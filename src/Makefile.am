@@ -1,8 +1,8 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
-bin_PROGRAMS = xfe xfa xfi xfp xfw
+bin_PROGRAMS = swordfish swfa swfi swfp swfw
 
-xfe_SOURCES = ../st/x.c \
+swordfish_SOURCES = ../st/x.c \
               ../st/st.c \
               icons.cpp \
 			  startupnotification.cpp \
@@ -47,7 +47,7 @@ xfe_SOURCES = ../st/x.c \
               main.cpp
 
 if STARTUPNOTIFY
-xfe_SOURCES += ../libsn/sn-common.c  \
+swordfish_SOURCES += ../libsn/sn-common.c  \
               ../libsn/sn-launchee.c \
               ../libsn/sn-launcher.c \
               ../libsn/sn-list.c \
@@ -57,10 +57,10 @@ xfe_SOURCES += ../libsn/sn-common.c  \
               ../libsn/sn-xutils.c
 endif
 
-xfe_LDADD = @LIBINTL@ -lutil
+swordfish_LDADD = @LIBINTL@ -lutil
 
 
-xfa_SOURCES = ../st/x.c \
+swfa_SOURCES = ../st/x.c \
               ../st/st.c \
               icons.cpp \
 			  startupnotification.cpp \
@@ -85,7 +85,7 @@ xfa_SOURCES = ../st/x.c \
               XFileArchive.cpp
 
 if STARTUPNOTIFY
-xfa_SOURCES += ../libsn/sn-common.c  \
+swfa_SOURCES += ../libsn/sn-common.c  \
               ../libsn/sn-launchee.c \
               ../libsn/sn-launcher.c \
               ../libsn/sn-list.c \
@@ -95,10 +95,10 @@ xfa_SOURCES += ../libsn/sn-common.c  \
               ../libsn/sn-xutils.c
 endif
 
-xfa_LDADD = @LIBINTL@ -lutil
+swfa_LDADD = @LIBINTL@ -lutil
 
 
-xfi_SOURCES = ../st/x.c \
+swfi_SOURCES = ../st/x.c \
               ../st/st.c \
               icons.cpp \
 			  startupnotification.cpp \
@@ -123,7 +123,7 @@ xfi_SOURCES = ../st/x.c \
               XFileImage.cpp
 
 if STARTUPNOTIFY
-xfi_SOURCES += ../libsn/sn-common.c  \
+swfi_SOURCES += ../libsn/sn-common.c  \
               ../libsn/sn-launchee.c \
               ../libsn/sn-launcher.c \
               ../libsn/sn-list.c \
@@ -133,10 +133,10 @@ xfi_SOURCES += ../libsn/sn-common.c  \
               ../libsn/sn-xutils.c
 endif
 
-xfi_LDADD = @LIBINTL@ -lutil
+swfi_LDADD = @LIBINTL@ -lutil
 
 
-xfp_SOURCES = ../st/x.c \
+swfp_SOURCES = ../st/x.c \
               ../st/st.c \
               icons.cpp \
 			  startupnotification.cpp \
@@ -161,7 +161,7 @@ xfp_SOURCES = ../st/x.c \
               XFilePackage.cpp
 
 if STARTUPNOTIFY
-xfp_SOURCES += ../libsn/sn-common.c  \
+swfp_SOURCES += ../libsn/sn-common.c  \
               ../libsn/sn-launchee.c \
               ../libsn/sn-launcher.c \
               ../libsn/sn-list.c \
@@ -171,10 +171,10 @@ xfp_SOURCES += ../libsn/sn-common.c  \
               ../libsn/sn-xutils.c
 endif
 
-xfp_LDADD = @LIBINTL@ -lutil
+swfp_LDADD = @LIBINTL@ -lutil
 	  
 
-xfw_SOURCES = ../st/x.c \
+swfw_SOURCES = ../st/x.c \
               ../st/st.c \
               icons.cpp \
 			  startupnotification.cpp \
@@ -202,7 +202,7 @@ xfw_SOURCES = ../st/x.c \
               XFileWrite.cpp
 
 if STARTUPNOTIFY
-xfw_SOURCES += ../libsn/sn-common.c  \
+swfw_SOURCES += ../libsn/sn-common.c  \
               ../libsn/sn-launchee.c \
               ../libsn/sn-launcher.c \
               ../libsn/sn-list.c \
@@ -212,7 +212,7 @@ xfw_SOURCES += ../libsn/sn-common.c  \
               ../libsn/sn-xutils.c
 endif
 
-xfw_LDADD = @LIBINTL@ -lutil
+swfw_LDADD = @LIBINTL@ -lutil
 
 				
 

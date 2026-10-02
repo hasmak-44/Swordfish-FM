@@ -1,4 +1,4 @@
-man_MANS=xfe.1 xfa.1 xfi.1 xfp.1 xfw.1
+man_MANS=swordfish.1 swordfish-archive.1 swordfish-image.1 swordfish-package.1 swordfish-write.1
 
 if XFEAUTOMOUNTER
 SUBDIRS = po m4 src automount icons
@@ -9,19 +9,19 @@ endif
 DIST_SUBDIRS = po m4 src automount icons
 
 rcdir = $(prefix)/share/xfe
-rc_DATA = xferc
+rc_DATA = swordfishrc
 pkdir = $(prefix)/share/polkit-1/actions
 
-EXTRA_DIST = autogen.sh buildrun installrun uninstall-xfe iconlinks.sh config.h i18n.h org.xfe.root.policy.in.in xfe.1 xfa.1 xfi.1 xfp.1 xfw.1 \
-             ABOUT-NLS TODO BUGS xferc.in *.desktop.in.in \
+EXTRA_DIST = autogen.sh buildrun installrun uninstall-xfe iconlinks.sh config.h i18n.h org.swordfish.root.policy.in.in swordfish.1 swordfish-archive.1 swordfish-image.1 swordfish-package.1 swordfish-write.1 \
+             ABOUT-NLS TODO BUGS swordfishrc.in *.desktop.in.in \
 	         $(top_srcdir)/icons/* $(top_srcdir)/debian
 
 desktopdir = $(prefix)/share/applications
-desktop_in_files = xfe.desktop.in xfa.desktop.in xfi.desktop.in xfp.desktop.in xfw.desktop.in
+desktop_in_files = swordfish.desktop.in swfa.desktop.in swfi.desktop.in swfp.desktop.in swfw.desktop.in
 desktop_DATA = $(desktop_in_files:.desktop.in=.desktop)
 
-polkit_action_in_in_FILES = org.xfe.root.policy.in.in
-polkit_action_in_FILES = org.xfe.root.policy.in
+polkit_action_in_in_FILES = org.swordfish.root.policy.in.in
+polkit_action_in_FILES = org.swordfish.root.policy.in
 polkit_action_FILES = $(polkit_action_in_FILES:.policy.in=.policy)
 polkit_actiondir = $(datadir)/polkit-1/actions
 if INSTALL_POLKIT_ACTIONS
@@ -30,22 +30,22 @@ endif
 
 do_subst = sed -e 's,[@]bindir[@],$(bindir),g'
 
-xfe.desktop: xfe.desktop.in Makefile
+swordfish.desktop: swordfish.desktop.in Makefile
 		$(AM_V_GEN)$(MSGFMT) --desktop -d $(top_srcdir)/po --template $< -o $@
-xfa.desktop: xfa.desktop.in Makefile
+swfa.desktop: swfa.desktop.in Makefile
 		$(AM_V_GEN)$(MSGFMT) --desktop -d $(top_srcdir)/po --template $< -o $@
-xfi.desktop: xfi.desktop.in Makefile
+swfi.desktop: swfi.desktop.in Makefile
 		$(AM_V_GEN)$(MSGFMT) --desktop -d $(top_srcdir)/po --template $< -o $@
-xfp.desktop: xfp.desktop.in Makefile
+swfp.desktop: swfp.desktop.in Makefile
 		$(AM_V_GEN)$(MSGFMT) --desktop -d $(top_srcdir)/po --template $< -o $@
-xfw.desktop: xfw.desktop.in Makefile
+swfw.desktop: swfw.desktop.in Makefile
 		$(AM_V_GEN)$(MSGFMT) --desktop -d $(top_srcdir)/po --template $< -o $@
 
-org.xfe.root.policy: org.xfe.root.policy.in Makefile
+org.swordfish.root.policy: org.swordfish.root.policy.in Makefile
 		$(AM_V_GEN)$(MSGFMT) --xml -d $(top_srcdir)/po --template $< -o $@
 
-org.xfe.root.policy.in: org.xfe.root.policy.in.in Makefile
-	$(do_subst) < org.xfe.root.policy.in.in > org.xfe.root.policy.in
+org.swordfish.root.policy.in: org.swordfish.root.policy.in.in Makefile
+	$(do_subst) < org.swordfish.root.policy.in.in > org.swordfish.root.policy.in
 
 dist-hook:
 	cd po && $(MAKE) update-po
@@ -57,13 +57,13 @@ install-data-hook:
 	sh iconlinks.sh $(top_srcdir) $(DESTDIR)$(rcdir)
 if INSTALL_POLKIT_ACTIONS
 	$(MKDIR_P) $(DESTDIR)$(pkdir)
-	cp org.xfe.root.policy $(DESTDIR)$(pkdir)
+	cp org.swordfish.root.policy $(DESTDIR)$(pkdir)
 endif
 	
 uninstall-hook:
 	rm -rf $(DESTDIR)$(rcdir)
 if INSTALL_POLKIT_ACTIONS
-	rm -f $(DESTDIR)$(pkdir)/org.xfe.root.policy
+	rm -f $(DESTDIR)$(pkdir)/org.swordfish.root.policy
 endif
 
 ACLOCAL_AMFLAGS = -I m4

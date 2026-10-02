@@ -311,6 +311,6 @@ else
 fi
 
 echo ""
-echo "              Do:  'make' to compile Xfe."
-echo "            Then:  'make install' (as root) to install Xfe."
+echo "              Do:  .make. to compile Swordfish.."
+echo "                        Then:  .make install. (as root) to install Swordfish.."
 echo ""
