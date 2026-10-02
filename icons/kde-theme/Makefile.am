@@ -1,3 +1,3 @@
-icondir=$(datadir)/xfe/icons/kde-theme
+icondir=$(datadir)/swordfish/icons/kde-theme
 icon_DATA=*.png
 	

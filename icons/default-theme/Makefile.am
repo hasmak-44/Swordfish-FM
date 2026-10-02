@@ -1,3 +1,3 @@
-icondir=$(datadir)/xfe/icons/default-theme
+icondir=$(datadir)/swordfish/icons/default-theme
 icon_DATA=*.png
 	

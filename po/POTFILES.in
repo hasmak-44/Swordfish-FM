@@ -41,7 +41,8 @@ src/startupnotification.cpp
 src/xfeutils.cpp
 automount/xfe-automount.cpp
 swordfish.desktop.in
-xfi.desktop.in
-xfp.desktop.in
-xfw.desktop.in
-org.xfe.root.policy.in.in
+swfa.desktop.in
+swfi.desktop.in
+swfp.desktop.in
+swfw.desktop.in
+org.swordfish.root.policy.in.in

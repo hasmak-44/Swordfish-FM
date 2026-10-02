@@ -2,12 +2,12 @@
 # Copyright (C) 2002-2026 Roland Baudin
 # This file is distributed under the same license as the Xfe package.
 # Vidar Jon Bauge <vidarjon@tiscali.dk>, 2006
-# 
+#
 msgid ""
 msgstr ""
 "Project-Id-Version: Xfe 0.99\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-03 11:24+0200\n"
+"POT-Creation-Date: 2026-10-02 16:50+0000\n"
 "PO-Revision-Date: 2007-04-03 16:36+0100\n"
 "Last-Translator: Jonas Bardino <jonas@meshtechnologies.com>\n"
 "Language-Team: Danish\n"
@@ -5813,16 +5813,18 @@ msgstr "Du kører Xfe som root!"
 
 #: src/XFileExplorer.cpp:3542
 #, fuzzy, c-format
-msgid "Can't create Xfe config folder %s: %s"
+msgid "Can.t create Swordfish config folder %s: %s"
 msgstr "Kan ikke overskrive mappen %s. Den er ikke tom"
 
 #: src/XFileExplorer.cpp:3547
 #, fuzzy, c-format
-msgid "Can't create Xfe config folder %s"
+msgid "Can.t create Swordfish config folder %s"
 msgstr "Kan ikke overskrive mappen %s. Den er ikke tom"
 
 #: src/XFileExplorer.cpp:3569
-msgid "No global xferc file found! Please select a configuration file..."
+#, fuzzy
+#| msgid "No global xferc file found! Please select a configuration file..."
+msgid "No global swordfishrc file found! Please select a configuration file..."
 msgstr ""
 "Kunne ikke finde en global xferc! Vælg venligst en konfigurationsfil..."
 
@@ -5831,7 +5833,7 @@ msgid "XFE configuration file"
 msgstr "XFE konfigurationsfil"
 
 #: src/XFileExplorer.cpp:3586
-msgid "Xfe cannot run without a global xferc configuration file"
+msgid "Swordfish cannot run without a global swordfishrc configuration file"
 msgstr ""
 
 #: src/XFileExplorer.cpp:3609 src/XFileExplorer.cpp:5791
@@ -6262,7 +6264,7 @@ msgstr ""
 #| "\n"
 msgid ""
 "\n"
-"Usage: xfa [options] [archive] \n"
+"Usage: swfa [options] [archive] \n"
 "\n"
 "    [options] can be any of the following:\n"
 "\n"
@@ -6663,9 +6665,21 @@ msgid "Open Image"
 msgstr "Åbn billedfil"
 
 #: src/XFileImage.cpp:3155
+#, fuzzy
+#| msgid ""
+#| "\n"
+#| "Usage: xfi [options] [image] \n"
+#| "\n"
+#| "    [options] can be any of the following:\n"
+#| "\n"
+#| "        -h, --help         Print (this) help screen and exit.\n"
+#| "        -v, --version      Print version information and exit.\n"
+#| "\n"
+#| "    [image] is the path to the image file you want to open on start up.\n"
+#| "\n"
 msgid ""
 "\n"
-"Usage: xfi [options] [image] \n"
+"Usage: swfi [options] [image] \n"
 "\n"
 "    [options] can be any of the following:\n"
 "\n"
@@ -6763,7 +6777,7 @@ msgstr "Forespørgsel på %s mislykkedes!"
 #, fuzzy
 msgid ""
 "\n"
-"Usage: xfp [options] [package] \n"
+"Usage: swfp [options] [package] \n"
 "\n"
 "    [options] can be any of the following:\n"
 "\n"
@@ -6790,7 +6804,7 @@ msgstr ""
 #, fuzzy
 msgid ""
 "\n"
-"Usage: xfw [options] [file1] [file2] [file3]...\n"
+"Usage: swfw [options] [file1] [file2] [file3]...\n"
 "\n"
 "    [options] can be any of the following:\n"
 "\n"
@@ -6880,8 +6894,9 @@ msgid ""
 " \n"
 "                                   XFE, X File Explorer File Manager\n"
 " \n"
-"                                     <http://roland65.free.fr/xfe>\n"
-"                                 <http://sourceforge.net/projects/xfe>\n"
+"                                     <http://roland65.free.fr/swordfish>\n"
+"                                 <http://sourceforge.net/projects/"
+"swordfish>\n"
 " \n"
 " \n"
 " \n"
@@ -7102,8 +7117,8 @@ msgid ""
 "   Trash system\n"
 "   =-=-=-=-=-=-=\n"
 " \n"
-"  Xfe implements a trash system that is fully compliant with the freedesktop."
-"org standards.\n"
+"  Xfe implements a trash system that is fully compliant with the "
+"freedesktop.org standards.\n"
 "  This allows you to move files to the trash can and to restore files from "
 "within Xfe or your favorite desktop.\n"
 "  Note that the trash files location is: ~/.local/share/Trash/files\n"
@@ -7118,30 +7133,30 @@ msgid ""
 "  by hand. However, you may want to understand the configuration principles, "
 "because some customizations can also\n"
 "  easily be done by manually editing the configurations files.\n"
-"  Be careful to quit Xfe before manually editing any configuration file, "
-"otherwise changes could not be taken\n"
+"  Be careful to quit Swordfish before manually editing any configuration "
+"file, otherwise changes could not be taken\n"
 "  into account.\n"
 " \n"
-"  The system-wide configuration file xferc is located in /usr/share/xfe, /"
-"usr/local/share/xfe\n"
-"  or /opt/local/share/xfe, in the given order of precedence.\n"
+"  The system-wide configuration file swordfishrc is located in /usr/share/"
+"swordfish, /usr/local/share/swordfish\n"
+"  or /opt/local/share/swordfish, in the given order of precedence.\n"
 " \n"
-"  The local configuration files for Xfe, Xfw, Xfi, Xfa and Xfp are now "
-"located in the ~/.config/xfe folder.\n"
-"  They are named xferc, xfwrc, xfirc, xfarc and xfprc.\n"
+"  The local configuration files for Swordfish, Swfw, Swfi, Swfa and Swfp are "
+"now located in the ~/.config/swordfish folder.\n"
+"  They are named swordfishrc, xfwrc, xfirc, xfarc and xfprc.\n"
 "  \n"
-"  At the very first Xfe run, the system-wide configuration file is copied "
-"into the local configuration file\n"
-"  ~/.config/xfe/xferc which does not exists yet. If the system-wide "
-"configuration file is not found\n"
+"  At the very first Swordfish run, the system-wide configuration file is "
+"copied into the local configuration file\n"
+"  ~/.config/swordfish/swordfishrc which does not exists yet. If the system-"
+"wide configuration file is not found\n"
 "  (in case of an unusual install place), a dialog asks the user to select "
 "the right place. It is thus easier to\n"
 "  customize Xfe (this is particularly true for the file associations) by "
 "hand editing because all the local options\n"
 "  are located in the same file.\n"
 " \n"
-"  Default PNG icons are located in /usr/share/xfe/icons/default-theme or /"
-"usr/local/share/xfe/icons/default-theme,\n"
+"  Default PNG icons are located in /usr/share/swordfish/icons/default-theme "
+"or /usr/local/share/swordfish/icons/default-theme,\n"
 "  depending on your installation. You can easily change the icon theme path "
 "in the Preferences dialog.\n"
 " \n"
@@ -7216,8 +7231,8 @@ msgid ""
 "and go to the Scripts sub menu. Last, choose\n"
 "  the script you want to apply on the selected files.\n"
 " \n"
-"  The script files must be located in the ~/.config/xfe/scripts folder and "
-"have to be executable. You can organize\n"
+"  The script files must be located in the ~/.config/swordfish/scripts folder "
+"and have to be executable. You can organize\n"
 "  this folder as you like by using sub-folders. You can use the Tools / Go "
 "to script folder menu item to directly go\n"
 "  to the script folder and manage it.\n"
@@ -7464,7 +7479,7 @@ msgstr ""
 #, fuzzy
 msgid ""
 "\n"
-"Usage: xfe [options...] [FOLDER|FILE...]\n"
+"Usage: swordfish [options...] [FOLDER|FILE...]\n"
 "\n"
 "    [options...] are the following:\n"
 "\n"
@@ -7568,83 +7583,100 @@ msgstr ""
 msgid "%u s"
 msgstr ""
 
-#: xfe.desktop.in:3
+#: swordfish.desktop.in:2
 msgid "Xfe"
 msgstr ""
 
-#: xfe.desktop.in:4
+#: swordfish.desktop.in:3
 #, fuzzy
 msgid "File Manager"
 msgstr "Ejer"
 
-#: xfe.desktop.in:5
+#: swordfish.desktop.in:4
 msgid "A lightweight file manager for X Window"
 msgstr ""
 
-#: xfe.desktop.in:6
+#: swordfish.desktop.in:5
 #, fuzzy
 msgid "file manager"
 msgstr "Ejer"
 
-#: xfi.desktop.in:3
+#: swfa.desktop.in:2
+msgid "Xfa"
+msgstr ""
+
+#: swfa.desktop.in:3
+#, fuzzy
+#| msgid "No package loaded"
+msgid "Archive viewer"
+msgstr "Ingen pakke åbnet"
+
+#: swfa.desktop.in:4
+#, fuzzy
+msgid "A simple archive viewer and extractor for Xfe"
+msgstr "Kunne ikke finde et program til at håndtere pakken (rpm eller dpkg)!"
+
+#: swfa.desktop.in:5
+msgid "archive viewer;archive extractor"
+msgstr ""
+
+#: swfi.desktop.in:2
 msgid "Xfi"
 msgstr ""
 
-#: xfi.desktop.in:4
+#: swfi.desktop.in:3
 #, fuzzy
 msgid "Image Viewer"
 msgstr "Standard billedviser :"
 
-#: xfi.desktop.in:5
+#: swfi.desktop.in:4
 msgid "A simple image viewer for Xfe"
 msgstr ""
 
-#: xfi.desktop.in:6
+#: swfi.desktop.in:5
 msgid "image viewer;image manager"
 msgstr ""
 
-#: xfp.desktop.in:3
+#: swfp.desktop.in:2
 msgid "Xfp"
 msgstr ""
 
-#: xfp.desktop.in:4
+#: swfp.desktop.in:3
 #, fuzzy
 msgid "Package Manager"
 msgstr "Pakke forespørgsel "
 
-#: xfp.desktop.in:5
+#: swfp.desktop.in:4
 #, fuzzy
 msgid "A simple package manager for Xfe"
 msgstr "Kunne ikke finde et program til at håndtere pakken (rpm eller dpkg)!"
 
-#: xfp.desktop.in:6
+#: swfp.desktop.in:5
 msgid "package viewer;package manager"
 msgstr ""
 
-#: xfw.desktop.in:3
+#: swfw.desktop.in:2
 msgid "Xfw"
 msgstr ""
 
-#: xfw.desktop.in:4
+#: swfw.desktop.in:3
 #, fuzzy
 msgid "Text Editor"
 msgstr "Standard tekstredigering :"
 
-#: xfw.desktop.in:5
+#: swfw.desktop.in:4
 msgid "A simple text editor for Xfe"
 msgstr ""
 
-#: xfw.desktop.in:6
+#: swfw.desktop.in:5
 msgid "editor;viewer;text"
 msgstr ""
 
-#: org.xfe.root.policy.in.in:11
-msgid "Run Xfe as root"
-msgstr "Kør Xfe som root"
+#~ msgid "Run Xfe as root"
+#~ msgstr "Kør Xfe som root"
 
-#: org.xfe.root.policy.in.in:12
-msgid "Authentication is required to run Xfe as root"
-msgstr "Godkendelse er krævet for at køre Xfe som root"
+#~ msgid "Authentication is required to run Xfe as root"
+#~ msgstr "Godkendelse er krævet for at køre Xfe som root"
 
 #, fuzzy
 #~ msgid "Go to Previous FprevImageer"
@@ -7901,11 +7933,6 @@ msgstr "Godkendelse er krævet for at køre Xfe som root"
 #, fuzzy
 #~ msgid "Unarchive program arj does not exist"
 #~ msgstr "Mappen %s findes ikke"
-
-#, fuzzy
-#~| msgid "No package loaded"
-#~ msgid "Archive opened"
-#~ msgstr "Ingen pakke åbnet"
 
 #, fuzzy
 #~ msgid "Archive extracted"
