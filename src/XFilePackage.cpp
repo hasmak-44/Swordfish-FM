@@ -803,7 +803,7 @@ void XFilePackage::create()
 // Usage message
 #define USAGE_MSG    _( \
             "\
-\nUsage: xfp [options] [package] \n\
+\nUsage: swfp [options] [package] \n\
 \n\
     [options] can be any of the following:\n\
 \n\

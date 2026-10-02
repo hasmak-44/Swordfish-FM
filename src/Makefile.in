@@ -88,8 +88,8 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
-bin_PROGRAMS = xfe$(EXEEXT) xfa$(EXEEXT) xfi$(EXEEXT) xfp$(EXEEXT) \
-	xfw$(EXEEXT)
+bin_PROGRAMS = swordfish$(EXEEXT) swfa$(EXEEXT) swfi$(EXEEXT) \
+	swfp$(EXEEXT) swfw$(EXEEXT)
 @STARTUPNOTIFY_TRUE@am__append_1 = ../libsn/sn-common.c  \
 @STARTUPNOTIFY_TRUE@              ../libsn/sn-launchee.c \
 @STARTUPNOTIFY_TRUE@              ../libsn/sn-launcher.c \
@@ -152,7 +152,7 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
-am__xfa_SOURCES_DIST = ../st/x.c ../st/st.c icons.cpp \
+am__swfa_SOURCES_DIST = ../st/x.c ../st/st.c icons.cpp \
 	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
 	CommandWindow.cpp DialogBox.cpp DirHistBox.cpp DirList.cpp \
 	File.cpp FileDialog.cpp FileDict.cpp FileList.cpp \
@@ -171,7 +171,7 @@ am__dirstamp = $(am__leading_dot)dirstamp
 @STARTUPNOTIFY_TRUE@	../libsn/sn-util.$(OBJEXT) \
 @STARTUPNOTIFY_TRUE@	../libsn/sn-xmessages.$(OBJEXT) \
 @STARTUPNOTIFY_TRUE@	../libsn/sn-xutils.$(OBJEXT)
-am_xfa_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) icons.$(OBJEXT) \
+am_swfa_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) icons.$(OBJEXT) \
 	startupnotification.$(OBJEXT) xfeutils.$(OBJEXT) \
 	ComboBox.$(OBJEXT) CommandWindow.$(OBJEXT) DialogBox.$(OBJEXT) \
 	DirHistBox.$(OBJEXT) DirList.$(OBJEXT) File.$(OBJEXT) \
@@ -181,9 +181,77 @@ am_xfa_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) icons.$(OBJEXT) \
 	OverwriteBox.$(OBJEXT) PathLinker.$(OBJEXT) \
 	StringList.$(OBJEXT) TextLabel.$(OBJEXT) \
 	XFileArchive.$(OBJEXT) $(am__objects_1)
-xfa_OBJECTS = $(am_xfa_OBJECTS)
-xfa_DEPENDENCIES =
-am__xfe_SOURCES_DIST = ../st/x.c ../st/st.c icons.cpp \
+swfa_OBJECTS = $(am_swfa_OBJECTS)
+swfa_DEPENDENCIES =
+am__swfi_SOURCES_DIST = ../st/x.c ../st/st.c icons.cpp \
+	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
+	CommandWindow.cpp DialogBox.cpp DirList.cpp DirHistBox.cpp \
+	File.cpp FileDialog.cpp FileDict.cpp FileList.cpp \
+	HistInputDialog.cpp IconList.cpp InputDialog.cpp \
+	MessageBox.cpp OverwriteBox.cpp PathLinker.cpp StringList.cpp \
+	TextLabel.cpp XFileImage.cpp ../libsn/sn-common.c \
+	../libsn/sn-launchee.c ../libsn/sn-launcher.c \
+	../libsn/sn-list.c ../libsn/sn-monitor.c ../libsn/sn-util.c \
+	../libsn/sn-xmessages.c ../libsn/sn-xutils.c
+am_swfi_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) icons.$(OBJEXT) \
+	startupnotification.$(OBJEXT) xfeutils.$(OBJEXT) \
+	ComboBox.$(OBJEXT) CommandWindow.$(OBJEXT) DialogBox.$(OBJEXT) \
+	DirList.$(OBJEXT) DirHistBox.$(OBJEXT) File.$(OBJEXT) \
+	FileDialog.$(OBJEXT) FileDict.$(OBJEXT) FileList.$(OBJEXT) \
+	HistInputDialog.$(OBJEXT) IconList.$(OBJEXT) \
+	InputDialog.$(OBJEXT) MessageBox.$(OBJEXT) \
+	OverwriteBox.$(OBJEXT) PathLinker.$(OBJEXT) \
+	StringList.$(OBJEXT) TextLabel.$(OBJEXT) XFileImage.$(OBJEXT) \
+	$(am__objects_1)
+swfi_OBJECTS = $(am_swfi_OBJECTS)
+swfi_DEPENDENCIES =
+am__swfp_SOURCES_DIST = ../st/x.c ../st/st.c icons.cpp \
+	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
+	CommandWindow.cpp DialogBox.cpp DirHistBox.cpp DirList.cpp \
+	File.cpp FileDialog.cpp FileDict.cpp FileList.cpp \
+	HistInputDialog.cpp IconList.cpp InputDialog.cpp \
+	MessageBox.cpp OverwriteBox.cpp PathLinker.cpp StringList.cpp \
+	TextLabel.cpp XFilePackage.cpp ../libsn/sn-common.c \
+	../libsn/sn-launchee.c ../libsn/sn-launcher.c \
+	../libsn/sn-list.c ../libsn/sn-monitor.c ../libsn/sn-util.c \
+	../libsn/sn-xmessages.c ../libsn/sn-xutils.c
+am_swfp_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) icons.$(OBJEXT) \
+	startupnotification.$(OBJEXT) xfeutils.$(OBJEXT) \
+	ComboBox.$(OBJEXT) CommandWindow.$(OBJEXT) DialogBox.$(OBJEXT) \
+	DirHistBox.$(OBJEXT) DirList.$(OBJEXT) File.$(OBJEXT) \
+	FileDialog.$(OBJEXT) FileDict.$(OBJEXT) FileList.$(OBJEXT) \
+	HistInputDialog.$(OBJEXT) IconList.$(OBJEXT) \
+	InputDialog.$(OBJEXT) MessageBox.$(OBJEXT) \
+	OverwriteBox.$(OBJEXT) PathLinker.$(OBJEXT) \
+	StringList.$(OBJEXT) TextLabel.$(OBJEXT) \
+	XFilePackage.$(OBJEXT) $(am__objects_1)
+swfp_OBJECTS = $(am_swfp_OBJECTS)
+swfp_DEPENDENCIES =
+am__swfw_SOURCES_DIST = ../st/x.c ../st/st.c icons.cpp \
+	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
+	ColorSelector.cpp CommandWindow.cpp DialogBox.cpp \
+	DirHistBox.cpp DirList.cpp File.cpp FileDialog.cpp \
+	FileDict.cpp FileList.cpp FontDialog.cpp HistInputDialog.cpp \
+	IconList.cpp InputDialog.cpp MessageBox.cpp OverwriteBox.cpp \
+	PathLinker.cpp StringList.cpp TextLabel.cpp WriteWindow.cpp \
+	XFileWrite.cpp ../libsn/sn-common.c ../libsn/sn-launchee.c \
+	../libsn/sn-launcher.c ../libsn/sn-list.c \
+	../libsn/sn-monitor.c ../libsn/sn-util.c \
+	../libsn/sn-xmessages.c ../libsn/sn-xutils.c
+am_swfw_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) icons.$(OBJEXT) \
+	startupnotification.$(OBJEXT) xfeutils.$(OBJEXT) \
+	ComboBox.$(OBJEXT) ColorSelector.$(OBJEXT) \
+	CommandWindow.$(OBJEXT) DialogBox.$(OBJEXT) \
+	DirHistBox.$(OBJEXT) DirList.$(OBJEXT) File.$(OBJEXT) \
+	FileDialog.$(OBJEXT) FileDict.$(OBJEXT) FileList.$(OBJEXT) \
+	FontDialog.$(OBJEXT) HistInputDialog.$(OBJEXT) \
+	IconList.$(OBJEXT) InputDialog.$(OBJEXT) MessageBox.$(OBJEXT) \
+	OverwriteBox.$(OBJEXT) PathLinker.$(OBJEXT) \
+	StringList.$(OBJEXT) TextLabel.$(OBJEXT) WriteWindow.$(OBJEXT) \
+	XFileWrite.$(OBJEXT) $(am__objects_1)
+swfw_OBJECTS = $(am_swfw_OBJECTS)
+swfw_DEPENDENCIES =
+am__swordfish_SOURCES_DIST = ../st/x.c ../st/st.c icons.cpp \
 	startupnotification.cpp xfeutils.cpp ArchInputDialog.cpp \
 	BookmarkDialog.cpp BrowseInputDialog.cpp ColorSelector.cpp \
 	ComboBox.cpp CommandWindow.cpp ConnectDialog.cpp DialogBox.cpp \
@@ -199,17 +267,18 @@ am__xfe_SOURCES_DIST = ../st/x.c ../st/st.c icons.cpp \
 	../libsn/sn-launcher.c ../libsn/sn-list.c \
 	../libsn/sn-monitor.c ../libsn/sn-util.c \
 	../libsn/sn-xmessages.c ../libsn/sn-xutils.c
-am_xfe_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) icons.$(OBJEXT) \
-	startupnotification.$(OBJEXT) xfeutils.$(OBJEXT) \
-	ArchInputDialog.$(OBJEXT) BookmarkDialog.$(OBJEXT) \
-	BrowseInputDialog.$(OBJEXT) ColorSelector.$(OBJEXT) \
-	ComboBox.$(OBJEXT) CommandWindow.$(OBJEXT) \
-	ConnectDialog.$(OBJEXT) DialogBox.$(OBJEXT) \
-	DirHistBox.$(OBJEXT) DirList.$(OBJEXT) DirPanel.$(OBJEXT) \
-	ExecuteBox.$(OBJEXT) File.$(OBJEXT) FileDialog.$(OBJEXT) \
-	FileDict.$(OBJEXT) FileList.$(OBJEXT) FilePanel.$(OBJEXT) \
-	FontDialog.$(OBJEXT) HistInputDialog.$(OBJEXT) \
-	IconList.$(OBJEXT) InputDialog.$(OBJEXT) KeyBindings.$(OBJEXT) \
+am_swordfish_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) \
+	icons.$(OBJEXT) startupnotification.$(OBJEXT) \
+	xfeutils.$(OBJEXT) ArchInputDialog.$(OBJEXT) \
+	BookmarkDialog.$(OBJEXT) BrowseInputDialog.$(OBJEXT) \
+	ColorSelector.$(OBJEXT) ComboBox.$(OBJEXT) \
+	CommandWindow.$(OBJEXT) ConnectDialog.$(OBJEXT) \
+	DialogBox.$(OBJEXT) DirHistBox.$(OBJEXT) DirList.$(OBJEXT) \
+	DirPanel.$(OBJEXT) ExecuteBox.$(OBJEXT) File.$(OBJEXT) \
+	FileDialog.$(OBJEXT) FileDict.$(OBJEXT) FileList.$(OBJEXT) \
+	FilePanel.$(OBJEXT) FontDialog.$(OBJEXT) \
+	HistInputDialog.$(OBJEXT) IconList.$(OBJEXT) \
+	InputDialog.$(OBJEXT) KeyBindings.$(OBJEXT) \
 	KeyBindingsDialog.$(OBJEXT) MessageBox.$(OBJEXT) \
 	OverwriteBox.$(OBJEXT) PathLinker.$(OBJEXT) Places.$(OBJEXT) \
 	Preferences.$(OBJEXT) Properties.$(OBJEXT) \
@@ -217,76 +286,8 @@ am_xfe_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) icons.$(OBJEXT) \
 	SearchWindow.$(OBJEXT) StringList.$(OBJEXT) \
 	TabButtons.$(OBJEXT) TextLabel.$(OBJEXT) TextWindow.$(OBJEXT) \
 	XFileExplorer.$(OBJEXT) main.$(OBJEXT) $(am__objects_1)
-xfe_OBJECTS = $(am_xfe_OBJECTS)
-xfe_DEPENDENCIES =
-am__xfi_SOURCES_DIST = ../st/x.c ../st/st.c icons.cpp \
-	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
-	CommandWindow.cpp DialogBox.cpp DirList.cpp DirHistBox.cpp \
-	File.cpp FileDialog.cpp FileDict.cpp FileList.cpp \
-	HistInputDialog.cpp IconList.cpp InputDialog.cpp \
-	MessageBox.cpp OverwriteBox.cpp PathLinker.cpp StringList.cpp \
-	TextLabel.cpp XFileImage.cpp ../libsn/sn-common.c \
-	../libsn/sn-launchee.c ../libsn/sn-launcher.c \
-	../libsn/sn-list.c ../libsn/sn-monitor.c ../libsn/sn-util.c \
-	../libsn/sn-xmessages.c ../libsn/sn-xutils.c
-am_xfi_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) icons.$(OBJEXT) \
-	startupnotification.$(OBJEXT) xfeutils.$(OBJEXT) \
-	ComboBox.$(OBJEXT) CommandWindow.$(OBJEXT) DialogBox.$(OBJEXT) \
-	DirList.$(OBJEXT) DirHistBox.$(OBJEXT) File.$(OBJEXT) \
-	FileDialog.$(OBJEXT) FileDict.$(OBJEXT) FileList.$(OBJEXT) \
-	HistInputDialog.$(OBJEXT) IconList.$(OBJEXT) \
-	InputDialog.$(OBJEXT) MessageBox.$(OBJEXT) \
-	OverwriteBox.$(OBJEXT) PathLinker.$(OBJEXT) \
-	StringList.$(OBJEXT) TextLabel.$(OBJEXT) XFileImage.$(OBJEXT) \
-	$(am__objects_1)
-xfi_OBJECTS = $(am_xfi_OBJECTS)
-xfi_DEPENDENCIES =
-am__xfp_SOURCES_DIST = ../st/x.c ../st/st.c icons.cpp \
-	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
-	CommandWindow.cpp DialogBox.cpp DirHistBox.cpp DirList.cpp \
-	File.cpp FileDialog.cpp FileDict.cpp FileList.cpp \
-	HistInputDialog.cpp IconList.cpp InputDialog.cpp \
-	MessageBox.cpp OverwriteBox.cpp PathLinker.cpp StringList.cpp \
-	TextLabel.cpp XFilePackage.cpp ../libsn/sn-common.c \
-	../libsn/sn-launchee.c ../libsn/sn-launcher.c \
-	../libsn/sn-list.c ../libsn/sn-monitor.c ../libsn/sn-util.c \
-	../libsn/sn-xmessages.c ../libsn/sn-xutils.c
-am_xfp_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) icons.$(OBJEXT) \
-	startupnotification.$(OBJEXT) xfeutils.$(OBJEXT) \
-	ComboBox.$(OBJEXT) CommandWindow.$(OBJEXT) DialogBox.$(OBJEXT) \
-	DirHistBox.$(OBJEXT) DirList.$(OBJEXT) File.$(OBJEXT) \
-	FileDialog.$(OBJEXT) FileDict.$(OBJEXT) FileList.$(OBJEXT) \
-	HistInputDialog.$(OBJEXT) IconList.$(OBJEXT) \
-	InputDialog.$(OBJEXT) MessageBox.$(OBJEXT) \
-	OverwriteBox.$(OBJEXT) PathLinker.$(OBJEXT) \
-	StringList.$(OBJEXT) TextLabel.$(OBJEXT) \
-	XFilePackage.$(OBJEXT) $(am__objects_1)
-xfp_OBJECTS = $(am_xfp_OBJECTS)
-xfp_DEPENDENCIES =
-am__xfw_SOURCES_DIST = ../st/x.c ../st/st.c icons.cpp \
-	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
-	ColorSelector.cpp CommandWindow.cpp DialogBox.cpp \
-	DirHistBox.cpp DirList.cpp File.cpp FileDialog.cpp \
-	FileDict.cpp FileList.cpp FontDialog.cpp HistInputDialog.cpp \
-	IconList.cpp InputDialog.cpp MessageBox.cpp OverwriteBox.cpp \
-	PathLinker.cpp StringList.cpp TextLabel.cpp WriteWindow.cpp \
-	XFileWrite.cpp ../libsn/sn-common.c ../libsn/sn-launchee.c \
-	../libsn/sn-launcher.c ../libsn/sn-list.c \
-	../libsn/sn-monitor.c ../libsn/sn-util.c \
-	../libsn/sn-xmessages.c ../libsn/sn-xutils.c
-am_xfw_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) icons.$(OBJEXT) \
-	startupnotification.$(OBJEXT) xfeutils.$(OBJEXT) \
-	ComboBox.$(OBJEXT) ColorSelector.$(OBJEXT) \
-	CommandWindow.$(OBJEXT) DialogBox.$(OBJEXT) \
-	DirHistBox.$(OBJEXT) DirList.$(OBJEXT) File.$(OBJEXT) \
-	FileDialog.$(OBJEXT) FileDict.$(OBJEXT) FileList.$(OBJEXT) \
-	FontDialog.$(OBJEXT) HistInputDialog.$(OBJEXT) \
-	IconList.$(OBJEXT) InputDialog.$(OBJEXT) MessageBox.$(OBJEXT) \
-	OverwriteBox.$(OBJEXT) PathLinker.$(OBJEXT) \
-	StringList.$(OBJEXT) TextLabel.$(OBJEXT) WriteWindow.$(OBJEXT) \
-	XFileWrite.$(OBJEXT) $(am__objects_1)
-xfw_OBJECTS = $(am_xfw_OBJECTS)
-xfw_DEPENDENCIES =
+swordfish_OBJECTS = $(am_swordfish_OBJECTS)
+swordfish_DEPENDENCIES =
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -359,11 +360,11 @@ AM_V_CXXLD = $(am__v_CXXLD_@AM_V@)
 am__v_CXXLD_ = $(am__v_CXXLD_@AM_DEFAULT_V@)
 am__v_CXXLD_0 = @echo "  CXXLD   " $@;
 am__v_CXXLD_1 = 
-SOURCES = $(xfa_SOURCES) $(xfe_SOURCES) $(xfi_SOURCES) $(xfp_SOURCES) \
-	$(xfw_SOURCES)
-DIST_SOURCES = $(am__xfa_SOURCES_DIST) $(am__xfe_SOURCES_DIST) \
-	$(am__xfi_SOURCES_DIST) $(am__xfp_SOURCES_DIST) \
-	$(am__xfw_SOURCES_DIST)
+SOURCES = $(swfa_SOURCES) $(swfi_SOURCES) $(swfp_SOURCES) \
+	$(swfw_SOURCES) $(swordfish_SOURCES)
+DIST_SOURCES = $(am__swfa_SOURCES_DIST) $(am__swfi_SOURCES_DIST) \
+	$(am__swfp_SOURCES_DIST) $(am__swfw_SOURCES_DIST) \
+	$(am__swordfish_SOURCES_DIST)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -538,10 +539,10 @@ xcb_event_CFLAGS = @xcb_event_CFLAGS@
 xcb_event_LIBS = @xcb_event_LIBS@
 xft_config = @xft_config@
 AUTOMAKE_OPTIONS = subdir-objects
-xfe_SOURCES = ../st/x.c ../st/st.c icons.cpp startupnotification.cpp \
-	xfeutils.cpp ArchInputDialog.cpp BookmarkDialog.cpp \
-	BrowseInputDialog.cpp ColorSelector.cpp ComboBox.cpp \
-	CommandWindow.cpp ConnectDialog.cpp DialogBox.cpp \
+swordfish_SOURCES = ../st/x.c ../st/st.c icons.cpp \
+	startupnotification.cpp xfeutils.cpp ArchInputDialog.cpp \
+	BookmarkDialog.cpp BrowseInputDialog.cpp ColorSelector.cpp \
+	ComboBox.cpp CommandWindow.cpp ConnectDialog.cpp DialogBox.cpp \
 	DirHistBox.cpp DirList.cpp DirPanel.cpp ExecuteBox.cpp \
 	File.cpp FileDialog.cpp FileDict.cpp FileList.cpp \
 	FilePanel.cpp FontDialog.cpp HistInputDialog.cpp IconList.cpp \
@@ -551,36 +552,36 @@ xfe_SOURCES = ../st/x.c ../st/st.c icons.cpp startupnotification.cpp \
 	SearchPanel.cpp SearchWindow.cpp StringList.cpp TabButtons.cpp \
 	TextLabel.cpp TextWindow.cpp XFileExplorer.cpp main.cpp \
 	$(am__append_1)
-xfe_LDADD = @LIBINTL@ -lutil
-xfa_SOURCES = ../st/x.c ../st/st.c icons.cpp startupnotification.cpp \
+swordfish_LDADD = @LIBINTL@ -lutil
+swfa_SOURCES = ../st/x.c ../st/st.c icons.cpp startupnotification.cpp \
 	xfeutils.cpp ComboBox.cpp CommandWindow.cpp DialogBox.cpp \
 	DirHistBox.cpp DirList.cpp File.cpp FileDialog.cpp \
 	FileDict.cpp FileList.cpp HistInputDialog.cpp IconList.cpp \
 	InputDialog.cpp MessageBox.cpp OverwriteBox.cpp PathLinker.cpp \
 	StringList.cpp TextLabel.cpp XFileArchive.cpp $(am__append_2)
-xfa_LDADD = @LIBINTL@ -lutil
-xfi_SOURCES = ../st/x.c ../st/st.c icons.cpp startupnotification.cpp \
+swfa_LDADD = @LIBINTL@ -lutil
+swfi_SOURCES = ../st/x.c ../st/st.c icons.cpp startupnotification.cpp \
 	xfeutils.cpp ComboBox.cpp CommandWindow.cpp DialogBox.cpp \
 	DirList.cpp DirHistBox.cpp File.cpp FileDialog.cpp \
 	FileDict.cpp FileList.cpp HistInputDialog.cpp IconList.cpp \
 	InputDialog.cpp MessageBox.cpp OverwriteBox.cpp PathLinker.cpp \
 	StringList.cpp TextLabel.cpp XFileImage.cpp $(am__append_3)
-xfi_LDADD = @LIBINTL@ -lutil
-xfp_SOURCES = ../st/x.c ../st/st.c icons.cpp startupnotification.cpp \
+swfi_LDADD = @LIBINTL@ -lutil
+swfp_SOURCES = ../st/x.c ../st/st.c icons.cpp startupnotification.cpp \
 	xfeutils.cpp ComboBox.cpp CommandWindow.cpp DialogBox.cpp \
 	DirHistBox.cpp DirList.cpp File.cpp FileDialog.cpp \
 	FileDict.cpp FileList.cpp HistInputDialog.cpp IconList.cpp \
 	InputDialog.cpp MessageBox.cpp OverwriteBox.cpp PathLinker.cpp \
 	StringList.cpp TextLabel.cpp XFilePackage.cpp $(am__append_4)
-xfp_LDADD = @LIBINTL@ -lutil
-xfw_SOURCES = ../st/x.c ../st/st.c icons.cpp startupnotification.cpp \
+swfp_LDADD = @LIBINTL@ -lutil
+swfw_SOURCES = ../st/x.c ../st/st.c icons.cpp startupnotification.cpp \
 	xfeutils.cpp ComboBox.cpp ColorSelector.cpp CommandWindow.cpp \
 	DialogBox.cpp DirHistBox.cpp DirList.cpp File.cpp \
 	FileDialog.cpp FileDict.cpp FileList.cpp FontDialog.cpp \
 	HistInputDialog.cpp IconList.cpp InputDialog.cpp \
 	MessageBox.cpp OverwriteBox.cpp PathLinker.cpp StringList.cpp \
 	TextLabel.cpp WriteWindow.cpp XFileWrite.cpp $(am__append_5)
-xfw_LDADD = @LIBINTL@ -lutil
+swfw_LDADD = @LIBINTL@ -lutil
 AM_CPPFLAGS = -I. -I$(top_srcdir) -I$(top_srcdir)/intl
 EXTRA_DIST = ../libsn/sn-common.h	\
 	          ../libsn/sn-internals.h \
@@ -757,25 +758,25 @@ clean-binPROGRAMS:
 ../libsn/sn-xutils.$(OBJEXT): ../libsn/$(am__dirstamp) \
 	../libsn/$(DEPDIR)/$(am__dirstamp)
 
-xfa$(EXEEXT): $(xfa_OBJECTS) $(xfa_DEPENDENCIES) $(EXTRA_xfa_DEPENDENCIES) 
-	@rm -f xfa$(EXEEXT)
-	$(AM_V_CXXLD)$(CXXLINK) $(xfa_OBJECTS) $(xfa_LDADD) $(LIBS)
+swfa$(EXEEXT): $(swfa_OBJECTS) $(swfa_DEPENDENCIES) $(EXTRA_swfa_DEPENDENCIES) 
+	@rm -f swfa$(EXEEXT)
+	$(AM_V_CXXLD)$(CXXLINK) $(swfa_OBJECTS) $(swfa_LDADD) $(LIBS)
 
-xfe$(EXEEXT): $(xfe_OBJECTS) $(xfe_DEPENDENCIES) $(EXTRA_xfe_DEPENDENCIES) 
-	@rm -f xfe$(EXEEXT)
-	$(AM_V_CXXLD)$(CXXLINK) $(xfe_OBJECTS) $(xfe_LDADD) $(LIBS)
+swfi$(EXEEXT): $(swfi_OBJECTS) $(swfi_DEPENDENCIES) $(EXTRA_swfi_DEPENDENCIES) 
+	@rm -f swfi$(EXEEXT)
+	$(AM_V_CXXLD)$(CXXLINK) $(swfi_OBJECTS) $(swfi_LDADD) $(LIBS)
 
-xfi$(EXEEXT): $(xfi_OBJECTS) $(xfi_DEPENDENCIES) $(EXTRA_xfi_DEPENDENCIES) 
-	@rm -f xfi$(EXEEXT)
-	$(AM_V_CXXLD)$(CXXLINK) $(xfi_OBJECTS) $(xfi_LDADD) $(LIBS)
+swfp$(EXEEXT): $(swfp_OBJECTS) $(swfp_DEPENDENCIES) $(EXTRA_swfp_DEPENDENCIES) 
+	@rm -f swfp$(EXEEXT)
+	$(AM_V_CXXLD)$(CXXLINK) $(swfp_OBJECTS) $(swfp_LDADD) $(LIBS)
 
-xfp$(EXEEXT): $(xfp_OBJECTS) $(xfp_DEPENDENCIES) $(EXTRA_xfp_DEPENDENCIES) 
-	@rm -f xfp$(EXEEXT)
-	$(AM_V_CXXLD)$(CXXLINK) $(xfp_OBJECTS) $(xfp_LDADD) $(LIBS)
+swfw$(EXEEXT): $(swfw_OBJECTS) $(swfw_DEPENDENCIES) $(EXTRA_swfw_DEPENDENCIES) 
+	@rm -f swfw$(EXEEXT)
+	$(AM_V_CXXLD)$(CXXLINK) $(swfw_OBJECTS) $(swfw_LDADD) $(LIBS)
 
-xfw$(EXEEXT): $(xfw_OBJECTS) $(xfw_DEPENDENCIES) $(EXTRA_xfw_DEPENDENCIES) 
-	@rm -f xfw$(EXEEXT)
-	$(AM_V_CXXLD)$(CXXLINK) $(xfw_OBJECTS) $(xfw_LDADD) $(LIBS)
+swordfish$(EXEEXT): $(swordfish_OBJECTS) $(swordfish_DEPENDENCIES) $(EXTRA_swordfish_DEPENDENCIES) 
+	@rm -f swordfish$(EXEEXT)
+	$(AM_V_CXXLD)$(CXXLINK) $(swordfish_OBJECTS) $(swordfish_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)

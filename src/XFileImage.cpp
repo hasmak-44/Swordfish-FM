@@ -3153,7 +3153,7 @@ void XFileImage::saveConfig()
 // Usage message
 #define USAGE_MSG    _( \
             "\
-\nUsage: xfi [options] [image] \n\
+\nUsage: swfi [options] [image] \n\
 \n\
     [options] can be any of the following:\n\
 \n\

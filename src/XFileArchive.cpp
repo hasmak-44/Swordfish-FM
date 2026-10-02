@@ -2160,7 +2160,7 @@ void XFileArchive::create()
 // Usage message
 #define USAGE_MSG    _( \
             "\
-\nUsage: xfa [options] [archive] \n\
+\nUsage: swfa [options] [archive] \n\
 \n\
     [options] can be any of the following:\n\
 \n\

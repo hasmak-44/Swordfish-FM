@@ -211,7 +211,7 @@ XFileWrite::~XFileWrite()
 // Usage message
 #define USAGE_MSG    _( \
             "\
-\nUsage: xfw [options] [file1] [file2] [file3]...\n\
+\nUsage: swfw [options] [file1] [file2] [file3]...\n\
 \n\
     [options] can be any of the following:\n\
 \n\

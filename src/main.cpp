@@ -323,7 +323,7 @@ static const FXuchar hand3_mask_bits[] =
 // Usage message
 #define USAGE_MSG    _( \
             "\
-\nUsage: xfe [options...] [FOLDER|FILE...]\n\
+\nUsage: swordfish [options...] [FOLDER|FILE...]\n\
 \n\
     [options...] are the following:\n\
 \n\
