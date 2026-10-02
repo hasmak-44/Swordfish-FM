@@ -1,3 +1,5 @@
+![Swordfish FM Banner](banner.jpg)
+
 # Swordfish FM
 
 > **⚠️ Work in Progress - Not ready for release yet**
