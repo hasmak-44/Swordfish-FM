@@ -13644,7 +13644,7 @@ fi
 
 
 # Output
-ac_config_files="$ac_config_files Makefile m4/Makefile po/Makefile.in xferc xfe.desktop.in xfa.desktop.in xfi.desktop.in xfp.desktop.in xfw.desktop.in automount/Makefile src/Makefile icons/Makefile icons/apps/Makefile icons/apps-scalable/Makefile icons/default-theme/Makefile icons/gnome-theme/Makefile icons/xfce-theme/Makefile icons/kde-theme/Makefile"
+ac_config_files="$ac_config_files Makefile m4/Makefile po/Makefile.in swordfishrc swordfish.desktop.in swfa.desktop.in swfi.desktop.in swfp.desktop.in swfw.desktop.in automount/Makefile src/Makefile icons/Makefile icons/apps/Makefile icons/apps-scalable/Makefile icons/default-theme/Makefile icons/gnome-theme/Makefile icons/xfce-theme/Makefile icons/kde-theme/Makefile"
 
 
 cat >confcache <<\_ACEOF
@@ -14403,12 +14403,12 @@ do
     "Makefile") CONFIG_FILES="$CONFIG_FILES Makefile" ;;
     "m4/Makefile") CONFIG_FILES="$CONFIG_FILES m4/Makefile" ;;
     "po/Makefile.in") CONFIG_FILES="$CONFIG_FILES po/Makefile.in" ;;
-    "xferc") CONFIG_FILES="$CONFIG_FILES xferc" ;;
-    "xfe.desktop.in") CONFIG_FILES="$CONFIG_FILES xfe.desktop.in" ;;
-    "xfa.desktop.in") CONFIG_FILES="$CONFIG_FILES xfa.desktop.in" ;;
-    "xfi.desktop.in") CONFIG_FILES="$CONFIG_FILES xfi.desktop.in" ;;
-    "xfp.desktop.in") CONFIG_FILES="$CONFIG_FILES xfp.desktop.in" ;;
-    "xfw.desktop.in") CONFIG_FILES="$CONFIG_FILES xfw.desktop.in" ;;
+    "swordfishrc") CONFIG_FILES="$CONFIG_FILES swordfishrc" ;;
+    "swordfish.desktop.in") CONFIG_FILES="$CONFIG_FILES swordfish.desktop.in" ;;
+    "swfa.desktop.in") CONFIG_FILES="$CONFIG_FILES swfa.desktop.in" ;;
+    "swfi.desktop.in") CONFIG_FILES="$CONFIG_FILES swfi.desktop.in" ;;
+    "swfp.desktop.in") CONFIG_FILES="$CONFIG_FILES swfp.desktop.in" ;;
+    "swfw.desktop.in") CONFIG_FILES="$CONFIG_FILES swfw.desktop.in" ;;
     "automount/Makefile") CONFIG_FILES="$CONFIG_FILES automount/Makefile" ;;
     "src/Makefile") CONFIG_FILES="$CONFIG_FILES src/Makefile" ;;
     "icons/Makefile") CONFIG_FILES="$CONFIG_FILES icons/Makefile" ;;

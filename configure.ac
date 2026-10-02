@@ -277,8 +277,8 @@ fi
 
 
 # Output
-AC_CONFIG_FILES([Makefile m4/Makefile po/Makefile.in xferc xfe.desktop.in xfa.desktop.in
-          xfi.desktop.in xfp.desktop.in xfw.desktop.in automount/Makefile src/Makefile
+AC_CONFIG_FILES([Makefile m4/Makefile po/Makefile.in swordfishrc swordfish.desktop.in swfa.desktop.in
+          swfi.desktop.in swfp.desktop.in swfw.desktop.in automount/Makefile src/Makefile
           icons/Makefile
           icons/apps/Makefile
           icons/apps-scalable/Makefile
