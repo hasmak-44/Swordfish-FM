@@ -25,7 +25,7 @@ This project is based on Xfe, which is licensed under the **GNU General Public L
 - Original Xfe License: GPLv2
 - Swordfish FM will maintain GPLv2 compatibility.
 
-See [LICENSE](LICENSE) for full details.
+See [COPYING](COPYING) for full details..
 Copyright (C) Roland Baudin and contributors.
 
 > If Xfe is the root, Swordfish FM aims to be the evolution.
