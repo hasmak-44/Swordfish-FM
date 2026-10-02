@@ -542,7 +542,7 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString file, FXString path, FXbool
             }
 
             // Load big and mini icons
-            FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/xfe/icons/default-theme");
+            FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/default-theme");
             FXString iconpath = xf_realpath(getApp()->reg().readStringEntry("SETTINGS", "iconpath", defaulticonpath.text()));
 
             FXIcon* bigicon = xf_loadiconfile(getApp(), iconpath, bigic->getText(), scalefrac, getApp()->getBaseColor());
@@ -2051,7 +2051,7 @@ long PropertiesBox::onCmdBrowseIcon(FXObject* sender, FXSelector sel, void* ptr)
         icon = miniic->getText();
     }
 
-    FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/xfe/icons/default-theme");
+    FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/default-theme");
     FXString iconpath = xf_realpath(getApp()->reg().readStringEntry("SETTINGS", "iconpath", defaulticonpath.text()));
     const char* patterns[] =
     {

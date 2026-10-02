@@ -10,8 +10,8 @@
 \n \
                                   XFE, X File Explorer File Manager\n \
 \n \
-                                    <http://roland65.free.fr/xfe>\n \
-                                <http://sourceforge.net/projects/xfe>\n \
+                                    <http://roland65.free.fr/swordfish>\n \
+                                <http://sourceforge.net/projects/swordfish>\n \
 \n \
 \n \
 \n \
@@ -222,22 +222,22 @@
  You can perform any Xfe customization (layout, file associations, key bindings, etc.) without editing any file\n \
  by hand. However, you may want to understand the configuration principles, because some customizations can also\n \
  easily be done by manually editing the configurations files.\n \
- Be careful to quit Xfe before manually editing any configuration file, otherwise changes could not be taken\n \
+ Be careful to quit Swordfish before manually editing any configuration file, otherwise changes could not be taken\n \
  into account.\n \
 \n \
- The system-wide configuration file xferc is located in /usr/share/xfe, /usr/local/share/xfe\n \
- or /opt/local/share/xfe, in the given order of precedence.\n \
+ The system-wide configuration file swordfishrc is located in /usr/share/swordfish, /usr/local/share/swordfish\n \
+ or /opt/local/share/swordfish, in the given order of precedence.\n \
 \n \
- The local configuration files for Xfe, Xfw, Xfi, Xfa and Xfp are now located in the ~/.config/xfe folder.\n \
- They are named xferc, xfwrc, xfirc, xfarc and xfprc.\n \
+ The local configuration files for Swordfish, Swfw, Swfi, Swfa and Swfp are now located in the ~/.config/swordfish folder.\n \
+ They are named swordfishrc, xfwrc, xfirc, xfarc and xfprc.\n \
  \n \
- At the very first Xfe run, the system-wide configuration file is copied into the local configuration file\n \
- ~/.config/xfe/xferc which does not exists yet. If the system-wide configuration file is not found\n \
+ At the very first Swordfish run, the system-wide configuration file is copied into the local configuration file\n \
+ ~/.config/swordfish/swordfishrc which does not exists yet. If the system-wide configuration file is not found\n \
  (in case of an unusual install place), a dialog asks the user to select the right place. It is thus easier to\n \
  customize Xfe (this is particularly true for the file associations) by hand editing because all the local options\n \
  are located in the same file.\n \
 \n \
- Default PNG icons are located in /usr/share/xfe/icons/default-theme or /usr/local/share/xfe/icons/default-theme,\n \
+ Default PNG icons are located in /usr/share/swordfish/icons/default-theme or /usr/local/share/swordfish/icons/default-theme,\n \
  depending on your installation. You can easily change the icon theme path in the Preferences dialog.\n \
 \n \
 \n \
@@ -295,7 +295,7 @@
  select the files you want to proceed, then right click on the file list and go to the Scripts sub menu. Last, choose\n \
  the script you want to apply on the selected files.\n \
 \n \
- The script files must be located in the ~/.config/xfe/scripts folder and have to be executable. You can organize\n \
+ The script files must be located in the ~/.config/swordfish/scripts folder and have to be executable. You can organize\n \
  this folder as you like by using sub-folders. You can use the Tools / Go to script folder menu item to directly go\n \
  to the script folder and manage it.\n \
 \n \

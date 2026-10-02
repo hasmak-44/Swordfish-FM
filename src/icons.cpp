@@ -241,7 +241,7 @@ FXbool loadAppIcons(FXApp* app, FXuint* iconpathstatus)
     double scalefrac = FXMAX(1.0, res / 100.0);
 
     // Default icon path
-    FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/xfe/icons/default-theme");
+    FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/default-theme");
 
     // Select icon path
     FXString iconpath = xf_realpath(app->reg().readStringEntry("SETTINGS", "iconpath", defaulticonpath.text()));

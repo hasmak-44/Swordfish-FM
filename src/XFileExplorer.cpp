@@ -3519,17 +3519,17 @@ void XFileExplorer::create()
 #endif
 
     // If no Xfe local configuration exists (i.e. at first call or after a purge of the configuration files),
-    // copy the global xferc file to the local configuration directory, and read / write the registry
+    // copy the global swordfishrc file to the local configuration directory, and read / write the registry
     int mask;
     FXString configlocation = xdgconfighome + PATHSEPSTRING XFECONFIGPATH;
     FXString configpath = configlocation + PATHSEPSTRING XFECONFIGNAME;
 
     if (!xf_existfile(configpath))
     {
-        // Create ~/.config/xfe directory if it doesn't exist
+        // Create ~/.config/swordfish directory if it doesn't exist
         if (!xf_existfile(configlocation))
         {
-            // Create the ~/.config/xfe directory according to the umask
+            // Create the ~/.config/swordfish directory according to the umask
             mask = umask(0);
             umask(mask);
             errno = 0;
@@ -3539,38 +3539,38 @@ void XFileExplorer::create()
             {
                 if (errcode)
                 {
-                    MessageBox::error(this, BOX_OK, _("Error"), _("Can't create Xfe config folder %s: %s"),
+                    MessageBox::error(this, BOX_OK, _("Error"), _("Can.t create Swordfish config folder %s: %s"),
                                       configlocation.text(), strerror(errcode));
                 }
                 else
                 {
-                    MessageBox::error(this, BOX_OK, _("Error"), _("Can't create Xfe config folder %s"),
+                    MessageBox::error(this, BOX_OK, _("Error"), _("Can.t create Swordfish config folder %s"),
                                       configlocation.text());
                 }
             }
         }
 
         // Copy the global xfrec file (three possible locations) to the local configuration file
-        if (xf_existfile("/usr/share/xfe/xferc"))
+        if (xf_existfile("/usr/share/swordfish/swordfishrc"))
         {
-            FXFile::copy("/usr/share/xfe/xferc", configpath, false);
+            FXFile::copy("/usr/share/swordfish/swordfishrc", configpath, false);
         }
-        else if (xf_existfile("/usr/local/share/xfe/xferc"))
+        else if (xf_existfile("/usr/local/share/swordfish/swordfishrc"))
         {
-            FXFile::copy("/usr/local/share/xfe/xferc", configpath, false);
+            FXFile::copy("/usr/local/share/swordfish/swordfishrc", configpath, false);
         }
-        else if (xf_existfile("/opt/local/share/xfe/xferc"))
+        else if (xf_existfile("/opt/local/share/swordfish/swordfishrc"))
         {
-            FXFile::copy("/opt/local/share/xfe/xferc", configpath, false);
+            FXFile::copy("/opt/local/share/swordfish/swordfishrc", configpath, false);
         }
         // If nothing is found, display a file dialog to let the user choose the right place
         else
         {
-            FileDialog browse(this, _("No global xferc file found! Please select a configuration file..."));
+            FileDialog browse(this, _("No global swordfishrc file found! Please select a configuration file..."));
 
             const char* patterns[] =
             {
-                _("XFE configuration file"), "*xferc*", NULL
+                _("XFE configuration file"), "*swordfishrc*", NULL
             };
             browse.setFilename(ROOTDIR);
             browse.setPatternList(patterns);
@@ -3583,7 +3583,7 @@ void XFileExplorer::create()
             else
             {
                 MessageBox::error(this, BOX_OK, _("Error"),
-                                  _("Xfe cannot run without a global xferc configuration file"));
+                                  _("Swordfish cannot run without a global swordfishrc configuration file"));
                 exit(EXIT_FAILURE);
             }
         }
@@ -4610,7 +4610,7 @@ long XFileExplorer::onCmdRestart(FXObject*, FXSelector, void*)
 
     if (fork() == 0) // Child
     {
-        execvp("xfe", args);
+        execvp("swordfish", args);
     }
     else // Parent
     {

@@ -3,7 +3,7 @@
 #
 
 # Initialize
-AC_INIT([xfe],[2.1.11])
+AC_INIT([swordfish],[2.1.11])
 AC_CONFIG_SRCDIR([src/XFileExplorer.cpp])
 AM_INIT_AUTOMAKE([subdir-objects -Wall])
 AC_CONFIG_HEADERS([config.h])
@@ -33,7 +33,7 @@ PKG_PROG_PKG_CONFIG
 
 
 # Internationalization
-GETTEXT_PACKAGE=xfe
+GETTEXT_PACKAGE=swordfish
 AC_SUBST(GETTEXT_PACKAGE)
 AC_DEFINE_UNQUOTED(GETTEXT_PACKAGE,"$GETTEXT_PACKAGE",[The package name, for gettext])
 AM_GNU_GETTEXT(external)

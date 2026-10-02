@@ -102,7 +102,7 @@ FXIMPLEMENT(FileDict, FXDict, NULL, 0)
 FileDict::FileDict(FXApp* a) : app(a), settings(&a->reg())
 {
     // Set icon path if it exists, otherwise set icon path to default
-    FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/xfe/icons/default-theme");
+    FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/default-theme");
     FXString iconpath = xf_realpath(settings->readStringEntry("SETTINGS", "iconpath", defaulticonpath.text()));
 
     if (!xf_existfile(iconpath))
@@ -117,7 +117,7 @@ FileDict::FileDict(FXApp* a) : app(a), settings(&a->reg())
 FileDict::FileDict(FXApp* a, FXSettings* db) : app(a), settings(db)
 {
     // Set icon path if it exists, otherwise set icon path to default
-    FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/xfe/icons/default-theme");
+    FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/default-theme");
     FXString iconpath = xf_realpath(settings->readStringEntry("SETTINGS", "iconpath", defaulticonpath.text()));
 
     if (!xf_existfile(iconpath))

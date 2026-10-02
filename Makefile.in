@@ -104,8 +104,8 @@ am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
  configure.lineno config.status.lineno
 mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = config.h
-CONFIG_CLEAN_FILES = xferc xfe.desktop.in xfa.desktop.in \
-	xfi.desktop.in xfp.desktop.in xfw.desktop.in
+CONFIG_CLEAN_FILES = swordfishrc swordfish.desktop.in swfa.desktop.in \
+	swfi.desktop.in swfp.desktop.in swfw.desktop.in
 CONFIG_CLEAN_VPATH_FILES =
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -194,9 +194,9 @@ am__define_uniq_tagged_files = \
     if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
   done | $(am__uniquify_input)`
 am__DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/config.h.in \
-	$(srcdir)/xfa.desktop.in.in $(srcdir)/xfe.desktop.in.in \
-	$(srcdir)/xferc.in $(srcdir)/xfi.desktop.in.in \
-	$(srcdir)/xfp.desktop.in.in $(srcdir)/xfw.desktop.in.in \
+	$(srcdir)/swfa.desktop.in.in $(srcdir)/swfi.desktop.in.in \
+	$(srcdir)/swfp.desktop.in.in $(srcdir)/swfw.desktop.in.in \
+	$(srcdir)/swordfish.desktop.in.in $(srcdir)/swordfishrc.in \
 	ABOUT-NLS AUTHORS COPYING ChangeLog INSTALL NEWS README TODO \
 	compile config.guess config.rpath config.sub depcomp \
 	install-sh ltmain.sh missing
@@ -393,22 +393,22 @@ xcb_aux_LIBS = @xcb_aux_LIBS@
 xcb_event_CFLAGS = @xcb_event_CFLAGS@
 xcb_event_LIBS = @xcb_event_LIBS@
 xft_config = @xft_config@
-man_MANS = xfe.1 xfa.1 xfi.1 xfp.1 xfw.1
+man_MANS = swordfish.1 swordfish-archive.1 swordfish-image.1 swordfish-package.1 swordfish-write.1
 @XFEAUTOMOUNTER_FALSE@SUBDIRS = po m4 src icons
 @XFEAUTOMOUNTER_TRUE@SUBDIRS = po m4 src automount icons
 DIST_SUBDIRS = po m4 src automount icons
 rcdir = $(prefix)/share/xfe
-rc_DATA = xferc
+rc_DATA = swordfishrc
 pkdir = $(prefix)/share/polkit-1/actions
-EXTRA_DIST = autogen.sh buildrun installrun uninstall-xfe iconlinks.sh config.h i18n.h org.xfe.root.policy.in.in xfe.1 xfa.1 xfi.1 xfp.1 xfw.1 \
-             ABOUT-NLS TODO BUGS xferc.in *.desktop.in.in \
+EXTRA_DIST = autogen.sh buildrun installrun uninstall-xfe iconlinks.sh config.h i18n.h org.swordfish.root.policy.in.in swordfish.1 swordfish-archive.1 swordfish-image.1 swordfish-package.1 swordfish-write.1 \
+             ABOUT-NLS TODO BUGS swordfishrc.in *.desktop.in.in \
 	         $(top_srcdir)/icons/* $(top_srcdir)/debian
 
 desktopdir = $(prefix)/share/applications
-desktop_in_files = xfe.desktop.in xfa.desktop.in xfi.desktop.in xfp.desktop.in xfw.desktop.in
+desktop_in_files = swordfish.desktop.in swfa.desktop.in swfi.desktop.in swfp.desktop.in swfw.desktop.in
 desktop_DATA = $(desktop_in_files:.desktop.in=.desktop)
-polkit_action_in_in_FILES = org.xfe.root.policy.in.in
-polkit_action_in_FILES = org.xfe.root.policy.in
+polkit_action_in_in_FILES = org.swordfish.root.policy.in.in
+polkit_action_in_FILES = org.swordfish.root.policy.in
 polkit_action_FILES = $(polkit_action_in_FILES:.policy.in=.policy)
 polkit_actiondir = $(datadir)/polkit-1/actions
 @INSTALL_POLKIT_ACTIONS_TRUE@polkit_action_DATA = $(polkit_action_FILES)
@@ -466,17 +466,17 @@ $(srcdir)/config.h.in:  $(am__configure_deps)
 
 distclean-hdr:
 	-rm -f config.h stamp-h1
-xferc: $(top_builddir)/config.status $(srcdir)/xferc.in
+swordfishrc: $(top_builddir)/config.status $(srcdir)/swordfishrc.in
 	cd $(top_builddir) && $(SHELL) ./config.status $@
-xfe.desktop.in: $(top_builddir)/config.status $(srcdir)/xfe.desktop.in.in
+swordfish.desktop.in: $(top_builddir)/config.status $(srcdir)/swordfish.desktop.in.in
 	cd $(top_builddir) && $(SHELL) ./config.status $@
-xfa.desktop.in: $(top_builddir)/config.status $(srcdir)/xfa.desktop.in.in
+swfa.desktop.in: $(top_builddir)/config.status $(srcdir)/swfa.desktop.in.in
 	cd $(top_builddir) && $(SHELL) ./config.status $@
-xfi.desktop.in: $(top_builddir)/config.status $(srcdir)/xfi.desktop.in.in
+swfi.desktop.in: $(top_builddir)/config.status $(srcdir)/swfi.desktop.in.in
 	cd $(top_builddir) && $(SHELL) ./config.status $@
-xfp.desktop.in: $(top_builddir)/config.status $(srcdir)/xfp.desktop.in.in
+swfp.desktop.in: $(top_builddir)/config.status $(srcdir)/swfp.desktop.in.in
 	cd $(top_builddir) && $(SHELL) ./config.status $@
-xfw.desktop.in: $(top_builddir)/config.status $(srcdir)/xfw.desktop.in.in
+swfw.desktop.in: $(top_builddir)/config.status $(srcdir)/swfw.desktop.in.in
 	cd $(top_builddir) && $(SHELL) ./config.status $@
 install-man1: $(man_MANS)
 	@$(NORMAL_INSTALL)
@@ -1029,22 +1029,22 @@ uninstall-man: uninstall-man1
 .PRECIOUS: Makefile
 
 
-xfe.desktop: xfe.desktop.in Makefile
+swordfish.desktop: swordfish.desktop.in Makefile
 		$(AM_V_GEN)$(MSGFMT) --desktop -d $(top_srcdir)/po --template $< -o $@
-xfa.desktop: xfa.desktop.in Makefile
+swfa.desktop: swfa.desktop.in Makefile
 		$(AM_V_GEN)$(MSGFMT) --desktop -d $(top_srcdir)/po --template $< -o $@
-xfi.desktop: xfi.desktop.in Makefile
+swfi.desktop: swfi.desktop.in Makefile
 		$(AM_V_GEN)$(MSGFMT) --desktop -d $(top_srcdir)/po --template $< -o $@
-xfp.desktop: xfp.desktop.in Makefile
+swfp.desktop: swfp.desktop.in Makefile
 		$(AM_V_GEN)$(MSGFMT) --desktop -d $(top_srcdir)/po --template $< -o $@
-xfw.desktop: xfw.desktop.in Makefile
+swfw.desktop: swfw.desktop.in Makefile
 		$(AM_V_GEN)$(MSGFMT) --desktop -d $(top_srcdir)/po --template $< -o $@
 
-org.xfe.root.policy: org.xfe.root.policy.in Makefile
+org.swordfish.root.policy: org.swordfish.root.policy.in Makefile
 		$(AM_V_GEN)$(MSGFMT) --xml -d $(top_srcdir)/po --template $< -o $@
 
-org.xfe.root.policy.in: org.xfe.root.policy.in.in Makefile
-	$(do_subst) < org.xfe.root.policy.in.in > org.xfe.root.policy.in
+org.swordfish.root.policy.in: org.swordfish.root.policy.in.in Makefile
+	$(do_subst) < org.swordfish.root.policy.in.in > org.swordfish.root.policy.in
 
 dist-hook:
 	cd po && $(MAKE) update-po
@@ -1055,11 +1055,11 @@ dist-hook:
 install-data-hook:
 	sh iconlinks.sh $(top_srcdir) $(DESTDIR)$(rcdir)
 @INSTALL_POLKIT_ACTIONS_TRUE@	$(MKDIR_P) $(DESTDIR)$(pkdir)
-@INSTALL_POLKIT_ACTIONS_TRUE@	cp org.xfe.root.policy $(DESTDIR)$(pkdir)
+@INSTALL_POLKIT_ACTIONS_TRUE@	cp org.swordfish.root.policy $(DESTDIR)$(pkdir)
 
 uninstall-hook:
 	rm -rf $(DESTDIR)$(rcdir)
-@INSTALL_POLKIT_ACTIONS_TRUE@	rm -f $(DESTDIR)$(pkdir)/org.xfe.root.policy
+@INSTALL_POLKIT_ACTIONS_TRUE@	rm -f $(DESTDIR)$(pkdir)/org.swordfish.root.policy
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

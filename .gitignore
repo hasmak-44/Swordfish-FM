@@ -6,3 +6,22 @@ config.status
 config.h
 stamp-h1
 *~
+# build artifacts
+Makefile
+src/Makefile
+src/swordfish
+src/swfa
+src/swfi
+src/swfp
+src/swfw
+swordfishrc
+*.desktop
+*.desktop.in
+!src/*.desktop.in.orig
+po/Makefile
+po/POTFILES
+po/Makefile.in
+automount/Makefile
+m4/Makefile
+st/.dirstamp
+libsn/.dirstamp

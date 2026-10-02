@@ -40,7 +40,7 @@ src/main.cpp
 src/startupnotification.cpp
 src/xfeutils.cpp
 automount/xfe-automount.cpp
-xfe.desktop.in
+swordfish.desktop.in
 xfi.desktop.in
 xfp.desktop.in
 xfw.desktop.in

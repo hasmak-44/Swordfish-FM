@@ -48,7 +48,7 @@ bool FXRegistry::read()
 
         if (nbytes > 0)
         {
-            dirname = FXPath::directory(FXString(buf, nbytes)) + "/../share/xfe";
+            dirname = FXPath::directory(FXString(buf, nbytes)) + "/../share/swordfish";
             ok = readFromDir(dirname, false);
         }
     }

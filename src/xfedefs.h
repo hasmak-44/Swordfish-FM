@@ -252,9 +252,9 @@ enum
 #define CONFIGPATH    ".config"
 #endif
 
-// Xfe config path
+// Swordfish config path
 #ifndef XFECONFIGPATH
-#define XFECONFIGPATH    "xfe"
+#define XFECONFIGPATH    "swordfish"
 #endif
 
 // Scripts path
@@ -279,7 +279,7 @@ enum
 
 // Xfe application name
 #ifndef XFEAPPNAME
-#define XFEAPPNAME    "xfe"
+#define XFEAPPNAME    "swordfish"
 #endif
 
 // Xfe vendor name
@@ -287,14 +287,14 @@ enum
 #define XFEVDRNAME    "Xfe"
 #endif
 
-// Xfe config file name
+// Swordfish config file name
 #ifndef XFECONFIGNAME
-#define XFECONFIGNAME    "xferc"
+#define XFECONFIGNAME    "swordfishrc"
 #endif
 
 // Command to launch Xfe as root with pkexec
 #ifndef DEFAULT_PKEXEC_CMD
-#define DEFAULT_PKEXEC_CMD    "pkexec xfe"
+#define DEFAULT_PKEXEC_CMD    "pkexec swordfish"
 #endif
 
 // Command to launch Xfe as root with sudo or su, using st as a terminal
