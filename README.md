@@ -8,8 +8,9 @@
 
 > **⚠️ Work in Progress - Not ready for release yet**
 > 
-> About the name **SwordFish**, XFE file anger is known for its speed and versatility, ad I am a life long avid angler, I wanted to choose a name that reflects both the ethos of XFE, and combine with my hobby, Swordfish is one of the fastest and most agile top ocean predators, hence the name
-> I hope SwordFish-FM will live up to expectations and saisfies your needs.
+> About the name **SwordFish**, The original XFE file anger is known for its speed and versatility, ad I am a life long avid angler, I wanted to choose a name that reflects both the ethos of XFE, and combine with my hobby, Swordfish is one of the fastest and most agile top ocean predators, hence the name
+> 
+> I hope SwordFish-FM will live up to expectations and satisfies your needs.
 
 ## 🙏 Credits & Acknowledgments
 
@@ -31,4 +32,4 @@ This project is based on Xfe, which is licensed under the **GNU General Public L
 See [COPYING](COPYING) for full details..
 Copyright (C) Roland Baudin and contributors.
 
-> If Xfe is the root, Swordfish FM aims to be the evolution.
+> If **XFE** is the root, **Swordfish FM** aims to be the evolution.
