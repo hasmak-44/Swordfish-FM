@@ -284,7 +284,7 @@ enum
 
 // Xfe vendor name
 #ifndef XFEVDRNAME
-#define XFEVDRNAME    "Xfe"
+#define XFEVDRNAME    "SwordFish"
 #endif
 
 // Swordfish config file name

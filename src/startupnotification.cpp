@@ -150,7 +150,7 @@ int runcmd(FXString cmd, FXString cmdname, FXString dir, FXString startdir, FXbo
         sn_launcher_context_set_description(context, message.text());
         sn_launcher_context_set_icon_name(context, cmdname.text());
         timestamp = gettimestamp(xdisplay);
-        sn_launcher_context_initiate(context, "Xfe", cmd.text(), timestamp);
+        sn_launcher_context_initiate(context, "SwordFish", cmd.text(), timestamp);
 
         // Run command in background
         cmd += " &";

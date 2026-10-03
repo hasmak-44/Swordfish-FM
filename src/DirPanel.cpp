@@ -4528,7 +4528,7 @@ long DirPanel::onUpdTitle(FXObject* sender, FXSelector, void*)
     // There is no selected item
     if (item == NULL)
     {
-        mainWindow->setTitle("Xfe - ");
+        mainWindow->setTitle("SwordFish - ");
         return 0;
     }
 
@@ -4539,11 +4539,11 @@ long DirPanel::onUpdTitle(FXObject* sender, FXSelector, void*)
     // Update the path in the window title
     if (getuid() == 0)
     {
-        mainWindow->setTitle("Xfe (root) - " + path);
+        mainWindow->setTitle("SwordFish (root) - " + path);
     }
     else
     {
-        mainWindow->setTitle("Xfe - " + path);
+        mainWindow->setTitle("SwordFish - " + path);
     }
 
     return 1;

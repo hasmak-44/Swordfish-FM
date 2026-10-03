@@ -1,12 +1,12 @@
 [Desktop Entry]
-Name=Xfw
+Name=Swfw
 GenericName=Text Editor
-Comment=A simple text editor for Xfe
+Comment=A simple text editor for SwordFish
 Keywords=editor;viewer;text
-Exec=xfw %F
+Exec=swfw %F
 Terminal=false
 Type=Application
 StartupNotify=@STARTUPNOTIFY@
 MimeType=text/plain;
-Icon=xfw
+Icon=swordfish-write
 Categories=Utility;TextEditor;

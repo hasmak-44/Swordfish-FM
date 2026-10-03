@@ -1,12 +1,12 @@
 [Desktop Entry]
-Name=Xfp
+Name=Swfp
 GenericName=Package Manager
-Comment=A simple package manager for Xfe
+Comment=A simple package manager for SwordFish
 Keywords=package viewer;package manager
-Exec=xfp %f
+Exec=swfp %f
 Terminal=false
 Type=Application
 StartupNotify=@STARTUPNOTIFY@
 MimeType=application/x-deb;application/x-debian-package;application/x-rpm;
-Icon=xfp
+Icon=swordfish-package
 Categories=Utility;PackageManager;

@@ -1,12 +1,12 @@
 [Desktop Entry]
-Name=Xfi
+Name=Swfi
 GenericName=Image Viewer
-Comment=A simple image viewer for Xfe
+Comment=A simple image viewer for SwordFish
 Keywords=image viewer;image manager
-Exec=xfi %f
+Exec=swfi %f
 Terminal=false
 Type=Application
 StartupNotify=@STARTUPNOTIFY@
 MimeType=image/bmp;image/jpeg;image/gif;image/png;image/tiff;image/xpm;
-Icon=xfi
+Icon=swordfish-image
 Categories=Utility;Viewer;

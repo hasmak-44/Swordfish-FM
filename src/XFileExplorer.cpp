@@ -1753,7 +1753,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     hotkey = xf_parseaccel(key);
     getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));
 
-    new FXMenuCommand(helpmenu, _("&About X File Explorer"), NULL, this, ID_ABOUT);
+    new FXMenuCommand(helpmenu, _("&About SwordFish"), NULL, this, ID_ABOUT);
     helpmenutitle = new FXMenuTitle(menubar, _("&Help"), NULL, helpmenu);
 
     // Other accelerators
@@ -4777,13 +4777,13 @@ long XFileExplorer::onCmdHelp(FXObject*, FXSelector, void*)
 long XFileExplorer::onCmdAbout(FXObject*, FXSelector, void*)
 {
     FXString msg;
-    msg.format(_("X File Explorer Version %s"), VERSION);
+    msg.format(_("SwordFish Version %s"), VERSION);
 
     FXString copyright = (FXString)"\n" + COPYRIGHT + "\n\n" +
                          _("X Win Commander by Maxim Baranov\n\n") +
                          _("FOX Toolkit by Jeroen van der Zijp\n");
 
-    FXString web = "\n\n<http://roland65.free.fr/xfe>\n<http://sourceforge.net/projects/xfe>\n";
+    FXString web = "\n\n<https://github.com/hasmak-44/Swordfish-FM>\n<https://github.com/hasmak-44/Swordfish-FM>\n";
 
     FXString translators =
         _("\nTranslators\n\
@@ -4819,7 +4819,7 @@ Turkish: erkaN\n\
 ");
 
     msg = msg + web + copyright + translators;
-    MessageBox about(this, _("About X File Explorer"), msg.text(), xfeicon, BOX_OK | DECOR_TITLE | DECOR_BORDER,
+    MessageBox about(this, _("About SwordFish"), msg.text(), xfeicon, BOX_OK | DECOR_TITLE | DECOR_BORDER,
                      JUSTIFY_CENTER_X | ICON_BEFORE_TEXT | LAYOUT_CENTER_Y | LAYOUT_LEFT | LAYOUT_FILL_X |
                      LAYOUT_FILL_Y);
     about.execute(PLACEMENT_OWNER);

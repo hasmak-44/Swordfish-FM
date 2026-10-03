@@ -343,9 +343,9 @@ static const FXuchar hand3_mask_bits[] =
 
 int main(int argc, char* argv[])
 {
-    const char* title = "Xfe";
+    const char* title = "SwordFish";
     const char* appname = "xfe";
-    const char* vdrname = "Xfe";
+    const char* vdrname = "SwordFish";
     int i;
     FXbool loadicons;
     FXString startfiledir1 = "";
@@ -539,7 +539,7 @@ int main(int argc, char* argv[])
     // If root
     if (getuid() == 0)
     {
-        title = "Xfe (root)";
+        title = "SwordFish (root)";
     }
 
     // Create and run application

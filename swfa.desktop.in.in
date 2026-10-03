@@ -1,12 +1,12 @@
 [Desktop Entry]
-Name=Xfa
+Name=Swfa
 GenericName=Archive viewer
-Comment=A simple archive viewer and extractor for Xfe
+Comment=A simple archive viewer and extractor for SwordFish
 Keywords=archive viewer;archive extractor
-Exec=xfa %F
+Exec=swfa %F
 Terminal=false
 Type=Application
 StartupNotify=@STARTUPNOTIFY@
 MimeType=text/plain;
-Icon=xfa
+Icon=swordfish-archive
 Categories=Utility;Archiving;Compression;

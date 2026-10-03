@@ -1,11 +1,11 @@
 [Desktop Entry]
-Name=Xfe
+Name=SwordFish
 GenericName=File Manager
-Comment=A lightweight file manager for X Window
-Keywords=file manager
-Exec=xfe
+Comment=A lightweight file manager - SwordFish FM
+Keywords=file manager;swordfish
+Exec=swordfish
 Terminal=false
 Type=Application
 StartupNotify=@STARTUPNOTIFY@
-Icon=xfe
+Icon=swordfish
 Categories=System;FileManager;
