@@ -8,9 +8,9 @@
 
 > **⚠️ Work in Progress - Not ready for release yet**
 > 
-> About the name **SwordFish**, The original XFE file anger is known for its speed and versatility, ad I am a life long avid angler, I wanted to choose a name that reflects both the ethos of XFE, and combine with my hobby, Swordfish is one of the fastest and most agile top ocean predators, hence the name
+> About the name **SwordFish**, The original XFE file manager is known for its speed and versatility, ad I am a life long avid angler, I wanted to choose a name that reflects both the ethos of XFE, and combine with my hobby, Swordfish is one of the fastest and most agile top ocean predators, hence the name ;}
 > 
-> I hope SwordFish-FM will live up to expectations and satisfies your needs.
+> I hope **SwordFish-FM** will live up to expectations and satisfies your needs.
 
 ## 🙏 Credits & Acknowledgments
 
