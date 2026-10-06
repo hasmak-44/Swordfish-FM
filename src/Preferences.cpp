@@ -34,6 +34,32 @@ FXbool Theme::operator !=(const Theme& t)
 extern FXMainWindow* mainWindow;
 extern FXString execpath;
 
+class PreferencesScrollWindow : public FXScrollWindow
+{
+private:
+    FXint maxHeight;
+
+public:
+    PreferencesScrollWindow(FXComposite* parent, FXuint opts, FXint height) :
+        FXScrollWindow(parent, opts),
+        maxHeight(height)
+    {
+    }
+
+    FXint getDefaultHeight() override
+    {
+        return FXMIN(FXScrollWindow::getDefaultHeight(), maxHeight);
+    }
+};
+
+
+static FXVerticalFrame* createPreferencesPage(FXTabBook* tabbook)
+{
+    FXint maxHeight = FXMAX(120, tabbook->getRoot()->getHeight() - 200);
+    PreferencesScrollWindow* scroll = new PreferencesScrollWindow(tabbook, LAYOUT_FILL_X | LAYOUT_FILL_Y, maxHeight);
+    return new FXVerticalFrame(scroll, FRAME_NONE | LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 10, 0);
+}
+
 
 // Create hilite color from given color for gradient controls
 static FXColor makeHiliteColorGradient(FXColor color)
@@ -341,7 +367,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
 
     // First tab - General options
     new FXTabItem(tabbook, _("&General"), NULL);
-    FXVerticalFrame* general = new FXVerticalFrame(tabbook, FRAME_NONE, 0, 0, 0, 0, 0, 0, 10, 0);
+    FXVerticalFrame* general = createPreferencesPage(tabbook);
 
     FXGroupBox* group = new FXGroupBox(general, _("Starting"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE |
                                        LAYOUT_FILL_X | LAYOUT_FILL_Y);
@@ -457,7 +483,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
 
     // Second tab - Dialogs
     new FXTabItem(tabbook, _("&Dialogs"), NULL);
-    FXVerticalFrame* dialogs = new FXVerticalFrame(tabbook, FRAME_NONE, 0, 0, 0, 0, 0, 0, 10, 0);
+    FXVerticalFrame* dialogs = createPreferencesPage(tabbook);
     group = new FXGroupBox(dialogs, _("Confirmations"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     ask = new FXCheckButton(group, _("Confirm copy/move/rename/symlink") + FXString(" "));
@@ -536,7 +562,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
 
     // Third tab - Settings
     new FXTabItem(tabbook, _("&Settings"), NULL);
-    FXVerticalFrame* settings = new FXVerticalFrame(tabbook, FRAME_NONE, 0, 0, 0, 0, 0, 0, 10, 0);
+    FXVerticalFrame* settings = createPreferencesPage(tabbook);
 
     startdirmode = getApp()->reg().readUnsignedEntry("OPTIONS", "startdir_mode", START_HOMEDIR) + ID_START_HOMEDIR;
     oldstartdirmode = startdirmode;
@@ -723,7 +749,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
 
     // Fourth tab - Columns order
     new FXTabItem(tabbook, _("File &List"), NULL);
-    FXVerticalFrame* columns = new FXVerticalFrame(tabbook, FRAME_NONE, 0, 0, 0, 0, 0, 0, 10, 0);
+    FXVerticalFrame* columns = createPreferencesPage(tabbook);
     group = new FXGroupBox(columns, _("Displayed Columns"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     FXVerticalFrame* frame = new FXVerticalFrame(group, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X);
@@ -841,7 +867,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
 
     // Fifth tab - Programs
     new FXTabItem(tabbook, _("&Programs"), NULL);
-    FXVerticalFrame* programs = new FXVerticalFrame(tabbook, FRAME_NONE, 0, 0, 0, 0, 0, 0, 10, 0);
+    FXVerticalFrame* programs = createPreferencesPage(tabbook);
     group = new FXGroupBox(programs, _("Default Programs"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     matrix = new FXMatrix(group, 3, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
@@ -948,7 +974,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
 
     // Sixth tab - Appearance
     new FXTabItem(tabbook, _("&Appearance"), NULL);
-    FXVerticalFrame* visual = new FXVerticalFrame(tabbook, FRAME_NONE, 0, 0, 0, 0, 0, 0, 10, 0);
+    FXVerticalFrame* visual = createPreferencesPage(tabbook);
     FXGroupBox* themes = new FXGroupBox(visual, _("Color Theme"),
                                         GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
@@ -1013,7 +1039,7 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
 
     // Seventh tab - Fonts
     new FXTabItem(tabbook, _("&Fonts"), NULL);
-    FXVerticalFrame* fonts = new FXVerticalFrame(tabbook, FRAME_NONE, 0, 0, 0, 0, 0, 0, 10, 0);
+    FXVerticalFrame* fonts = createPreferencesPage(tabbook);
     FXGroupBox* fgroup = new FXGroupBox(fonts, _("Fonts"),
                                         GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
@@ -1034,7 +1060,7 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
 
     // Eighth tab - Key bindings
     new FXTabItem(tabbook, _("&Key Bindings"), NULL);
-    FXVerticalFrame* keybindings = new FXVerticalFrame(tabbook, FRAME_NONE, 0, 0, 0, 0, 0, 0, 10, 0);
+    FXVerticalFrame* keybindings = createPreferencesPage(tabbook);
     FXGroupBox* kbgroup = new FXGroupBox(keybindings, _("Key Bindings"),
                                          GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
