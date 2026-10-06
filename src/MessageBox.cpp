@@ -45,8 +45,9 @@ FXIMPLEMENT(MessageBox, DialogBox, MessageBoxMap, ARRAYNUMBER(MessageBoxMap))
 // Construct message box with given caption, icon, and message text
 MessageBox::MessageBox(FXWindow* owner, const FXString& caption, const FXString& text, FXIcon* ic, FXuint opts,
                        FXuint textopts, int x, int y) :
-    DialogBox(owner, caption, opts | DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE | DECOR_MAXIMIZE | DECOR_CLOSE, x,
-              y, 0, 0, 0, 0, 0, 0, 4, 4)
+    DialogBox(owner, caption,
+              opts | DECOR_TITLE | DECOR_BORDER | DECOR_SHRINKABLE | DECOR_STRETCHABLE | DECOR_MAXIMIZE | DECOR_CLOSE,
+              x, y, 0, 0, 0, 0, 0, 0, 4, 4)
 {
     initialize(text, ic, opts & BOX_BUTTON_MASK, textopts);
 }
@@ -56,8 +57,8 @@ MessageBox::MessageBox(FXWindow* owner, const FXString& caption, const FXString&
 MessageBox::MessageBox(FXApp* a, const FXString& caption, const FXString& text, FXIcon* ic, FXuint opts,
                        FXuint textopts, int x, int y) :
     DialogBox(a, caption,
-              opts | DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE | DECOR_MINIMIZE | DECOR_MAXIMIZE | DECOR_CLOSE, x,
-              y, 0, 0, 0, 0, 0, 0, 4, 4)
+              opts | DECOR_TITLE | DECOR_BORDER | DECOR_SHRINKABLE | DECOR_STRETCHABLE | DECOR_MINIMIZE |
+              DECOR_MAXIMIZE | DECOR_CLOSE, x, y, 0, 0, 0, 0, 0, 0, 4, 4)
 {
     initialize(text, ic, opts & BOX_BUTTON_MASK, textopts);
 }
@@ -70,9 +71,10 @@ void MessageBox::initialize(const FXString& text, FXIcon* ic, FXuint whichbutton
     FXVerticalFrame* content = new FXVerticalFrame(this, LAYOUT_FILL_X | LAYOUT_FILL_Y);
     FXHorizontalFrame* info = new FXHorizontalFrame(content, LAYOUT_TOP | LAYOUT_LEFT | LAYOUT_FILL_X | LAYOUT_FILL_Y,
                                                     0, 0, 0, 0, 10, 10, 10, 10);
+    FXScrollWindow* messageScroll = new FXScrollWindow(info, LAYOUT_FILL_X | LAYOUT_FILL_Y | HSCROLLING_OFF);
 
     // Message text
-    msg = new FXLabel(info, FXString::null, ic, textoptions);
+    msg = new FXLabel(messageScroll, FXString::null, ic, textoptions | LAYOUT_FILL_X);
     setText(text);
 
     FXHorizontalFrame* buttons = new FXHorizontalFrame(content,

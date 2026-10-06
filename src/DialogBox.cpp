@@ -123,7 +123,27 @@ void DialogBox::show(FXuint placement)
     int rw, rh, wx, wy, ww, wh, x, y;
     FXuint state;
 
-    // Get dialog size
+    // Ensure the dialog has a usable size and fits on screen.
+    rw = getRoot()->getWidth();
+    rh = getRoot()->getHeight();
+    ww = getWidth();
+    wh = getHeight();
+    if (ww <= 1)
+    {
+        ww = getDefaultWidth();
+    }
+    if (wh <= 1)
+    {
+        wh = getDefaultHeight();
+    }
+    ww = FXMIN(ww, FXMAX(1, rw - 20));
+    wh = FXMIN(wh, FXMAX(1, rh - 40));
+    if (ww != getWidth() || wh != getHeight())
+    {
+        resize(ww, wh);
+    }
+
+    // Get dialog position
     translateCoordinatesTo(wx, wy, getRoot(), 0, 0);
     ww = getWidth();
     wh = getHeight();
@@ -134,10 +154,6 @@ void DialogBox::show(FXuint placement)
     // Place such that mouse in the middle
     if ((x < wx) || (y < wy) || (wx + ww <= x) || (wy + wh <= y))
     {
-        // Get root window size
-        rw = getRoot()->getWidth();
-        rh = getRoot()->getHeight();
-
         // Move by the minimal amount
         if (x < wx)
         {

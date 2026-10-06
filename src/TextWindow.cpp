@@ -22,7 +22,7 @@ FXIMPLEMENT(TextWindow, DialogBox, TextWindowMap, ARRAYNUMBER(TextWindowMap))
 
 // Construct
 TextWindow::TextWindow(FXWindow* owner, const FXString& name, int nblines, int nbcols) :
-    DialogBox(owner, name, DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE | DECOR_MAXIMIZE | DECOR_CLOSE,
+    DialogBox(owner, name, DECOR_TITLE | DECOR_BORDER | DECOR_SHRINKABLE | DECOR_STRETCHABLE | DECOR_MAXIMIZE | DECOR_CLOSE,
               0, 0, 0, 0, 6, 6, 6, 6, 4, 4)
 {
     // Bottom part
@@ -51,7 +51,7 @@ TextWindow::TextWindow(FXWindow* owner, const FXString& name, int nblines, int n
 
 // Construct Text dialog box
 TextWindow::TextWindow(FXApp* app, const FXString& name, int nblines, int nbcols) :
-    DialogBox(app, name, DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE | DECOR_MINIMIZE | DECOR_MAXIMIZE | DECOR_CLOSE,
+    DialogBox(app, name, DECOR_TITLE | DECOR_BORDER | DECOR_SHRINKABLE | DECOR_STRETCHABLE | DECOR_MINIMIZE | DECOR_MAXIMIZE | DECOR_CLOSE,
               0, 0, 0, 0, 6, 6, 6, 6, 4, 4)
 {
     // Bottom part

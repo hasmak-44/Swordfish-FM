@@ -38,25 +38,30 @@ class PreferencesScrollWindow : public FXScrollWindow
 {
 private:
     FXint maxHeight;
+    FXint minHeight;
 
 public:
-    PreferencesScrollWindow(FXComposite* parent, FXuint opts, FXint height) :
+    PreferencesScrollWindow(FXComposite* parent, FXuint opts, FXint minheight, FXint maxheight) :
         FXScrollWindow(parent, opts),
-        maxHeight(height)
+        maxHeight(maxheight),
+        minHeight(minheight)
     {
     }
 
     FXint getDefaultHeight() override
     {
-        return FXMIN(FXScrollWindow::getDefaultHeight(), maxHeight);
+        return FXMAX(minHeight, FXMIN(FXScrollWindow::getDefaultHeight(), maxHeight));
     }
 };
 
 
 static FXVerticalFrame* createPreferencesPage(FXTabBook* tabbook)
 {
-    FXint maxHeight = FXMAX(120, tabbook->getRoot()->getHeight() - 200);
-    PreferencesScrollWindow* scroll = new PreferencesScrollWindow(tabbook, LAYOUT_FILL_X | LAYOUT_FILL_Y, maxHeight);
+    FXint screenHeight = tabbook->getRoot()->getHeight();
+    FXint maxHeight = FXMAX(160, screenHeight - 220);
+    FXint minHeight = FXMIN(480, maxHeight);
+    PreferencesScrollWindow* scroll = new PreferencesScrollWindow(tabbook, LAYOUT_FILL_X | LAYOUT_FILL_Y,
+                                                                 minHeight, maxHeight);
     return new FXVerticalFrame(scroll, FRAME_NONE | LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 10, 0);
 }
 
@@ -229,7 +234,8 @@ FXIMPLEMENT(PreferencesBox, DialogBox, PreferencesMap, ARRAYNUMBER(PreferencesMa
 // Construct
 PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor listforecolor, FXColor highlightcolor,
                                FXColor pbarcolor, FXColor attentioncolor, FXColor scrollbarcolor) :
-    DialogBox(win, _("Preferences"), DECOR_TITLE | DECOR_BORDER | DECOR_MAXIMIZE | DECOR_STRETCHABLE | DECOR_CLOSE)
+    DialogBox(win, _("Preferences"),
+              DECOR_TITLE | DECOR_BORDER | DECOR_MAXIMIZE | DECOR_SHRINKABLE | DECOR_STRETCHABLE | DECOR_CLOSE)
 {
     // Current theme
     currTheme.name = _("Current Theme");
@@ -2955,6 +2961,11 @@ FXuint PreferencesBox::execute(FXuint placement)
     oldtextfont = textfont->getText();
 
     create();
+    if (getHeight() < 160)
+    {
+        FXint minimumHeight = FXMIN(480, FXMAX(160, getRoot()->getHeight() - 120));
+        resize(FXMAX(getWidth(), getDefaultWidth()), FXMAX(getDefaultHeight(), minimumHeight));
+    }
     show(placement);
     getApp()->refresh();
     return getApp()->runModalFor(this);
