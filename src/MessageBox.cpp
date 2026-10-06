@@ -71,10 +71,9 @@ void MessageBox::initialize(const FXString& text, FXIcon* ic, FXuint whichbutton
     FXVerticalFrame* content = new FXVerticalFrame(this, LAYOUT_FILL_X | LAYOUT_FILL_Y);
     FXHorizontalFrame* info = new FXHorizontalFrame(content, LAYOUT_TOP | LAYOUT_LEFT | LAYOUT_FILL_X | LAYOUT_FILL_Y,
                                                     0, 0, 0, 0, 10, 10, 10, 10);
-    FXScrollWindow* messageScroll = new FXScrollWindow(info, LAYOUT_FILL_X | LAYOUT_FILL_Y | HSCROLLING_OFF);
 
     // Message text
-    msg = new FXLabel(messageScroll, FXString::null, ic, textoptions | LAYOUT_FILL_X);
+    msg = new FXLabel(info, FXString::null, ic, textoptions);
     setText(text);
 
     FXHorizontalFrame* buttons = new FXHorizontalFrame(content,
