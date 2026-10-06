@@ -12,6 +12,7 @@
 
 
 #include "xfedefs.h"
+#include "xfeutils.h"
 #include "startupnotification.h"
 #include "icons.h"
 #include "File.h"
@@ -2593,7 +2594,7 @@ long SearchPanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
 
         // Build scripts menu
         new FXMenuSeparator(menu);
-        FXString scriptpath = homedir + PATHSEPSTRING CONFIGPATH PATHSEPSTRING XFECONFIGPATH PATHSEPSTRING SCRIPTPATH;
+        FXString scriptpath = xf_scriptpath();
         FXMenuPane* scriptsmenu = new FXMenuPane(this);
         new FXMenuCascade(menu, _("Scripts"), minirunicon, scriptsmenu);
         readScriptDir(scriptsmenu, scriptpath);
@@ -4578,7 +4579,7 @@ long SearchPanel::onCmdRunScript(FXObject* sender, FXSelector sel, void*)
 // Go to script directory
 long SearchPanel::onCmdGoScriptDir(FXObject* sender, FXSelector sel, void*)
 {
-    FXString scriptpath = homedir + PATHSEPSTRING CONFIGPATH PATHSEPSTRING XFECONFIGPATH PATHSEPSTRING SCRIPTPATH;
+    FXString scriptpath = xf_scriptpath();
 
     if (!xf_existfile(scriptpath))
     {

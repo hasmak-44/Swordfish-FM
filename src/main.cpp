@@ -383,7 +383,7 @@ int main(int argc, char* argv[])
 
 #if ENABLE_NLS
     // Set the text message domain.
-    bindtextdomain(PACKAGE, LOCALEDIR);
+    xf_bindtextdomain(PACKAGE, LOCALEDIR);
     bind_textdomain_codeset(PACKAGE, "utf-8");
     textdomain(PACKAGE);
 #endif

@@ -1,0 +1,51 @@
+#!/bin/sh
+set -eu
+
+if [ -n "${APPIMAGE:-}" ]; then
+    app_root=${APPDIR:?AppImage runtime did not set APPDIR}
+    data_root="${APPIMAGE}.data"
+else
+    app_run=$(readlink -f -- "$0")
+    app_root=$(CDPATH= cd -- "$(dirname -- "$app_run")" && pwd)
+    data_root="$app_root/portable-data"
+fi
+
+if [ ! -x "$app_root/usr/bin/swordfish" ]; then
+    printf 'Swordfish portable app is incomplete: %s/usr/bin/swordfish is missing\n' "$app_root" >&2
+    exit 1
+fi
+
+for directory in config data cache state scripts themes icons addons; do
+    if ! mkdir -p "$data_root/$directory"; then
+        printf 'Cannot create portable data directory: %s\n' "$data_root/$directory" >&2
+        exit 1
+    fi
+done
+if [ ! -w "$data_root" ]; then
+    printf 'Portable data directory is not writable: %s\n' "$data_root" >&2
+    exit 1
+fi
+
+export SWORDFISH_PORTABLE=1
+export SWORDFISH_PORTABLE_DATA=$data_root
+export XDG_CONFIG_HOME="$data_root/config"
+export XDG_DATA_HOME="$data_root/data"
+export XDG_CACHE_HOME="$data_root/cache"
+export XDG_STATE_HOME="$data_root/state"
+export PATH="$app_root/usr/bin:$PATH"
+
+library_path="$app_root/usr/lib:$app_root/usr/lib64:$app_root/usr/lib/x86_64-linux-gnu"
+if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+    library_path="$library_path:$LD_LIBRARY_PATH"
+fi
+export LD_LIBRARY_PATH=$library_path
+
+program=swordfish
+case "$(basename -- "$0")" in
+    run-swfa) program=swfa ;;
+    run-swfi) program=swfi ;;
+    run-swfp) program=swfp ;;
+    run-swfw) program=swfw ;;
+esac
+
+exec "$app_root/usr/bin/$program" "$@"

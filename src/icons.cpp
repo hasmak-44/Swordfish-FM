@@ -3,6 +3,8 @@
 #include "config.h"
 #include "i18n.h"
 
+#include <stdlib.h>
+
 #include <fx.h>
 #include <FXPNGIcon.h>
 
@@ -230,6 +232,15 @@ FXIcon* dockflipicon;
 FXIcon* dockfreeicon;
 
 
+static FXbool pathIsWithin(const FXString& path, const FXString& directory)
+{
+    return path == directory ||
+           (path.length() > directory.length() &&
+            path.find(directory) == 0 &&
+            path[directory.length()] == '/');
+}
+
+
 // Load all application icons as global variables
 FXbool loadAppIcons(FXApp* app, FXuint* iconpathstatus)
 {
@@ -245,6 +256,20 @@ FXbool loadAppIcons(FXApp* app, FXuint* iconpathstatus)
 
     // Select icon path
     FXString iconpath = xf_realpath(app->reg().readStringEntry("SETTINGS", "iconpath", defaulticonpath.text()));
+    const char* portabledata = getenv("SWORDFISH_PORTABLE_DATA");
+    if (portabledata && *portabledata)
+    {
+        FXString sidecarThemes = FXString(portabledata) + PATHSEPSTRING "themes";
+        FXString sidecarIcons = FXString(portabledata) + PATHSEPSTRING "icons";
+
+        if (!pathIsWithin(iconpath, defaulticonpath) &&
+            !pathIsWithin(iconpath, sidecarThemes) &&
+            !pathIsWithin(iconpath, sidecarIcons))
+        {
+            iconpath = defaulticonpath;
+            app->reg().writeStringEntry("SETTINGS", "iconpath", iconpath.text());
+        }
+    }
     if (iconpath[0] == '~')
     {
         iconpath = FXSystem::getHomeDirectory() + iconpath.after('~');

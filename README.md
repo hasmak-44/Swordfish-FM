@@ -33,3 +33,11 @@ See [COPYING](COPYING) for full details..
 Copyright (C) Roland Baudin and contributors.
 
 > If **XFE** is the root, **Swordfish FM** aims to be the evolution.
+
+## Portable Linux testing build
+
+A relocatable Linux x86_64 folder build is available for testing without
+installing Swordfish system-wide. It keeps settings and scripts in writable
+sidecar folders and is designed to grow into a portable package with optional
+themes, icons, add-ons, and custom actions. See
+[portable/README.md](portable/README.md) for build and usage instructions.

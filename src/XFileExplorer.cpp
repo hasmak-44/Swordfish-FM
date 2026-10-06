@@ -86,6 +86,7 @@ extern char** args;
 extern FXString homedir;
 extern FXString xdgdatahome;
 extern FXString xdgconfighome;
+extern FXString execpath;
 
 // Main window
 extern FXMainWindow* mainWindow;
@@ -140,7 +141,7 @@ long MenuPane::onMap(FXObject*, FXSelector, void*)
     ms-> create();
 
     // Add script menu items
-    FXString scriptpath = homedir + PATHSEPSTRING CONFIGPATH PATHSEPSTRING XFECONFIGPATH PATHSEPSTRING SCRIPTPATH;
+    FXString scriptpath = xf_scriptpath();
     ((XFileExplorer*)mainWindow)->readScriptDir(((XFileExplorer*)mainWindow), this, scriptpath);        
     
     return FXMenuPane::onMap(this, 0, nullptr);
@@ -3121,7 +3122,7 @@ void XFileExplorer::create()
     treetwopanels_lpanel_pct = getApp()->reg().readRealEntry("OPTIONS", "treetwopanels_lpanel_pct", 0.40);
 
     // Complete scripts menu
-    FXString scriptpath = homedir + PATHSEPSTRING CONFIGPATH PATHSEPSTRING XFECONFIGPATH PATHSEPSTRING SCRIPTPATH;
+    FXString scriptpath = xf_scriptpath();
     readScriptDir(this, scriptsmenu, scriptpath);
 
     // Window width and height
@@ -3550,8 +3551,16 @@ void XFileExplorer::create()
             }
         }
 
-        // Copy the global xfrec file (three possible locations) to the local configuration file
-        if (xf_existfile("/usr/share/swordfish/swordfishrc"))
+        // Copy the bundled defaults in portable mode, otherwise check standard install locations.
+        if (getenv("SWORDFISH_PORTABLE"))
+        {
+            FXString bundledconfig = FXPath::directory(execpath) + "/../share/swordfish/swordfishrc";
+            if (xf_existfile(bundledconfig))
+            {
+                FXFile::copy(bundledconfig, configpath, false);
+            }
+        }
+        else if (xf_existfile("/usr/share/swordfish/swordfishrc"))
         {
             FXFile::copy("/usr/share/swordfish/swordfishrc", configpath, false);
         }

@@ -5033,7 +5033,7 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
 
         // Build scripts menu
         new FXMenuSeparator(menu);
-        FXString scriptpath = homedir + PATHSEPSTRING CONFIGPATH PATHSEPSTRING XFECONFIGPATH PATHSEPSTRING SCRIPTPATH;
+        FXString scriptpath = xf_scriptpath();
         FXMenuPane* scriptsmenu = new FXMenuPane(this);
         new FXMenuCascade(menu, _("Scripts"), minirunicon, scriptsmenu);
         readScriptDir(this, scriptsmenu, scriptpath);
@@ -6110,7 +6110,7 @@ long FilePanel::onCmdRunScript(FXObject* sender, FXSelector sel, void*)
 // Go to scripts directory
 long FilePanel::onCmdGoScriptDir(FXObject* sender, FXSelector sel, void*)
 {
-    FXString scriptpath = homedir + PATHSEPSTRING CONFIGPATH PATHSEPSTRING XFECONFIGPATH PATHSEPSTRING SCRIPTPATH;
+    FXString scriptpath = xf_scriptpath();
 
     if (!xf_existfile(scriptpath))
     {

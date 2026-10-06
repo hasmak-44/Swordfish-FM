@@ -10,7 +10,7 @@ scrollbarsize=12
 #
 # Where to search for icons
 #
-iconpath = @prefix@/share/xfe/icons/default-theme
+iconpath = @prefix@/share/swordfish/icons/default-theme
 
 
 [KEYBINDINGS]

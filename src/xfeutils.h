@@ -662,6 +662,8 @@ FXString xf_filepath(const FXString);
 FXString xf_filepath(const FXString, const FXString);
 FXString xf_realpath(const FXString);
 FXString xf_execpath(char*);
+FXString xf_scriptpath();
+void xf_bindtextdomain(const FXchar*, const FXchar*);
 
 FXString xf_filefromuri(FXString);
 FXString xf_filetouri(const FXString&);

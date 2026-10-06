@@ -12,6 +12,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <libgen.h>
+#include <stdlib.h>
 #include <sys/statvfs.h>
 
 #include <fx.h>
@@ -1118,6 +1119,41 @@ FXString xf_realpath(const FXString path)
     }
     
     return ret;
+}
+
+
+// Return the custom-script directory for the current run mode.
+FXString xf_scriptpath()
+{
+    const char* portabledata = getenv("SWORDFISH_PORTABLE_DATA");
+    if (portabledata && *portabledata)
+    {
+        return FXString(portabledata) + PATHSEPSTRING "scripts";
+    }
+
+    extern FXString xdgconfighome;
+    return xdgconfighome + PATHSEPSTRING XFECONFIGPATH PATHSEPSTRING SCRIPTPATH;
+}
+
+
+void xf_bindtextdomain(const FXchar* package, const FXchar* installedir)
+{
+    if (getenv("SWORDFISH_PORTABLE"))
+    {
+        char executable[MAXPATHLEN];
+        int length = readlink("/proc/self/exe", executable, MAXPATHLEN);
+        if (length <= 0)
+        {
+            fprintf(stderr, "Cannot locate portable Swordfish translations.\n");
+            return;
+        }
+
+        FXString localedir = FXPath::directory(FXString(executable, length)) + "/../share/locale";
+        bindtextdomain(package, localedir.text());
+        return;
+    }
+
+    bindtextdomain(package, installedir);
 }
 
 

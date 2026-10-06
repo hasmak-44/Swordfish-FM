@@ -3,6 +3,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
+#include <stdlib.h>
 
 #ifdef HAVE_XFT_H
 #include <X11/Xft/Xft.h>
@@ -33,15 +34,7 @@ bool FXRegistry::read()
     FXString dirname;
     bool ok = false;
 
-    dirname = FXPath::search(REGISTRYPATH, "xfe");
-    if (!dirname.empty())
-    {
-        ok = readFromDir(dirname, false);
-    }
-
-    // !!! Hack to search for directory relative to xfe executable path
-#if defined(linux)
-    if (!ok)
+    if (getenv("SWORDFISH_PORTABLE"))
     {
         char buf[MAXPATHLEN];
         int nbytes = readlink("/proc/self/exe", buf, MAXPATHLEN);
@@ -52,16 +45,38 @@ bool FXRegistry::read()
             ok = readFromDir(dirname, false);
         }
     }
-#endif
-    // !!! End of hack !!!
-
-    // Try search along PATH if still not found
-    if (!ok)
+    else
     {
-        dirname = FXPath::search(FXSystem::getExecPath(), "xfe");
+        dirname = FXPath::search(REGISTRYPATH, "xfe");
         if (!dirname.empty())
         {
             ok = readFromDir(dirname, false);
+        }
+
+        // !!! Hack to search for directory relative to xfe executable path
+#if defined(linux)
+        if (!ok)
+        {
+            char buf[MAXPATHLEN];
+            int nbytes = readlink("/proc/self/exe", buf, MAXPATHLEN);
+
+            if (nbytes > 0)
+            {
+                dirname = FXPath::directory(FXString(buf, nbytes)) + "/../share/swordfish";
+                ok = readFromDir(dirname, false);
+            }
+        }
+#endif
+        // !!! End of hack !!!
+
+        // Try search along PATH if still not found
+        if (!ok)
+        {
+            dirname = FXPath::search(FXSystem::getExecPath(), "xfe");
+            if (!dirname.empty())
+            {
+                ok = readFromDir(dirname, false);
+            }
         }
     }
 
