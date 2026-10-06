@@ -13,7 +13,7 @@ rc_DATA = swordfishrc
 pkdir = $(prefix)/share/polkit-1/actions
 
 EXTRA_DIST = autogen.sh buildrun installrun install-swordfish-system.sh uninstall-swordfish iconlinks.sh config.h i18n.h org.swordfish.root.policy.in.in swordfish.1 swordfish-archive.1 swordfish-image.1 swordfish-package.1 swordfish-write.1 \
-             portable/AppRun portable/build-portable.sh portable/README.md \
+             portable/AppRun portable/Dockerfile portable/build-portable-in-container portable/build-portable.sh portable/README.md \
              ABOUT-NLS TODO BUGS swordfishrc.in *.desktop.in.in \
                  $(top_srcdir)/icons/* $(top_srcdir)/debian
 

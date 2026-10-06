@@ -5,6 +5,13 @@ source_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 build_root="$source_root/build"
 output_dir=${1:-"$build_root/Swordfish-Portable"}
 output_dir=$(realpath -m -- "$output_dir")
+docker_command=${DOCKER:-docker}
+image=swordfish-portable-builder:debian12
+
+if ! command -v "$docker_command" >/dev/null 2>&1; then
+    printf 'Docker is required to build against the Debian 12 glibc baseline.\n' >&2
+    exit 1
+fi
 
 if [ "$(uname -m)" != x86_64 ]; then
     printf 'This portable build currently targets Linux x86_64, not %s.\n' "$(uname -m)" >&2
@@ -19,55 +26,32 @@ case "$output_dir" in
         ;;
 esac
 
-linuxdeploy=${LINUXDEPLOY:-linuxdeploy}
-if ! command -v "$linuxdeploy" >/dev/null 2>&1; then
-    printf 'linuxdeploy is required to bundle shared libraries. Install it or set LINUXDEPLOY.\n' >&2
-    exit 1
-fi
-
 jobs=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '1')}
 if ! [[ "$jobs" =~ ^[1-9][0-9]*$ ]]; then
-    printf 'JOBS must be a positive integer, got: %s\n' "$jobs" >&2
-    exit 1
-fi
-
-cd "$source_root"
-./configure --prefix=/usr
-make -j"$jobs"
-
-rm -rf -- "$output_dir"
-mkdir -p "$output_dir"
-DESTDIR="$output_dir" make install
-
-deploy_args=(--appdir "$output_dir")
-for program in swordfish swfa swfi swfp swfw; do
-    executable="$output_dir/usr/bin/$program"
-    if [ ! -x "$executable" ]; then
-        printf 'Expected installed program is missing: %s\n' "$executable" >&2
+        printf 'JOBS must be a positive integer, got: %s\n' "$jobs" >&2
         exit 1
-    fi
-    deploy_args+=(--executable "$executable")
-done
-
-desktop_file="$output_dir/usr/share/applications/swordfish.desktop"
-if [ ! -f "$desktop_file" ]; then
-    printf 'Expected desktop file is missing: %s\n' "$desktop_file" >&2
-    exit 1
 fi
-deploy_args+=(--desktop-file "$desktop_file")
-"$linuxdeploy" "${deploy_args[@]}"
 
-install -m 755 portable/AppRun "$output_dir/AppRun"
-install -m 644 portable/README.md "$output_dir/README.md"
-mkdir -p "$output_dir/usr/share/doc/swordfish"
-install -m 644 COPYING "$output_dir/usr/share/doc/swordfish/COPYING"
-for program in swfa swfi swfp swfw; do
-    ln -s AppRun "$output_dir/run-$program"
-done
+relative_output=${output_dir#"$build_root"/}
+if [ "$relative_output" = "$output_dir" ] || [ "$relative_output" = "$build_root" ]; then
+        printf 'Cannot map output path into build directory: %s\n' "$output_dir" >&2
+        exit 1
+fi
 
-for directory in config data cache state scripts themes icons addons; do
-    mkdir -p "$output_dir/portable-data/$directory"
-done
+"$docker_command" build \
+        --tag "$image" \
+        --file "$source_root/portable/Dockerfile" \
+        "$source_root/portable"
 
-printf 'Portable bundle created at %s\n' "$output_dir"
-printf 'Launch it with: %s/AppRun\n' "$output_dir"
+"$docker_command" run --rm \
+        --user "$(id -u):$(id -g)" \
+        --env HOME=/tmp/swordfish-portable-home \
+        --env JOBS="$jobs" \
+        --volume "$source_root:/source:ro" \
+        --volume "$build_root:/output" \
+        "$image" \
+        /usr/local/bin/build-portable-in-container "$relative_output"
+
+archive="${output_dir}.tar.gz"
+tar -C "$(dirname -- "$output_dir")" -czf "$archive" "$(basename -- "$output_dir")"
+printf 'Compressed portable bundle created at %s\n' "$archive"

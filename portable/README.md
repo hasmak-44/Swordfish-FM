@@ -5,15 +5,17 @@ x86_64. It includes the Swordfish programs, installed resources, and shared
 libraries collected by `linuxdeploy`. Run `AppRun` from the generated folder;
 do not run `make install` as root.
 
-The source must first be configured and compiled on a Linux system with the
-Swordfish build dependencies installed. `linuxdeploy` is also required to
-collect the shared libraries:
+The build uses Docker to compile against Debian 12 (glibc 2.36), a compatible
+baseline for older Linux systems than the Ubuntu 24.04 environment used by
+the first prototype. It downloads a checksum-pinned `linuxdeploy` release to
+collect shared libraries. Docker and internet access are required to build:
 
 ```sh
 ./portable/build-portable.sh
 ```
 
-The output is `build/Swordfish-Portable`. It can be copied as a folder and
+The output is `build/Swordfish-Portable`, with a compressed archive at
+`build/Swordfish-Portable.tar.gz`. The folder can be copied directly and
 started with `build/Swordfish-Portable/AppRun`. The `run-swfa`, `run-swfi`,
 `run-swfp`, and `run-swfw` launchers start the corresponding companion apps.
 
@@ -35,9 +37,9 @@ The current program supports custom scripts and configurable icon paths; the
 `linuxdeploy` bundles most application libraries, including FOX, image and
 archive libraries. Core system libraries and interfaces such as glibc, the C++
 runtime, X11, font handling, and graphics drivers remain host-provided. The
-build therefore reduces conflicts with installed copies but cannot guarantee
-compatibility with every Linux distribution. Test the folder on the target
-systems before relying on it.
+bundle is now built using glibc 2.36, but still cannot guarantee compatibility
+with Linux systems older than Debian 12 or with every graphics stack. Test the
+folder on the target systems before relying on it.
 
 The first build is not yet an AppImage; it creates the relocatable directory
 so its isolation can be tested before adding the AppImage packaging step.

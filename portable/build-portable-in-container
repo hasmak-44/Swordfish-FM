@@ -1,0 +1,81 @@
+#!/bin/bash
+set -euo pipefail
+
+relative_output=${1:?Output path under build/ is required}
+source_root=/source
+source_copy=/tmp/swordfish-source
+output_dir="/output/$relative_output"
+
+case "$relative_output" in
+    ""|/*|..|../*|*/../*)
+        printf 'Unsafe output path: %s\n' "$relative_output" >&2
+        exit 1
+        ;;
+esac
+
+if [ "$(getconf GNU_LIBC_VERSION)" != "glibc 2.36" ]; then
+    printf 'Expected Debian 12 glibc 2.36, found %s\n' "$(getconf GNU_LIBC_VERSION)" >&2
+    exit 1
+fi
+
+mkdir -p "$source_copy" "$(dirname -- "$output_dir")" "$HOME"
+tar -C "$source_root" \
+    --exclude=.git \
+    --exclude=build \
+    --exclude=zip \
+    --exclude='*.zip' \
+    -cf - . | tar -C "$source_copy" -xf -
+
+linuxdeploy_appimage=/tmp/linuxdeploy-x86_64.AppImage
+linuxdeploy_dir=/tmp/linuxdeploy
+curl --fail --location --retry 3 \
+    --output "$linuxdeploy_appimage" \
+    https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+chmod 755 "$linuxdeploy_appimage"
+printf '%s  %s\n' \
+    c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d \
+    "$linuxdeploy_appimage" | sha256sum --check
+mkdir -p "$linuxdeploy_dir"
+(cd "$linuxdeploy_dir" && "$linuxdeploy_appimage" --appimage-extract >/dev/null)
+linuxdeploy="$linuxdeploy_dir/squashfs-root/AppRun"
+
+cd "$source_copy"
+autoreconf -fi
+./configure --prefix=/usr
+make -j"${JOBS:-1}"
+
+rm -rf -- "$output_dir"
+mkdir -p "$output_dir"
+DESTDIR="$output_dir" make install
+
+deploy_args=(--appdir "$output_dir")
+for program in swordfish swfa swfi swfp swfw; do
+    executable="$output_dir/usr/bin/$program"
+    if [ ! -x "$executable" ]; then
+        printf 'Expected installed program is missing: %s\n' "$executable" >&2
+        exit 1
+    fi
+    deploy_args+=(--executable "$executable")
+done
+
+desktop_file="$output_dir/usr/share/applications/swordfish.desktop"
+if [ ! -f "$desktop_file" ]; then
+    printf 'Expected desktop file is missing: %s\n' "$desktop_file" >&2
+    exit 1
+fi
+deploy_args+=(--desktop-file "$desktop_file")
+"$linuxdeploy" "${deploy_args[@]}"
+
+install -m 755 portable/AppRun "$output_dir/AppRun"
+install -m 644 portable/README.md "$output_dir/README.md"
+mkdir -p "$output_dir/usr/share/doc/swordfish"
+install -m 644 COPYING "$output_dir/usr/share/doc/swordfish/COPYING"
+for program in swfa swfi swfp swfw; do
+    ln -s AppRun "$output_dir/run-$program"
+done
+
+for directory in config data cache state scripts themes icons addons; do
+    mkdir -p "$output_dir/portable-data/$directory"
+done
+
+printf 'Built portable folder against Debian 12 / glibc 2.36 at %s\n' "$output_dir"
