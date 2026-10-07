@@ -4830,7 +4830,7 @@ Turkish: erkaN\n\
     msg = msg + web + copyright + translators;
     MessageBox about(this, _("About SwordFish"), msg.text(), xfeicon, BOX_OK | DECOR_TITLE | DECOR_BORDER,
                      JUSTIFY_CENTER_X | ICON_BEFORE_TEXT | LAYOUT_CENTER_Y | LAYOUT_LEFT | LAYOUT_FILL_X |
-                     LAYOUT_FILL_Y);
+                     LAYOUT_FILL_Y, 0, 0, true);
     about.execute(PLACEMENT_OWNER);
     lpanel->getCurrent()->setFocusOnList();
     return 1;

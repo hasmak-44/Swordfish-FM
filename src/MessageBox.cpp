@@ -44,36 +44,49 @@ FXIMPLEMENT(MessageBox, DialogBox, MessageBoxMap, ARRAYNUMBER(MessageBoxMap))
 
 // Construct message box with given caption, icon, and message text
 MessageBox::MessageBox(FXWindow* owner, const FXString& caption, const FXString& text, FXIcon* ic, FXuint opts,
-                       FXuint textopts, int x, int y) :
+                       FXuint textopts, int x, int y, FXbool scrollable) :
     DialogBox(owner, caption,
               opts | DECOR_TITLE | DECOR_BORDER | DECOR_SHRINKABLE | DECOR_STRETCHABLE | DECOR_MAXIMIZE | DECOR_CLOSE,
               x, y, 0, 0, 0, 0, 0, 0, 4, 4)
 {
-    initialize(text, ic, opts & BOX_BUTTON_MASK, textopts);
+    initialize(text, ic, opts & BOX_BUTTON_MASK, textopts, scrollable);
 }
 
 
 // Construct free floating message box with given caption, icon, and message text
 MessageBox::MessageBox(FXApp* a, const FXString& caption, const FXString& text, FXIcon* ic, FXuint opts,
-                       FXuint textopts, int x, int y) :
+                       FXuint textopts, int x, int y, FXbool scrollable) :
     DialogBox(a, caption,
               opts | DECOR_TITLE | DECOR_BORDER | DECOR_SHRINKABLE | DECOR_STRETCHABLE | DECOR_MINIMIZE |
               DECOR_MAXIMIZE | DECOR_CLOSE, x, y, 0, 0, 0, 0, 0, 0, 4, 4)
 {
-    initialize(text, ic, opts & BOX_BUTTON_MASK, textopts);
+    initialize(text, ic, opts & BOX_BUTTON_MASK, textopts, scrollable);
 }
 
 
 // Build contents
-void MessageBox::initialize(const FXString& text, FXIcon* ic, FXuint whichbuttons, FXuint textoptions)
+void MessageBox::initialize(const FXString& text, FXIcon* ic, FXuint whichbuttons, FXuint textoptions,
+                            FXbool scrollable)
 {
     FXButton* initial;
     FXVerticalFrame* content = new FXVerticalFrame(this, LAYOUT_FILL_X | LAYOUT_FILL_Y);
     FXHorizontalFrame* info = new FXHorizontalFrame(content, LAYOUT_TOP | LAYOUT_LEFT | LAYOUT_FILL_X | LAYOUT_FILL_Y,
                                                     0, 0, 0, 0, 10, 10, 10, 10);
 
-    // Message text
-    msg = new FXLabel(info, FXString::null, ic, textoptions);
+    if (scrollable)
+    {
+        if (ic)
+        {
+            new FXLabel(info, FXString::null, ic, ICON_BEFORE_TEXT | LAYOUT_CENTER_Y);
+        }
+        scrollmsg = new FXText(info, NULL, 0, TEXT_READONLY | TEXT_WORDWRAP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        scrollmsg->setVisibleRows(16);
+        scrollmsg->setVisibleColumns(72);
+    }
+    else
+    {
+        msg = new FXLabel(info, FXString::null, ic, textoptions);
+    }
     setText(text);
 
     FXHorizontalFrame* buttons = new FXHorizontalFrame(content,
@@ -426,5 +439,13 @@ FXuint MessageBox::information(FXApp* app, FXuint opts, const char* caption, con
 void MessageBox::setText(FXString text)
 {
     // Set message text with a maximum of MAX_MESSAGE_LENGTH characters per line
-    msg->setText(xf_multilines(text, MAX_MESSAGE_LENGTH));
+    FXString formatted = xf_multilines(text, MAX_MESSAGE_LENGTH);
+    if (scrollmsg)
+    {
+        scrollmsg->setText(formatted);
+    }
+    else
+    {
+        msg->setText(formatted);
+    }
 }
