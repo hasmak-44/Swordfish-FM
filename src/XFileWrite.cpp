@@ -351,7 +351,7 @@ int main(int argc, char* argv[])
     {
         MessageBox::error(application->getRootWindow(), BOX_OK, _("Error loading icons"),
                           _("Icon path doesn't exist, default icon path was selected.\
-\n\nFrom Xfe, please check your icon path in Edit / Preferences / Appearance..."));
+\n\nFrom Swordfish, please check your icon path in Edit / Preferences / Appearance..."));
     }
 
     // Some icons not found
@@ -359,7 +359,7 @@ int main(int argc, char* argv[])
     {
         MessageBox::error(application->getRootWindow(), BOX_OK, _("Error loading icons"),
                           _("Unable to load some icons, default icon theme was selected.\
-\n\nFrom Xfe, please check your icon theme in Edit / Preferences / Appearance..."));       
+\n\nFrom Swordfish, please check your icon theme in Edit / Preferences / Appearance..."));
     }
 
     // Default icon path doesn't exist
@@ -367,7 +367,7 @@ int main(int argc, char* argv[])
     {
         MessageBox::error(application->getRootWindow(), BOX_OK, _("Error loading icons"),
                           _("Unable to load default icons, no icons can be shown.\
-\n\nPlease check your Xfe installation..."));       
+\n\nPlease check your Swordfish installation..."));
     }
 
     // Tooltips setup time and duration

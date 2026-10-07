@@ -258,7 +258,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     // Other default themes
     Theme theme;
     
-    theme = Theme("Xfe", _("The default theme"), FXRGB(237, 236, 235), FXRGB(125, 125, 125), FXRGB(255, 255, 255),
+    theme = Theme("Swordfish", _("The default theme"), FXRGB(237, 236, 235), FXRGB(125, 125, 125), FXRGB(255, 255, 255),
                       FXRGB(0, 0, 0),
                       FXRGB(10, 36, 106), FXRGB(255, 255, 255), FXRGB(255, 255, 255), FXRGB(0, 0, 0),
                       FXRGB(238, 238, 238), FXRGB(10, 36, 106), FXRGB(255, 0, 0), FXRGB(237, 236, 235));
@@ -633,7 +633,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     FXbool automount = getApp()->reg().readUnsignedEntry("OPTIONS", "automount", false);
     automountbutton->setCheck(automount);
     FXbool automount_open = getApp()->reg().readUnsignedEntry("OPTIONS", "automount_open", false);
-    autoopenbutton = new FXCheckButton(matrix, _("Open new Xfe window when mounting") + FXString(" "), this, ID_AUTO_OPEN);
+    autoopenbutton = new FXCheckButton(matrix, _("Open new Swordfish window when mounting") + FXString(" "), this, ID_AUTO_OPEN);
     autoopenbutton->setCheck(automount_open);
 
 #endif

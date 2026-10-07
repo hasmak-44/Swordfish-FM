@@ -299,11 +299,11 @@ enum
 
 // Command to launch Xfe as root with sudo or su, using st as a terminal
 #ifndef DEFAULT_SUDO_CMD
-#define DEFAULT_SUDO_CMD    "sudo -b xfe"
+#define DEFAULT_SUDO_CMD    "sudo -b swordfish"
 #endif
 
 #ifndef DEFAULT_SU_CMD
-#define DEFAULT_SU_CMD    "su -c 'nohup xfe >& /dev/null &'"
+#define DEFAULT_SU_CMD    "su -c 'nohup swordfish >& /dev/null &'"
 #endif
 
 // Tooltips setup time and duration

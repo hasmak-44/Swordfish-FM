@@ -4,10 +4,11 @@ on:
   push:
     tags:
       - "SwordFish-Portable-*"
+      - "swordfish-portable-*"
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing SwordFish-Portable-* tag to build artifacts for
+        description: Existing Swordfish-Portable-* or swordfish-portable-* tag
         required: true
         type: string
 
@@ -25,12 +26,22 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          if [[ "$RELEASE_TAG" != SwordFish-Portable-* || "$RELEASE_TAG" == "SwordFish-Portable-" ]]; then
+          case "$RELEASE_TAG" in
+            SwordFish-Portable-*)
+              version=${RELEASE_TAG#SwordFish-Portable-}
+              ;;
+            swordfish-portable-*)
+              version=${RELEASE_TAG#swordfish-portable-}
+              ;;
+            *)
+              version=
+              ;;
+          esac
+          if [[ -z "$version" ]]; then
             printf 'Not a portable release tag: %s\n' "$RELEASE_TAG" >&2
             exit 1
           fi
           git check-ref-format "refs/tags/$RELEASE_TAG"
-          version=${RELEASE_TAG#SwordFish-Portable-}
           printf 'tag=%s\nversion=%s\n' "$RELEASE_TAG" "$version" >> "$GITHUB_OUTPUT"
 
       - name: Build portable bundle

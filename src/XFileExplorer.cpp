@@ -1234,11 +1234,11 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
                  BUTTON_TOOLBAR | FRAME_NONE | LAYOUT_CENTER_Y | LAYOUT_LEFT | ICON_BEFORE_TEXT);
 
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "new_window", "F3");
-    new FXButton(toolstoolbar, TAB + _("Launch Xfe") + PARS(key), minixfeicon, this, XFileExplorer::ID_NEW_WIN,
+    new FXButton(toolstoolbar, TAB + _("Launch Swordfish") + PARS(key), minixfeicon, this, XFileExplorer::ID_NEW_WIN,
                  BUTTON_TOOLBAR | FRAME_NONE | LAYOUT_CENTER_Y | LAYOUT_LEFT);
 
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "new_root_window", "Shift-F3");
-    new FXButton(toolstoolbar, TAB + _("Launch Xfe as root") + PARS(key), minixferooticon, this, XFileExplorer::ID_SU,
+    new FXButton(toolstoolbar, TAB + _("Launch Swordfish as root") + PARS(key), minixferooticon, this, XFileExplorer::ID_SU,
                  BUTTON_TOOLBAR | FRAME_NONE | LAYOUT_CENTER_Y | LAYOUT_LEFT);
 
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "execute_command", "Ctrl-E");
@@ -3496,7 +3496,7 @@ void XFileExplorer::create()
     FXbool root_warn = getApp()->reg().readUnsignedEntry("OPTIONS", "root_warn", true);
     if ((getuid() == 0) && root_warn)
     {
-        MessageBox::information(this, BOX_OK, _("Warning"), _("Running Xfe as root!"));
+        MessageBox::information(this, BOX_OK, _("Warning"), _("Running Swordfish as root!"));
     }
 
     // Initial focus is always on the left panel
@@ -3579,7 +3579,7 @@ void XFileExplorer::create()
 
             const char* patterns[] =
             {
-                _("XFE configuration file"), "*swordfishrc*", NULL
+                _("Swordfish configuration file"), "*swordfishrc*", NULL
             };
             browse.setFilename(ROOTDIR);
             browse.setPatternList(patterns);
@@ -4651,7 +4651,7 @@ long XFileExplorer::onCmdNewWindow(FXObject*, FXSelector, void*)
     }
 
     // Run
-    FXString cmd = "xfe " + startdir + " &";
+    FXString cmd = "swordfish " + startdir + " &";
 
     int ret = system(cmd.text());
 

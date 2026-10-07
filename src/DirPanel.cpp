@@ -808,7 +808,7 @@ long DirPanel::onCmdOpenPlaceNewWindow(FXObject*, FXSelector, void*)
     FXString key = placeslist->getCurrentItem();
     FXString directory = placeslist->getItemPathname(key);
 
-    FXString cmd = "xfe " + directory + " &";
+    FXString cmd = "swordfish " + directory + " &";
 
     int ret = system(cmd.text());
 
@@ -935,7 +935,7 @@ long DirPanel::onCmdOpenMountNewWindow(FXObject*, FXSelector, void*)
     FXString key = mountslist->getCurrentItem();
     FXString directory = mountslist->getItemPathname(key);
 
-    FXString cmd = "xfe " + directory + " &";
+    FXString cmd = "swordfish " + directory + " &";
 
     int ret = system(cmd.text());
 
@@ -1062,7 +1062,7 @@ long DirPanel::onCmdOpenBookmarkNewWindow(FXObject*, FXSelector, void*)
     FXString name = bookmarkslist->getCurrentItem();
     FXString directory = bookmarkslist->getItemPathname(name);
 
-    FXString cmd = "xfe " + directory + " &";
+    FXString cmd = "swordfish " + directory + " &";
 
     int ret = system(cmd.text());
 

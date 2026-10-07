@@ -113,7 +113,7 @@ void MessageBox::initialize(const FXString& text, FXIcon* ic, FXuint whichbutton
         {
             FXString key = getApp()->reg().readStringEntry("KEYBINDINGS", "new_root_window", "Shift-F3");
             // Space before tab is used to set the correct button height
-            FXButton* btn = new FXButton(buttons, " " + TAB + _("Launch Xfe as root") + PARS(key), minixferooticon,
+            FXButton* btn = new FXButton(buttons, " " + TAB + _("Launch Swordfish as root") + PARS(key), minixferooticon,
                                          this, ID_CLICKED_SU, BUTTON_DEFAULT | ICON_AFTER_TEXT |
                                          FRAME_GROOVE | LAYOUT_TOP | LAYOUT_LEFT | LAYOUT_CENTER_X,
                                          0, 0, 0, 0, HORZ_PAD, HORZ_PAD, VERT_PAD, VERT_PAD);

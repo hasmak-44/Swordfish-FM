@@ -97,14 +97,14 @@ KeyBindingsBox::KeyBindingsBox(FXWindow* win, FXStringDict* glbbindings, FXStrin
     FXGroupBox* groupbox1 = new FXGroupBox(frame1, FXString::null,
                                            LAYOUT_SIDE_TOP | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     new FXLabel(groupbox1,
-                _("These key bindings are common to all Xfe applications.\nDouble click on an item to modify the selected key binding..."),
+                _("These key bindings are common to all Swordfish applications.\nDouble click on an item to modify the selected key binding..."),
                 NULL, LAYOUT_LEFT | JUSTIFY_LEFT, 0, 0, 0, 0, 0, 0, 0, 20);
     glbBindingsList = new IconList(groupbox1, NULL, 0, this, ID_GLB_BINDINGS_LIST,
                                    ICONLIST_STANDARD | HSCROLLER_NEVER | ICONLIST_BROWSESELECT |
                                    LAYOUT_SIDE_TOP | LAYOUT_LEFT | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
     // Second tab is Xfe key bindings
-    new FXTabItem(tabbook, _("Xf&e Key Bindings"), NULL);
+    new FXTabItem(tabbook, _("S&wordfish Key Bindings"), NULL);
     FXVerticalFrame* frame2 = new FXVerticalFrame(tabbook, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y,
                                                   0, 0, 0, 0, 0, 0, 20, 20);
     new FXLabel(frame2, FXString::null, NULL, JUSTIFY_LEFT); // For spacing
@@ -995,7 +995,7 @@ You should erase the existing key binding before assigning it again."),
             if (exist_in_xfe)
             {
                 MessageBox::error(this, BOX_OK, _("Error"),
-                                  _("The key binding %s is already used in the Xfe section.\n\
+                                  _("The key binding %s is already used in the Swordfish section.\n\
 You should erase the existing key binding before assigning it again."),
                                   newkey.text());
 
@@ -1147,7 +1147,7 @@ You should erase the existing key binding before assigning it again."),
             if (exist_in_xfe)
             {
                 MessageBox::error(this, BOX_OK, _("Error"),
-                                  _("The key binding %s is already used in the Xfe section.\n\
+                                  _("The key binding %s is already used in the Swordfish section.\n\
 You should erase the existing key binding before assigning it again."),
                                   newkey.text());
 
