@@ -187,6 +187,7 @@ extern FXIcon* minidirbackicon;
 extern FXIcon* minidirforwardicon;
 extern FXIcon* minixferooticon;
 extern FXIcon* minixfeicon;
+extern FXIcon* xfedockicon;
 extern FXIcon* minifiledialogicon;
 extern FXIcon* miniswitchpanelsicon;
 extern FXIcon* minisyncpanelsicon;

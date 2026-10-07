@@ -689,7 +689,8 @@ FXbool xf_isidentical(const FXString&, const FXString&);
 int xf_setwaitcursor(FXApp*, FXuint);
 int xf_runst(FXString);
 FXString xf_getcommandoutput(FXString);
-FXIcon* xf_loadiconfile(FXApp*, const FXString, const FXString, const double, const FXColor);
+FXIcon* xf_loadiconfile(FXApp*, const FXString, const FXString, const double, const FXColor,
+                        const FXbool blend = true);
 
 FXString xf_truncline(FXString, FXuint);
 FXString xf_multilines(FXString, FXuint);

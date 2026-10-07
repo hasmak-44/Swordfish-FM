@@ -1921,7 +1921,7 @@ FXString xf_getcommandoutput(FXString cmd)
 
 // Load a PNG icon from a file in the icon path
 FXIcon* xf_loadiconfile(FXApp* app, const FXString iconpath, const FXString iconname,
-                        const double scalefrac, const FXColor blendcolor)
+                        const double scalefrac, const FXColor blendcolor, const FXbool blend)
 {
     // Icon name is empty
     if (iconname.length() == 0)
@@ -1954,8 +1954,11 @@ FXIcon* xf_loadiconfile(FXApp* app, const FXString iconpath, const FXString icon
                 // Scale it
                 icon->scale(scalefrac * icon->getWidth(), scalefrac * icon->getHeight());
 
-                // Blend it
-                icon->blend(blendcolor);
+                if (blend)
+                {
+                    // Blend it
+                    icon->blend(blendcolor);
+                }
 
                 // Create it
                 icon->create();

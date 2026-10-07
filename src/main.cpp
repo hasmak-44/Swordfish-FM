@@ -543,7 +543,8 @@ int main(int argc, char* argv[])
     }
 
     // Create and run application
-    mainWindow = new XFileExplorer(application, startURIs, panel_mode, iconic, maximized, title, xfeicon, minixfeicon);
+    mainWindow = new XFileExplorer(application, startURIs, panel_mode, iconic, maximized, title, xfedockicon,
+                                   minixfeicon);
 
     // Catch SIGCHLD to harvest zombie child processes
     application->addSignal(SIGCHLD, mainWindow, XFileExplorer::ID_HARVEST, true);

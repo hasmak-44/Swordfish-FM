@@ -188,6 +188,7 @@ FXIcon* minidirbackicon;
 FXIcon* minidirforwardicon;
 FXIcon* minixferooticon;
 FXIcon* minixfeicon;
+FXIcon* xfedockicon;
 FXIcon* minifiledialogicon;
 FXIcon* miniswitchpanelsicon;
 FXIcon* minisyncpanelsicon;
@@ -448,6 +449,8 @@ load:
     success = ((minidirforwardicon = xf_loadiconfile(app, iconpath, "minidirforward.png", scalefrac, baseColor)) != NULL) & success;
     success = ((minixferooticon = xf_loadiconfile(app, iconpath, "minixferoot.png", scalefrac, baseColor)) != NULL) & success;
     success = ((minixfeicon = xf_loadiconfile(app, iconpath, "minixfe.png", scalefrac, baseColor)) != NULL) & success;
+    xfedockicon = xf_loadiconfile(app, defaulticonpath, "xfe-dock.png", scalefrac, baseColor, false);
+    success = (xfedockicon != NULL) & success;
     success = ((minifiledialogicon = xf_loadiconfile(app, iconpath, "minifiledialog.png", scalefrac, baseColor)) != NULL) & success;
     success = ((miniswitchpanelsicon = xf_loadiconfile(app, iconpath, "miniswitchpanels.png", scalefrac, baseColor)) != NULL) & success;
     success = ((minisyncpanelsicon = xf_loadiconfile(app, iconpath, "minisyncpanels.png", scalefrac, baseColor)) != NULL) & success;

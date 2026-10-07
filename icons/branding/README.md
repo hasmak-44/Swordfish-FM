@@ -6,6 +6,6 @@ separate `swordfish-dock` circular icon for dock, panel, and tray integrations.
 Raster sizes are provided at 16, 22, 24, 32, 48, 64, 128, 256, 512, and 1024
 pixels; scalable SVG versions are also installed.
 
-The running application's FOX window and About icons use the folder design.
-Icons in the selectable file-type themes are separate and are not part of this
-branding set.
+The FOX title-bar icon and About icon use the folder design; the FOX large
+window icon uses the circular design for running-window panels. Icons in the
+selectable file-type themes are separate and are not part of this branding set.
