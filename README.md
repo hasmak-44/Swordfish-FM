@@ -41,28 +41,28 @@ system. It currently supports 64-bit x86 Linux.
 
 ### Download and run Swordfish
 
-You do not need to compile the program or install developer tools.
+This testing build runs on 64-bit x86 Linux. It does not install Swordfish
+system-wide. You need Python 3, `curl`, and GitHub CLI (`gh`); on Ubuntu,
+install the CLI with `sudo apt install gh`. For other Linux versions, see the
+[GitHub CLI installation instructions](https://github.com/cli/cli#installation).
 
-1. Open this repository's **Actions** tab on GitHub.
-2. In the workflow list, choose **Portable build artifacts**.
-3. Open a completed run for the portable version you want. A green check mark
-   means the build succeeded.
-4. Near the bottom of the run page, find **Artifacts** and click the
-   `Swordfish-Portable-...` download.
-5. Extract the downloaded ZIP file. Open the extracted `Swordfish-Portable`
-   folder.
-6. Double-click `AppRun` to start Swordfish. If Linux asks whether to run the
-   file, choose **Run**. You can also start it from a terminal by opening that
-   folder and running `./AppRun`.
+Open a terminal and copy/paste this command. It downloads and starts the installer:
 
-Keep the extracted folder together: `AppRun` needs the files beside it. Your
-portable settings and data are saved in that folder, so you can move or back
-up the whole folder. This is a testing build, not a system-wide installation.
+```sh
+curl -fL https://raw.githubusercontent.com/hasmak-44/Swordfish-FM/portable-layout/portable/install-swordfish.py -o /tmp/install-swordfish.py && python3 /tmp/install-swordfish.py
+```
 
-The ZIP and `.tar.gz` downloads are attached to the workflow run, not to the
-tag page. GitHub's **Source code** downloads on a tag page are the program's
-source files, not the ready-to-run portable build. Workflow downloads are
-available for 90 days.
+The first time, GitHub CLI will guide you through signing in using your
+browser. This is a one-time step. The installer then finds and downloads the
+latest successful portable build, asks you to choose where to put it, and
+starts Swordfish. Your installed files and portable settings stay together in
+a version-named folder under the location you choose. It will not overwrite an
+existing installation. Leave the terminal open while Swordfish is running; if
+anything goes wrong, the installer prints an error there.
+
+Build downloads are kept for 90 days. If the installer says no build is
+available, a new portable build needs to be created. GitHub's **Source code**
+downloads on a tag page are not the ready-to-run app.
 
 For technical details or to build it yourself, see
 [portable/README.md](portable/README.md).

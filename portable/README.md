@@ -21,12 +21,16 @@ started with `build/Swordfish-Portable/AppRun`. The `run-swfa`, `run-swfi`,
 
 Pushing a tag named `SwordFish-Portable-*` or `swordfish-portable-*` builds
 versioned `.tar.gz` and `.zip` portable bundles and stores them as downloadable
-GitHub Actions artifacts for that workflow run. GitHub does not support attaching files
-directly to a tag; the tag page will still show GitHub's automatic "Source
-code" archives, which contain the repository source. The portable bundles are
-available from the workflow run's artifacts for 90 days. To build artifacts
-for an existing tag, run the **Portable build artifacts** workflow manually
-and provide the tag name. This workflow does not publish a GitHub Release.
+GitHub Actions artifacts for that workflow run. GitHub does not support
+attaching files directly to a tag; the tag page will still show GitHub's
+automatic "Source code" archives, which contain the repository source. The
+portable bundles are available from the workflow run's artifacts for 90 days.
+To build artifacts for an existing tag, run the **Portable build artifacts**
+workflow manually and provide the tag name. This workflow does not publish a
+GitHub Release.
+
+For an automated download and installation, follow the beginner-friendly
+instructions in the main [README](../README.md#download-and-run-swordfish).
 
 Writable state is kept in `portable-data` beside the AppDir:
 
