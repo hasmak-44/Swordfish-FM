@@ -12,9 +12,20 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
 jobs:
   build-portable:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy-pages.outputs.page_url }}
     steps:
       - name: Check out tagged source
         uses: actions/checkout@v4
@@ -51,6 +62,17 @@ jobs:
         run: |
           mkdir -p build/portable-download
           cp -a build/Swordfish-Portable build/portable-download/
+          mkdir -p build/pages
+          cp -a build/Swordfish-Portable build/pages/
+          (cd build/pages && zip -qr Swordfish-Portable.zip Swordfish-Portable)
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/pages
 
       - name: Upload portable folder
         uses: actions/upload-artifact@v4
@@ -59,3 +81,7 @@ jobs:
           path: build/portable-download/*
           if-no-files-found: error
           retention-days: 90
+
+      - name: Deploy latest portable download
+        id: deploy-pages
+        uses: actions/deploy-pages@v4

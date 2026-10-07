@@ -20,16 +20,14 @@ started with `build/Swordfish-Portable/AppRun`. The `run-swfa`, `run-swfi`,
 `run-swfp`, and `run-swfw` launchers start the corresponding companion apps.
 
 Pushing a tag named `SwordFish-Portable-*` or `swordfish-portable-*` builds the
-portable folder and stores it as a downloadable GitHub Actions artifact for
-that workflow run. GitHub packages the complete `Swordfish-Portable` folder
-into the downloaded ZIP, so users extract it only once. The artifact is
-available for 90 days. This workflow does not publish a GitHub Release; tag
-pages continue to show GitHub's automatic source archives.
+portable folder, updates the direct download at
+`https://hasmak-44.github.io/Swordfish-FM/Swordfish-Portable.zip`, and stores a
+copy as a GitHub Actions artifact for 90 days. The workflow deploys the download
+using GitHub Pages and does not publish a GitHub Release; tag pages continue
+to show GitHub's automatic source archives.
 
-For the no-extra-tools download and launch steps, see the main
+For user download and launch steps, see the main
 [README](../README.md#download-and-start-swordfish).
-The helper that opens the page for the latest successful artifact is
-[download-latest-portable.py](./download-latest-portable.py).
 
 Writable state is kept in `portable-data` beside the AppDir:
 
