@@ -47,13 +47,6 @@ jobs:
       - name: Build portable bundle
         run: ./portable/build-portable.sh
 
-      - name: Name versioned archives
-        env:
-          VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          mv build/Swordfish-Portable.tar.gz \
-            "build/Swordfish-Portable-${VERSION}-linux-x86_64.tar.gz"
-
       - name: Create ZIP archive
         env:
           VERSION: ${{ steps.release.outputs.version }}
@@ -66,7 +59,6 @@ jobs:
         with:
           name: Swordfish-Portable-${{ steps.release.outputs.version }}-linux-x86_64
           path: |
-            build/Swordfish-Portable-${{ steps.release.outputs.version }}-linux-x86_64.tar.gz
             build/Swordfish-Portable-${{ steps.release.outputs.version }}-linux-x86_64.zip
           if-no-files-found: error
           retention-days: 90

@@ -42,68 +42,29 @@ system. It currently supports 64-bit x86 Linux.
 ### Download and run Swordfish
 
 This testing build runs on 64-bit x86 Linux. It does not install Swordfish
-system-wide. These instructions are for MX Linux 23 and other Debian-based
-systems. The installer needs Python 3, `curl`, GitHub CLI (`gh`), and Python's
-Tk folder picker.
-
-### One-time setup on MX Linux 23 or Debian
-
-Open a terminal and run these commands to add GitHub's official package
-repository and install the required tools:
-
-```sh
-sudo apt update
-sudo apt install curl ca-certificates
-sudo mkdir -p -m 755 /etc/apt/keyrings
-curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
-sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-sudo apt update
-sudo apt install gh python3 python3-tk
-```
-
-You only need to do this setup once.
-
-### Other Linux distributions
-
-Install `gh` (GitHub CLI), Python 3, and `curl` using your distribution's
-package manager. Common GitHub CLI package commands are:
-
-| Linux distribution | Install GitHub CLI |
-| --- | --- |
-| Fedora | `sudo dnf install gh` |
-| Arch Linux or Manjaro | `sudo pacman -S github-cli` |
-| openSUSE | `sudo zypper install gh` |
-| Alpine | `sudo apk add github-cli` |
-| Void Linux | `sudo xbps-install github-cli` |
-
-The installer also needs a folder picker. It uses an installed `zenity`,
-KDE's `kdialog`, or Python Tkinter. If none is available, install the
-folder-picker package provided by your distribution (often named `zenity`,
-`kdialog`, or `python3-tkinter`) and run the installer again. The exact package
-name can vary. If your distribution is not listed above, use the
-[official GitHub CLI Linux installation guide](https://github.com/cli/cli/blob/trunk/docs/install_linux.md)
-to install `gh`.
+system-wide and does not require installing GitHub CLI, Python, or other
+installer tools.
 
 ### Download and start Swordfish
 
-Open a terminal and copy/paste this command. It downloads and starts the installer:
+1. Open the [Portable build artifacts workflow](https://github.com/hasmak-44/Swordfish-FM/actions/workflows/portable-release.yml)
+   in your web browser.
+2. Select the newest run with a green check mark.
+3. Scroll down to **Artifacts** and click the
+   `Swordfish-Portable-...` download. Your browser downloads a ZIP file.
+4. Open your **Downloads** folder and extract the downloaded ZIP using your
+   file manager's archive option (often **Extract Here** or **Extract To**).
+   This first ZIP contains the portable app ZIP.
+5. Extract the `Swordfish-Portable-...zip` inside it to the folder where you
+   want to keep Swordfish.
+6. Open the extracted `Swordfish-Portable` folder and double-click `AppRun`.
+   If Linux asks, choose **Run**.
 
-```sh
-curl -fL https://raw.githubusercontent.com/hasmak-44/Swordfish-FM/portable-layout/portable/install-swordfish.py -o /tmp/install-swordfish.py && python3 /tmp/install-swordfish.py
-```
+Keep the extracted `Swordfish-Portable` folder together. Swordfish saves its
+settings and data inside that folder, so you can move or back it up as one
+unit. This is a testing build, not a system-wide installation.
 
-The first time, GitHub CLI will guide you through signing in using your
-browser. This is a one-time step. The installer then finds and downloads the
-latest successful portable build, opens a folder picker so you can choose
-where to put it, and starts Swordfish. Your installed files and portable
-settings stay together in a version-named folder under the location you
-choose. It will not overwrite an existing installation. Leave the terminal
-open while Swordfish is running; if anything goes wrong, the installer prints
-an error there.
-
-Build downloads are kept for 90 days. If the installer says no build is
-available, a new portable build needs to be created. GitHub's **Source code**
+The artifact download is available for 90 days. GitHub's **Source code**
 downloads on a tag page are not the ready-to-run app.
 
 For technical details or to build it yourself, see
