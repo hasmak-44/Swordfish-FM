@@ -42,9 +42,29 @@ system. It currently supports 64-bit x86 Linux.
 ### Download and run Swordfish
 
 This testing build runs on 64-bit x86 Linux. It does not install Swordfish
-system-wide. You need Python 3, `curl`, and GitHub CLI (`gh`); on Ubuntu,
-install the CLI with `sudo apt install gh`. For other Linux versions, see the
-[GitHub CLI installation instructions](https://github.com/cli/cli#installation).
+system-wide. These instructions are for MX Linux 23 and other Debian-based
+systems. The installer needs Python 3, `curl`, GitHub CLI (`gh`), and Python's
+Tk folder picker.
+
+### One-time setup on MX Linux 23
+
+Open a terminal and run these commands to add GitHub's official package
+repository and install the required tools:
+
+```sh
+sudo apt update
+sudo apt install curl ca-certificates
+sudo mkdir -p -m 755 /etc/apt/keyrings
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
+sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+sudo apt update
+sudo apt install gh python3 python3-tk
+```
+
+You only need to do this setup once.
+
+### Download and start Swordfish
 
 Open a terminal and copy/paste this command. It downloads and starts the installer:
 
@@ -54,11 +74,12 @@ curl -fL https://raw.githubusercontent.com/hasmak-44/Swordfish-FM/portable-layou
 
 The first time, GitHub CLI will guide you through signing in using your
 browser. This is a one-time step. The installer then finds and downloads the
-latest successful portable build, asks you to choose where to put it, and
-starts Swordfish. Your installed files and portable settings stay together in
-a version-named folder under the location you choose. It will not overwrite an
-existing installation. Leave the terminal open while Swordfish is running; if
-anything goes wrong, the installer prints an error there.
+latest successful portable build, opens a folder picker so you can choose
+where to put it, and starts Swordfish. Your installed files and portable
+settings stay together in a version-named folder under the location you
+choose. It will not overwrite an existing installation. Leave the terminal
+open while Swordfish is running; if anything goes wrong, the installer prints
+an error there.
 
 Build downloads are kept for 90 days. If the installer says no build is
 available, a new portable build needs to be created. GitHub's **Source code**
