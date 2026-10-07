@@ -47,18 +47,15 @@ jobs:
       - name: Build portable bundle
         run: ./portable/build-portable.sh
 
-      - name: Create ZIP archive
-        env:
-          VERSION: ${{ steps.release.outputs.version }}
+      - name: Prepare portable folder for download
         run: |
-          cd build
-          zip -qr "Swordfish-Portable-${VERSION}-linux-x86_64.zip" Swordfish-Portable
+          mkdir -p build/portable-download
+          cp -a build/Swordfish-Portable build/portable-download/
 
-      - name: Upload portable bundles as workflow artifacts
+      - name: Upload portable folder
         uses: actions/upload-artifact@v4
         with:
           name: Swordfish-Portable-${{ steps.release.outputs.version }}-linux-x86_64
-          path: |
-            build/Swordfish-Portable-${{ steps.release.outputs.version }}-linux-x86_64.zip
+          path: build/portable-download/*
           if-no-files-found: error
           retention-days: 90

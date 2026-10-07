@@ -19,12 +19,12 @@ The output is `build/Swordfish-Portable`, with a compressed archive at
 started with `build/Swordfish-Portable/AppRun`. The `run-swfa`, `run-swfi`,
 `run-swfp`, and `run-swfw` launchers start the corresponding companion apps.
 
-Pushing a tag named `SwordFish-Portable-*` or `swordfish-portable-*` builds a
-versioned portable ZIP and stores it as a downloadable GitHub Actions artifact
-for that workflow run. GitHub wraps that download in its own ZIP, so extract
-the downloaded artifact ZIP first, then extract the portable ZIP inside it.
-The artifact is available for 90 days. This workflow does not publish a
-GitHub Release; tag pages continue to show GitHub's automatic source archives.
+Pushing a tag named `SwordFish-Portable-*` or `swordfish-portable-*` builds the
+portable folder and stores it as a downloadable GitHub Actions artifact for
+that workflow run. GitHub packages the complete `Swordfish-Portable` folder
+into the downloaded ZIP, so users extract it only once. The artifact is
+available for 90 days. This workflow does not publish a GitHub Release; tag
+pages continue to show GitHub's automatic source archives.
 
 For the no-extra-tools download and launch steps, see the main
 [README](../README.md#download-and-start-swordfish).

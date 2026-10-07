@@ -47,24 +47,27 @@ installer tools.
 
 ### Download and start Swordfish
 
-1. Open the [Portable build artifacts workflow](https://github.com/hasmak-44/Swordfish-FM/actions/workflows/portable-release.yml)
-   in your web browser.
-2. Select the newest run with a green check mark.
-3. Scroll down to **Artifacts** and click the
-   `Swordfish-Portable-...` download. Your browser downloads a ZIP file.
-4. Open your **Downloads** folder and extract the downloaded ZIP using your
-   file manager's archive option (often **Extract Here** or **Extract To**).
-   This first ZIP contains the portable app ZIP.
-5. Extract the `Swordfish-Portable-...zip` inside it to the folder where you
-   want to keep Swordfish.
-6. Open the extracted `Swordfish-Portable` folder and double-click `AppRun`.
-   If Linux asks, choose **Run**.
+1. Click [here to download the latest portable version](https://github.com/hasmak-44/Swordfish-FM/actions/workflows/portable-release.yml).
+   GitHub opens the page with the available portable builds.
+2. Click the newest build with a green check mark. On that page, find
+   **Artifacts** and click `Swordfish-Portable-...`. Your browser downloads a
+   ZIP file wherever it normally saves downloads.
+3. Find the downloaded ZIP and extract it to the place where you want to keep
+   Swordfish. The extracted `Swordfish-Portable` folder contains the complete
+   app. **Extract the whole folder; do not move files out of it. Keep the
+   folder together.**
+4. To update an existing copy, extract the new `Swordfish-Portable` folder
+   over the old one in the same location. If asked, choose to replace the
+   existing app files. Your settings and customizations in `portable-data`
+   stay in place. To keep an older version too, extract the new folder
+   somewhere different; both versions can be run side by side.
+5. To start Swordfish, open the `Swordfish-Portable` folder and double-click
+   `AppRun`. If Linux asks, choose **Run**. You can also open a terminal in
+   that folder and run `./AppRun`, or create a desktop launcher whose command
+   points to the `AppRun` file in your Swordfish folder.
 
-Keep the extracted `Swordfish-Portable` folder together. Swordfish saves its
-settings and data inside that folder, so you can move or back it up as one
-unit. This is a testing build, not a system-wide installation.
-
-The artifact download is available for 90 days. GitHub's **Source code**
+This testing build runs on 64-bit x86 Linux and does not install Swordfish
+system-wide. GitHub keeps each build download for 90 days. The **Source code**
 downloads on a tag page are not the ready-to-run app.
 
 For technical details or to build it yourself, see
