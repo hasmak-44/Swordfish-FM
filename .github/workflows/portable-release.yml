@@ -63,8 +63,7 @@ jobs:
           mkdir -p build/portable-download
           cp -a build/Swordfish-Portable build/portable-download/
           mkdir -p build/pages
-          cp -a build/Swordfish-Portable build/pages/
-          (cd build/pages && zip -qr Swordfish-Portable.zip Swordfish-Portable)
+          (cd build && zip -qr pages/Swordfish-Portable.zip Swordfish-Portable)
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
