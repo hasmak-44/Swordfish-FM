@@ -28,6 +28,8 @@ pages continue to show GitHub's automatic source archives.
 
 For the no-extra-tools download and launch steps, see the main
 [README](../README.md#download-and-start-swordfish).
+The helper that opens the page for the latest successful artifact is
+[download-latest-portable.py](./download-latest-portable.py).
 
 Writable state is kept in `portable-data` beside the AppDir:
 

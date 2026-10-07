@@ -42,33 +42,42 @@ system. It currently supports 64-bit x86 Linux.
 ### Download and run Swordfish
 
 This testing build runs on 64-bit x86 Linux. It does not install Swordfish
-system-wide and does not require installing GitHub CLI, Python, or other
-installer tools.
+system-wide. The optional helper uses Python 3's standard library only; it
+does not need GitHub CLI or extra Python packages. If Python 3 is not already
+available, you can use the browser-only steps below instead.
 
 ### Download and start Swordfish
 
-1. Click [here to download the latest portable version](https://github.com/hasmak-44/Swordfish-FM/actions/workflows/portable-release.yml).
-   GitHub opens the page with the available portable builds.
-2. Click the newest build with a green check mark. On that page, find
-   **Artifacts** and click `Swordfish-Portable-...`. Your browser downloads a
-   ZIP file wherever it normally saves downloads.
-3. Find the downloaded ZIP and extract it to the place where you want to keep
+1. Download the [latest-build helper script](https://raw.githubusercontent.com/hasmak-44/Swordfish-FM/portable-layout/portable/download-latest-portable.py).
+   You need Python 3 to run it; it does not need GitHub CLI or extra Python
+   packages. If you prefer not to run the helper, open the
+   [portable builds page](https://github.com/hasmak-44/Swordfish-FM/actions/workflows/portable-release.yml)
+   and choose a successful run yourself.
+2. Open a terminal in the folder where the script was downloaded and run
+   `python3 download-latest-portable.py`. The helper finds the newest
+   successful build and opens its page in your browser.
+3. On that page, click the matching `Swordfish-Portable-...` name under
+   **Artifacts**. Your browser downloads the ZIP wherever it normally saves
+   downloads.
+4. Find the downloaded ZIP and extract it to the place where you want to keep
    Swordfish. The extracted `Swordfish-Portable` folder contains the complete
    app. **Extract the whole folder; do not move files out of it. Keep the
    folder together.**
-4. To update an existing copy, extract the new `Swordfish-Portable` folder
+5. To update an existing copy, extract the new `Swordfish-Portable` folder
    over the old one in the same location. If asked, choose to replace the
    existing app files. Your settings and customizations in `portable-data`
    stay in place. To keep an older version too, extract the new folder
    somewhere different; both versions can be run side by side.
-5. To start Swordfish, open the `Swordfish-Portable` folder and double-click
+6. To start Swordfish, open the `Swordfish-Portable` folder and double-click
    `AppRun`. If Linux asks, choose **Run**. You can also open a terminal in
    that folder and run `./AppRun`, or create a desktop launcher whose command
    points to the `AppRun` file in your Swordfish folder.
 
 This testing build runs on 64-bit x86 Linux and does not install Swordfish
-system-wide. GitHub keeps each build download for 90 days. The **Source code**
-downloads on a tag page are not the ready-to-run app.
+system-wide. GitHub keeps each build download for 90 days. The helper opens
+the correct build page, but GitHub requires the user to click the artifact
+there; a browser does not allow scripts to start a file download silently.
+The **Source code** downloads on a tag page are not the ready-to-run app.
 
 For technical details or to build it yourself, see
 [portable/README.md](portable/README.md).
