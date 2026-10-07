@@ -38,6 +38,10 @@ if [ "$relative_output" = "$output_dir" ] || [ "$relative_output" = "$build_root
         exit 1
 fi
 
+# Create the bind-mount source as the invoking user; otherwise Docker may
+# create it as root and the unprivileged container user cannot write to it.
+mkdir -p "$build_root"
+
 "$docker_command" build \
         --tag "$image" \
         --file "$source_root/portable/Dockerfile" \
