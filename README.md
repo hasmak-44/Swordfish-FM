@@ -36,8 +36,33 @@ Copyright (C) Roland Baudin and contributors.
 
 ## Portable Linux testing build
 
-A relocatable Linux x86_64 folder build is available for testing without
-installing Swordfish system-wide. It keeps settings and scripts in writable
-sidecar folders and is designed to grow into a portable package with optional
-themes, icons, add-ons, and custom actions. See
-[portable/README.md](portable/README.md) for build and usage instructions.
+A portable Linux build lets you run Swordfish without installing it into the
+system. It currently supports 64-bit x86 Linux.
+
+### Download and run Swordfish
+
+You do not need to compile the program or install developer tools.
+
+1. Open this repository's **Actions** tab on GitHub.
+2. In the workflow list, choose **Portable build artifacts**.
+3. Open a completed run for the portable version you want. A green check mark
+   means the build succeeded.
+4. Near the bottom of the run page, find **Artifacts** and click the
+   `Swordfish-Portable-...` download.
+5. Extract the downloaded ZIP file. Open the extracted `Swordfish-Portable`
+   folder.
+6. Double-click `AppRun` to start Swordfish. If Linux asks whether to run the
+   file, choose **Run**. You can also start it from a terminal by opening that
+   folder and running `./AppRun`.
+
+Keep the extracted folder together: `AppRun` needs the files beside it. Your
+portable settings and data are saved in that folder, so you can move or back
+up the whole folder. This is a testing build, not a system-wide installation.
+
+The ZIP and `.tar.gz` downloads are attached to the workflow run, not to the
+tag page. GitHub's **Source code** downloads on a tag page are the program's
+source files, not the ready-to-run portable build. Workflow downloads are
+available for 90 days.
+
+For technical details or to build it yourself, see
+[portable/README.md](portable/README.md).

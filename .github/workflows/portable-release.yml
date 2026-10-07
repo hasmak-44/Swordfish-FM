@@ -1,0 +1,61 @@
+name: Portable build artifacts
+
+on:
+  push:
+    tags:
+      - "SwordFish-Portable-*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing SwordFish-Portable-* tag to build artifacts for
+        required: true
+        type: string
+
+jobs:
+  build-portable:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Validate portable tag
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [[ "$RELEASE_TAG" != SwordFish-Portable-* || "$RELEASE_TAG" == "SwordFish-Portable-" ]]; then
+            printf 'Not a portable release tag: %s\n' "$RELEASE_TAG" >&2
+            exit 1
+          fi
+          git check-ref-format "refs/tags/$RELEASE_TAG"
+          version=${RELEASE_TAG#SwordFish-Portable-}
+          printf 'tag=%s\nversion=%s\n' "$RELEASE_TAG" "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build portable bundle
+        run: ./portable/build-portable.sh
+
+      - name: Name versioned archives
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          mv build/Swordfish-Portable.tar.gz \
+            "build/Swordfish-Portable-${VERSION}-linux-x86_64.tar.gz"
+
+      - name: Create ZIP archive
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          cd build
+          zip -qr "Swordfish-Portable-${VERSION}-linux-x86_64.zip" Swordfish-Portable
+
+      - name: Upload portable bundles as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Swordfish-Portable-${{ steps.release.outputs.version }}-linux-x86_64
+          path: |
+            build/Swordfish-Portable-${{ steps.release.outputs.version }}-linux-x86_64.tar.gz
+            build/Swordfish-Portable-${{ steps.release.outputs.version }}-linux-x86_64.zip
+          if-no-files-found: error
+          retention-days: 90
