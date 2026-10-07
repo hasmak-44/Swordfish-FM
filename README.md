@@ -46,7 +46,7 @@ system-wide. These instructions are for MX Linux 23 and other Debian-based
 systems. The installer needs Python 3, `curl`, GitHub CLI (`gh`), and Python's
 Tk folder picker.
 
-### One-time setup on MX Linux 23
+### One-time setup on MX Linux 23 or Debian
 
 Open a terminal and run these commands to add GitHub's official package
 repository and install the required tools:
@@ -63,6 +63,27 @@ sudo apt install gh python3 python3-tk
 ```
 
 You only need to do this setup once.
+
+### Other Linux distributions
+
+Install `gh` (GitHub CLI), Python 3, and `curl` using your distribution's
+package manager. Common GitHub CLI package commands are:
+
+| Linux distribution | Install GitHub CLI |
+| --- | --- |
+| Fedora | `sudo dnf install gh` |
+| Arch Linux or Manjaro | `sudo pacman -S github-cli` |
+| openSUSE | `sudo zypper install gh` |
+| Alpine | `sudo apk add github-cli` |
+| Void Linux | `sudo xbps-install github-cli` |
+
+The installer also needs a folder picker. It uses an installed `zenity`,
+KDE's `kdialog`, or Python Tkinter. If none is available, install the
+folder-picker package provided by your distribution (often named `zenity`,
+`kdialog`, or `python3-tkinter`) and run the installer again. The exact package
+name can vary. If your distribution is not listed above, use the
+[official GitHub CLI Linux installation guide](https://github.com/cli/cli/blob/trunk/docs/install_linux.md)
+to install `gh`.
 
 ### Download and start Swordfish
 
