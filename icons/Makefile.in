@@ -326,7 +326,7 @@ xcb_aux_LIBS = @xcb_aux_LIBS@
 xcb_event_CFLAGS = @xcb_event_CFLAGS@
 xcb_event_LIBS = @xcb_event_LIBS@
 xft_config = @xft_config@
-SUBDIRS = apps apps-scalable default-theme gnome-theme kde-theme xfce-theme
+SUBDIRS = branding apps apps-scalable default-theme gnome-theme kde-theme xfce-theme
 all: all-recursive
 
 .SUFFIXES:

@@ -1,3 +1,63 @@
-icondir=$(datadir)/icons/hicolor/48x48/apps
-icon_DATA=*.png *.xpm
+icondir=$(datadir)/icons/hicolor
+nobase_icon_DATA = \
+	16x16/apps/swordfish.png \
+	16x16/apps/swordfish-archive.png \
+	16x16/apps/swordfish-image.png \
+	16x16/apps/swordfish-package.png \
+	16x16/apps/swordfish-write.png \
+	16x16/apps/swordfish-dock.png \
+	22x22/apps/swordfish.png \
+	22x22/apps/swordfish-archive.png \
+	22x22/apps/swordfish-image.png \
+	22x22/apps/swordfish-package.png \
+	22x22/apps/swordfish-write.png \
+	22x22/apps/swordfish-dock.png \
+	24x24/apps/swordfish.png \
+	24x24/apps/swordfish-archive.png \
+	24x24/apps/swordfish-image.png \
+	24x24/apps/swordfish-package.png \
+	24x24/apps/swordfish-write.png \
+	24x24/apps/swordfish-dock.png \
+	32x32/apps/swordfish.png \
+	32x32/apps/swordfish-archive.png \
+	32x32/apps/swordfish-image.png \
+	32x32/apps/swordfish-package.png \
+	32x32/apps/swordfish-write.png \
+	32x32/apps/swordfish-dock.png \
+	48x48/apps/swordfish.png \
+	48x48/apps/swordfish-archive.png \
+	48x48/apps/swordfish-image.png \
+	48x48/apps/swordfish-package.png \
+	48x48/apps/swordfish-write.png \
+	48x48/apps/swordfish-dock.png \
+	64x64/apps/swordfish.png \
+	64x64/apps/swordfish-archive.png \
+	64x64/apps/swordfish-image.png \
+	64x64/apps/swordfish-package.png \
+	64x64/apps/swordfish-write.png \
+	64x64/apps/swordfish-dock.png \
+	128x128/apps/swordfish.png \
+	128x128/apps/swordfish-archive.png \
+	128x128/apps/swordfish-image.png \
+	128x128/apps/swordfish-package.png \
+	128x128/apps/swordfish-write.png \
+	128x128/apps/swordfish-dock.png \
+	256x256/apps/swordfish.png \
+	256x256/apps/swordfish-archive.png \
+	256x256/apps/swordfish-image.png \
+	256x256/apps/swordfish-package.png \
+	256x256/apps/swordfish-write.png \
+	256x256/apps/swordfish-dock.png \
+	512x512/apps/swordfish.png \
+	512x512/apps/swordfish-archive.png \
+	512x512/apps/swordfish-image.png \
+	512x512/apps/swordfish-package.png \
+	512x512/apps/swordfish-write.png \
+	512x512/apps/swordfish-dock.png \
+	1024x1024/apps/swordfish.png \
+	1024x1024/apps/swordfish-archive.png \
+	1024x1024/apps/swordfish-image.png \
+	1024x1024/apps/swordfish-package.png \
+	1024x1024/apps/swordfish-write.png \
+	1024x1024/apps/swordfish-dock.png
 	

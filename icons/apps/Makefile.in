@@ -145,7 +145,7 @@ am__uninstall_files_from_dir = { \
          $(am__cd) "$$dir" && rm -f $$files; }; \
   }
 am__installdirs = "$(DESTDIR)$(icondir)"
-DATA = $(icon_DATA)
+DATA = $(nobase_icon_DATA)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 am__DIST_COMMON = $(srcdir)/Makefile.in
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -298,8 +298,69 @@ xcb_aux_LIBS = @xcb_aux_LIBS@
 xcb_event_CFLAGS = @xcb_event_CFLAGS@
 xcb_event_LIBS = @xcb_event_LIBS@
 xft_config = @xft_config@
-icondir = $(datadir)/icons/hicolor/48x48/apps
-icon_DATA = *.png *.xpm
+icondir = $(datadir)/icons/hicolor
+nobase_icon_DATA = \
+	16x16/apps/swordfish.png \
+	16x16/apps/swordfish-archive.png \
+	16x16/apps/swordfish-image.png \
+	16x16/apps/swordfish-package.png \
+	16x16/apps/swordfish-write.png \
+	16x16/apps/swordfish-dock.png \
+	22x22/apps/swordfish.png \
+	22x22/apps/swordfish-archive.png \
+	22x22/apps/swordfish-image.png \
+	22x22/apps/swordfish-package.png \
+	22x22/apps/swordfish-write.png \
+	22x22/apps/swordfish-dock.png \
+	24x24/apps/swordfish.png \
+	24x24/apps/swordfish-archive.png \
+	24x24/apps/swordfish-image.png \
+	24x24/apps/swordfish-package.png \
+	24x24/apps/swordfish-write.png \
+	24x24/apps/swordfish-dock.png \
+	32x32/apps/swordfish.png \
+	32x32/apps/swordfish-archive.png \
+	32x32/apps/swordfish-image.png \
+	32x32/apps/swordfish-package.png \
+	32x32/apps/swordfish-write.png \
+	32x32/apps/swordfish-dock.png \
+	48x48/apps/swordfish.png \
+	48x48/apps/swordfish-archive.png \
+	48x48/apps/swordfish-image.png \
+	48x48/apps/swordfish-package.png \
+	48x48/apps/swordfish-write.png \
+	48x48/apps/swordfish-dock.png \
+	64x64/apps/swordfish.png \
+	64x64/apps/swordfish-archive.png \
+	64x64/apps/swordfish-image.png \
+	64x64/apps/swordfish-package.png \
+	64x64/apps/swordfish-write.png \
+	64x64/apps/swordfish-dock.png \
+	128x128/apps/swordfish.png \
+	128x128/apps/swordfish-archive.png \
+	128x128/apps/swordfish-image.png \
+	128x128/apps/swordfish-package.png \
+	128x128/apps/swordfish-write.png \
+	128x128/apps/swordfish-dock.png \
+	256x256/apps/swordfish.png \
+	256x256/apps/swordfish-archive.png \
+	256x256/apps/swordfish-image.png \
+	256x256/apps/swordfish-package.png \
+	256x256/apps/swordfish-write.png \
+	256x256/apps/swordfish-dock.png \
+	512x512/apps/swordfish.png \
+	512x512/apps/swordfish-archive.png \
+	512x512/apps/swordfish-image.png \
+	512x512/apps/swordfish-package.png \
+	512x512/apps/swordfish-write.png \
+	512x512/apps/swordfish-dock.png \
+	1024x1024/apps/swordfish.png \
+	1024x1024/apps/swordfish-archive.png \
+	1024x1024/apps/swordfish-image.png \
+	1024x1024/apps/swordfish-package.png \
+	1024x1024/apps/swordfish-write.png \
+	1024x1024/apps/swordfish-dock.png
+
 all: all-am
 
 .SUFFIXES:
@@ -332,26 +393,29 @@ $(top_srcdir)/configure:  $(am__configure_deps)
 $(ACLOCAL_M4):  $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
-install-iconDATA: $(icon_DATA)
+install-nobase_iconDATA: $(nobase_icon_DATA)
 	@$(NORMAL_INSTALL)
-	@list='$(icon_DATA)'; test -n "$(icondir)" || list=; \
+	@list='$(nobase_icon_DATA)'; test -n "$(icondir)" || list=; \
 	if test -n "$$list"; then \
 	  echo " $(MKDIR_P) '$(DESTDIR)$(icondir)'"; \
 	  $(MKDIR_P) "$(DESTDIR)$(icondir)" || exit 1; \
 	fi; \
-	for p in $$list; do \
-	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
-	  echo "$$d$$p"; \
-	done | $(am__base_list) | \
-	while read files; do \
-	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(icondir)'"; \
-	  $(INSTALL_DATA) $$files "$(DESTDIR)$(icondir)" || exit $$?; \
+	$(am__nobase_list) | while read dir files; do \
+	  xfiles=; for file in $$files; do \
+	    if test -f "$$file"; then xfiles="$$xfiles $$file"; \
+	    else xfiles="$$xfiles $(srcdir)/$$file"; fi; done; \
+	  test -z "$$xfiles" || { \
+	    test "x$$dir" = x. || { \
+	      echo " $(MKDIR_P) '$(DESTDIR)$(icondir)/$$dir'"; \
+	      $(MKDIR_P) "$(DESTDIR)$(icondir)/$$dir"; }; \
+	    echo " $(INSTALL_DATA) $$xfiles '$(DESTDIR)$(icondir)/$$dir'"; \
+	    $(INSTALL_DATA) $$xfiles "$(DESTDIR)$(icondir)/$$dir" || exit $$?; }; \
 	done
 
-uninstall-iconDATA:
+uninstall-nobase_iconDATA:
 	@$(NORMAL_UNINSTALL)
-	@list='$(icon_DATA)'; test -n "$(icondir)" || list=; \
-	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	@list='$(nobase_icon_DATA)'; test -n "$(icondir)" || list=; \
+	$(am__nobase_strip_setup); files=`$(am__nobase_strip)`; \
 	dir='$(DESTDIR)$(icondir)'; $(am__uninstall_files_from_dir)
 tags TAGS:
 
@@ -449,7 +513,7 @@ info: info-am
 
 info-am:
 
-install-data-am: install-iconDATA
+install-data-am: install-nobase_iconDATA
 
 install-dvi: install-dvi-am
 
@@ -493,7 +557,7 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-iconDATA
+uninstall-am: uninstall-nobase_iconDATA
 
 .MAKE: install-am install-strip
 
@@ -501,13 +565,13 @@ uninstall-am: uninstall-iconDATA
 	ctags-am distclean distclean-generic distdir dvi dvi-am html \
 	html-am info info-am install install-am install-data \
 	install-data-am install-dvi install-dvi-am install-exec \
-	install-exec-am install-html install-html-am install-iconDATA \
-	install-info install-info-am install-man install-pdf \
-	install-pdf-am install-ps install-ps-am install-strip \
-	installcheck installcheck-am installdirs maintainer-clean \
-	maintainer-clean-generic mostlyclean mostlyclean-generic pdf \
-	pdf-am ps ps-am tags-am uninstall uninstall-am \
-	uninstall-iconDATA
+	install-exec-am install-html install-html-am install-info \
+	install-info-am install-man install-nobase_iconDATA \
+	install-pdf install-pdf-am install-ps install-ps-am \
+	install-strip installcheck installcheck-am installdirs \
+	maintainer-clean maintainer-clean-generic mostlyclean \
+	mostlyclean-generic pdf pdf-am ps ps-am tags-am uninstall \
+	uninstall-am uninstall-nobase_iconDATA
 
 .PRECIOUS: Makefile
 

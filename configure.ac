@@ -280,6 +280,7 @@ fi
 AC_CONFIG_FILES([Makefile m4/Makefile po/Makefile.in swordfishrc swordfish.desktop.in swfa.desktop.in
           swfi.desktop.in swfp.desktop.in swfw.desktop.in automount/Makefile src/Makefile
           icons/Makefile
+          icons/branding/Makefile
           icons/apps/Makefile
           icons/apps-scalable/Makefile
           icons/default-theme/Makefile

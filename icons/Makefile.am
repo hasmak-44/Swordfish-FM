@@ -1,3 +1,2 @@
-SUBDIRS=apps apps-scalable default-theme gnome-theme kde-theme xfce-theme
-
+SUBDIRS=branding apps apps-scalable default-theme gnome-theme kde-theme xfce-theme
 

@@ -299,7 +299,9 @@ xcb_event_CFLAGS = @xcb_event_CFLAGS@
 xcb_event_LIBS = @xcb_event_LIBS@
 xft_config = @xft_config@
 icondir = $(datadir)/icons/hicolor/scalable/apps
-icon_DATA = *.svg
+icon_DATA = swordfish.svg swordfish-archive.svg swordfish-image.svg \
+	swordfish-package.svg swordfish-write.svg swordfish-dock.svg
+
 all: all-am
 
 .SUFFIXES:

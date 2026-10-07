@@ -8,7 +8,7 @@ mkdir -p "$DST/icons/gnome-theme" "$DST/icons/xfce-theme" "$DST/icons/kde-theme"
 
 # Link default-theme icons into other themes if missing
 shopt -s nullglob
-for f in "$SRC"/icons/default-theme/*.png "$SRC"/icons/apps/*.png; do
+for f in "$SRC"/icons/default-theme/*.png "$SRC"/icons/apps/48x48/apps/*.png; do
   [ -f "$f" ] || continue
   bn=$(basename "$f")
   for th in gnome-theme xfce-theme kde-theme; do
