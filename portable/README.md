@@ -47,9 +47,10 @@ The current program supports custom scripts and configurable icon paths; the
 `linuxdeploy` bundles most application libraries, including FOX, image and
 archive libraries. Core system libraries and interfaces such as glibc, the C++
 runtime, X11, font handling, and graphics drivers remain host-provided. The
-bundle is now built using glibc 2.36, but still cannot guarantee compatibility
-with Linux systems older than Debian 12 or with every graphics stack. Test the
-folder on the target systems before relying on it.
+generic GLVND OpenGL dispatch libraries are bundled, while graphics drivers are
+loaded from the host. The bundle is built using glibc 2.36, but still cannot
+guarantee compatibility with Linux systems older than Debian 12 or with every
+graphics stack. Test the folder on the target systems before relying on it.
 
 The first build is not yet an AppImage; it creates the relocatable directory
 so its isolation can be tested before adding the AppImage packaging step.

@@ -16,6 +16,7 @@ RUN apt-get update \
         libfreetype6-dev \
         libfox-1.6-dev \
         libnotify-dev \
+        libopengl0 \
         libpng-dev \
         libpolkit-agent-1-dev \
         libstartup-notification0-dev \

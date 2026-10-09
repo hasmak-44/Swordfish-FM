@@ -66,6 +66,18 @@ fi
 deploy_args+=(--desktop-file "$desktop_file")
 "$linuxdeploy" "${deploy_args[@]}"
 
+# Bundle the generic GLVND dispatch libraries, but leave graphics drivers to
+# the host so OpenGL continues to use the target system's driver stack.
+mkdir -p "$output_dir/usr/lib"
+for library in libOpenGL.so.0 libGLdispatch.so.0; do
+    library_path=$(ldconfig -p | awk -v name="$library" '$1 == name { print $NF; exit }')
+    if [ -z "$library_path" ] || [ ! -f "$library_path" ]; then
+        printf 'Required OpenGL runtime library is unavailable: %s\n' "$library" >&2
+        exit 1
+    fi
+    install -m 755 "$library_path" "$output_dir/usr/lib/$library"
+done
+
 install -m 755 portable/AppRun "$output_dir/AppRun"
 install -m 644 portable/README.md "$output_dir/README.md"
 mkdir -p "$output_dir/usr/share/doc/swordfish"

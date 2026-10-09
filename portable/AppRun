@@ -27,7 +27,7 @@ if [ ! -w "$data_root" ]; then
 fi
 
 export SWORDFISH_PORTABLE=1
-export SWORDFISH_PORTABLE_DATA=$data_root
+export SWORDFISH_PORTABLE_DATA="$data_root"
 export XDG_CONFIG_HOME="$data_root/config"
 export XDG_DATA_HOME="$data_root/data"
 export XDG_CACHE_HOME="$data_root/cache"
@@ -38,7 +38,7 @@ library_path="$app_root/usr/lib:$app_root/usr/lib64:$app_root/usr/lib/x86_64-lin
 if [ -n "${LD_LIBRARY_PATH:-}" ]; then
     library_path="$library_path:$LD_LIBRARY_PATH"
 fi
-export LD_LIBRARY_PATH=$library_path
+export LD_LIBRARY_PATH="$library_path"
 
 program=swordfish
 case "$(basename -- "$0")" in
