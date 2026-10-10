@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/time.h>
+#include <mntent.h>
 
 #include <fx.h>
 #include <fxkeys.h>
@@ -177,6 +178,8 @@ FXDEFMAP(FilePanel) FilePanelMap[] =
 #if defined(linux)
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_MOUNT, FilePanel::onCmdMount),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_UMOUNT, FilePanel::onCmdMount),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_ARCHIVE_OPEN, FilePanel::onCmdArchiveOpen),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_ARCHIVE_CLOSE, FilePanel::onCmdArchiveClose),
     FXMAPFUNC(SEL_UPDATE, FilePanel::ID_MOUNT, FilePanel::onUpdMount),
     FXMAPFUNC(SEL_UPDATE, FilePanel::ID_UMOUNT, FilePanel::onUpdUnmount),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_PKG_QUERY, FilePanel::onCmdPkgQuery),
@@ -188,6 +191,112 @@ FXDEFMAP(FilePanel) FilePanelMap[] =
 
 
 // Object implementation
+#if defined(linux)
+// Archive formats that archivemount can open
+static FXbool archiveMountable(const FXString& name)
+{
+    FXString ext1 = name.rafter('.', 1).lower();
+    FXString ext2 = name.rafter('.', 2).lower();
+    if (ext2.left(4) == "tar.")
+    {
+        return true;
+    }
+    static const char* exts[] = { "tar", "tgz", "tbz", "tbz2", "txz", "tzst", "taz", "zip", "7z", "rar", "iso",
+                                  "cpio", "lzh", NULL };
+    for (int i = 0; exts[i]; i++)
+    {
+        if (ext1 == exts[i])
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+// Look for a program in the host PATH (the portable launcher adds its own folder first)
+static FXString archiveFindProgram(const char* program)
+{
+    const char* hostpath = getenv("SWORDFISH_HOST_PATH");
+    const char* envpath = hostpath ? hostpath : getenv("PATH");
+    FXString paths = envpath ? envpath : "/usr/bin:/bin";
+    for (int i = 0; i < paths.contains(':') + 1; i++)
+    {
+        FXString file = paths.section(':', i) + "/" + program;
+        if (!paths.section(':', i).empty() && xf_isreadexecutable(file) && !xf_isdirectory(file))
+        {
+            return file;
+        }
+    }
+    return FXString::null;
+}
+
+
+// Candidate mount point folders for an archive (the script naming first, then the full-extension one)
+static void archiveMountPoints(const FXString& archive, FXString& first, FXString& second)
+{
+    FXString ext2 = archive.rafter('.', 2).lower();
+    first = archive.rbefore('.', 1) + "_archive";
+    second = (ext2.left(4) == "tar.") ? archive.rbefore('.', 2) + "_archive" : first;
+}
+
+
+// Is this folder a mounted archive?
+static FXbool archiveIsMount(const FXString& dir)
+{
+    FXbool found = false;
+    FILE* mtab = setmntent(MTAB_PATH, "r");
+    if (mtab)
+    {
+        struct mntent* mnt;
+        while ((mnt = getmntent(mtab)))
+        {
+            if (strcmp(mnt->mnt_type, "fuse.archivemount") == 0 && dir == mnt->mnt_dir)
+            {
+                found = true;
+                break;
+            }
+        }
+        endmntent(mtab);
+    }
+    return found;
+}
+
+
+// Return the folder where this archive is currently mounted, or an empty string
+static FXString archiveMountedAt(const FXString& archive)
+{
+    FXString first, second;
+    archiveMountPoints(archive, first, second);
+    if (archiveIsMount(first))
+    {
+        return first;
+    }
+    if (archiveIsMount(second))
+    {
+        return second;
+    }
+    return FXString::null;
+}
+
+
+// Prefix that lets host programs run without the portable bundle libraries
+static FXString archiveHostEnv()
+{
+    if (!getenv("SWORDFISH_PORTABLE"))
+    {
+        return FXString::null;
+    }
+    const char* hostlib = getenv("SWORDFISH_HOST_LD_LIBRARY_PATH");
+    if (hostlib && *hostlib)
+    {
+        return "env LD_LIBRARY_PATH=" + xf_quote(FXString(hostlib)) + " ";
+    }
+    return "env -u LD_LIBRARY_PATH ";
+}
+#endif
+
+
 FXIMPLEMENT(FilePanel, FXVerticalFrame, FilePanelMap, ARRAYNUMBER(FilePanelMap))
 
 
@@ -5000,7 +5109,13 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
 
 #if defined(linux)
         FXString name = current->list->getItemPathname(itm);
-        if ((num == 1) && (fsdevices->find(name.text()) || mtdevices->find(name.text())))
+        if ((num == 1) && archiveIsMount(name))
+        {
+            new FXMenuCommand(menu, _("Close Archive Folder (save changes)"), miniunmounticon, current,
+                              FilePanel::ID_ARCHIVE_CLOSE);
+            new FXMenuSeparator(menu);
+        }
+        else if ((num == 1) && (fsdevices->find(name.text()) || mtdevices->find(name.text())))
         {
             new FXMenuCommand(menu, _("&Mount"), minimounticon, current, FilePanel::ID_MOUNT);
             new FXMenuCommand(menu, _("Unmount"), miniunmounticon, current, FilePanel::ID_UMOUNT);
@@ -5066,6 +5181,23 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
                 new FXMenuCommand(menu, _("Un&install"), minipackageicon, current, ID_PKG_UNINSTALL);
             }
 #endif
+#if defined(linux)
+            // Open the archive as a folder, or close it if it is already open
+            if (ar && (num == 1) && archiveMountable(name) && !archiveFindProgram("archivemount").empty())
+            {
+                if (archiveMountedAt(current->list->getItemPathname(itm)).empty())
+                {
+                    new FXMenuCommand(menu, _("Open Archive as &Folder"), minifoldericon, current,
+                                      FilePanel::ID_ARCHIVE_OPEN);
+                }
+                else
+                {
+                    new FXMenuCommand(menu, _("Close Archive Folder (save changes)"), miniunmounticon, current,
+                                      FilePanel::ID_ARCHIVE_CLOSE);
+                }
+            }
+#endif
+
             // Not archive nor package
             if (!ar)
             {
@@ -6149,6 +6281,9 @@ long FilePanel::onCmdRunScript(FXObject* sender, FXSelector sel, void*)
         break;
     }
 
+    // Scripts may mount or create folders asynchronously, so refresh fully for a while
+    current->list->boostRefresh();
+
     // Return to the starting directory
     ret = chdir(startlocation.text());
     if (ret < 0)
@@ -6286,6 +6421,7 @@ long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
 
     // Mount/unmount file system
     f->mount(dir, msgwait, cmd);
+    current->list->boostRefresh();
 
     ret = chdir(startlocation.text());
     if (ret < 0)
@@ -6319,6 +6455,207 @@ long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
     // Force panel refresh
     onCmdRefresh(0, 0, 0);
 
+    return 1;
+}
+
+
+// Open an archive as a folder (needs archivemount)
+long FilePanel::onCmdArchiveOpen(FXObject*, FXSelector, void*)
+{
+    current->list->setFocus();
+
+    FXString archive;
+    for (int u = 0; u < current->list->getNumItems(); u++)
+    {
+        if (current->list->isItemSelected(u))
+        {
+            archive = current->list->getItemPathname(u);
+        }
+    }
+    if (archive.empty() || xf_isdirectory(archive))
+    {
+        return 0;
+    }
+
+    FXString program = archiveFindProgram("archivemount");
+    if (program.empty())
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("The archivemount program is not installed"));
+        return 0;
+    }
+
+    // Already open, just show the folder
+    if (!archiveMountedAt(archive).empty())
+    {
+        current->list->boostRefresh();
+        return 1;
+    }
+
+    FXString unused, mountpoint;
+    archiveMountPoints(archive, unused, mountpoint);
+
+    FXbool created = false;
+    if (xf_existfile(mountpoint))
+    {
+        if (!xf_isdirectory(mountpoint) || !xf_isemptydir(mountpoint))
+        {
+            MessageBox::error(this, BOX_OK, _("Error"), _("Can't open archive, %s already exists"),
+                              mountpoint.text());
+            return 0;
+        }
+    }
+    else
+    {
+        if (mkdir(mountpoint.text(), 0755) < 0)
+        {
+            MessageBox::error(this, BOX_OK, _("Error"), _("Can't create folder %s: %s"), mountpoint.text(),
+                              strerror(errno));
+            return 0;
+        }
+        created = true;
+    }
+
+    FXString cmd = archiveHostEnv() + xf_quote(program);
+    if (access(archive.text(), W_OK) != 0)
+    {
+        cmd += " -o readonly";
+    }
+    cmd += " " + xf_quote(archive) + " " + xf_quote(mountpoint) + " 2>&1";
+
+    int ret = chdir(ROOTDIR);
+    if (ret < 0)
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Can't enter folder %s"), ROOTDIR);
+        if (created)
+        {
+            rmdir(mountpoint.text());
+        }
+        return 0;
+    }
+
+    getApp()->beginWaitCursor();
+    File* f = new File(this, _("Open archive as folder..."), MOUNT);
+    f->create();
+
+    FXString output;
+    int status = -1;
+    f->mount(mountpoint, _("Please wait while opening archive:"), cmd, &output, &status);
+    delete f;
+
+    ret = chdir(startlocation.text());
+    getApp()->endWaitCursor();
+
+    if (status != 0 || !archiveIsMount(mountpoint))
+    {
+        if (created)
+        {
+            rmdir(mountpoint.text());
+        }
+        MessageBox::error(this, BOX_OK, _("Error"), _("Can't open archive %s: %s"), archive.text(),
+                          output.empty() ? _("unknown error") : output.trim().text());
+    }
+    else
+    {
+        // Show and select the new folder
+        current->list->boostRefresh();
+    }
+
+    onCmdRefresh(0, 0, 0);
+    return 1;
+}
+
+
+// Close an archive folder, saving any changes to the archive
+long FilePanel::onCmdArchiveClose(FXObject*, FXSelector, void*)
+{
+    current->list->setFocus();
+
+    FXString target;
+    for (int u = 0; u < current->list->getNumItems(); u++)
+    {
+        if (current->list->isItemSelected(u))
+        {
+            target = current->list->getItemPathname(u);
+        }
+    }
+    if (target.empty())
+    {
+        return 0;
+    }
+
+    FXString mountpoint = archiveIsMount(target) ? target : archiveMountedAt(target);
+    if (mountpoint.empty())
+    {
+        return 0;
+    }
+
+    // Move every view out of the folder, otherwise it is busy and can't be unmounted
+    FXString parent = FXPath::directory(mountpoint);
+    FXString prefix = mountpoint + "/";
+    XFileExplorer* explorer = (XFileExplorer*)mainWindow;
+    FilePanel* panels[2] = { explorer->getLeftPanel(), explorer->getRightPanel() };
+    for (int i = 0; i < 2; i++)
+    {
+        if (panels[i])
+        {
+            FXString dir = panels[i]->list->getDirectory();
+            if (dir == mountpoint || dir.left(prefix.length()) == prefix)
+            {
+                panels[i]->setDirectory(parent);
+                panels[i]->updatePath();
+            }
+        }
+    }
+    FXString dirpaneldir = dirpanel->getDirectory();
+    if (dirpaneldir == mountpoint || dirpaneldir.left(prefix.length()) == prefix)
+    {
+        dirpanel->setDirectory(parent, true);
+    }
+
+    FXString program = archiveFindProgram("fusermount");
+    if (program.empty())
+    {
+        program = archiveFindProgram("fusermount3");
+    }
+    if (program.empty())
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("The fusermount program is not installed"));
+        return 0;
+    }
+    FXString cmd = archiveHostEnv() + xf_quote(program) + " -u " + xf_quote(mountpoint) + " 2>&1";
+
+    int ret = chdir(ROOTDIR);
+    if (ret < 0)
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Can't enter folder %s"), ROOTDIR);
+        return 0;
+    }
+
+    getApp()->beginWaitCursor();
+    File* f = new File(this, _("Close archive folder..."), UNMOUNT);
+    f->create();
+
+    FXString output;
+    int status = -1;
+    f->mount(mountpoint, _("Saving archive, please wait:"), cmd, &output, &status);
+    delete f;
+
+    ret = chdir(startlocation.text());
+    getApp()->endWaitCursor();
+
+    if (status != 0)
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Can't close archive folder %s: %s"), mountpoint.text(),
+                          output.empty() ? _("unknown error") : output.trim().text());
+    }
+    else if (mountpoint.right(8) == "_archive")
+    {
+        // Remove the empty mount folder created when the archive was opened
+        rmdir(mountpoint.text());
+    }
+
+    current->list->boostRefresh(5);
+    onCmdRefresh(0, 0, 0);
     return 1;
 }
 

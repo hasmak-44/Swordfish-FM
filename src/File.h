@@ -163,7 +163,7 @@ public:
     int archive(const FXString, const FXString);
 
 #if defined(linux)
-    int mount(const FXString, const FXString, const FXString);
+    int mount(const FXString, const FXString, const FXString, FXString* output = NULL, int* status = NULL);
     int pkgInstall(const FXString, const FXString);
     int pkgUninstall(const FXString, const FXString);
 

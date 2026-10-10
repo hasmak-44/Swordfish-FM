@@ -157,6 +157,8 @@ public:
 #if defined(linux)
         ID_MOUNT,
         ID_UMOUNT,
+        ID_ARCHIVE_OPEN,
+        ID_ARCHIVE_CLOSE,
         ID_PKG_QUERY,
         ID_PKG_INSTALL,
         ID_PKG_UNINSTALL,
@@ -228,6 +230,8 @@ public:
 
 #if defined(linux)
     long onCmdMount(FXObject*, FXSelector, void*);
+    long onCmdArchiveOpen(FXObject*, FXSelector, void*);
+    long onCmdArchiveClose(FXObject*, FXSelector, void*);
     long onUpdMount(FXObject*, FXSelector, void*);
     long onUpdUnmount(FXObject*, FXSelector, void*);
     long onCmdPkgQuery(FXObject*, FXSelector, void*);

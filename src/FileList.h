@@ -1,6 +1,8 @@
 #ifndef FILELIST_H
 #define FILELIST_H
 
+#include <set>
+#include <string>
 #include "xfedefs.h"
 #include "StringList.h"
 #include "IconList.h"
@@ -140,6 +142,10 @@ protected:
     FXuint matchmode = 0;                               // File wildcard match mode
     FXTime timestamp = 0;                               // Time when last refreshed
     FXuint counter = 0;                                 // Refresh counter
+    FXuint boostcount = 0;                              // Remaining seconds of full rescans after a mount or script
+    std::set<std::string> knownnames;                   // Names present when a boosted refresh started
+    FXString boostname;                                 // Name of the new item being tracked
+    FXString boostdir;                                  // Directory watched for new items
     FXbool allowrefresh = false;                        // Allow or disallow periodic refresh
     FXbool displaythumbnails = false;                   // Display thumbnails
     FXString trashfileslocation;                        // Location of the trash files directory
@@ -189,6 +195,7 @@ private:
 public:
     long onCmdRefresh(FXObject*, FXSelector, void*);
     long onCmdRefreshTimer(FXObject*, FXSelector, void*);
+    void boostRefresh(FXuint seconds = 30);
     long onOpenTimer(FXObject*, FXSelector, void*);
     long onDNDEnter(FXObject*, FXSelector, void*);
     long onDNDLeave(FXObject*, FXSelector, void*);

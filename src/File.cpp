@@ -7,6 +7,7 @@
 #include <utime.h>
 #if defined(linux)
 #include <sys/statfs.h>
+#include <sys/wait.h>
 #endif
 
 // For Sun compatibility
@@ -2440,7 +2441,7 @@ FXString File::sourcesize(const FXString src, FXulong* totalsize, const FXbool u
 
 
 #if defined(linux)
-int File::mount(const FXString dir, const FXString msg, const FXString cmd)
+int File::mount(const FXString dir, const FXString msg, const FXString cmd, FXString* output, int* status)
 {
     FXbool mount_messages = getApp()->reg().readUnsignedEntry("OPTIONS", "mount_messages", true);
 
@@ -2514,6 +2515,17 @@ int File::mount(const FXString dir, const FXString msg, const FXString cmd)
     {
         MessageBox::error(this, BOX_OK, _("Error"), "%s", buf.text());
         return -1;
+    }
+
+    // Caller wants the command result and handles messages itself
+    if (output)
+    {
+        *output = buf;
+        if (status)
+        {
+            *status = WIFEXITED(exit_status) ? WEXITSTATUS(exit_status) : -1;
+        }
+        return 1;
     }
 
     // Success message

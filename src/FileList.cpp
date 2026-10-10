@@ -8,6 +8,10 @@
 
 #include "AppLogger.h"
 
+#if defined(linux)
+#include <sys/statfs.h>
+#endif
+
 #include <fx.h>
 #include <fxkeys.h>
 #include <FXPNGIcon.h>
@@ -4097,6 +4101,20 @@ void FileList::setAllowRefresh(const FXbool allow)
 }
 
 
+// Rescan quickly for a while and select the first new item that appears (e.g. a folder created by a script)
+void FileList::boostRefresh(FXuint seconds)
+{
+    boostcount = seconds;
+    boostdir = directory;
+    boostname = "";
+    knownnames.clear();
+    for (int i = 0; i < getNumItems(); i++)
+    {
+        knownnames.insert(getItemFilename(i).text());
+    }
+}
+
+
 // Refresh; don't update if user is interacting with the list
 long FileList::onCmdRefreshTimer(FXObject*, FXSelector, void*)
 {
@@ -4109,8 +4127,54 @@ long FileList::onCmdRefreshTimer(FXObject*, FXSelector, void*)
     // Don't refresh if not allowed
     if (flags & FLAG_UPDATE && allowrefresh)
     {
-        scan(false);
-        counter = (counter + 1) % REFRESH_FREQUENCY;
+        if (boostcount > 0 && boostdir == directory)
+        {
+            // A mount changes a folder without changing its parent date, so rescan fully for a while
+            boostcount--;
+            listItems(true);
+            sortItems();
+
+            // Select the new item (ignoring entries that are not ready yet)
+            int found = -1;
+            if (!boostname.empty())
+            {
+                found = findItem(boostname);
+            }
+            else
+            {
+                for (int i = 0; i < getNumItems(); i++)
+                {
+                    FXString n = getItemFilename(i);
+                    if (!n.empty() && knownnames.find(n.text()) == knownnames.end())
+                    {
+                        boostname = n;
+                        found = i;
+                        break;
+                    }
+                }
+            }
+            if (found >= 0)
+            {
+                killSelection(true);
+                setCurrentItem(found, true);
+                selectItem(found, true);
+                makeItemVisible(found);
+                if (boostcount > 3)
+                {
+                    boostcount = 3;
+                }
+            }
+            if (boostcount == 0)
+            {
+                boostname = "";
+            }
+        }
+        else
+        {
+            boostcount = 0;
+            scan(false);
+            counter = (counter + 1) % REFRESH_FREQUENCY;
+        }
     }
 
     // Restart timer
@@ -4562,7 +4626,16 @@ void FileList::scan(FXbool force)
             FXTime newdate = (FXTime)FXMAX(info.st_mtime, info.st_ctime);
 
             // Forced, directory date was changed, or failed to get proper date or counter expired
-            if (force || (timestamp != newdate) || (counter == 0))
+            // FUSE mounts (archivemount, sshfs...) often don't update the folder date when contents change
+            FXbool fusedir = false;
+#if defined(linux)
+            struct statfs fsinfo;
+            if (statfs(directory.text(), &fsinfo) == 0 && fsinfo.f_type == 0x65735546)
+            {
+                fusedir = (counter % 3 == 0);
+            }
+#endif
+            if (force || (timestamp != newdate) || (counter == 0) || fusedir)
             {
                 // And do the refresh
 #if defined(linux)
@@ -6020,6 +6093,12 @@ fnd:
                         {
                             item->setBigIcon(bignetdriveicon);
                             item->setMiniIcon(mininetdriveicon);
+                        }
+                        else if (xf_strequal(mtdevices->find(pathname.text()), "fuse.archivemount"))
+                        {
+                            filetype = _("Archive Folder");
+                            item->setBigIcon(bigarchexticon);
+                            item->setMiniIcon(miniarchexticon);
                         }
                         else
                         {
