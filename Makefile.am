@@ -20,6 +20,7 @@ EXTRA_DIST = autogen.sh buildrun installrun install-swordfish-system.sh uninstal
 desktopdir = $(prefix)/share/applications
 desktop_in_files = swordfish.desktop.in swfa.desktop.in swfi.desktop.in swfp.desktop.in swfw.desktop.in
 desktop_DATA = $(desktop_in_files:.desktop.in=.desktop)
+bin_SCRIPTS = swordfish-open
 
 polkit_action_in_in_FILES = org.swordfish.root.policy.in.in
 polkit_action_in_FILES = org.swordfish.root.policy.in

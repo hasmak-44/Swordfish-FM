@@ -251,7 +251,7 @@ XFilePackage::XFilePackage(FXApp* a) : FXMainWindow(a, "Xfp", NULL, NULL,
     new FXMenuCheck(prefsmenu, _("&Toolbar"), toolbar, FXWindow::ID_TOGGLESHOWN);
 
     // Help Menu entries
-    mc = new FXMenuCommand(helpmenu, _("&About X File Package"), NULL, this, ID_ABOUT, 0);
+    mc = new FXMenuCommand(helpmenu, _("&About Swordfish Package"), NULL, this, ID_ABOUT, 0);
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "help", "F1");
     mc->setAccelText(key);
     hotkey = xf_parseaccel(key);
@@ -333,9 +333,9 @@ long XFilePackage::onCmdAbout(FXObject*, FXSelector, void*)
 {
     FXString msg;
 
-    msg.format(_("X File Package Version %s is a simple rpm or deb package manager.\n\n"), VERSION);
+    msg.format(_("Swordfish Package Version %s is a simple rpm or deb package manager.\n\n"), VERSION);
     msg += COPYRIGHT;
-    MessageBox about(this, _("About X File Package"), msg.text(), xfpicon, BOX_OK | DECOR_TITLE | DECOR_BORDER,
+    MessageBox about(this, _("About Swordfish Package"), msg.text(), xfpicon, BOX_OK | DECOR_TITLE | DECOR_BORDER,
                      JUSTIFY_CENTER_X | ICON_BEFORE_TEXT | LAYOUT_CENTER_Y | LAYOUT_LEFT | LAYOUT_FILL_X |
                      LAYOUT_FILL_Y);
     about.execute(PLACEMENT_OWNER);

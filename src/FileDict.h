@@ -8,6 +8,7 @@ struct FileAssoc
 {
     FXString key;                            // Key extension (ex: zip, cpp, ...)
     FXString command;                        // Command to execute
+    FXString originalCommand;                // Stored association before application mode is applied
     FXString extension;                      // Full extension name (ex: ZIP Archive, C++ Source, ...)
     FXString mimetype;                       // Mime type name
     FXIcon* bigicon = NULL;                  // Big normal icon
@@ -124,6 +125,7 @@ private:
     FXApp* app = NULL;                       // Application object
     FXSettings* settings = NULL;             // Settings database where to get bindings
     IconDict* icons = NULL;                  // Icon table
+    FileAssoc systemDefault;
 
 protected:
     FileDict()
@@ -131,6 +133,7 @@ protected:
     }
     virtual void* createData(const void*);
     virtual void deleteData(void*);
+    FileAssoc* systemDefaultBinding();
 
 private:
     FileDict(const FileDict&);

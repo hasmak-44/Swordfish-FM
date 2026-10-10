@@ -30,6 +30,7 @@ RUN apt-get update \
         libxrandr-dev \
         libxrender-dev \
         pkg-config \
+        librsvg2-bin \
         python3 \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*

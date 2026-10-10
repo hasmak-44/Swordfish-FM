@@ -7,6 +7,7 @@
 #include "ComboBox.h"
 #include "DialogBox.h"
 #include "KeyBindings.h"
+#include "SystemIcons.h"
 
 
 // Number of modifiable colors
@@ -63,6 +64,10 @@ private:
     ComboBox* colorsBox = NULL;
     FXList* themesList = NULL;
     FXTextField* iconpath = NULL;
+    FXListBox* iconthemelist = NULL;
+    std::vector<FXString> iconthemepaths;
+    std::vector<SystemTheme> iconthemesystem;
+    std::vector<int> iconthemesysindex;
     FXTextField* txtviewer = NULL;
     FXTextField* txteditor = NULL;
     FXTextField* filecomparator = NULL;
@@ -88,6 +93,9 @@ private:
     FXTextField* sudocmd = NULL;
     FXTextField* sucmd = NULL;
     FXString oldiconpath;
+    FXListBox* languagelist = NULL;
+    std::vector<FXString> languagecodes;
+    FXString oldlanguage;
     FXString oldtxtviewer;
     FXString oldtxteditor;
     FXString oldfilecomparator;
@@ -113,6 +121,12 @@ private:
     FXCheckButton* alwaysshowtabbar = NULL;
     FXCheckButton* restoretabs = NULL;
     FXCheckButton* showpathlink = NULL;
+    FXRadioButton* systemapps = NULL;
+    FXRadioButton* internalapps = NULL;
+    FXRadioButton* customapps = NULL;
+    FXDataTarget programmodetarget;
+    FXuint programmode = PROGRAM_MODE_SYSTEM_DEFAULTS;
+    FXuint oldprogrammode = 0;
 #if defined(linux) && defined(XFE_AUTOMOUNTER)
     FXCheckButton* automountbutton = NULL;
     FXCheckButton* autoopenbutton = NULL;
@@ -271,9 +285,11 @@ public:
         ID_THEME_SAVEAS,
         ID_THEME_RENAME,
         ID_THEME_REMOVE,
+        ID_THEME_EXPORT,
+        ID_THEME_IMPORT,
         ID_NORMALFONT,
         ID_TEXTFONT,
-        ID_BROWSE_ICON_PATH,
+        ID_ICON_THEME,
         ID_TRASH_BYPASS,
         ID_CONFIRM_TRASH,
         ID_CONFIRM_DEL_EMPTYDIR,
@@ -332,7 +348,13 @@ public:
     long onCmdThemeSaveAs(FXObject*, FXSelector, void*);
     long onCmdThemeRename(FXObject*, FXSelector, void*);
     long onCmdThemeRemove(FXObject*, FXSelector, void*);
-    long onCmdBrowsePath(FXObject*, FXSelector, void*);
+    long onCmdThemeExport(FXObject*, FXSelector, void*);
+    long onCmdThemeImport(FXObject*, FXSelector, void*);
+    long onUpdThemeExport(FXObject*, FXSelector, void*);
+    long onCmdIconTheme(FXObject*, FXSelector, void*);
+    void fillIconThemeList();
+    void selectIconTheme();
+    void fillLanguageList();
     long onCmdNormalFont(FXObject*, FXSelector, void*);
     long onCmdTextFont(FXObject*, FXSelector, void*);
     long onUpdTrash(FXObject*, FXSelector, void*);

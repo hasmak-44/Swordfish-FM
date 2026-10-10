@@ -237,7 +237,7 @@ protected:
 
 public:
     XFileExplorer(FXApp* app, vector_FXString URIs, const int pm = -1, const FXbool iconic = false,
-                  const FXbool maximized = false, const char* title = "X File Explorer",
+                  const FXbool maximized = false, const char* title = "Swordfish",
                   FXIcon* bigicon = NULL, FXIcon* miniicon = NULL);
     virtual void create();
 

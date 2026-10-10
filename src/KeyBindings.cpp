@@ -111,7 +111,7 @@ KeyBindingsBox::KeyBindingsBox(FXWindow* win, FXStringDict* glbbindings, FXStrin
     FXGroupBox* groupbox2 = new FXGroupBox(frame2, FXString::null,
                                            LAYOUT_SIDE_TOP | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     new FXLabel(groupbox2,
-                _("These key bindings are specific to the X File Explorer application.\nDouble click on an item to modify the selected key binding..."),
+                _("These key bindings are specific to the Swordfish application.\nDouble click on an item to modify the selected key binding..."),
                 NULL, LAYOUT_LEFT | JUSTIFY_LEFT, 0, 0, 0, 0, 0, 0, 0, 20);
     xfeBindingsList = new IconList(groupbox2, NULL, 0, this, ID_XFE_BINDINGS_LIST,
                                    ICONLIST_STANDARD | HSCROLLER_NEVER | ICONLIST_BROWSESELECT |
@@ -125,7 +125,7 @@ KeyBindingsBox::KeyBindingsBox(FXWindow* win, FXStringDict* glbbindings, FXStrin
     FXGroupBox* groupbox3 = new FXGroupBox(frame3, FXString::null,
                                            LAYOUT_SIDE_TOP | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     new FXLabel(groupbox3,
-                _("These key bindings are specific to the X File Image application.\nDouble click on an item to modify the selected key binding..."),
+                _("These key bindings are specific to the Swordfish Image application.\nDouble click on an item to modify the selected key binding..."),
                 NULL, LAYOUT_LEFT | JUSTIFY_LEFT, 0, 0, 0, 0, 0, 0, 0, 20);
     xfiBindingsList = new IconList(groupbox3, NULL, 0, this, ID_XFI_BINDINGS_LIST,
                                    ICONLIST_STANDARD | HSCROLLER_NEVER | ICONLIST_BROWSESELECT |
@@ -139,7 +139,7 @@ KeyBindingsBox::KeyBindingsBox(FXWindow* win, FXStringDict* glbbindings, FXStrin
     FXGroupBox* groupbox4 = new FXGroupBox(frame4, FXString::null,
                                            LAYOUT_SIDE_TOP | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     new FXLabel(groupbox4,
-                _("These key bindings are specific to the X File Write application.\nDouble click on an item to modify the selected key binding..."),
+                _("These key bindings are specific to the Swordfish Write application.\nDouble click on an item to modify the selected key binding..."),
                 NULL, LAYOUT_LEFT | JUSTIFY_LEFT, 0, 0, 0, 0, 0, 0, 0, 20);
     xfwBindingsList = new IconList(groupbox4, NULL, 0, this, ID_XFW_BINDINGS_LIST,
                                    ICONLIST_STANDARD | HSCROLLER_NEVER | ICONLIST_BROWSESELECT |
@@ -302,7 +302,7 @@ long KeyBindingsBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
 
         // Ask the user if he wants to restart Xfe
         if (BOX_CLICKED_CANCEL != MessageBox::question(this, BOX_OK_CANCEL, _("Restart"),
-                                  _("Key bindings will be changed after restart.\nRestart X File Explorer now?")))
+                                  _("Key bindings will be changed after restart.\nRestart Swordfish now?")))
         {
             mainWindow->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_RESTART), NULL);
         }

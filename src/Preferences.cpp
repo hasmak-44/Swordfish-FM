@@ -6,6 +6,10 @@
 #include <fx.h>
 #include <fxkeys.h>
 
+#include "AppLogger.h"
+#include <dirent.h>
+#include <algorithm>
+
 #include "icons.h"
 #include "xfedefs.h"
 #include "xfeutils.h"
@@ -166,11 +170,14 @@ FXDEFMAP(PreferencesBox) PreferencesMap[] =
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_THEME_SAVEAS, PreferencesBox::onCmdThemeSaveAs),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_THEME_RENAME, PreferencesBox::onCmdThemeRename),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_THEME_REMOVE, PreferencesBox::onCmdThemeRemove),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_THEME_EXPORT, PreferencesBox::onCmdThemeExport),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_THEME_IMPORT, PreferencesBox::onCmdThemeImport),
+    FXMAPFUNC(SEL_UPDATE, PreferencesBox::ID_THEME_EXPORT, PreferencesBox::onUpdThemeExport),
     FXMAPFUNC(SEL_RIGHTBUTTONRELEASE, PreferencesBox::ID_THEME, PreferencesBox::onCmdPopupMenu),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_NORMALFONT, PreferencesBox::onCmdNormalFont),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_TEXTFONT, PreferencesBox::onCmdTextFont),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_THEME, PreferencesBox::onCmdTheme),
-    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_BROWSE_ICON_PATH, PreferencesBox::onCmdBrowsePath),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_ICON_THEME, PreferencesBox::onCmdIconTheme),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_START_HOMEDIR, PreferencesBox::onCmdStartDir),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_START_CURRENTDIR, PreferencesBox::onCmdStartDir),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_START_LASTDIR, PreferencesBox::onCmdStartDir),
@@ -874,6 +881,22 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     // Fifth tab - Programs
     new FXTabItem(tabbook, _("&Programs"), NULL);
     FXVerticalFrame* programs = createPreferencesPage(tabbook);
+    group = new FXGroupBox(programs, _("Application Handling"),
+                           GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    vframe = new FXVerticalFrame(group, FRAME_NONE | LAYOUT_FILL_X);
+    systemapps = new FXRadioButton(vframe, _("Use system default applications for all files") + FXString(" "),
+                                   &programmodetarget, FXDataTarget::ID_OPTION + PROGRAM_MODE_SYSTEM_DEFAULTS);
+    internalapps = new FXRadioButton(vframe, _("Use Swordfish built-in applications where available") + FXString(" "),
+                                    &programmodetarget, FXDataTarget::ID_OPTION + PROGRAM_MODE_INTERNAL);
+    customapps = new FXRadioButton(vframe, _("Customize each program individually") + FXString(" "),
+                                   &programmodetarget, FXDataTarget::ID_OPTION + PROGRAM_MODE_CUSTOM);
+    programmode = getApp()->reg().readUnsignedEntry(
+        "OPTIONS", "program_mode", PROGRAM_MODE_SYSTEM_DEFAULTS);
+    oldprogrammode = programmode;
+    programmodetarget.connect(programmode);
+    systemapps->setCheck(programmode == PROGRAM_MODE_SYSTEM_DEFAULTS);
+    internalapps->setCheck(programmode == PROGRAM_MODE_INTERNAL);
+    customapps->setCheck(programmode == PROGRAM_MODE_CUSTOM);
     group = new FXGroupBox(programs, _("Default Programs"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     matrix = new FXMatrix(group, 3, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
@@ -997,6 +1020,12 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
     }
     themesList->setCurrentItem(0);
 
+    FXHorizontalFrame* themebuttons = new FXHorizontalFrame(vframe, FRAME_NONE | LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 5, 0);
+    new FXButton(themebuttons, _("&Import theme..."), NULL, this, ID_THEME_IMPORT,
+                 FRAME_RAISED | FRAME_THICK | LAYOUT_LEFT, 0, 0, 0, 0, 10, 10, 3, 3);
+    new FXButton(themebuttons, _("&Export theme..."), NULL, this, ID_THEME_EXPORT,
+                 FRAME_RAISED | FRAME_THICK | LAYOUT_LEFT, 0, 0, 0, 0, 10, 10, 3, 3);
+
     FXGroupBox* colors = new FXGroupBox(visual, _("Custom Colors"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     FXMatrix* matrix3 = new FXMatrix(colors, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y,
                                      0, 0, 0, 0, 0);
@@ -1032,16 +1061,23 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
     spindpi->setValue(uidpi);
 
     // Find iconpath from the Xfe registry settings or set it to default
-    FXGroupBox* group2 = new FXGroupBox(visual, _("Icon Theme Path"),
+    FXGroupBox* group2 = new FXGroupBox(visual, _("Icon Theme"),
                                         GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
-    FXMatrix* matrix2 = new FXMatrix(group2, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
-    iconpath = new FXTextField(matrix2, 40, NULL, 0,
-                               TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW | LAYOUT_FILL_X);
-    new FXButton(matrix2, _("\tSelect path..."), minifiledialogicon, this, ID_BROWSE_ICON_PATH,
-                 FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
+    iconthemelist = new FXListBox(group2, this, ID_ICON_THEME, FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X);
+
+    // The selected path is kept in a hidden field used by the apply/cancel logic
+    iconpath = new FXTextField(group2, 1, NULL, 0, TEXTFIELD_NORMAL);
+    iconpath->hide();
     FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/default-theme");
     oldiconpath = xf_realpath(getApp()->reg().readStringEntry("SETTINGS", "iconpath", defaulticonpath.text()));
     iconpath->setText(oldiconpath);
+    fillIconThemeList();
+
+    // Language of the user interface, applied after restart
+    FXGroupBox* langgroup = new FXGroupBox(visual, _("Language"),
+                                           GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    languagelist = new FXListBox(langgroup, NULL, 0, FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X);
+    fillLanguageList();
 
     // Seventh tab - Fonts
     new FXTabItem(tabbook, _("&Fonts"), NULL);
@@ -1124,6 +1160,7 @@ long PreferencesBox::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         getRoot()->getCursorPosition(x, y, state);
 
         new FXMenuCommand(menu, _("&Save As..."), minisaveasicon, this, PreferencesBox::ID_THEME_SAVEAS);
+        new FXMenuCommand(menu, _("&Import theme..."), NULL, this, PreferencesBox::ID_THEME_IMPORT);
 
         menu->create();
         menu->popup(NULL, x, y);
@@ -1143,6 +1180,8 @@ long PreferencesBox::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
 
         new FXMenuCommand(menu, _("Re&name..."), minirenameicon, this, PreferencesBox::ID_THEME_RENAME);
         new FXMenuCommand(menu, _("&Remove"), minideleteicon, this, PreferencesBox::ID_THEME_REMOVE);
+        new FXMenuCommand(menu, _("&Export theme..."), NULL, this, PreferencesBox::ID_THEME_EXPORT);
+        new FXMenuCommand(menu, _("&Import theme..."), NULL, this, PreferencesBox::ID_THEME_IMPORT);
 
         menu->create();
         menu->popup(NULL, x, y);
@@ -1211,6 +1250,227 @@ long PreferencesBox::onCmdThemeSaveAs(FXObject* sender, FXSelector sel, void* pt
         return 0;
     }
 
+    return 1;
+}
+
+
+// Export button is only useful for custom themes
+long PreferencesBox::onUpdThemeExport(FXObject* sender, FXSelector, void*)
+{
+    int index = themesList->getCurrentItem();
+    if (index >= NUM_DEFAULT_THEMES && index < (int)Themes.size())
+    {
+        sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
+    }
+    else
+    {
+        sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_DISABLE), NULL);
+    }
+    return 1;
+}
+
+
+// Names of the colors in an exported theme file, in the order stored in a Theme
+static const char* const themeColorKeys[NUM_COLORS] = {
+    "base", "border", "background", "foreground", "selected_background", "selected_foreground",
+    "list_background", "list_foreground", "highlight", "progress_bar", "attention", "scrollbar"};
+
+
+static FXString themeColorText(FXColor color)
+{
+    return FXString().format("#%02X%02X%02X", FXREDVAL(color), FXGREENVAL(color), FXBLUEVAL(color));
+}
+
+
+static FXbool themeColorParse(const FXString& text, FXColor& color)
+{
+    FXString value = FXString(text).trim();
+    if (value.length() != 7 || value[0] != '#')
+    {
+        return false;
+    }
+    for (int i = 1; i < 7; i++)
+    {
+        if (!isxdigit((unsigned char)value[i]))
+        {
+            return false;
+        }
+    }
+    unsigned int rgb = 0;
+    sscanf(value.text() + 1, "%x", &rgb);
+    color = FXRGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    return true;
+}
+
+
+// Export the selected custom theme to a text file
+long PreferencesBox::onCmdThemeExport(FXObject*, FXSelector, void*)
+{
+    int index = themesList->getCurrentItem();
+    if (index < NUM_DEFAULT_THEMES || index >= (int)Themes.size())
+    {
+        MessageBox::warning(this, BOX_OK, _("Warning"), _("Select a custom theme to export"));
+        return 1;
+    }
+    const Theme& theme = Themes[index];
+
+    FileDialog savedialog(this, _("Export color theme"));
+    const char* patterns[] =
+    {
+        _("Swordfish themes"), "*.swordfish-theme", _("All Files"), "*", NULL
+    };
+    FXString safe = theme.name;
+    for (FXint i = 0; i < safe.length(); i++)
+    {
+        if (safe[i] == '/' || safe[i] == '\\' || safe[i] == ':')
+        {
+            safe[i] = '_';
+        }
+    }
+    savedialog.setPatternList(patterns);
+    savedialog.setSelectMode(SELECT_FILE_ANY);
+    savedialog.setFilename(FXSystem::getHomeDirectory() + PATHSEPSTRING + safe + ".swordfish-theme");
+    if (!savedialog.execute())
+    {
+        return 1;
+    }
+    FXString file = savedialog.getFilename();
+    if (xf_existfile(file) &&
+        BOX_CLICKED_NO == MessageBox::question(this, BOX_YES_NO, _("Overwrite"), _("Overwrite existing file: %s?"), file.text()))
+    {
+        return 1;
+    }
+
+    FILE* fp = fopen(file.text(), "w");
+    if (!fp)
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Cannot write file: %s"), file.text());
+        return 1;
+    }
+    fprintf(fp, "# Swordfish color theme\n");
+    fprintf(fp, "name=%s\n", theme.name.text());
+    fprintf(fp, "tip=%s\n", theme.tip.text());
+    for (int i = 0; i < NUM_COLORS; i++)
+    {
+        fprintf(fp, "%s=%s\n", themeColorKeys[i], themeColorText(theme.color[i]).text());
+    }
+    fclose(fp);
+    appLog(APP_LOG_SETTINGS, "theme-exported", "theme=\"" + theme.name + "\" file=\"" + file + "\"");
+    return 1;
+}
+
+
+// Import a theme from a text file and add it to the custom themes
+long PreferencesBox::onCmdThemeImport(FXObject*, FXSelector, void*)
+{
+    FileDialog browse(this, _("Import color theme"));
+    const char* patterns[] =
+    {
+        _("Swordfish themes"), "*.swordfish-theme", _("All Files"), "*", NULL
+    };
+    browse.setPatternList(patterns);
+    browse.setSelectMode(SELECT_FILE_EXISTING);
+    browse.setFilename(FXSystem::getHomeDirectory() + PATHSEPSTRING);
+    if (!browse.execute())
+    {
+        return 1;
+    }
+    FXString file = browse.getFilename();
+
+    FILE* fp = fopen(file.text(), "r");
+    if (!fp)
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Cannot read file: %s"), file.text());
+        return 1;
+    }
+
+    FXString name, tip;
+    FXColor colors[NUM_COLORS];
+    FXbool have[NUM_COLORS] = {false};
+    char line[1024];
+    while (fgets(line, sizeof(line), fp))
+    {
+        FXString text = FXString(line).trim();
+        if (text.empty() || text[0] == '#' || !text.contains('='))
+        {
+            continue;
+        }
+        FXString key = text.before('=').trim();
+        FXString value = text.after('=').trim();
+        if (key == "name")
+        {
+            name = value;
+        }
+        else if (key == "tip")
+        {
+            tip = value;
+        }
+        else
+        {
+            for (int i = 0; i < NUM_COLORS; i++)
+            {
+                if (key == themeColorKeys[i])
+                {
+                    have[i] = themeColorParse(value, colors[i]);
+                }
+            }
+        }
+    }
+    fclose(fp);
+
+    FXbool valid = !name.empty() && !name.contains(';');
+    for (int i = 0; i < NUM_COLORS; i++)
+    {
+        valid = valid && have[i];
+    }
+    if (!valid)
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("This is not a valid Swordfish theme file: %s"), file.text());
+        return 1;
+    }
+    tip.substitute(';', ',', true);
+    if (tip.empty())
+    {
+        tip = _("Custom theme, right click to rename or remove");
+    }
+
+    // Offer to replace a custom theme with the same name
+    for (FXuint n = 0; n < Themes.size(); n++)
+    {
+        if (Themes[n].name == name)
+        {
+            if (n < NUM_DEFAULT_THEMES)
+            {
+                MessageBox::warning(this, BOX_OK, _("Warning"), _("Theme name already exists, operation cancelled"));
+                return 1;
+            }
+            if (BOX_CLICKED_NO == MessageBox::question(this, BOX_YES_NO, _("Replace theme"),
+                                                       _("A theme named \"%s\" already exists. Replace it?"), name.text()))
+            {
+                return 1;
+            }
+            for (int i = 0; i < NUM_COLORS; i++)
+            {
+                Themes[n].color[i] = colors[i];
+            }
+            Themes[n].tip = tip;
+            themesList->setCurrentItem(n);
+            themesList->selectItem(n);
+            currTheme = Themes[n];
+            appLog(APP_LOG_SETTINGS, "theme-imported", "theme=\"" + name + "\" file=\"" + file + "\"");
+            return 1;
+        }
+    }
+
+    Theme theme = Theme(name.text(), tip.text(), colors[0], colors[1], colors[2], colors[3], colors[4], colors[5],
+                        colors[6], colors[7], colors[8], colors[9], colors[10], colors[11]);
+    Themes.push_back(theme);
+    themesList->appendItem(theme.name);
+    int last = (int)Themes.size() - 1;
+    themesList->setCurrentItem(last);
+    themesList->selectItem(last);
+    currTheme = Themes[last];
+    appLog(APP_LOG_SETTINGS, "theme-imported", "theme=\"" + name + "\" file=\"" + file + "\"");
     return 1;
 }
 
@@ -1308,32 +1568,282 @@ long PreferencesBox::onCmdTheme(FXObject* sender, FXSelector sel, void* ptr)
 }
 
 
-// Browse icons path
-long PreferencesBox::onCmdBrowsePath(FXObject* o, FXSelector s, void* p)
+// Add a theme folder to the list if it contains Swordfish icons
+static void addIconTheme(std::vector<FXString>& paths, const FXString& dir)
 {
-    FileDialog browse(this, _("Select an icon theme folder or an icon file"));
-
-    browse.setSelectMode(SELECT_FILE_MIXED);
-
-    FXString path = iconpath->getText();
-    if (path[0] == '~')
+    FXString real = xf_realpath(dir);
+    if (!xf_isdirectory(real) || !xf_existfile(real + "/bigfolder.png"))
     {
-        path = FXSystem::getHomeDirectory() + path.after('~');
+        return;
     }
-
-    browse.setDirectory(path);
-    if (browse.execute())
+    for (size_t i = 0; i < paths.size(); i++)
     {
-        FXString path = browse.getFilename();
-        if (xf_isfile(path))
+        if (paths[i] == real)
         {
-            iconpath->setText(FXPath::directory(path).text());
-        }
-        else
-        {
-            iconpath->setText(path);
+            return;
         }
     }
+    paths.push_back(real);
+}
+
+
+// Scan a directory for icon theme folders
+static void scanIconThemes(std::vector<FXString>& paths, const FXString& parent)
+{
+    std::vector<FXString> found;
+    DIR* dir = opendir(parent.text());
+    if (dir)
+    {
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != NULL)
+        {
+            if (entry->d_name[0] != '.')
+            {
+                addIconTheme(found, parent + "/" + entry->d_name);
+            }
+        }
+        closedir(dir);
+    }
+    std::sort(found.begin(), found.end());
+    for (size_t i = 0; i < found.size(); i++)
+    {
+        addIconTheme(paths, found[i]);
+    }
+}
+
+
+// Build the list of available icon themes (names only)
+void PreferencesBox::fillIconThemeList()
+{
+    iconthemepaths.clear();
+    iconthemesystem.clear();
+    iconthemesysindex.clear();
+    iconthemelist->clearItems();
+
+    scanIconThemes(iconthemepaths, xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons"));
+    const char* portabledata = getenv("SWORDFISH_PORTABLE_DATA");
+    if (portabledata && *portabledata)
+    {
+        scanIconThemes(iconthemepaths, FXString(portabledata) + "/themes");
+    }
+    scanIconThemes(iconthemepaths, FXPath::directory(systemThemeFolder("x")));
+
+    // Keep a currently configured theme that lives elsewhere
+    addIconTheme(iconthemepaths, oldiconpath);
+
+    std::vector<FXString> names;
+    for (size_t i = 0; i < iconthemepaths.size(); i++)
+    {
+        FXString name = FXPath::name(iconthemepaths[i]);
+        FXString suffix = systemThemeSuffix();
+        if (name.length() > 6 && name.rafter('-') == "theme")
+        {
+            name = name.rbefore('-');
+        }
+        else if (name.length() > suffix.length() && name.right(suffix.length()) == suffix)
+        {
+            name = name.left(name.length() - suffix.length()) + " (system)";
+        }
+        if (name.length() > 0)
+        {
+            name.replace(0, 1, FXString(name.left(1)).upper());
+        }
+        names.push_back(name);
+        iconthemesysindex.push_back(-1);
+    }
+
+    // Installed system themes that have not been converted yet
+    std::vector<SystemTheme> installed;
+    scanSystemThemes(installed);
+    for (size_t i = 0; i < installed.size(); i++)
+    {
+        FXString dest = systemThemeFolder(installed[i].id);
+        if (xf_existfile(dest + "/bigfolder.png"))
+        {
+            continue;
+        }
+        iconthemepaths.push_back(dest);
+        names.push_back(installed[i].name + " (system)");
+        iconthemesystem.push_back(installed[i]);
+        iconthemesysindex.push_back((int)iconthemesystem.size() - 1);
+    }
+
+    for (size_t i = 0; i < names.size(); i++)
+    {
+        iconthemelist->appendItem(names[i]);
+    }
+    iconthemelist->setNumVisible(FXMIN((int)iconthemepaths.size(), 10));
+    selectIconTheme();
+}
+
+
+// Language name written in the language itself
+static FXString languageName(const FXString& code)
+{
+    static const char* const names[][2] = {
+        {"bs", "Bosanski"}, {"ca", "Català"}, {"cs", "Čeština"}, {"da", "Dansk"}, {"de", "Deutsch"},
+        {"el", "Ελληνικά"}, {"es", "Español"}, {"es_AR", "Español (Argentina)"}, {"es_CO", "Español (Colombia)"},
+        {"fi", "Suomi"}, {"fr", "Français"}, {"hu", "Magyar"}, {"it", "Italiano"}, {"ja", "日本語"},
+        {"ka", "ქართული"}, {"nl", "Nederlands"}, {"no", "Norsk"}, {"pl", "Polski"},
+        {"pt_BR", "Português (Brasil)"}, {"pt_PT", "Português (Portugal)"}, {"ru", "Русский"},
+        {"sv", "Svenska"}, {"tr", "Türkçe"}, {"zh_CN", "中文 (简体)"}, {"zh_TW", "中文 (繁體)"}};
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+    {
+        if (code == names[i][0])
+        {
+            return names[i][1];
+        }
+    }
+    return code;
+}
+
+
+// Build the list of languages found in the translations folder
+void PreferencesBox::fillLanguageList()
+{
+    languagecodes.clear();
+    languagelist->clearItems();
+
+    languagecodes.push_back(FXString());
+    languagelist->appendItem(_("System default"));
+    languagecodes.push_back("en");
+    languagelist->appendItem("English");
+
+    std::vector<FXString> found;
+    FXString localedir = xf_localedir();
+    DIR* dir = localedir.empty() ? NULL : opendir(localedir.text());
+    if (dir)
+    {
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != NULL)
+        {
+            if (entry->d_name[0] != '.' && FXString(entry->d_name) != "en" &&
+                xf_existfile(localedir + "/" + entry->d_name + "/LC_MESSAGES/" PACKAGE ".mo"))
+            {
+                found.push_back(entry->d_name);
+            }
+        }
+        closedir(dir);
+    }
+    std::sort(found.begin(), found.end());
+    for (size_t i = 0; i < found.size(); i++)
+    {
+        languagecodes.push_back(found[i]);
+        languagelist->appendItem(languageName(found[i]));
+    }
+
+    oldlanguage = xf_readlanguage();
+    int current = 0;
+    for (size_t i = 0; i < languagecodes.size(); i++)
+    {
+        if (languagecodes[i] == oldlanguage)
+        {
+            current = (int)i;
+        }
+    }
+    languagelist->setNumVisible(FXMIN((int)languagecodes.size(), 12));
+    languagelist->setCurrentItem(current);
+}
+
+
+// Select the list entry matching the current icon path
+void PreferencesBox::selectIconTheme()
+{
+    FXString current = xf_realpath(iconpath->getText());
+    for (size_t i = 0; i < iconthemepaths.size(); i++)
+    {
+        if (iconthemepaths[i] == current)
+        {
+            iconthemelist->setCurrentItem((int)i);
+            return;
+        }
+    }
+}
+
+
+// Icon theme chosen from the list
+struct IconConvertProgress
+{
+    FXApp* app;
+    FXDialogBox* dialog;
+    FXProgressBar* bar;
+    FXLabel* eta;
+    FXlong start;
+};
+
+
+static void iconConvertProgress(int done, int total, void* data)
+{
+    IconConvertProgress* progress = (IconConvertProgress*)data;
+    progress->bar->setTotal(total);
+    progress->bar->setProgress(done);
+    if (done > 0 && done < total)
+    {
+        double elapsed = (double)(FXThread::time() - progress->start) / 1000000000.0;
+        int remaining = (int)(elapsed * (total - done) / done + 0.5);
+        progress->eta->setText(FXString().format(_("Time remaining: %d s"), remaining));
+    }
+    else if (done >= total)
+    {
+        progress->eta->setText(_("Time remaining: 0 s"));
+    }
+    progress->dialog->layout();
+    progress->dialog->repaint();
+    progress->app->runWhileEvents();
+}
+
+
+long PreferencesBox::onCmdIconTheme(FXObject*, FXSelector, void*)
+{
+    int index = iconthemelist->getCurrentItem();
+    if (index < 0 || index >= (int)iconthemepaths.size())
+    {
+        return 1;
+    }
+
+    // System theme that must be converted first
+    int sysindex = iconthemesysindex[index];
+    if (sysindex >= 0)
+    {
+        const SystemTheme& theme = iconthemesystem[sysindex];
+        FXString mapfile = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/system-icon-map.txt");
+        FXString defaultdir = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/default-theme");
+
+        FXDialogBox* wait = new FXDialogBox(this, _("Converting icons"), DECOR_TITLE | DECOR_BORDER);
+        FXVerticalFrame* frame = new FXVerticalFrame(wait, LAYOUT_FILL_X | LAYOUT_FILL_Y, 0, 0, 0, 0, 20, 20, 20, 20, 10, 10);
+        new FXLabel(frame, _("This will take a few seconds"), NULL, LAYOUT_CENTER_X);
+        IconConvertProgress progress;
+        progress.app = getApp();
+        progress.dialog = wait;
+        progress.bar = new FXProgressBar(frame, NULL, 0, LAYOUT_FILL_X | FRAME_SUNKEN | FRAME_THICK | PROGRESSBAR_PERCENTAGE, 0, 0, 300, 0);
+        progress.bar->setTotal(100);
+        progress.bar->setProgress(0);
+        progress.eta = new FXLabel(frame, _("Time remaining: calculating..."), NULL, LAYOUT_CENTER_X);
+        progress.start = FXThread::time();
+        wait->create();
+        wait->show(PLACEMENT_OWNER);
+        wait->layout();
+        wait->repaint();
+        getApp()->runWhileEvents();
+        getApp()->beginWaitCursor();
+
+        FXString error;
+        int count = convertSystemTheme(getApp(), theme, mapfile, defaultdir, iconthemepaths[index], error,
+                                       iconConvertProgress, &progress);
+
+        getApp()->endWaitCursor();
+        delete wait;
+
+        if (count < 0)
+        {
+            appLog(APP_LOG_ERRORS, "system-icons-convert-failed", "theme=\"" + theme.id + "\" error=\"" + error + "\"");
+            MessageBox::error(this, BOX_OK, _("Error"), "%s", error.text());
+            selectIconTheme();
+            return 1;
+        }
+        iconthemesysindex[index] = -1;
+    }
+    iconpath->setText(iconthemepaths[index]);
     return 1;
 }
 
@@ -1943,7 +2453,7 @@ long PreferencesBox::onCmdRestoreKeyBindings(FXObject*, FXSelector, void*)
 
     // Ask the user if he wants to restart Xfe
     if (BOX_CLICKED_CANCEL != MessageBox::question(this, BOX_OK_CANCEL, _("Restart"),
-                              _("Key bindings will be changed after restart.\nRestart X File Explorer now?")))
+                              _("Key bindings will be changed after restart.\nRestart Swordfish now?")))
     {
         mainWindow->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_RESTART), NULL);
     }
@@ -1984,6 +2494,16 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     {
         getApp()->reg().writeStringEntry("SETTINGS", "iconpath", iconpath->getText().text());
         getApp()->reg().write();
+        restart_theme = true;
+    }
+
+    // Language has changed
+    int langindex = languagelist->getCurrentItem();
+    if (langindex >= 0 && langindex < (int)languagecodes.size() && languagecodes[langindex] != oldlanguage)
+    {
+        xf_writelanguage(languagecodes[langindex]);
+        appLog(APP_LOG_SETTINGS, "language-changed", "language=\"" + languagecodes[langindex] + "\"");
+        oldlanguage = languagecodes[langindex];
         restart_theme = true;
     }
 
@@ -2454,6 +2974,15 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     getApp()->reg().writeUnsignedEntry("OPTIONS", "automount_open", autoopenbutton->getCheck());
 #endif
     getApp()->reg().writeUnsignedEntry("OPTIONS", "root_mode", rootmode->getCheck());
+    getApp()->reg().writeUnsignedEntry("OPTIONS", "program_mode", programmode);
+    FXString settingDetails;
+    settingDetails.format("program_mode=%u root_mode=%u dirpanel_mode=%u", programmode,
+                          static_cast<FXuint>(rootmode->getCheck()), dirpanel_mode);
+    appLog(APP_LOG_SETTINGS, "preferences-saved", settingDetails);
+    if (programmode != oldprogrammode)
+    {
+        restart_fileopen = true;
+    }
     getApp()->reg().writeStringEntry("OPTIONS", "sudo_cmd", sudocmd->getText().text());
     getApp()->reg().writeStringEntry("OPTIONS", "su_cmd", sucmd->getText().text());
 #ifdef STARTUP_NOTIFICATION
@@ -2720,7 +3249,7 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
         restart_diropen | restart_fileopen | restart_automount)
     {
         if (BOX_CLICKED_CANCEL != MessageBox::question(this, BOX_OK_CANCEL, _("Restart"),
-                                 _("Preferences will be changed after restart.\nRestart X File Explorer now?")))
+                                 _("Preferences will be changed after restart.\nRestart Swordfish now?")))
         {
             // Set restarted flag
             getApp()->reg().writeUnsignedEntry("SETTINGS", "restarted", true);
@@ -2848,6 +3377,14 @@ long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
     themesList->setCurrentItem(themelist_prev);
     currTheme = currTheme_prev;
     iconpath->setText(oldiconpath);
+    selectIconTheme();
+    for (size_t i = 0; i < languagecodes.size(); i++)
+    {
+        if (languagecodes[i] == oldlanguage)
+        {
+            languagelist->setCurrentItem((int)i);
+        }
+    }
     spindpi->setValue(uidpi_prev);
     uidpi = uidpi_prev;
 

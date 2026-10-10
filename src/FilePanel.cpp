@@ -1,6 +1,8 @@
 #include "config.h"
 #include "i18n.h"
 
+#include "AppLogger.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,6 +73,19 @@ extern int FilterNum;
 extern FXStringDict* fsdevices;
 extern FXStringDict* mtdevices;
 #endif
+
+static void logFileOpen(const char* event, FXApp* app, const FXString& pathname, const FileAssoc* association,
+                        const FXString& selectedProgram, const FXString& launchCommand, FXbool programExists)
+{
+    FXuint mode = app->reg().readUnsignedEntry("OPTIONS", "program_mode", PROGRAM_MODE_SYSTEM_DEFAULTS);
+    FXString details;
+    details.format("mode=%u file=\"%s\" original=\"%s\" association=\"%s\" selected=\"%s\" launch=\"%s\" executable_found=%s",
+                   mode, pathname.text(),
+            association ? association->originalCommand.text() : "",
+            association ? association->command.text() : "", selectedProgram.text(),
+            launchCommand.text(), programExists ? "yes" : "no");
+    appLog(APP_LOG_FILE_OPERATIONS, FXString(event), details);
+}
 
 
 // Map
@@ -1310,6 +1325,7 @@ long FilePanel::onCmdItemDoubleClicked(FXObject* sender, FXSelector sel, void* p
                 // Does not have access
                 if (!xf_isreadexecutable(pathname))
                 {
+                    appLog(APP_LOG_ERRORS, "directory-open-denied", FXString("path=\"") + pathname + "\"");
                     MessageBox::error(getApp(), BOX_OK_SU, _("Error"), _(" Permission to: %s denied."),
                                       pathname.text());
                     getApp()->endWaitCursor();
@@ -1321,6 +1337,8 @@ long FilePanel::onCmdItemDoubleClicked(FXObject* sender, FXSelector sel, void* p
                 }
                 else
                 {
+                    appLog(APP_LOG_FILE_OPERATIONS, "directory-opened",
+                           FXString("path=\"") + pathname + "\"");
                     list->setDirectory(pathname);
                 }
 
@@ -1395,9 +1413,12 @@ long FilePanel::onCmdItemDoubleClicked(FXObject* sender, FXSelector sel, void* p
                         }
 
                         // If command exists, run it
-                        if (xf_existcommand(cmdname))
+                        FXbool commandExists = xf_existcommand(cmdname);
+                        cmd = cmdname + " " + xf_quote(pathname);
+                        logFileOpen("double-click-associated", getApp(), pathname, association, cmdname, cmd,
+                                    commandExists);
+                        if (commandExists)
                         {
-                            cmd = cmdname + " " + xf_quote(pathname);
 #ifdef STARTUP_NOTIFICATION
                             runcmd(cmd, cmdname, current->list->getDirectory(), startlocation, usesn, snexcepts);
 #else
@@ -1407,6 +1428,9 @@ long FilePanel::onCmdItemDoubleClicked(FXObject* sender, FXSelector sel, void* p
                         // If command does not exist, call the "Open with..." dialog
                         else
                         {
+                            FXString details;
+                            details.format("program=\"%s\" file=\"%s\"", cmdname.text(), pathname.text());
+                            appLog(APP_LOG_ERRORS, "associated-program-not-found", details);
                             getApp()->endWaitCursor();
                             MessageBox::warning(this, BOX_OK, _("Warning"), _("Program %s not found"), cmdname.text());
                             current->handle(this, FXSEL(SEL_COMMAND, ID_OPEN_WITH), NULL);
@@ -1415,11 +1439,14 @@ long FilePanel::onCmdItemDoubleClicked(FXObject* sender, FXSelector sel, void* p
                     // Or execute the file
                     else if (list->isItemExecutable(item))
                     {
+                        logFileOpen("double-click-executable", getApp(), pathname, NULL, pathname,
+                                    xf_quote(pathname), true);
                         execFile(pathname);
                     }
                     // Or call the "Open with..." dialog
                     else
                     {
+                        logFileOpen("double-click-open-with", getApp(), pathname, NULL, "", "", false);
                         getApp()->endWaitCursor();
                         current->handle(this, FXSEL(SEL_COMMAND, ID_OPEN_WITH), NULL);
                     }
@@ -1427,11 +1454,14 @@ long FilePanel::onCmdItemDoubleClicked(FXObject* sender, FXSelector sel, void* p
                 // If no association but executable
                 else if (list->isItemExecutable(item))
                 {
+                    logFileOpen("double-click-executable", getApp(), pathname, NULL, pathname,
+                                xf_quote(pathname), true);
                     execFile(pathname);
                 }
                 // Other cases
                 else
                 {
+                    logFileOpen("double-click-open-with", getApp(), pathname, NULL, "", "", false);
                     getApp()->endWaitCursor();
                     current->handle(this, FXSEL(SEL_COMMAND, ID_OPEN_WITH), NULL);
                 }
@@ -1665,6 +1695,7 @@ long FilePanel::onCmdDirectoryUp(FXObject* sender, FXSelector sel, void* ptr)
     dirpanel->setDirectory(current->list->getDirectory(), true);
     current->updatePath();
     updateLocation();
+    appLog(APP_LOG_FILE_OPERATIONS, "directory-up", current->list->getDirectory());
     return 1;
 }
 
@@ -1677,6 +1708,7 @@ long FilePanel::onCmdGoHome(FXObject* sender, FXSelector sel, void* ptr)
     dirpanel->setDirectory(homedir, true);
     current->updatePath();
     updateLocation();
+    appLog(APP_LOG_FILE_OPERATIONS, "directory-home", homedir);
     return 1;
 }
 
@@ -1689,6 +1721,7 @@ long FilePanel::onCmdGoTrash(FXObject* sender, FXSelector sel, void* ptr)
     dirpanel->setDirectory(trashfileslocation, true);
     current->updatePath();
     updateLocation();
+    appLog(APP_LOG_FILE_OPERATIONS, "directory-trash", trashfileslocation);
     return 1;
 }
 
@@ -2042,6 +2075,11 @@ long FilePanel::onCmdFileMan(FXObject* sender, FXSelector sel, void* ptr)
     {
         targetdir = FXPath::directory(target);
     }
+
+    FXString operationDetails;
+    operationDetails.format("operation=%s item_count=%d source=\"%s\" target=\"%s\"",
+                            command.text(), num, src.text(), target.text());
+    appLog(APP_LOG_FILE_OPERATIONS, "operation-requested", operationDetails);
 
     // Target parent directory doesn't exist
     if (!xf_existfile(targetdir))
@@ -2652,8 +2690,18 @@ long FilePanel::onCmdFileTrash(FXObject*, FXSelector, void*)
     {
         return 0;
     }
+    FXString trashDetails;
+    trashDetails.format("item_count=%d directory=\"%s\"", num, dir.text());
+    appLog(APP_LOG_FILE_OPERATIONS, "trash-requested", trashDetails);
+    for (int u = 0; u < current->list->getNumItems(); u++)
+    {
+        if (current->list->isItemSelected(u))
+        {
+            appLog(APP_LOG_FILE_OPERATIONS, "trash-item", current->list->getItemPathname(u));
+        }
+    }
     // If exist selected files, use them
-    else if (num >= 1)
+    if (num >= 1)
     {
         // Possibly deselect the '..' directory
         if (current->list->isItemSelected(0))
@@ -3131,8 +3179,18 @@ long FilePanel::onCmdFileDelete(FXObject*, FXSelector, void*)
     {
         return 0;
     }
+    FXString deleteDetails;
+    deleteDetails.format("item_count=%d directory=\"%s\"", num, dir.text());
+    appLog(APP_LOG_FILE_OPERATIONS, "permanent-delete-requested", deleteDetails);
+    for (int u = 0; u < current->list->getNumItems(); u++)
+    {
+        if (current->list->isItemSelected(u))
+        {
+            appLog(APP_LOG_FILE_OPERATIONS, "permanent-delete-item", current->list->getItemPathname(u));
+        }
+    }
     // If exist selected files, use them
-    else if (num >= 1)
+    if (num >= 1)
     {
         // Possibly deselect the '..' directory
         if (current->list->isItemSelected(0))
@@ -4413,6 +4471,10 @@ long FilePanel::onCmdOpen(FXObject*, FXSelector, void*)
                 // A command exists
                 if (cmd != "")
                 {
+                    FXString launchCommand = cmd + " " + xf_quote(pathname);
+                    logFileOpen("open-menu-associated", getApp(), pathname, association, cmd, launchCommand,
+                                xf_existcommand(cmd));
+
                     // Check if the command is already in the list
                     FXuint j;
                     FXbool found = false;
@@ -4442,11 +4504,13 @@ long FilePanel::onCmdOpen(FXObject*, FXSelector, void*)
             // Or execute the file
             else if (current->list->isItemExecutable(u))
             {
+                logFileOpen("open-menu-executable", getApp(), pathname, NULL, pathname, xf_quote(pathname), true);
                 execFile(pathname);
             }
             // Or call the "Open with..." dialog
             else
             {
+                logFileOpen("open-menu-open-with", getApp(), pathname, NULL, "", "", false);
                 // One item, call the "Open with..." dialog
                 if (current->list->getNumSelectedItems() == 1)
                 {

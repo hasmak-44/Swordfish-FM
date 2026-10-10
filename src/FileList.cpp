@@ -6,6 +6,8 @@
 #include "config.h"
 #include "i18n.h"
 
+#include "AppLogger.h"
+
 #include <fx.h>
 #include <fxkeys.h>
 #include <FXPNGIcon.h>
@@ -4256,6 +4258,7 @@ void FileList::showHiddenFiles(FXbool shown)
     if (opts != options)
     {
         options = opts;
+        appLog(APP_LOG_UI, "hidden-files-changed", FXString("enabled=") + (shown ? "yes" : "no"));
         scan(true);
     }
     setFocus();
@@ -4272,6 +4275,10 @@ FXbool FileList::shownThumbnails() const
 // Change show thumbnails mode
 void FileList::showThumbnails(FXbool display)
 {
+    if (displaythumbnails != display)
+    {
+        appLog(APP_LOG_UI, "thumbnails-changed", FXString("enabled=") + (display ? "yes" : "no"));
+    }
     displaythumbnails = display;
 
     // Refresh to display or hide thumbnails

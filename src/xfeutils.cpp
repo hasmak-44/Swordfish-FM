@@ -1136,19 +1136,122 @@ FXString xf_scriptpath()
 }
 
 
-void xf_bindtextdomain(const FXchar* package, const FXchar* installedir)
+// File holding the language chosen in Preferences (empty or missing means system default)
+FXString xf_languagefile()
+{
+    const char* config = getenv("XDG_CONFIG_HOME");
+    FXString base = (config && *config) ? FXString(config) : FXSystem::getHomeDirectory() + "/.config";
+    return base + "/swordfish/language";
+}
+
+
+// Language code chosen in Preferences, empty for the system default
+FXString xf_readlanguage()
+{
+    FXString language;
+    FILE* fp = fopen(xf_languagefile().text(), "r");
+    if (fp)
+    {
+        char line[128];
+        if (fgets(line, sizeof(line), fp))
+        {
+            language = FXString(line).trim();
+        }
+        fclose(fp);
+    }
+    for (FXint i = 0; i < language.length(); i++)
+    {
+        if (!isalnum((unsigned char)language[i]) && language[i] != '_' && language[i] != '-')
+        {
+            return FXString();
+        }
+    }
+    return language;
+}
+
+
+// Save the language chosen in Preferences, empty for the system default
+void xf_writelanguage(const FXString& language)
+{
+    FXString file = xf_languagefile();
+    if (language.empty())
+    {
+        unlink(file.text());
+        return;
+    }
+    FXString dir = FXPath::directory(file);
+    mkdir(dir.text(), 0755);
+    FILE* fp = fopen(file.text(), "w");
+    if (fp)
+    {
+        fprintf(fp, "%s\n", language.text());
+        fclose(fp);
+    }
+}
+
+
+// Folder containing the translations
+FXString xf_localedir()
 {
     if (getenv("SWORDFISH_PORTABLE"))
     {
         char executable[MAXPATHLEN];
         int length = readlink("/proc/self/exe", executable, MAXPATHLEN);
-        if (length <= 0)
+        if (length > 0)
+        {
+            return FXPath::directory(FXString(executable, length)) + "/../share/locale";
+        }
+        return FXString();
+    }
+    return LOCALEDIR;
+}
+
+
+void xf_bindtextdomain(const FXchar* package, const FXchar* installedir)
+{
+    // Apply the language chosen in Preferences
+    // The app restarts through exec, so remember the original LANGUAGE to undo a previous choice
+    if (!getenv("SWORDFISH_ORIG_LANGUAGE"))
+    {
+        const char* orig = getenv("LANGUAGE");
+        setenv("SWORDFISH_ORIG_LANGUAGE", orig ? orig : "", 1);
+    }
+    FXString language = xf_readlanguage();
+    if (language.empty())
+    {
+        const char* orig = getenv("SWORDFISH_ORIG_LANGUAGE");
+        if (orig && *orig)
+        {
+            setenv("LANGUAGE", orig, 1);
+        }
+        else
+        {
+            unsetenv("LANGUAGE");
+        }
+    }
+    else
+    {
+        setenv("LANGUAGE", language.text(), 1);
+
+        // LANGUAGE is ignored by gettext when the message locale is C, so borrow any installed locale
+        const char* current = setlocale(LC_MESSAGES, NULL);
+        if (!current || strncmp(current, "C", 1) == 0 || strcmp(current, "POSIX") == 0)
+        {
+            if (!setlocale(LC_MESSAGES, "en_US.UTF-8"))
+            {
+                setlocale(LC_MESSAGES, "en_US.utf8");
+            }
+        }
+    }
+
+    if (getenv("SWORDFISH_PORTABLE"))
+    {
+        FXString localedir = xf_localedir();
+        if (localedir.empty())
         {
             fprintf(stderr, "Cannot locate portable Swordfish translations.\n");
             return;
         }
-
-        FXString localedir = FXPath::directory(FXString(executable, length)) + "/../share/locale";
         bindtextdomain(package, localedir.text());
         return;
     }

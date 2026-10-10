@@ -58,6 +58,14 @@ for program in swordfish swfa swfi swfp swfw; do
     deploy_args+=(--executable "$executable")
 done
 
+# SVG converter used to turn system icon themes into Swordfish icons
+rsvg_convert=$(command -v rsvg-convert)
+if [ -z "$rsvg_convert" ]; then
+    printf 'rsvg-convert is required to bundle the icon converter\n' >&2
+    exit 1
+fi
+deploy_args+=(--executable "$rsvg_convert")
+
 desktop_file="$output_dir/usr/share/applications/swordfish.desktop"
 if [ ! -f "$desktop_file" ]; then
     printf 'Expected desktop file is missing: %s\n' "$desktop_file" >&2
@@ -65,6 +73,13 @@ if [ ! -f "$desktop_file" ]; then
 fi
 deploy_args+=(--desktop-file "$desktop_file")
 "$linuxdeploy" "${deploy_args[@]}"
+
+# Keep the original Xfe executable names working for saved settings and
+# file associations, while using the Swordfish names as the packaged programs.
+ln -s swfa "$output_dir/usr/bin/xfa"
+ln -s swfi "$output_dir/usr/bin/xfi"
+ln -s swfp "$output_dir/usr/bin/xfp"
+ln -s swfw "$output_dir/usr/bin/xfw"
 
 # Bundle the generic GLVND dispatch libraries, but leave graphics drivers to
 # the host so OpenGL continues to use the target system's driver stack.

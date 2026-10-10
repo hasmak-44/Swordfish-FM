@@ -263,7 +263,9 @@ FXbool loadAppIcons(FXApp* app, FXuint* iconpathstatus)
         FXString sidecarThemes = FXString(portabledata) + PATHSEPSTRING "themes";
         FXString sidecarIcons = FXString(portabledata) + PATHSEPSTRING "icons";
 
-        if (!pathIsWithin(iconpath, defaulticonpath) &&
+        FXString bundledIcons = FXPath::directory(defaulticonpath);
+
+        if (!pathIsWithin(iconpath, bundledIcons) &&
             !pathIsWithin(iconpath, sidecarThemes) &&
             !pathIsWithin(iconpath, sidecarIcons))
         {

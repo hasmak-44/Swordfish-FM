@@ -904,7 +904,7 @@ XFileImage::XFileImage(FXApp* a, FXbool smoothscroll, FXColor listbackcolor,
     sep2->setSelector(FXRecentFiles::ID_ANYFILES);
 
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "quit", "Ctrl-Q");
-    text = _("&Quit") + TABS(key) + _("Quit Xfi.") + PARS(key);
+    text = _("&Quit") + TABS(key) + _("Quit Swordfish Image.") + PARS(key);
     mc = new FXMenuCommand(filemenu, text, miniquiticon, this, ID_QUIT);
     hotkey = xf_parseaccel(key);
     getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));
@@ -1026,7 +1026,7 @@ XFileImage::XFileImage(FXApp* a, FXbool smoothscroll, FXColor listbackcolor,
 
     // Help Menu entries
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "help", "F1");
-    text = _("&About X File Image") + TABS(key) + _("About X File Image.") + PARS(key);
+    text = _("&About Swordfish Image") + TABS(key) + _("About Swordfish Image.") + PARS(key);
     mc = new FXMenuCommand(helpmenu, text, NULL, this, ID_ABOUT, 0);
     hotkey = xf_parseaccel(key);
     getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));
@@ -1594,9 +1594,9 @@ long XFileImage::onCmdAbout(FXObject*, FXSelector, void*)
 {
     FXString msg;
 
-    msg.format(_("X File Image Version %s is a simple image viewer.\n\n"), VERSION);
+    msg.format(_("Swordfish Image Version %s is a simple image viewer.\n\n"), VERSION);
     msg += COPYRIGHT;
-    MessageBox about(this, _("About X File Image"), msg.text(), xfiicon, BOX_OK | DECOR_TITLE | DECOR_BORDER,
+    MessageBox about(this, _("About Swordfish Image"), msg.text(), xfiicon, BOX_OK | DECOR_TITLE | DECOR_BORDER,
                      JUSTIFY_CENTER_X | ICON_BEFORE_TEXT | LAYOUT_CENTER_Y | LAYOUT_LEFT | LAYOUT_FILL_X |
                      LAYOUT_FILL_Y);
     about.execute(PLACEMENT_OWNER);
@@ -1771,7 +1771,7 @@ long XFileImage::onCmdToggleFileListBefore(FXObject* sender, FXSelector, void*)
     filelistbefore = !filelistbefore;
 
     if (BOX_CLICKED_CANCEL != MessageBox::question(this, BOX_OK_CANCEL, _("Restart"),
-                              _("Change will be taken into account after restart.\nRestart X File Image now?")))
+                              _("Change will be taken into account after restart.\nRestart Swordfish Image now?")))
     {
         this->handle(this, FXSEL(SEL_COMMAND, XFileImage::ID_RESTART), NULL);
     }

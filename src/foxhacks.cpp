@@ -101,10 +101,15 @@ bool FXRegistry::readFromDir(const FXString& dirname, bool mark)
     // Directory is empty?
     if (!dirname.empty())
     {
+        // Load Swordfish defaults before desktop and per-user overrides.
+        if (parseFile(dirname + PATHSEPSTRING XFECONFIGNAME, mark))
+        {
+            ok = true;
+        }
+
         // First try to load desktop registry
         if (parseFile(dirname + PATHSEPSTRING DESKTOP, false))
         {
-            FXString nn = dirname + PATHSEPSTRING DESKTOP;
             ok = true;
         }
 

@@ -262,6 +262,12 @@ enum
 #define SCRIPTPATH    "scripts"
 #endif
 
+#ifndef PROGRAM_MODE_SYSTEM_DEFAULTS
+#define PROGRAM_MODE_SYSTEM_DEFAULTS    0
+#define PROGRAM_MODE_INTERNAL           1
+#define PROGRAM_MODE_CUSTOM             2
+#endif
+
 // Local trashcan directory path
 #ifndef TRASHPATH
 #define TRASHPATH    "Trash"
@@ -330,12 +336,12 @@ enum
 
 // Default text viewer program
 #ifndef DEFAULT_TXTVIEWER
-#define DEFAULT_TXTVIEWER    "xfw -r"
+#define DEFAULT_TXTVIEWER    "swfw -r"
 #endif
 
 // Default text editor program
 #ifndef DEFAULT_TXTEDITOR
-#define DEFAULT_TXTEDITOR    "xfw"
+#define DEFAULT_TXTEDITOR    "swfw"
 #endif
 
 // Default file comparator program
@@ -350,12 +356,12 @@ enum
 
 // Default image viewer program
 #ifndef DEFAULT_IMGVIEWER
-#define DEFAULT_IMGVIEWER    "xfi"
+#define DEFAULT_IMGVIEWER    "swfi"
 #endif
 
 // Default archiver program
 #ifndef DEFAULT_ARCHIVER
-#define DEFAULT_ARCHIVER    "xfa"
+#define DEFAULT_ARCHIVER    "swfa"
 #endif
 
 // Default PDF viewer program

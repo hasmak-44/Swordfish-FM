@@ -4,6 +4,7 @@ bin_PROGRAMS = swordfish swfa swfi swfp swfw
 
 swordfish_SOURCES = ../st/x.c \
               ../st/st.c \
+              AppLogger.cpp \
               icons.cpp \
 			  startupnotification.cpp \
 			  xfeutils.cpp \
@@ -35,6 +36,7 @@ swordfish_SOURCES = ../st/x.c \
 			  PathLinker.cpp \
 			  Places.cpp \
 			  Preferences.cpp \
+			  SystemIcons.cpp \
               Properties.cpp \
 			  RenameDialog.cpp \
 			  SearchPanel.cpp \
@@ -62,6 +64,7 @@ swordfish_LDADD = @LIBINTL@ -lutil
 
 swfa_SOURCES = ../st/x.c \
               ../st/st.c \
+              AppLogger.cpp \
               icons.cpp \
 			  startupnotification.cpp \
 			  xfeutils.cpp \
@@ -100,6 +103,7 @@ swfa_LDADD = @LIBINTL@ -lutil
 
 swfi_SOURCES = ../st/x.c \
               ../st/st.c \
+              AppLogger.cpp \
               icons.cpp \
 			  startupnotification.cpp \
 			  xfeutils.cpp \
@@ -138,6 +142,7 @@ swfi_LDADD = @LIBINTL@ -lutil
 
 swfp_SOURCES = ../st/x.c \
               ../st/st.c \
+              AppLogger.cpp \
               icons.cpp \
 			  startupnotification.cpp \
 			  xfeutils.cpp \
@@ -176,6 +181,7 @@ swfp_LDADD = @LIBINTL@ -lutil
 
 swfw_SOURCES = ../st/x.c \
               ../st/st.c \
+              AppLogger.cpp \
               icons.cpp \
 			  startupnotification.cpp \
 			  xfeutils.cpp \
@@ -240,6 +246,8 @@ EXTRA_DIST =  ../libsn/sn-common.h	\
               ../st/x.c \
 			  ../st/x.h \
 			  xfedefs.h \
+              AppLogger.h \
+              SystemIcons.h \
               help.h \
               icons.h \
 			  startupnotification.h \

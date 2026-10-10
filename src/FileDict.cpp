@@ -93,6 +93,42 @@ const char FileDict::defaultExecBinding[] = "defaultexecbinding";
 const char FileDict::defaultDirBinding[] = "defaultdirbinding";
 const char FileDict::defaultFileBinding[] = "defaultfilebinding";
 
+static FXString internalProgramForAssociation(const FXString& program)
+{
+    if (program == "<txtviewer>")
+    {
+        return DEFAULT_TXTVIEWER;
+    }
+    if (program == "<txteditor>")
+    {
+        return DEFAULT_TXTEDITOR;
+    }
+    if (program == "<imgviewer>")
+    {
+        return DEFAULT_IMGVIEWER;
+    }
+    if (program == "<archiver>")
+    {
+        return DEFAULT_ARCHIVER;
+    }
+
+    return "swordfish-open";
+}
+
+static FXString commandForProgramMode(const FXString& command, FXuint programMode)
+{
+    if (programMode == PROGRAM_MODE_SYSTEM_DEFAULTS)
+    {
+        return "swordfish-open,swordfish-open,swordfish-open";
+    }
+    if (programMode == PROGRAM_MODE_INTERNAL)
+    {
+        return internalProgramForAssociation(command.section(',', 0)) + "," +
+               internalProgramForAssociation(command.section(',', 1)) + "," +
+               internalProgramForAssociation(command.section(',', 2));
+    }
+    return command;
+}
 
 // Object implementation
 FXIMPLEMENT(FileDict, FXDict, NULL, 0)
@@ -224,6 +260,7 @@ void* FileDict::createData(const void* ptr)
     *q = '\0';
 
     // Initialize association data
+    fileassoc->originalCommand = command;
     fileassoc->command = command;
     fileassoc->extension = extension;
     fileassoc->bigicon = NULL;
@@ -308,6 +345,22 @@ FileAssoc* FileDict::remove(const char* ext)
 }
 
 
+FileAssoc* FileDict::systemDefaultBinding()
+{
+    systemDefault.key = defaultFileBinding;
+    systemDefault.command = "swordfish-open,swordfish-open,swordfish-open";
+    systemDefault.extension = _("File");
+    systemDefault.mimetype = "";
+    systemDefault.bigicon = NULL;
+    systemDefault.bigiconopen = NULL;
+    systemDefault.miniicon = NULL;
+    systemDefault.miniiconopen = NULL;
+    systemDefault.dragtype = 0;
+    systemDefault.flags = 0;
+    return &systemDefault;
+}
+
+
 // Find file association using the lower case file extension
 FileAssoc* FileDict::associate(const char* key)
 {
@@ -324,6 +377,9 @@ FileAssoc* FileDict::associate(const char* key)
     if ((record = find(lowkey)) != NULL)
     {
         record->key = lowkey;
+        FXuint programMode =
+            settings->readUnsignedEntry("OPTIONS", "program_mode", PROGRAM_MODE_SYSTEM_DEFAULTS);
+        record->command = commandForProgramMode(record->originalCommand, programMode);
         return record;
     }
 
@@ -335,6 +391,9 @@ FileAssoc* FileDict::associate(const char* key)
     {
         record = (FileAssoc*)FXDict::insert(lowkey, association);
         record->key = lowkey;
+        FXuint programMode =
+            settings->readUnsignedEntry("OPTIONS", "program_mode", PROGRAM_MODE_SYSTEM_DEFAULTS);
+        record->command = commandForProgramMode(record->originalCommand, programMode);
         return record;
     }
 
@@ -361,7 +420,20 @@ FileAssoc* FileDict::findFileBinding(const char* pathname)
 
     if (strlen(filename) == 0)
     {
-        return associate(defaultFileBinding);
+        record = associate(defaultFileBinding);
+        if (record)
+        {
+            return record;
+        }
+
+        FXuint programMode =
+            settings->readUnsignedEntry("OPTIONS", "program_mode", PROGRAM_MODE_SYSTEM_DEFAULTS);
+        if (programMode != PROGRAM_MODE_CUSTOM)
+        {
+            return systemDefaultBinding();
+        }
+
+        return NULL;
     }
 
     record = associate(filename);
@@ -385,7 +457,16 @@ FileAssoc* FileDict::findFileBinding(const char* pathname)
         }
         filename = strchr(filename + 1, '.');
     }
-    return associate(defaultFileBinding);
+
+    record = associate(defaultFileBinding);
+    if (record)
+    {
+        return record;
+    }
+
+    FXuint programMode =
+        settings->readUnsignedEntry("OPTIONS", "program_mode", PROGRAM_MODE_SYSTEM_DEFAULTS);
+    return programMode != PROGRAM_MODE_CUSTOM ? systemDefaultBinding() : NULL;
 }
 
 

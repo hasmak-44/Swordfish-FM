@@ -1,6 +1,8 @@
 #include "config.h"
 #include "i18n.h"
 
+#include "AppLogger.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -1389,6 +1391,8 @@ long DirPanel::onUpdBookmarks(FXObject* sender, FXSelector, void*)
 long DirPanel::onCmdToggleHidden(FXObject*, FXSelector, void*)
 {
     dirlist->showHiddenFiles(!dirlist->shownHiddenFiles());
+    appLog(APP_LOG_UI, "tree-hidden-files-toggled",
+           FXString("enabled=") + (dirlist->shownHiddenFiles() ? "yes" : "no"));
     return 1;
 }
 

@@ -8,12 +8,15 @@
 #include <sys/types.h>
 #include <string.h>
 #include <time.h>
+#include <vector>
 
 #include <fx.h>
 #include <fxkeys.h>
 #include <FXPNGIcon.h>
+#include <X11/Xatom.h>
 
 #include "xfedefs.h"
+#include "AppLogger.h"
 #include "icons.h"
 #include "xfeutils.h"
 #include "startupnotification.h"
@@ -27,6 +30,37 @@
 
 // Main window
 FXMainWindow* mainWindow = NULL;
+
+static void setNetWmIcon(FXMainWindow* window, FXIcon* icon)
+{
+    if (!window || !icon || !icon->getData())
+    {
+        fprintf(stderr, "Cannot set _NET_WM_ICON: window icon is unavailable\n");
+        return;
+    }
+
+    const FXint width = icon->getWidth();
+    const FXint height = icon->getHeight();
+    const FXColor* pixels = icon->getData();
+    const size_t pixel_count = static_cast<size_t>(width) * height;
+    std::vector<unsigned long> property(2 + pixel_count);
+    property[0] = width;
+    property[1] = height;
+
+    for (size_t i = 0; i < pixel_count; ++i)
+    {
+        property[i + 2] = (static_cast<unsigned long>(FXALPHAVAL(pixels[i])) << 24) |
+                          (static_cast<unsigned long>(FXREDVAL(pixels[i])) << 16) |
+                          (static_cast<unsigned long>(FXGREENVAL(pixels[i])) << 8) |
+                          FXBLUEVAL(pixels[i]);
+    }
+
+    Display* display = static_cast<Display*>(window->getApp()->getDisplay());
+    XChangeProperty(display, static_cast<Window>(window->id()), XInternAtom(display, "_NET_WM_ICON", False),
+                    XA_CARDINAL, 32, PropModeReplace, reinterpret_cast<const unsigned char*>(property.data()),
+                    static_cast<int>(property.size()));
+    XFlush(display);
+}
 
 // Exec path
 FXString execpath;
@@ -525,6 +559,13 @@ int main(int argc, char* argv[])
     // Load all application icons
     FXuint iconpathstatus;
     execpath = xf_execpath(argv[0]);
+    FXString startupDetails;
+    startupDetails.format("executable=\"%s\" program_mode=%u requested_panel_mode=%d portable=%s",
+                          execpath.text(),
+                          application->reg().readUnsignedEntry("OPTIONS", "program_mode",
+                                                               PROGRAM_MODE_SYSTEM_DEFAULTS),
+                          panel_mode, getenv("SWORDFISH_PORTABLE") ? "yes" : "no");
+    appLog(APP_LOG_APPLICATION, "started", startupDetails);
     loadicons = loadAppIcons(application, &iconpathstatus);
 
     // Set normal font
@@ -553,6 +594,7 @@ int main(int argc, char* argv[])
     application->addSignal(SIGINT, mainWindow, XFileExplorer::ID_QUIT);
 
     application->create();
+    setNetWmIcon(mainWindow, xfedockicon);
 
     // Tooltips setup time and duration
     application->setTooltipPause(TOOLTIP_PAUSE);
@@ -582,5 +624,7 @@ int main(int argc, char* argv[])
 \n\nPlease check your Swordfish installation..."));
     }
 
-    return application->run();
+    FXint exitCode = application->run();
+    appLog(APP_LOG_APPLICATION, "stopped", FXString("exit_code=") + FXStringVal(exitCode));
+    return exitCode;
 }

@@ -1,6 +1,7 @@
 #include "config.h"
 #include "i18n.h"
 
+#include "AppLogger.h"
 #include "TabButtons.h"
 #include "MessageBox.h"
 
@@ -205,6 +206,8 @@ long TabButtons::onCmdPathButton(FXObject* sender, FXSelector sel, void* ptr)
 
     // Update the FileList and DirList directory
     FXString filePath = tabPaths[index];
+    appLog(APP_LOG_UI, "tab-selected", FXString("index=") + FXStringVal(index) +
+           " path=\"" + filePath + "\"");
 
     filepanel->getCurrent()->setDirectory(filePath);
     dirpanel->setDirectory(filePath, true);
@@ -304,6 +307,7 @@ long TabButtons::onCmdNewTab(FXObject*, FXSelector, void*)
 
     // Add new tab
     addTab(pathname);
+    appLog(APP_LOG_UI, "tab-created", FXString("path=\"") + pathname + "\"");
 
     return 1;
 }
@@ -320,6 +324,7 @@ long TabButtons::onCmdRemoveAllTabs(FXObject*, FXSelector, void*)
     }
     else
     {
+        appLog(APP_LOG_UI, "all-tabs-removed", FXString("count=") + FXStringVal(nbActiveTabs));
         for (FXuint i = 0; i < nbActiveTabs; i++)
         {
             tabButtons[i]->setText("");

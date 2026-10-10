@@ -712,7 +712,7 @@ WriteWindow::WriteWindow(XFileWrite* a, const FXString& file, const FXbool _read
                  ID_PRINT, ICON_ABOVE_TEXT | BUTTON_TOOLBAR | FRAME_GROOVE | LAYOUT_CENTER_Y | LAYOUT_LEFT);
 
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "quit", "Ctrl-Q");
-    new FXButton(toolbar, TAB + _("Quit") + PARS(key) + TAB + _("Quit X File Write.") + PARS(key), miniquiticon,
+    new FXButton(toolbar, TAB + _("Quit") + PARS(key) + TAB + _("Quit Swordfish Write.") + PARS(key), miniquiticon,
                  getApp(),
                  XFileWrite::ID_CLOSEALL,
                  ICON_ABOVE_TEXT | BUTTON_TOOLBAR | FRAME_GROOVE | LAYOUT_CENTER_Y | LAYOUT_LEFT);
@@ -853,7 +853,7 @@ WriteWindow::WriteWindow(XFileWrite* a, const FXString& file, const FXbool _read
     sep2->setSelector(FXRecentFiles::ID_ANYFILES);
 
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "quit", "Ctrl-Q");
-    text = _("&Quit") + TABS(key) + _("Quit X File Write.") + PARS(key);
+    text = _("&Quit") + TABS(key) + _("Quit Swordfish Write.") + PARS(key);
     mc = new FXMenuCommand(filemenu, text, miniquiticon, getApp(), XFileWrite::ID_CLOSEALL);
     hotkey = xf_parseaccel(key);
     getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));
@@ -1027,7 +1027,7 @@ WriteWindow::WriteWindow(XFileWrite* a, const FXString& file, const FXbool _read
 
     // Help Menu entries
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "help", "F1");
-    text = _("&About X File Write") + TABS(key) + _("About X File Write.") + PARS(key);
+    text = _("&About Swordfish Write") + TABS(key) + _("About Swordfish Write.") + PARS(key);
     mc = new FXMenuCommand(helpmenu, text, NULL, this, ID_ABOUT, 0);
     hotkey = xf_parseaccel(key);
     getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));
@@ -1583,9 +1583,9 @@ long WriteWindow::onCmdAbout(FXObject*, FXSelector, void*)
 {
     FXString msg;
 
-    msg.format(_("X File Write Version %s is a simple text editor.\n\n"), VERSION);
+    msg.format(_("Swordfish Write Version %s is a simple text editor.\n\n"), VERSION);
     msg += COPYRIGHT;
-    MessageBox about(this, _("About X File Write"), msg.text(), xfwicon, BOX_OK | DECOR_TITLE | DECOR_BORDER,
+    MessageBox about(this, _("About Swordfish Write"), msg.text(), xfwicon, BOX_OK | DECOR_TITLE | DECOR_BORDER,
                      JUSTIFY_CENTER_X | ICON_BEFORE_TEXT | LAYOUT_CENTER_Y | LAYOUT_LEFT | LAYOUT_FILL_X |
                      LAYOUT_FILL_Y);
     about.execute(PLACEMENT_OWNER);

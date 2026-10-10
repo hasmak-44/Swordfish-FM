@@ -664,6 +664,10 @@ FXString xf_realpath(const FXString);
 FXString xf_execpath(char*);
 FXString xf_scriptpath();
 void xf_bindtextdomain(const FXchar*, const FXchar*);
+FXString xf_languagefile();
+FXString xf_readlanguage();
+void xf_writelanguage(const FXString&);
+FXString xf_localedir();
 
 FXString xf_filefromuri(FXString);
 FXString xf_filetouri(const FXString&);

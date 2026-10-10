@@ -15,6 +15,7 @@
 #include <fxkeys.h>
 #include <FXPNGIcon.h>
 
+#include "AppLogger.h"
 #include "xfedefs.h"
 #include "icons.h"
 #include "xfeutils.h"
@@ -3750,7 +3751,7 @@ void XFileExplorer::create()
             if (str.find("DEVICE") == -1)
             {
                 MessageBox::error(this, BOX_OK, _("Error"), _("Unable to find udisksctl command on your system.\
-\nPackage udisks2 is probably not installed, Xfe automounter is disabled."));       
+\nPackage udisks2 is probably not installed, Swordfish automounter is disabled."));       
                 
                 getApp()->reg().writeUnsignedEntry("OPTIONS", "automount", false);
                 automount = false;
@@ -4617,14 +4618,20 @@ long XFileExplorer::onCmdRestart(FXObject*, FXSelector, void*)
 {
     saveConfig();
 
-    if (fork() == 0) // Child
+    pid_t child = fork();
+    if (child == 0)
     {
-        execvp("swordfish", args);
+        execv(execpath.text(), args);
+        fprintf(stderr, "Unable to restart Swordfish from %s: %s\n", execpath.text(), strerror(errno));
+        _exit(EXIT_FAILURE);
     }
-    else // Parent
+    if (child < 0)
     {
-        exit(EXIT_SUCCESS);
+        MessageBox::error(this, BOX_OK, _("Error"), _("Unable to restart Swordfish: %s"), strerror(errno));
+        return 0;
     }
+
+    exit(EXIT_SUCCESS);
     return 1;
 }
 
@@ -4673,6 +4680,7 @@ long XFileExplorer::onCmdNewTab(FXObject*, FXSelector, void*)
    
     // Add tab
     tabbuttons->addTab(dirpathname);
+    appLog(APP_LOG_UI, "tab-created", FXString("path=\"") + dirpathname + "\"");
 
     return 1;
 }
@@ -4950,6 +4958,9 @@ long XFileExplorer::onCmdHorzVertPanels(FXObject* sender, FXSelector sel, void*)
         break;
     }
 
+    appLog(APP_LOG_UI, "panel-orientation-changed",
+           vertpanels ? "orientation=vertical" : "orientation=horizontal");
+
     return 1;
 }
 
@@ -5058,6 +5069,28 @@ long XFileExplorer::onCmdShowPanels(FXObject* sender, FXSelector sel, void* ptr)
         lpanel->showActiveIcon(true);
         break;
     }
+
+    const char* layoutName = "unknown";
+    switch (FXSELID(sel))
+    {
+    case ID_SHOW_ONE_PANEL:
+        layoutName = "one-panel";
+        break;
+    case ID_SHOW_TWO_PANELS:
+        layoutName = "two-panels";
+        break;
+    case ID_SHOW_FOLDERS_ONE_PANEL:
+        layoutName = "tree-one-panel";
+        break;
+    case ID_SHOW_FOLDERS_TWO_PANELS:
+        layoutName = "tree-two-panels";
+        break;
+    }
+    FXString layoutDetails;
+    layoutDetails.format("layout=%s tree_visible=%s right_panel_visible=%s orientation=%s",
+                         layoutName, dirpanel->shown() ? "yes" : "no", rpanel->shown() ? "yes" : "no",
+                         vertpanels ? "vertical" : "horizontal");
+    appLog(APP_LOG_UI, "panel-layout-changed", layoutDetails);
 
     // Set focus on current panel
     lpanel->getCurrent()->setFocusOnList();
@@ -5307,6 +5340,7 @@ long XFileExplorer::onCmdSynchronizePanels(FXObject* sender, FXSelector, void*)
         lpanel->setDirectory(dir);
         lpanel->updatePath();
     }
+    appLog(APP_LOG_UI, "panels-synchronized", FXString("directory=\"") + dir + "\"");
     return 1;
 }
 
@@ -5339,6 +5373,8 @@ long XFileExplorer::onCmdSwitchPanels(FXObject* sender, FXSelector, void*)
     rpanel->setDirectory(leftdir);
     rpanel->updatePath();
 
+    appLog(APP_LOG_UI, "panels-switched",
+           FXString("left=\"") + rightdir + "\" right=\"" + leftdir + "\"");
     return 1;
 }
 
@@ -5379,6 +5415,7 @@ long XFileExplorer::onCmdToggleStatus(FXObject*, FXSelector, void*)
     dirpanel->toggleStatusbar();
     lpanel->toggleStatusbar();
     rpanel->toggleStatusbar();
+    appLog(APP_LOG_UI, "status-bars-toggled");
     return 1;
 }
 
@@ -5571,8 +5608,23 @@ long XFileExplorer::onCmdSu(FXObject*, FXSelector, void*)
         }
 
         // Build command from current directory
-        cmd = getApp()->reg().readStringEntry("OPTIONS", "pkexec_cmd", DEFAULT_PKEXEC_CMD);
-        cmd += " " + currdir;
+        FXString pkexec_cmd = getApp()->reg().readStringEntry("OPTIONS", "pkexec_cmd", DEFAULT_PKEXEC_CMD);
+        if (getenv("SWORDFISH_PORTABLE") && pkexec_cmd == DEFAULT_PKEXEC_CMD)
+        {
+            FXString app_run = FXPath::directory(FXPath::directory(execpath)) + "/../AppRun";
+            const char* display = getenv("DISPLAY");
+            const char* xauthority = getenv("XAUTHORITY");
+            FXString xauthority_path = (xauthority && *xauthority)
+                                           ? xauthority
+                                           : FXSystem::getHomeDirectory() + "/.Xauthority";
+            cmd = "pkexec env DISPLAY=" + xf_quote(display ? display : "") +
+                  " XAUTHORITY=" + xf_quote(xauthority_path) + " SWORDFISH_PORTABLE=1 " + xf_quote(app_run);
+        }
+        else
+        {
+            cmd = pkexec_cmd;
+        }
+        cmd += " " + xf_quote(currdir);
 
 #ifdef STARTUP_NOTIFICATION
         status = runcmd(cmd, "pkexec", currdir, startlocation, false, "");
@@ -5607,6 +5659,11 @@ long XFileExplorer::onCmdSu(FXObject*, FXSelector, void*)
         {
             title = _("Enter the user password:");
             FXString sudo_cmd = getApp()->reg().readStringEntry("OPTIONS", "sudo_cmd", DEFAULT_SUDO_CMD);
+            if (getenv("SWORDFISH_PORTABLE") && sudo_cmd == DEFAULT_SUDO_CMD)
+            {
+                FXString app_run = FXPath::directory(FXPath::directory(execpath)) + "/../AppRun";
+                sudo_cmd = "sudo env SWORDFISH_PORTABLE=1 " + xf_quote(app_run);
+            }
             cmd = " -g 60x4 -e " + sudo_cmd;
         }
         // su
