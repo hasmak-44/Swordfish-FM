@@ -41,12 +41,11 @@ system. It currently supports 64-bit x86 Linux.
 
 ### Download and run Swordfish
 
-This testing build runs on 64-bit x86 Linux. It does not install Swordfish
+The portable build runs on 64-bit x86 Linux. It does not install Swordfish
 system-wide or require extra software to download it.
 
-1. Open [Swordfish-Portable v0.0.1 RC1](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-portable-0.0.1-rc1)
-   and download the ZIP asset, or click
-   [Download the latest Swordfish portable version](https://hasmak-44.github.io/Swordfish-FM/Swordfish-Portable.zip).
+1. Open the [latest Swordfish Portable release](https://github.com/hasmak-44/Swordfish-FM/releases/latest)
+   and download the Linux x86_64 ZIP under **Assets**.
    Your browser downloads the ZIP using its normal download settings.
 2. Extract the ZIP to the place where you want to keep Swordfish. The ZIP
    contains the complete `Swordfish-Portable` folder. **Extract the whole
