@@ -203,7 +203,12 @@ FXDEFMAP(XFileExplorer) XFileExplorerMap[] =
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_REMOVE_ALL_BOOKMARKS, XFileExplorer::onCmdRemoveAllBookmarks),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_BOOKMARK, XFileExplorer::onCmdGotoBookmark),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_REBUILD_BOOKMARKS_MENU, XFileExplorer::onCmdRebuildBookmarksMenu),
-    FXMAPFUNC(SEL_UPDATE, XFileExplorer::ID_REMOVE_ALL_BOOKMARKS, XFileExplorer::onUpdBookmarksMenu),
+    FXMAPFUNC(SEL_UPDATE, XFileExplorer::ID_MANAGE_BOOKMARKS, XFileExplorer::onUpdBookmarksMenu),
+    FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_BOOKMARK_SELECTED, XFileExplorer::onCmdBookmarkSelected),
+    FXMAPFUNC(SEL_UPDATE, XFileExplorer::ID_BOOKMARK_SELECTED, XFileExplorer::onUpdBookmarkSelected),
+    FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_ADD_TAB_GROUP, XFileExplorer::onCmdAddTabGroup),
+    FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_TAB_GROUP, XFileExplorer::onCmdOpenTabGroup),
+    FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_MANAGE_BOOKMARKS, XFileExplorer::onCmdManageBookmarks),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_DIR_UP, XFileExplorer::onCmdDirUp),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_DIR_BACK, XFileExplorer::onCmdDirBack),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_DIR_FORWARD, XFileExplorer::onCmdDirForward),
@@ -641,6 +646,9 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     // Splitter containing the two panels
     panelsplit = new FXSplitter(mainsplit, LAYOUT_SIDE_LEFT | LAYOUT_FILL_X | LAYOUT_FILL_Y |
                                 SPLITTER_TRACKING | FRAME_NONE);
+    FXuint panelres = getApp()->reg().readUnsignedEntry("SETTINGS", "screenres", 100);
+    panelsplit->setBarSize(7 * FXMAX(1.0, panelres / 100.0));
+    panelsplit->setBackColor(getApp()->getBorderColor());
 
     // Stack file panels horizontally or vertically (directory panel is always vertical)
     vertpanels = getApp()->reg().readUnsignedEntry("OPTIONS", "vert_panels", true);
@@ -1126,7 +1134,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     FXHotKey hotkey;
 
     // Tab buttons
-    tabbuttons = new TabButtons(tabtoolbar, lpanel, dirpanel, FRAME_NONE | LAYOUT_CENTER_Y | LAYOUT_LEFT);
+    tabtoolbar->hide();
 
     // General toolbar
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "go_back", "Ctrl-Backspace");
@@ -1357,21 +1365,51 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
 
     // Address combo box
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "clear_address", "Ctrl-L");
-    btn = new FXButton(addresstoolbar, TAB + _("Clear Address Bar") + PARS(key), NULL, this, ID_CLEAR_ADDRESS,
+    btn = new FXButton(addresstoolbar, TAB + _("Edit Path") + PARS(key), miniediticon, this, ID_CLEAR_ADDRESS,
                        BUTTON_TOOLBAR | LAYOUT_CENTER_Y | LAYOUT_LEFT | ICON_BEFORE_TEXT | FRAME_RAISED);
     hotkey = xf_parseaccel(key);
     btn->addHotKey(hotkey);
-    btn->hide(); // Clear address button not shown
+    new FXVerticalSeparator(addresstoolbar, SEPARATOR_GROOVE | LAYOUT_FILL_Y);
 
     addressbox = new HistComboBox(addresstoolbar, ADDRESS_BAR_LENGTH, true, false, this, ID_GOTO_ADDRESS,
                                   COMBOBOX_INSERT_LAST | JUSTIFY_LEFT | LAYOUT_CENTER_Y);
     addressbox->setNumVisible(5);
+    commonpathlink = new PathLinker(addresstoolbar, lpanel->getList(), dirpanel->getList(), LAYOUT_FILL_X);
+    commonpathlink->setEditTarget(this, ID_CLEAR_ADDRESS);
+    addressbox->hide();
 
     // Menus
 
     // File menu
     filemenu = new FXMenuPane(this);
     FXMenuCommand* mc = NULL;
+
+    mc = new FXMenuCommand(filemenu, _("&New Tab"), mininewtabicon, lpanel, FilePanel::ID_NEW_TAB);
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "new_tab", "Shift-F1");
+    mc->setAccelText(key);
+    hotkey = xf_parseaccel(key);
+    getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));
+    new FXMenuCommand(filemenu, _("Close Tab"), minicloseicon, lpanel, FilePanel::ID_CLOSE_TAB);
+    new FXMenuCommand(filemenu, _("Close All Tabs in This Pane"), miniremovetabicon, lpanel, FilePanel::ID_REMOVE_ALL_TABS);
+    new FXMenuSeparator(filemenu);
+    mc = new FXMenuCommand(filemenu, _("New &Window"), minixfeicon, this, XFileExplorer::ID_NEW_WIN);
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "new_window", "F3");
+    mc->setAccelText(key);
+    hotkey = xf_parseaccel(key);
+    getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));
+    new FXMenuSeparator(filemenu);
+    mc = new FXMenuCommand(filemenu, _("New &Root Window"), minixferooticon, this, XFileExplorer::ID_SU);
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "new_root_window", "Shift-F3");
+    mc->setAccelText(key);
+    hotkey = xf_parseaccel(key);
+    getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));
+    new FXMenuSeparator(filemenu);
+#if defined(linux)
+    mc = new FXMenuCommand(filemenu, _("&Connect to Server..."), miniservericon, this, ID_CONNECT_TO_SERVER);
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "connect_to_server", "Shift-F5");
+    mc->setAccelText(key);
+    new FXMenuSeparator(filemenu);
+#endif
 
     mc = new FXMenuCommand(filemenu, _("New &File..."), mininewfileicon, lpanel, FilePanel::ID_NEW_FILE);
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "new_file", "Ctrl-N");
@@ -1526,7 +1564,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     new FXMenuCheck(viewmenu, _("&General Toolbar"), generaltoolbar, FXWindow::ID_TOGGLESHOWN);
     new FXMenuCheck(viewmenu, _("&Tools Toolbar"), toolstoolbar, FXWindow::ID_TOGGLESHOWN);
     new FXMenuCheck(viewmenu, _("&Panel Toolbar"), paneltoolbar, FXWindow::ID_TOGGLESHOWN);
-    new FXMenuCheck(viewmenu, _("&Address Bar"), addresstoolbar, FXWindow::ID_TOGGLESHOWN);
+    // Address-bar placement is selected in Settings, not independently toggled.
     new FXMenuCheck(viewmenu, _("&Status Bar"), this, XFileExplorer::ID_TOGGLE_STATUS);
 
     new FXMenuSeparator(viewmenu);
@@ -1561,13 +1599,19 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
 
     // Bookmarks menu
     bookmarksmenu = new FXMenuPane(this);
-    mc = new FXMenuCommand(bookmarksmenu, _("&Add Bookmark"), miniaddbookicon, this, ID_ADD_BOOKMARK);
+    mc = new FXMenuCommand(bookmarksmenu, _("&Bookmark Current Tab..."), miniaddbookicon, this, ID_ADD_BOOKMARK);
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "add_bookmark", "Ctrl-B");
     mc->setAccelText(key);
     hotkey = xf_parseaccel(key);
     getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));
 
-    new FXMenuCommand(bookmarksmenu, _("&Remove All Bookmarks"), miniremovebookicon, this, ID_REMOVE_ALL_BOOKMARKS);
+    new FXMenuCommand(bookmarksmenu, _("Bookmark &Selected Folders"), NULL, this, ID_BOOKMARK_SELECTED);
+    new FXMenuCommand(bookmarksmenu, _("Bookmark All Tabs as &Group..."), NULL, this, ID_ADD_TAB_GROUP);
+    tabgroupsmenu = new FXMenuPane(this);
+    new FXMenuCascade(bookmarksmenu, _("&Tab Groups"), NULL, tabgroupsmenu);
+    rebuildTabGroupsMenu();
+    new FXMenuSeparator(bookmarksmenu);
+    new FXMenuCommand(bookmarksmenu, _("&Manage Bookmarks..."), miniremovebookicon, this, ID_MANAGE_BOOKMARKS);
     bookmarkssep = new FXMenuSeparator(bookmarksmenu);
 
     for (int i = 0; i < dirpanel->getNumBookmarks(); i++)
@@ -1608,7 +1652,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     new FXMenuCheck(lpanelmenu, _("I&gnore Case"), lpanel->getList(), FileList::ID_SORT_CASE);
     new FXMenuCheck(lpanelmenu, _("Fol&ders First"), lpanel->getList(), FileList::ID_DIRS_FIRST);
     new FXMenuCheck(lpanelmenu, _("Re&verse Order"), lpanel->getList(), FileList::ID_SORT_REVERSE);
-    lpanelmenutitle = new FXMenuTitle(menubar, _("&Left Panel"), NULL, lpanelmenu);
+    lpanelmenutitle = new FXMenuTitle(menubar, _("&Left/Top Panel"), NULL, lpanelmenu);
 
     // Right Panel Menu
     rpanelmenu = new FXMenuPane(this);
@@ -1639,7 +1683,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     new FXMenuCheck(rpanelmenu, _("I&gnore Case"), rpanel->getList(), FileList::ID_SORT_CASE);
     new FXMenuCheck(rpanelmenu, _("&Folders First"), rpanel->getList(), FileList::ID_DIRS_FIRST);
     new FXMenuCheck(rpanelmenu, _("Re&verse Order"), rpanel->getList(), FileList::ID_SORT_REVERSE);
-    rpanelmenutitle = new FXMenuTitle(menubar, _("&Right Panel"), NULL, rpanelmenu);
+    rpanelmenutitle = new FXMenuTitle(menubar, _("&Right/Bottom Panel"), NULL, rpanelmenu);
 
     // Scripts menu (dynamic menu)
     scriptsmenu = new MenuPane(this);
@@ -1651,29 +1695,6 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
 
     // Tools menu
     toolsmenu = new FXMenuPane(this);
-
-    mc = new FXMenuCommand(toolsmenu, _("&New Tab"), mininewtabicon, tabbuttons, TabButtons::ID_NEW_TAB);
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "new_tab", "Shift-F1");
-    mc->setAccelText(key);
-    hotkey = xf_parseaccel(key);
-    getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));
-    new FXMenuCommand(toolsmenu, _("Remove &All Tabs"), miniremovetabicon, tabbuttons, TabButtons::ID_REMOVE_ALL_TABS);
-
-    new FXMenuSeparator(toolsmenu);
-
-    mc = new FXMenuCommand(toolsmenu, _("New &Window"), minixfeicon, this, XFileExplorer::ID_NEW_WIN);
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "new_window", "F3");
-    mc->setAccelText(key);
-    hotkey = xf_parseaccel(key);
-    getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));
-
-    mc = new FXMenuCommand(toolsmenu, _("New &Root Window"), minixferooticon, this, XFileExplorer::ID_SU);
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "new_root_window", "Shift-F3");
-    mc->setAccelText(key);
-    hotkey = xf_parseaccel(key);
-    getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));
-
-    new FXMenuSeparator(toolsmenu);
 
     mc = new FXMenuCommand(toolsmenu, _("E&xecute Command..."), minirunicon, this, ID_RUN);
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "execute_command", "Ctrl-E");
@@ -1719,11 +1740,6 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "unmount", "Ctrl-U");
     mc->setAccelText(key);
 
-    new FXMenuSeparator(toolsmenu);
-
-    mc = new FXMenuCommand(toolsmenu, _("&Connect to Server..."), miniservericon, this, ID_CONNECT_TO_SERVER);
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "connect_to_server", "Shift-F5");
-    mc->setAccelText(key);
 #endif
     toolsmenutitle = new FXMenuTitle(menubar, _("&Tools"), NULL, toolsmenu);
 
@@ -1860,7 +1876,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
 
 
 // Save configuration when quitting
-void XFileExplorer::saveConfig()
+void XFileExplorer::saveConfig(FXbool restarting)
 {
     // Check if Xfe was restarted from Preferences dialog
     FXbool restarted = getApp()->reg().readUnsignedEntry("SETTINGS", "restarted", false);
@@ -2999,33 +3015,23 @@ void XFileExplorer::saveConfig()
 
     // Save tabs if required
     FXbool restore_tabs = getApp()->reg().readUnsignedEntry("OPTIONS", "restore_tabs", false);
-    if (restore_tabs && tabbuttons->getNumActiveTabs() > 0)
+    if (restore_tabs || restarting)
     {
-        if (getApp()->reg().readStringEntry("TABS", "tab0", NULL))
-        {
-            getApp()->reg().deleteSection("TABS");
-        }
-
-        for (FXuint i = 0; i < tabbuttons->getNumActiveTabs(); i++)
-        {
-            FXString regkey = "tab" + FXStringVal(i);
-            FXString data = tabbuttons->getPath(i);
-            getApp()->reg().writeStringEntry("TABS", regkey.text(), data.text());
-       }        
-
-        // Check consistency between current tab index and number of tabs
-        FXuint currentTab = FXMIN(tabbuttons->getCurrentTab(), tabbuttons->getNumActiveTabs() - 1);
-        
-        // Save current tab index
-        getApp()->reg().writeUnsignedEntry("OPTIONS", "current_tab", currentTab);
+        lpanel->getTabButtons()->saveTabs("LEFT TABS");
+        rpanel->getTabButtons()->saveTabs("RIGHT TABS");
     }
-        
     // Don't save tabs
     else
     {
         getApp()->reg().writeUnsignedEntry("OPTIONS", "current_tab", 0);
-        getApp()->reg().deleteSection("TABS");
+        getApp()->reg().deleteSection("LEFT TABS");
+        getApp()->reg().deleteSection("RIGHT TABS");
     }
+    if (restarting)
+    {
+        getApp()->reg().writeUnsignedEntry("SETTINGS", "restart_right_panel", getCurrentPanel() == rpanel);
+    }
+    getApp()->reg().deleteSection("TABS");
 
     // Read registry file to get bookmarks that could have been changed from another Xfe instance
     FXRegistry* reg = new FXRegistry(XFEAPPNAME, XFEVDRNAME);
@@ -3064,6 +3070,17 @@ void XFileExplorer::saveConfig()
 // Make application
 void XFileExplorer::create()
 {
+    // The restart child resumes this session without changing normal startup preferences.
+    FXbool restoreSession = getenv("SWORDFISH_RESUME_SESSION") != NULL;
+    unsetenv("SWORDFISH_RESUME_SESSION");
+
+    // Shade the tool bars slightly so they stand apart from the menu bar and the file lists
+    FXColor toolbarcolor = xf_barcolor(getApp(), 1);
+    xf_shadebar(topdock, toolbarcolor);
+    xf_shadebar(bottomdock, toolbarcolor);
+    xf_shadebar(leftdock, toolbarcolor);
+    xf_shadebar(rightdock, toolbarcolor);
+
     // Switch to two panels mode if startdir2 was specified
     // and no particular panel mode was selected
     if ((startdir2 != "") && (panel_mode == -1))
@@ -3239,6 +3256,12 @@ void XFileExplorer::create()
 
     // Read start directory mode
     FXuint startdirmode = getApp()->reg().readUnsignedEntry("OPTIONS", "startdir_mode", START_HOMEDIR);
+
+    if (restoreSession)
+    {
+        startdir1 = getApp()->reg().readStringEntry("LEFT PANEL", "lastdir", ROOTDIR);
+        startdir2 = getApp()->reg().readStringEntry("RIGHT PANEL", "lastdir", ROOTDIR);
+    }
 
     // Open left and right panels in starting directories (if specified) or in home / current or last directory
     if (startdir1 == "")
@@ -3657,59 +3680,36 @@ void XFileExplorer::create()
 
     // Restore tabs if required
     FXbool restore_tabs = getApp()->reg().readUnsignedEntry("OPTIONS", "restore_tabs", false);
-    if (restore_tabs && getApp()->reg().readStringEntry("TABS", "tab0", NULL) && !startdirs)
+    FilePanel* tabpanels[] = {lpanel, rpanel};
+    const char* sections[] = {"LEFT TABS", "RIGHT TABS"};
+    for (int pane = 0; pane < 2; pane++)
     {
-        FXuint i = 0;
-        while (1)
+        TabButtons* tabs = tabpanels[pane]->getTabButtons();
+        FXbool restored = false;
+        if (restoreSession || (restore_tabs && !startdirs))
         {
-            FXString regkey = "tab" + FXStringVal(i);
-            FXString path = getApp()->reg().readStringEntry("TABS", regkey.text(), NULL);
-
-            if (path != "")
+            const char* section = sections[pane];
+            FXuint selected = getApp()->reg().readUnsignedEntry(section, "current_tab", 0);
+            // Migrate the former shared tab list to the left pane.
+            if (pane == 0 && !getApp()->reg().existingSection("LEFT TABS"))
             {
-                tabbuttons->addTab(path);
-                i++;
+                section = "TABS";
+                selected = getApp()->reg().readUnsignedEntry("OPTIONS", "current_tab", 0);
             }
-            else
-            {
-                break;
-            }
+            restored = tabs->restoreTabs(section, selected);
         }
-
-        // Current tab
-        FXuint index = getApp()->reg().readUnsignedEntry("OPTIONS", "current_tab", 0);
-        tabbuttons->setCurrentTab(index);
+        if (!restored && always_show_tabbar)
+        {
+            tabs->addTab(tabpanels[pane]->getDirectory(), false);
+        }
     }
 
-    // Show tab according to start directory mode
-    else
+    if (restoreSession)
     {
-        // Show tab bar if needed
-        if (always_show_tabbar)
-        {
-            // Show start directory if any
-            if (startdirs)
-            {
-                tabbuttons->addTab(startdir1);
-            }
-            else
-            {
-                // Add first tab
-                if (startdirmode == START_HOMEDIR)
-                {
-                    tabbuttons->addTab(homedir);
-                }
-                else if (startdirmode == START_CURRENTDIR)
-                {
-                    tabbuttons->addTab(lpanel->getCurrent()->getDirectory());       
-                }
-                else // Last directory
-                {
-                    FXString lastdir = getApp()->reg().readStringEntry("LEFT PANEL", "lastdir", ROOTDIR);
-                    tabbuttons->addTab(lastdir);
-                }                
-            }
-        }
+        FilePanel* active = getApp()->reg().readUnsignedEntry("SETTINGS", "restart_right_panel", false) ?
+                            rpanel : lpanel;
+        active->setActive();
+        dirpanel->setDirectory(active->getDirectory(), true);
     }
 
     // Show window
@@ -3823,7 +3823,6 @@ XFileExplorer::~XFileExplorer()
     delete paneltoolbar;
     delete tabtoolbar;
     delete toolstoolbar;
-    delete tabbuttons;
     delete dirpanel;
     delete lpanel;
     delete rpanel;
@@ -3846,6 +3845,10 @@ long XFileExplorer::onKeyPress(FXObject* sender, FXSelector sel, void* ptr)
 {
     FXEvent* event = (FXEvent*)ptr;
     int current;
+    if (event->code == KEY_Escape && editingCommonPath)
+    {
+        return onCmdClearAddress(this, 0, NULL);
+    }
 
     // Tab was pressed : cycle through the panels from left to right
     if (event->code == KEY_Tab)
@@ -4430,7 +4433,7 @@ long XFileExplorer::onCmdRemoveAllBookmarks(FXObject*, FXSelector, void*)
     else
     {
         // Remove all menu items
-        bookmarkmc.clear();
+        clearBookmarkItems();
 
         // Remove all list items
         dirpanel->getBookmarksList()->removeAllItems();
@@ -4443,15 +4446,13 @@ long XFileExplorer::onCmdRemoveAllBookmarks(FXObject*, FXSelector, void*)
 // Update remove all bookmarks button and bookmarks menu items
 long XFileExplorer::onUpdBookmarksMenu(FXObject* sender, FXSelector, void* ptr)
 {
-    // Update remove all button
-    if (bookmarkmc.size() > 0)
+    // Separator above the bookmark items
+    if (dirpanel->getNumBookmarks() > 0)
     {
-        sender->handle(this, FXSEL(SEL_COMMAND, ID_ENABLE), ptr);
         bookmarkssep->show();
     }
     else
     {
-        sender->handle(this, FXSEL(SEL_COMMAND, ID_DISABLE), ptr);
         bookmarkssep->hide();
     }
 
@@ -4459,7 +4460,7 @@ long XFileExplorer::onUpdBookmarksMenu(FXObject* sender, FXSelector, void* ptr)
     if ((FXint)bookmarkmc.size() != dirpanel->getNumBookmarks())
     {
         // Remove all menu items
-        bookmarkmc.clear();
+        clearBookmarkItems();
 
         // Add items to the menu
         for (int i = 0; i < dirpanel->getNumBookmarks(); i++)
@@ -4493,7 +4494,7 @@ long XFileExplorer::onUpdBookmarksMenu(FXObject* sender, FXSelector, void* ptr)
 long XFileExplorer::onCmdRebuildBookmarksMenu(FXObject*, FXSelector, void*)
 {
     // Remove all menu items
-    bookmarkmc.clear();
+    clearBookmarkItems();
 
     // Add sorted items to the menu
     for (int i = 0; i < dirpanel->getNumBookmarks(); i++)
@@ -4571,16 +4572,72 @@ long XFileExplorer::onCmdGotoBookmark(FXObject* sender, FXSelector, void*)
 // Clear address bar
 long XFileExplorer::onCmdClearAddress(FXObject*, FXSelector, void*)
 {
-    addressbox->setText(FXString::null);
-    addressbox->CursorEnd();
-
-    return(1);
+    if (getApp()->reg().readUnsignedEntry("OPTIONS", "common_addressbar", false))
+    {
+        editingCommonPath = !editingCommonPath;
+        if (editingCommonPath)
+        {
+            commonpathlink->hide();
+            addressbox->setText(getCurrentPanel()->getDirectory());
+            addressbox->show();
+            addressbox->setFocus();
+            addressbox->selectAll();
+        }
+        else
+        {
+            addressbox->hide();
+            commonpathlink->show();
+            getCurrentPanel()->setFocusOnList();
+        }
+        addresstoolbar->recalc();
+        return 1;
+    }
+    return getCurrentPanel()->onCmdEditPath(this, FXSEL(SEL_COMMAND, FilePanel::ID_EDIT_PATH), NULL);
 }
 
 
 // Goto address entered into the text field
 long XFileExplorer::onCmdGotoAddress(FXObject*, FXSelector, void*)
 {
+    if (getApp()->reg().readUnsignedEntry("OPTIONS", "common_addressbar", false))
+    {
+        // The pane's validated navigation is shared with the common address bar.
+        FXString path = addressbox->getText();
+        if (path.empty())
+        {
+            MessageBox::warning(this, BOX_OK, _("Warning"), _("File name is empty, operation cancelled"));
+            addressbox->setFocus();
+            return 1;
+        }
+        FXString netpath;
+        int network = getCurrentPanel()->resolveNetworkPath(path, netpath);
+        if (network < 0)
+        {
+            addressbox->setFocus();
+            return 1;
+        }
+        path = (network > 0) ? netpath : xf_filefromuri(path);
+        if (path == "~")
+        {
+            path = FXSystem::getHomeDirectory();
+        }
+        else if (path.find("~/") == 0)
+        {
+            path.replace(0, 1, FXSystem::getHomeDirectory());
+        }
+        if (getCurrentPanel()->navigatePane(FXPath::absolute(getCurrentPanel()->getDirectory(), path)))
+        {
+            editingCommonPath = false;
+            addressbox->hide();
+            commonpathlink->show();
+            addresstoolbar->recalc();
+        }
+        else
+        {
+            addressbox->setFocus();
+        }
+        return 1;
+    }
     // Address where we want to go
     FXString address = addressbox->getText();
 
@@ -4616,11 +4673,16 @@ long XFileExplorer::onCmdGotoAddress(FXObject*, FXSelector, void*)
 // Restart the application when required
 long XFileExplorer::onCmdRestart(FXObject*, FXSelector, void*)
 {
-    saveConfig();
+    saveConfig(true);
 
     pid_t child = fork();
     if (child == 0)
     {
+        if (setenv("SWORDFISH_RESUME_SESSION", "1", 1) != 0)
+        {
+            fprintf(stderr, "Unable to preserve the Swordfish session: %s\n", strerror(errno));
+            _exit(EXIT_FAILURE);
+        }
         execv(execpath.text(), args);
         fprintf(stderr, "Unable to restart Swordfish from %s: %s\n", execpath.text(), strerror(errno));
         _exit(EXIT_FAILURE);
@@ -4679,7 +4741,7 @@ long XFileExplorer::onCmdNewTab(FXObject*, FXSelector, void*)
     FXString dirpathname = lpanel->getCurrent()->getDirectory();
    
     // Add tab
-    tabbuttons->addTab(dirpathname);
+    getTabButtons()->addTab(dirpathname);
     appLog(APP_LOG_UI, "tab-created", FXString("path=\"") + dirpathname + "\"");
 
     return 1;
@@ -4888,6 +4950,28 @@ long XFileExplorer::onCmdRefresh(FXObject*, FXSelector, void*)
 long XFileExplorer::onUpdAddress(FXObject* sender, FXSelector, void*)
 {
     FXString currentdir = lpanel->getCurrent()->getDirectory();
+    FXbool common = getApp()->reg().readUnsignedEntry("OPTIONS", "common_addressbar", false);
+    lpanel->showAddressbar(!common);
+    rpanel->showAddressbar(!common);
+    if (common)
+    {
+        addresstoolbar->show();
+        commonpathlink->setLists(getCurrentPanel()->getList(), dirpanel->getList());
+    }
+    else
+    {
+        addresstoolbar->hide();
+        if (editingCommonPath)
+        {
+            editingCommonPath = false;
+            addressbox->hide();
+            commonpathlink->show();
+        }
+    }
+    if (editingCommonPath)
+    {
+        return 1;
+    }
 
     if (currentdir != prevdir)
     {
@@ -5248,8 +5332,8 @@ long XFileExplorer::onUpdShowPanels(FXObject* sender, FXSelector sel, void* ptr)
             {
                 rpanelmenutitle->enable();
                 rpanelmenutitle->show();
-                rpanelmenutitle->setText(_("&Right Panel"));
-                lpanelmenutitle->setText(_("&Left Panel"));
+                rpanelmenutitle->setText(_("&Right/Bottom Panel"));
+                lpanelmenutitle->setText(_("&Left/Top Panel"));
                 //lpanel->repaint();
                 lpanel->setActive();
             }
@@ -5307,8 +5391,8 @@ long XFileExplorer::onUpdShowPanels(FXObject* sender, FXSelector sel, void* ptr)
             {
                 rpanelmenutitle->enable();
                 rpanelmenutitle->show();
-                rpanelmenutitle->setText(_("&Right Panel"));
-                lpanelmenutitle->setText(_("&Left Panel"));
+                rpanelmenutitle->setText(_("&Right/Bottom Panel"));
+                lpanelmenutitle->setText(_("&Left/Top Panel"));
                 //lpanel->repaint();
                 lpanel->setActive();
             }
@@ -6270,21 +6354,21 @@ long XFileExplorer::onUpdFileRestore(FXObject* sender, FXSelector, void* ptr)
 // Update file operation menu items
 long XFileExplorer::onUpdFileMan(FXObject* sender, FXSelector, void*)
 {
+    onUpdAddress(this, 0, NULL);
     // Update show tab bar
-    if (always_show_tabbar) // Always show
+    tabtoolbar->hide();
+    FilePanel* tabpanels[] = {lpanel, rpanel};
+    for (int pane = 0; pane < 2; pane++)
     {
-        tabtoolbar->show();
-    }
-    else
-    {
-        if (tabbuttons->getNumActiveTabs() == 0)
+        TabButtons* tabs = tabpanels[pane]->getTabButtons();
+        if (!always_show_tabbar && tabs->getNumActiveTabs() == 0)
         {
-            tabtoolbar->hide();
+            tabpanels[pane]->showTabbar(false);
         }
         else
         {
-            tabtoolbar->show();
-        }        
+            tabpanels[pane]->showTabbar(true);
+        }
     }
     
     // Update the panelfocus variable
@@ -6719,5 +6803,517 @@ int XFileExplorer::readScriptDir(FXWindow* owner, FXMenuPane* scriptsmenu, FXStr
     // Close directory
     (void)closedir(dp);
 
+    return 1;
+}
+
+
+// Delete the bookmark items of the Bookmarks menu
+void XFileExplorer::clearBookmarkItems(void)
+{
+    for (size_t i = 0; i < bookmarkmc.size(); i++)
+    {
+        delete bookmarkmc[i];
+    }
+    bookmarkmc.clear();
+}
+
+
+// Bookmark the folders selected in the current pane
+long XFileExplorer::onCmdBookmarkSelected(FXObject*, FXSelector, void*)
+{
+    FilePanel* panel = getCurrentPanel();
+    FileList* list = panel->getList();
+    for (int i = 0; i < list->getNumItems(); i++)
+    {
+        if (list->isItemSelected(i) && list->isItemDirectory(i) && list->getItemFilename(i) != "..")
+        {
+            dirpanel->getBookmarksList()->bookmarkFolder(list->getItemFullPathname(i));
+        }
+    }
+    return 1;
+}
+
+
+long XFileExplorer::onUpdBookmarkSelected(FXObject* sender, FXSelector, void*)
+{
+    FileList* list = getCurrentPanel()->getList();
+    FXbool found = false;
+    for (int i = 0; i < list->getNumItems() && !found; i++)
+    {
+        found = list->isItemSelected(i) && list->isItemDirectory(i) && list->getItemFilename(i) != "..";
+    }
+    sender->handle(this, FXSEL(SEL_COMMAND, found ? ID_ENABLE : ID_DISABLE), NULL);
+    return 1;
+}
+
+
+// Tab groups are listed in [TAB GROUPS] as "groupN = name;id" and each pane is saved
+// in its own section ([TAB GROUP id LEFT] and [TAB GROUP id RIGHT]) like the session tabs
+int XFileExplorer::getNumTabGroups(void)
+{
+    int n = 0;
+    while (getApp()->reg().readStringEntry("TAB GROUPS", ("group" + FXStringVal(n)).text(), NULL))
+    {
+        n++;
+    }
+    return n;
+}
+
+
+FXString XFileExplorer::getTabGroupName(int index)
+{
+    FXString data = getApp()->reg().readStringEntry("TAB GROUPS", ("group" + FXStringVal(index)).text(), "");
+    return data.rbefore(';');
+}
+
+
+static FXString tabGroupId(FXApp* app, int index)
+{
+    FXString data = app->reg().readStringEntry("TAB GROUPS", ("group" + FXStringVal(index)).text(), "");
+    return data.rafter(';');
+}
+
+
+void XFileExplorer::rebuildTabGroupsMenu(void)
+{
+    for (size_t i = 0; i < tabgroupmc.size(); i++)
+    {
+        delete tabgroupmc[i];
+    }
+    tabgroupmc.clear();
+    int n = getNumTabGroups();
+    for (int i = 0; i < n; i++)
+    {
+        FXString name = getTabGroupName(i);
+        tabgroupmc.push_back(new FXMenuCommand(tabgroupsmenu, name.substitute("&", "&&"), NULL, this, ID_TAB_GROUP));
+    }
+    if (n == 0)
+    {
+        FXMenuCommand* mc = new FXMenuCommand(tabgroupsmenu, _("No tab groups yet"));
+        mc->disable();
+        tabgroupmc.push_back(mc);
+    }
+    if (tabgroupsmenu->id())
+    {
+        for (size_t i = 0; i < tabgroupmc.size(); i++)
+        {
+            tabgroupmc[i]->create();
+        }
+    }
+}
+
+
+// Save the tabs of both panes under a name
+long XFileExplorer::onCmdAddTabGroup(FXObject*, FXSelector, void*)
+{
+    InputDialog dialog(this, "", _("Name of the tab group:"), _("Bookmark All Tabs as Group"), _("Name:"),
+                       bigaddbookicon);
+    dialog.setText(FXPath::name(getCurrentPanel()->getDirectory()));
+    dialog.selectAll();
+    if (!dialog.execute(PLACEMENT_CURSOR))
+    {
+        return 0;
+    }
+    FXString name = dialog.getText();
+    name.trim();
+    name.substitute(';', ',');
+    if (name.empty())
+    {
+        return 0;
+    }
+
+    // Replace a group with the same name
+    int n = getNumTabGroups();
+    int index = n;
+    for (int i = 0; i < n; i++)
+    {
+        if (getTabGroupName(i) == name)
+        {
+            if (BOX_CLICKED_CANCEL == MessageBox::question(this, BOX_OK_CANCEL, _("Confirm Replace"),
+                                                           _("Tab group %s already exists. Replace it?"), name.text()))
+            {
+                return 0;
+            }
+            index = i;
+        }
+    }
+    FXString id = (index < n) ? tabGroupId(getApp(), index) : FXStringVal((FXlong)FXThread::time());
+
+    FilePanel* panels[] = {lpanel, rpanel};
+    const char* sides[] = {"LEFT", "RIGHT"};
+    for (int pane = 0; pane < 2; pane++)
+    {
+        FXString section = "TAB GROUP " + id + " " + sides[pane];
+        panels[pane]->getTabButtons()->saveTabs(section.text());
+        getApp()->reg().writeStringEntry(section.text(), "dir", panels[pane]->getDirectory().text());
+        getApp()->reg().writeUnsignedEntry(section.text(), "active", getCurrentPanel() == panels[pane]);
+    }
+    getApp()->reg().writeStringEntry("TAB GROUPS", ("group" + FXStringVal(index)).text(), (name + ";" + id).text());
+    getApp()->reg().write();
+    rebuildTabGroupsMenu();
+    appLog(APP_LOG_UI, "tab-group-saved", "name=\"" + name + "\"");
+    return 1;
+}
+
+
+// Replace the tabs of both panes with a saved group
+FXbool XFileExplorer::openTabGroup(int index)
+{
+    if (index < 0 || index >= getNumTabGroups())
+    {
+        return false;
+    }
+    FXString id = tabGroupId(getApp(), index);
+    FilePanel* panels[] = {lpanel, rpanel};
+    const char* sides[] = {"LEFT", "RIGHT"};
+    FilePanel* active = NULL;
+    for (int pane = 0; pane < 2; pane++)
+    {
+        FXString section = "TAB GROUP " + id + " " + sides[pane];
+        TabButtons* tabs = panels[pane]->getTabButtons();
+        tabs->clearTabs();
+        FXuint selected = getApp()->reg().readUnsignedEntry(section.text(), "current_tab", 0);
+        if (!tabs->restoreTabs(section.text(), selected))
+        {
+            FXString dir = getApp()->reg().readStringEntry(section.text(), "dir", "");
+            if (!xf_isdirectory(dir))
+            {
+                dir = panels[pane]->getDirectory();
+            }
+            if (always_show_tabbar)
+            {
+                tabs->addTab(dir, false);
+            }
+            else
+            {
+                panels[pane]->setDirectory(dir);
+                panels[pane]->updatePath();
+            }
+        }
+        if (getApp()->reg().readUnsignedEntry(section.text(), "active", pane == 0))
+        {
+            active = panels[pane];
+        }
+    }
+    if (active)
+    {
+        active->setActive();
+        dirpanel->setDirectory(active->getDirectory(), true);
+    }
+    appLog(APP_LOG_UI, "tab-group-opened", "name=\"" + getTabGroupName(index) + "\"");
+    return true;
+}
+
+
+long XFileExplorer::onCmdOpenTabGroup(FXObject* sender, FXSelector, void*)
+{
+    for (size_t i = 0; i < tabgroupmc.size(); i++)
+    {
+        if (tabgroupmc[i] == sender)
+        {
+            openTabGroup(i);
+        }
+    }
+    return 1;
+}
+
+
+void XFileExplorer::renameTabGroup(int index)
+{
+    InputDialog dialog(this, getTabGroupName(index), _("New name of the tab group:"), _("Rename Tab Group"),
+                       _("Name:"), bigaddbookicon);
+    dialog.selectAll();
+    if (!dialog.execute(PLACEMENT_CURSOR))
+    {
+        return;
+    }
+    FXString name = dialog.getText();
+    name.trim();
+    name.substitute(';', ',');
+    if (name.empty())
+    {
+        return;
+    }
+    getApp()->reg().writeStringEntry("TAB GROUPS", ("group" + FXStringVal(index)).text(),
+                                     (name + ";" + tabGroupId(getApp(), index)).text());
+    getApp()->reg().write();
+    rebuildTabGroupsMenu();
+}
+
+
+void XFileExplorer::removeTabGroup(int index)
+{
+    int n = getNumTabGroups();
+    if (index < 0 || index >= n)
+    {
+        return;
+    }
+    FXString id = tabGroupId(getApp(), index);
+    getApp()->reg().deleteSection(("TAB GROUP " + id + " LEFT").text());
+    getApp()->reg().deleteSection(("TAB GROUP " + id + " RIGHT").text());
+    for (int i = index; i < n - 1; i++)
+    {
+        FXString next = getApp()->reg().readStringEntry("TAB GROUPS", ("group" + FXStringVal(i + 1)).text(), "");
+        getApp()->reg().writeStringEntry("TAB GROUPS", ("group" + FXStringVal(i)).text(), next.text());
+    }
+    getApp()->reg().deleteEntry("TAB GROUPS", ("group" + FXStringVal(n - 1)).text());
+    getApp()->reg().write();
+    rebuildTabGroupsMenu();
+}
+
+
+// Dialog to open, edit, reorder and remove bookmarks and tab groups
+class BookmarksManager : public DialogBox
+{
+    FXDECLARE(BookmarksManager)
+
+protected:
+    XFileExplorer* window = NULL;
+    DirPanel* dirpanel = NULL;
+    FXList* marks = NULL;
+    FXList* groups = NULL;
+    vector_FXString marknames;
+
+    BookmarksManager()
+    {
+    }
+
+    void fill(const FXString& selectmark = "", int selectgroup = -1)
+    {
+        BookmarksList* list = dirpanel->getBookmarksList();
+        marks->clearItems();
+        marknames.clear();
+        for (int i = 0; i < list->getNumItems(); i++)
+        {
+            FXString name = list->getItemText(i);
+            marknames.push_back(name);
+            marks->appendItem(name + "   \u2014   " + dirpanel->getBookmarkLocation(name), list->getItemIcon(i));
+            if (name == selectmark)
+            {
+                marks->setCurrentItem(i);
+                marks->selectItem(i);
+            }
+        }
+        groups->clearItems();
+        for (int i = 0; i < window->getNumTabGroups(); i++)
+        {
+            groups->appendItem(window->getTabGroupName(i), mininewtabicon);
+        }
+        if (selectgroup >= 0 && selectgroup < groups->getNumItems())
+        {
+            groups->setCurrentItem(selectgroup);
+            groups->selectItem(selectgroup);
+        }
+    }
+
+    FXString currentMark()
+    {
+        int i = marks->getCurrentItem();
+        return (i >= 0 && i < (int)marknames.size() && marks->isItemSelected(i)) ? marknames[i] : FXString::null;
+    }
+
+    int currentGroup()
+    {
+        int i = groups->getCurrentItem();
+        return (i >= 0 && groups->isItemSelected(i)) ? i : -1;
+    }
+
+    // Run a bookmark command of the Places pane on the selected bookmark
+    void bookmarkCommand(FXuint id)
+    {
+        FXString name = currentMark();
+        dirpanel->getBookmarksList()->setBookmark(name);
+        dirpanel->handle(this, FXSEL(SEL_COMMAND, id), NULL);
+        window->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_REBUILD_BOOKMARKS_MENU), NULL);
+        FXString current = dirpanel->getBookmarksList()->getCurrentItem();
+        fill(dirpanel->getBookmarkLocation(current).empty() ? FXString::null : current);
+    }
+
+public:
+    enum
+    {
+        ID_OPEN = DialogBox::ID_LAST,
+        ID_EDIT,
+        ID_UP,
+        ID_DOWN,
+        ID_REMOVE,
+        ID_REMOVE_ALL,
+        ID_GROUP_OPEN,
+        ID_GROUP_RENAME,
+        ID_GROUP_REMOVE,
+        ID_MARKS,
+        ID_GROUPS,
+        ID_LAST
+    };
+
+    BookmarksManager(XFileExplorer* win, DirPanel* dpanel) :
+        DialogBox(win, _("Manage Bookmarks"), DECOR_TITLE | DECOR_BORDER | DECOR_CLOSE | DECOR_STRETCHABLE,
+                  0, 0, 560, 440)
+    {
+        window = win;
+        dirpanel = dpanel;
+        FXVerticalFrame* contents = new FXVerticalFrame(this, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+
+        FXGroupBox* markbox = new FXGroupBox(contents, _("Bookmarks"),
+                                             GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        FXHorizontalFrame* markrow = new FXHorizontalFrame(markbox, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        FXPacker* markframe = new FXPacker(markrow, FRAME_SUNKEN | LAYOUT_FILL_X | LAYOUT_FILL_Y, 0, 0, 0, 0,
+                                           0, 0, 0, 0);
+        marks = new FXList(markframe, this, ID_MARKS, LIST_BROWSESELECT | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        FXVerticalFrame* markbuttons = new FXVerticalFrame(markrow, LAYOUT_FILL_Y | PACK_UNIFORM_WIDTH);
+        new FXButton(markbuttons, _("&Open"), NULL, this, ID_OPEN, FRAME_GROOVE | LAYOUT_FILL_X);
+        new FXButton(markbuttons, _("&Edit..."), NULL, this, ID_EDIT, FRAME_GROOVE | LAYOUT_FILL_X);
+        new FXButton(markbuttons, _("Move &Up"), NULL, this, ID_UP, FRAME_GROOVE | LAYOUT_FILL_X);
+        new FXButton(markbuttons, _("Move &Down"), NULL, this, ID_DOWN, FRAME_GROOVE | LAYOUT_FILL_X);
+        new FXButton(markbuttons, _("&Remove"), NULL, this, ID_REMOVE, FRAME_GROOVE | LAYOUT_FILL_X);
+        new FXButton(markbuttons, _("Remove &All"), NULL, this, ID_REMOVE_ALL, FRAME_GROOVE | LAYOUT_FILL_X);
+
+        FXGroupBox* groupbox = new FXGroupBox(contents, _("Tab Groups"),
+                                              GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+        FXHorizontalFrame* grouprow = new FXHorizontalFrame(groupbox, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        FXPacker* groupframe = new FXPacker(grouprow, FRAME_SUNKEN | LAYOUT_FILL_X | LAYOUT_FILL_Y, 0, 0, 0, 0,
+                                            0, 0, 0, 0);
+        groups = new FXList(groupframe, this, ID_GROUPS, LIST_BROWSESELECT | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        groups->setNumVisible(4);
+        FXVerticalFrame* groupbuttons = new FXVerticalFrame(grouprow, LAYOUT_FILL_Y | PACK_UNIFORM_WIDTH);
+        new FXButton(groupbuttons, _("O&pen Group"), NULL, this, ID_GROUP_OPEN, FRAME_GROOVE | LAYOUT_FILL_X);
+        new FXButton(groupbuttons, _("Re&name..."), NULL, this, ID_GROUP_RENAME, FRAME_GROOVE | LAYOUT_FILL_X);
+        new FXButton(groupbuttons, _("Remo&ve Group"), NULL, this, ID_GROUP_REMOVE, FRAME_GROOVE | LAYOUT_FILL_X);
+
+        new FXLabel(contents, _("Tip: drag a tab or a folder onto the Bookmarks list of the Places pane to bookmark it."),
+                    NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        FXHorizontalFrame* buttons = new FXHorizontalFrame(contents, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X,
+                                                           0, 0, 0, 0, 10, 10, 5, 5);
+        FXButton* close = new FXButton(buttons, _("&Close"), NULL, this, DialogBox::ID_CANCEL,
+                                       FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
+        close->addHotKey(KEY_Escape);
+        fill();
+    }
+
+    long onCmdOpen(FXObject*, FXSelector, void*)
+    {
+        FXString name = currentMark();
+        FXString path = dirpanel->getBookmarkLocation(name);
+        if (window->getCurrentPanel()->navigatePane(path))
+        {
+            dirpanel->getBookmarksList()->setBookmark(name);
+            handle(this, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+        }
+        return 1;
+    }
+
+    long onCmdEdit(FXObject*, FXSelector, void*)
+    {
+        bookmarkCommand(DirPanel::ID_MODIFY_BOOKMARK);
+        return 1;
+    }
+
+    long onCmdUp(FXObject*, FXSelector, void*)
+    {
+        bookmarkCommand(DirPanel::ID_MOVEUP_BOOKMARK);
+        return 1;
+    }
+
+    long onCmdDown(FXObject*, FXSelector, void*)
+    {
+        bookmarkCommand(DirPanel::ID_MOVEDOWN_BOOKMARK);
+        return 1;
+    }
+
+    long onCmdRemove(FXObject*, FXSelector, void*)
+    {
+        bookmarkCommand(DirPanel::ID_REMOVE_BOOKMARK);
+        return 1;
+    }
+
+    long onCmdRemoveAll(FXObject*, FXSelector, void*)
+    {
+        window->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_REMOVE_ALL_BOOKMARKS), NULL);
+        fill();
+        return 1;
+    }
+
+    long onUpdMark(FXObject* sender, FXSelector sel, void*)
+    {
+        FXbool enable = !currentMark().empty();
+        int i = marks->getCurrentItem();
+        if (FXSELID(sel) == ID_UP)
+        {
+            enable = enable && i > 0;
+        }
+        if (FXSELID(sel) == ID_DOWN)
+        {
+            enable = enable && i < marks->getNumItems() - 1;
+        }
+        if (FXSELID(sel) == ID_REMOVE_ALL)
+        {
+            enable = marks->getNumItems() > 0;
+        }
+        sender->handle(this, FXSEL(SEL_COMMAND, enable ? ID_ENABLE : ID_DISABLE), NULL);
+        return 1;
+    }
+
+    long onCmdGroupOpen(FXObject*, FXSelector, void*)
+    {
+        if (window->openTabGroup(currentGroup()))
+        {
+            handle(this, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+        }
+        return 1;
+    }
+
+    long onCmdGroupRename(FXObject*, FXSelector, void*)
+    {
+        int i = currentGroup();
+        window->renameTabGroup(i);
+        fill(FXString::null, i);
+        return 1;
+    }
+
+    long onCmdGroupRemove(FXObject*, FXSelector, void*)
+    {
+        int i = currentGroup();
+        if (BOX_CLICKED_OK == MessageBox::question(this, BOX_OK_CANCEL, _("Confirm Remove"),
+                                                   _("Remove tab group '%s' ?"), window->getTabGroupName(i).text()))
+        {
+            window->removeTabGroup(i);
+            fill(FXString::null, FXMIN(i, window->getNumTabGroups() - 1));
+        }
+        return 1;
+    }
+
+    long onUpdGroup(FXObject* sender, FXSelector, void*)
+    {
+        sender->handle(this, FXSEL(SEL_COMMAND, currentGroup() >= 0 ? ID_ENABLE : ID_DISABLE), NULL);
+        return 1;
+    }
+};
+
+FXDEFMAP(BookmarksManager) BookmarksManagerMap[] =
+{
+    FXMAPFUNC(SEL_COMMAND, BookmarksManager::ID_OPEN, BookmarksManager::onCmdOpen),
+    FXMAPFUNC(SEL_DOUBLECLICKED, BookmarksManager::ID_MARKS, BookmarksManager::onCmdOpen),
+    FXMAPFUNC(SEL_COMMAND, BookmarksManager::ID_EDIT, BookmarksManager::onCmdEdit),
+    FXMAPFUNC(SEL_COMMAND, BookmarksManager::ID_UP, BookmarksManager::onCmdUp),
+    FXMAPFUNC(SEL_COMMAND, BookmarksManager::ID_DOWN, BookmarksManager::onCmdDown),
+    FXMAPFUNC(SEL_COMMAND, BookmarksManager::ID_REMOVE, BookmarksManager::onCmdRemove),
+    FXMAPFUNC(SEL_COMMAND, BookmarksManager::ID_REMOVE_ALL, BookmarksManager::onCmdRemoveAll),
+    FXMAPFUNCS(SEL_UPDATE, BookmarksManager::ID_OPEN, BookmarksManager::ID_REMOVE_ALL, BookmarksManager::onUpdMark),
+    FXMAPFUNC(SEL_COMMAND, BookmarksManager::ID_GROUP_OPEN, BookmarksManager::onCmdGroupOpen),
+    FXMAPFUNC(SEL_DOUBLECLICKED, BookmarksManager::ID_GROUPS, BookmarksManager::onCmdGroupOpen),
+    FXMAPFUNC(SEL_COMMAND, BookmarksManager::ID_GROUP_RENAME, BookmarksManager::onCmdGroupRename),
+    FXMAPFUNC(SEL_COMMAND, BookmarksManager::ID_GROUP_REMOVE, BookmarksManager::onCmdGroupRemove),
+    FXMAPFUNCS(SEL_UPDATE, BookmarksManager::ID_GROUP_OPEN, BookmarksManager::ID_GROUP_REMOVE,
+               BookmarksManager::onUpdGroup),
+};
+
+FXIMPLEMENT(BookmarksManager, DialogBox, BookmarksManagerMap, ARRAYNUMBER(BookmarksManagerMap))
+
+
+long XFileExplorer::onCmdManageBookmarks(FXObject*, FXSelector, void*)
+{
+    BookmarksManager dialog(this, dirpanel);
+    dialog.create();
+    dialog.execute(PLACEMENT_OWNER);
     return 1;
 }

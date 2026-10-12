@@ -53,6 +53,10 @@ protected:
     FXuint single_click = SINGLE_CLICK_NONE;
 
 public:
+    FXString getDesktopDirectory() const
+    {
+        return placeslist->getDesktopDirectory();
+    }
     DirPanel(FXWindow* owner, FXComposite* p, FXColor listbackcolor = FXRGB(255, 255, 255),
              FXColor listforecolor = FXRGB(0, 0, 0), FXbool smoothscroll = true,
              FXuint opts = 0, int x = 0, int y = 0, int w = 0, int h = 0);

@@ -279,6 +279,10 @@ long PathLinker::onCmdLinkButton(FXObject* sender, FXSelector sel, void* ptr)
 // Gives the focus to the file list when clicking on the focus button
 long PathLinker::onCmdFocusButton(FXObject* sender, FXSelector sel, void* ptr)
 {
+    if (editTarget)
+    {
+        return editTarget->handle(this, FXSEL(SEL_COMMAND, editSelector), ptr);
+    }
     // Set the focus on the file list
     filelist->setFocus();
     return 1;
@@ -348,7 +352,8 @@ void PathLinker::unfocus(void)
 
 void PathLinker::focus(void)
 {
-    this->setBackColor(getApp()->getBaseColor());
+    // Blend with the (possibly shaded) address bar
+    this->setBackColor(getParent() ? getParent()->getBackColor() : getApp()->getBaseColor());
     for (int i = 0; i < NMAX_LINKS; i++)
     {
         linkButtons[i]->setBackColor(getApp()->getBaseColor());

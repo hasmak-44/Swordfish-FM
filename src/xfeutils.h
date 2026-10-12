@@ -709,4 +709,10 @@ FXString xf_substitutecase(const FXString&, const FXString&, const FXString&, bo
 
 FXulong xf_hashfile(const FXchar*);
 
+// Background color of a bar, shaded from the base color (level 0 = base color)
+FXColor xf_barcolor(FXApp*, int level);
+
+// Apply a bar color to a bar and its children that use the base color
+void xf_shadebar(FXWindow*, FXColor);
+
 #endif

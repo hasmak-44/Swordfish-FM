@@ -6,7 +6,7 @@
 
 # Swordfish FM
 
-> **⚠️ Work in Progress - Not ready for release yet**
+> **Swordfish-Portable v0.0.1 RC1 — release candidate available for testing**
 > 
 > About the name **SwordFish**, The original XFE file manager is known for its speed and versatility, ad I am a life long avid angler, I wanted to choose a name that reflects both the ethos of XFE, and combine with my hobby, Swordfish is one of the fastest and most agile top ocean predators, hence the name ;}
 > 
@@ -34,7 +34,7 @@ Copyright (C) Roland Baudin and contributors.
 
 > If **XFE** is the root, **Swordfish FM** aims to be the evolution.
 
-## Portable Linux testing build
+## Portable Linux release candidate
 
 A portable Linux build lets you run Swordfish without installing it into the
 system. It currently supports 64-bit x86 Linux.
@@ -44,7 +44,9 @@ system. It currently supports 64-bit x86 Linux.
 This testing build runs on 64-bit x86 Linux. It does not install Swordfish
 system-wide or require extra software to download it.
 
-1. Click [Download the latest Swordfish portable version](https://hasmak-44.github.io/Swordfish-FM/Swordfish-Portable.zip).
+1. Open [Swordfish-Portable v0.0.1 RC1](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-portable-0.0.1-rc1)
+   and download the ZIP asset, or click
+   [Download the latest Swordfish portable version](https://hasmak-44.github.io/Swordfish-FM/Swordfish-Portable.zip).
    Your browser downloads the ZIP using its normal download settings.
 2. Extract the ZIP to the place where you want to keep Swordfish. The ZIP
    contains the complete `Swordfish-Portable` folder. **Extract the whole
@@ -59,8 +61,7 @@ system-wide or require extra software to download it.
    that folder and run `./AppRun`, or create a desktop launcher whose command
    points to the `AppRun` file in your Swordfish folder.
 
-This is a testing build, not a system-wide installation. If the download link
-is not available yet, the first portable build is still being published.
+This is a release candidate for testing, not a system-wide installation.
 
 For technical details or to build it yourself, see
 [portable/README.md](portable/README.md).

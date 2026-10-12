@@ -617,6 +617,7 @@ DirPanel::DirPanel(FXWindow* owner, FXComposite* p, FXColor listbackcolor, FXCol
                          0, 0, 0, 0, 0, 0, 0, 4);
     status->setTarget(this);
     status->setSelector(FXSEL(SEL_UPDATE, DirPanel::ID_TITLE));
+    xf_shadebar(statusbar, xf_barcolor(getApp(), 1));
 
     // Home and trahscan locations
     trashlocation = xdgdatahome + PATHSEPSTRING TRASHPATH;

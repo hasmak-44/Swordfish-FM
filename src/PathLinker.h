@@ -24,6 +24,8 @@ protected:
     FXFont* highlightFont = NULL;
     FileList* filelist = NULL;
     DirList* dirlist = NULL;
+    FXObject* editTarget = NULL;
+    FXSelector editSelector = 0;
     PathLinker()
     {
     }
@@ -52,6 +54,17 @@ public:
     void setPath(FXString);
     void focus();
     void unfocus();
+    void setEditTarget(FXObject* tgt, FXSelector sel)
+    {
+        editTarget = tgt;
+        editSelector = sel;
+    }
+    void setLists(FileList* flist, DirList* dlist)
+    {
+        filelist = flist;
+        dirlist = dlist;
+        setPath(flist->getDirectory());
+    }
 };
 
 #endif

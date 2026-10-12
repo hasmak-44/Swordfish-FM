@@ -9,9 +9,116 @@
 extern FXString homedir;
 
 
+// Tab label button that can be dragged onto the Bookmarks list
+class TabDragButton : public FXButton
+{
+    FXDECLARE(TabDragButton)
+
+protected:
+    FXint pressx = 0;
+    FXint pressy = 0;
+    FXuint pressstate = STATE_UP;
+    FXbool dragging = false;
+    FXDragType tabType = 0;
+
+    TabDragButton()
+    {
+    }
+
+public:
+    TabDragButton(FXComposite* p, FXObject* tgt, FXSelector sel, FXuint opts) :
+        FXButton(p, "", NULL, tgt, sel, opts, 0, 0, 0, 0, 4, 4, 2, 2)
+    {
+    }
+
+    virtual void create()
+    {
+        FXButton::create();
+        tabType = getApp()->registerDragType(TABBUTTONS_DRAG_TYPE);
+    }
+
+    long onLeftBtnPress(FXObject* sender, FXSelector sel, void* ptr)
+    {
+        FXEvent* event = (FXEvent*)ptr;
+        pressx = event->root_x;
+        pressy = event->root_y;
+        pressstate = getState();
+        dragging = false;
+        return FXButton::onLeftBtnPress(sender, sel, ptr);
+    }
+
+    long onMotion(FXObject*, FXSelector, void* ptr)
+    {
+        FXEvent* event = (FXEvent*)ptr;
+        if (!dragging && (flags & FLAG_PRESSED) &&
+            FXABS(event->root_x - pressx) + FXABS(event->root_y - pressy) > 6 && beginDrag(&tabType, 1))
+        {
+            dragging = true;
+        }
+        if (dragging)
+        {
+            handleDrag(event->root_x, event->root_y, DRAG_COPY);
+            setDragCursor(getApp()->getDefaultCursor(didAccept() != DRAG_REJECT ? DEF_DNDCOPY_CURSOR :
+                                                     DEF_DNDSTOP_CURSOR));
+            return 1;
+        }
+        return 0;
+    }
+
+    long onLeftBtnRelease(FXObject* sender, FXSelector sel, void* ptr)
+    {
+        if (!dragging)
+        {
+            return FXButton::onLeftBtnRelease(sender, sel, ptr);
+        }
+        dragging = false;
+        endDrag(didAccept() != DRAG_REJECT);
+        setDragCursor(getDefaultCursor());
+        ungrab();
+        flags &= ~FLAG_PRESSED;
+        flags |= FLAG_UPDATE;
+        setState(pressstate);
+        return 1;
+    }
+
+    long onDNDRequest(FXObject* sender, FXSelector sel, void* ptr)
+    {
+        FXEvent* event = (FXEvent*)ptr;
+        if (FXButton::onDNDRequest(sender, sel, ptr))
+        {
+            return 1;
+        }
+        TabButtons* tabs = dynamic_cast<TabButtons*>(getTarget());
+        if (event->target == tabType && tabs)
+        {
+            FXString path = tabs->getPath(getSelector() - TabButtons::ID_START_TAB);
+            FXuchar* data;
+            FXMALLOC(&data, FXuchar, path.length() + 1);
+            memcpy(data, path.text(), path.length() + 1);
+            setDNDData(FROM_DRAGNDROP, tabType, data, path.length());
+            return 1;
+        }
+        return 0;
+    }
+};
+
+FXDEFMAP(TabDragButton) TabDragButtonMap[] =
+{
+    FXMAPFUNC(SEL_LEFTBUTTONPRESS, 0, TabDragButton::onLeftBtnPress),
+    FXMAPFUNC(SEL_LEFTBUTTONRELEASE, 0, TabDragButton::onLeftBtnRelease),
+    FXMAPFUNC(SEL_MOTION, 0, TabDragButton::onMotion),
+    FXMAPFUNC(SEL_DND_REQUEST, 0, TabDragButton::onDNDRequest),
+};
+
+FXIMPLEMENT(TabDragButton, FXButton, TabDragButtonMap, ARRAYNUMBER(TabDragButtonMap))
+
+
 FXDEFMAP(TabButtons) TabButtonsMap[] =
 {
     FXMAPFUNC(SEL_COMMAND, TabButtons::ID_NEW_TAB, TabButtons::onCmdNewTab),
+    FXMAPFUNC(SEL_LEFTBUTTONRELEASE, 0, TabButtons::onCmdNewTab),
+    FXMAPFUNC(SEL_RIGHTBUTTONRELEASE, 0, TabButtons::onBlankMenu),
+    FXMAPFUNC(SEL_RIGHTBUTTONRELEASE, TabButtons::ID_NEW_TAB, TabButtons::onBlankMenu),
     FXMAPFUNC(SEL_COMMAND, TabButtons::ID_REMOVE_ALL_TABS, TabButtons::onCmdRemoveAllTabs),
     FXMAPFUNCS(SEL_COMMAND, TabButtons::ID_START_TAB, TabButtons::ID_END_TAB, TabButtons::onCmdPathButton),
     FXMAPFUNCS(SEL_COMMAND, TabButtons::ID_START_CLOSE, TabButtons::ID_END_CLOSE, TabButtons::onCmdCloseButton),
@@ -28,16 +135,45 @@ FXDEFMAP(TabButtons) TabButtonsMap[] =
 FXIMPLEMENT(TabButtons, FXHorizontalFrame, TabButtonsMap, ARRAYNUMBER(TabButtonsMap))
 
 
+// Set the background color of a tab (frame, label and close button)
+void TabButtons::setTabColor(int index, FXColor color)
+{
+    if ((index < 0) || (index >= (int)tabButtons.size()))
+    {
+        return;
+    }
+    tabButtons[index]->getParent()->setBackColor(color);
+    tabButtons[index]->setBackColor(color);
+    closeButtons[index]->setBackColor(color);
+
+    // With shaded bars, the current tab is drawn flat in the lighter base color instead of pressed
+    if ((basecolor != getApp()->getBaseColor()) && (color == shadecolor))
+    {
+        tabButtons[index]->setState(STATE_UP);
+        closeButtons[index]->setState(STATE_UP);
+    }
+}
+
+
 // Construct
 TabButtons::TabButtons(FXComposite* a, FilePanel* fpanel, DirPanel* dpanel, FXuint opts) :
     FXHorizontalFrame(a, opts, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2)
 {
     // Frame background colors of selected and unselected tab
-    basecolor = getApp()->getBaseColor();
-    FXuint r = FXREDVAL(basecolor);
-    FXuint g = FXGREENVAL(basecolor);
-    FXuint b = FXBLUEVAL(basecolor);
-    shadecolor = FXRGB(0.9 * r, 0.9 * g, 0.9 * b);
+    // With bar shading, inactive tabs use the shaded bar color and the current tab the lighter base color
+    basecolor = xf_barcolor(getApp(), 2);
+    if (basecolor == getApp()->getBaseColor())
+    {
+        FXuint r = FXREDVAL(basecolor);
+        FXuint g = FXGREENVAL(basecolor);
+        FXuint b = FXBLUEVAL(basecolor);
+        shadecolor = FXRGB(0.9 * r, 0.9 * g, 0.9 * b);
+    }
+    else
+    {
+        shadecolor = getApp()->getBaseColor();
+    }
+    setBackColor(basecolor);
 
     // File and dir panels
     filepanel = fpanel;
@@ -53,7 +189,7 @@ TabButtons::TabButtons(FXComposite* a, FilePanel* fpanel, DirPanel* dpanel, FXui
     {
         FXHorizontalFrame* buttons = new FXHorizontalFrame(this, FRAME_GROOVE | LAYOUT_SIDE_TOP | LAYOUT_LEFT |
                                                            LAYOUT_FILL_Y, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2);
-        tabButtons.push_back(new FXButton(buttons, "", NULL, this, idTab, BUTTON_TOOLBAR, 0, 0, 0, 0, 4, 4, 2, 2));
+        tabButtons.push_back(new TabDragButton(buttons, this, idTab, BUTTON_TOOLBAR));
         closeButtons.push_back(new FXButton(buttons, "", minicloseicon, this, idClose, BUTTON_TOOLBAR,
                                0, 0, 0, 0, 0, 0, 2, 2));
 
@@ -67,10 +203,18 @@ TabButtons::TabButtons(FXComposite* a, FilePanel* fpanel, DirPanel* dpanel, FXui
         closeButtons[i]->hide();
     }
 
-    // New tab button
-    FXString key = getApp()->reg().readStringEntry("KEYBINDINGS", "new_tab", "Shift-F1");
-    FXString str = FXString(_("\tNew Tab")) + " (" + key + ")";
-    new FXButton(this, str, miniaddicon, this, ID_NEW_TAB, BUTTON_TOOLBAR | LAYOUT_FILL_Y, 0, 0, 0, 0, 0, 0, 2, 2);
+    new FXButton(this, FXString("+") + TAB + _("New Tab"), NULL, this, ID_NEW_TAB, BUTTON_TOOLBAR | LAYOUT_CENTER_Y);
+    new FXButton(this, "", NULL, this, ID_NEW_TAB,
+                 BUTTON_TOOLBAR | LAYOUT_FILL_X | LAYOUT_FILL_Y, 0, 0, 0, 0, 0, 0, 0, 0);
+
+    for (FXWindow* child = getFirst(); child; child = child->getNext())
+    {
+        child->setBackColor(basecolor);
+    }
+    for (int i = 0; i < NMAX_TABS; i++)
+    {
+        setTabColor(i, basecolor);
+    }
 
     // Initializations
     nbActiveTabs = 0;
@@ -106,15 +250,21 @@ void TabButtons::create()
 TabButtons::~TabButtons()
 {
     delete highlightFont;
-    delete tabPaths;    
+    delete[] tabPaths;
 }
 
 
 // Add new tab
-void TabButtons::addTab(FXString pathname)
+void TabButtons::addTab(FXString pathname, FXbool activate)
 {
     if (nbActiveTabs < NMAX_TABS)
     {
+        if (activate)
+        {
+            filepanel->setActive();
+            filepanel->finishPathEditing();
+        }
+        onUpdCurrentTab(this, 0, NULL);
         // Update previous and current tab indices
         FXuint index = nbActiveTabs++;
         prevTab = currentTab;
@@ -175,8 +325,12 @@ void TabButtons::addTab(FXString pathname)
         }
 
         // Set directory
-        filepanel->getCurrent()->setDirectory(pathname);
-        dirpanel->setDirectory(pathname, true);
+        filepanel->setDirectory(pathname);
+        filepanel->updatePath();
+        if (filepanel->isActive())
+        {
+            dirpanel->setDirectory(filepanel->getDirectory(), true);
+        }
 
         // Change font and state
         tabButtons[prevTab]->setFont(normalFont);
@@ -187,8 +341,8 @@ void TabButtons::addTab(FXString pathname)
         closeButtons[currentTab]->setState(STATE_DOWN);
 
         // Change frame background color
-        closeButtons[prevTab]->getParent()->setBackColor(basecolor);
-        closeButtons[currentTab]->getParent()->setBackColor(shadecolor);
+        setTabColor(prevTab, basecolor);
+        setTabColor(currentTab, shadecolor);
     } 
 }
 
@@ -197,10 +351,16 @@ void TabButtons::addTab(FXString pathname)
 long TabButtons::onCmdPathButton(FXObject* sender, FXSelector sel, void* ptr)
 {
     // Set the focus on the file list
-    filepanel->getCurrent()->getList()->setFocus();
+    filepanel->setActive();
+    filepanel->finishPathEditing();
+    onUpdCurrentTab(this, 0, NULL);
 
     // Index of pressed button
     FXuint index = FXSELID(sel) - ID_START_TAB;
+    if (index >= nbActiveTabs)
+    {
+        return 0;
+    }
     prevTab = currentTab;
     currentTab = index;
 
@@ -209,7 +369,8 @@ long TabButtons::onCmdPathButton(FXObject* sender, FXSelector sel, void* ptr)
     appLog(APP_LOG_UI, "tab-selected", FXString("index=") + FXStringVal(index) +
            " path=\"" + filePath + "\"");
 
-    filepanel->getCurrent()->setDirectory(filePath);
+    filepanel->setDirectory(filePath);
+    filepanel->updatePath();
     dirpanel->setDirectory(filePath, true);
 
     // Change fonts and states
@@ -221,8 +382,8 @@ long TabButtons::onCmdPathButton(FXObject* sender, FXSelector sel, void* ptr)
     closeButtons[currentTab]->setState(STATE_DOWN);
 
     // Change frame background color
-    closeButtons[prevTab]->getParent()->setBackColor(basecolor);
-    closeButtons[currentTab]->getParent()->setBackColor(shadecolor);
+    setTabColor(prevTab, basecolor);
+    setTabColor(currentTab, shadecolor);
 
     return 1;
 }
@@ -233,6 +394,14 @@ long TabButtons::onCmdCloseButton(FXObject* sender, FXSelector sel, void* ptr)
 {
     // Index of pressed button
     FXuint index = FXSELID(sel) - ID_START_CLOSE;
+    if (index >= nbActiveTabs)
+    {
+        return 0;
+    }
+    filepanel->setActive();
+    filepanel->finishPathEditing();
+    onUpdCurrentTab(this, 0, NULL);
+    FXuint oldCurrent = currentTab;
     
     // Change fonts and states
     tabButtons[index]->setFont(normalFont);
@@ -255,16 +424,26 @@ long TabButtons::onCmdCloseButton(FXObject* sender, FXSelector sel, void* ptr)
     nbActiveTabs--;
 
     // Update previous and current tab
-    if (index < currentTab)
+    if (index < oldCurrent)
     {
-        prevTab = currentTab;
-        currentTab = (currentTab <= 1 ? 0 : currentTab - 1);
+        currentTab = oldCurrent - 1;
     }
-    
-    if (index == currentTab)
+    else if (index == oldCurrent)
     {
-        currentTab = (currentTab <= 1 ? 0 : currentTab - 1);
-        filepanel->getCurrent()->setDirectory(tabPaths[currentTab]);
+        currentTab = nbActiveTabs ? FXMIN(index, nbActiveTabs - 1) : 0;
+        if (nbActiveTabs)
+        {
+            filepanel->setDirectory(tabPaths[currentTab]);
+            filepanel->updatePath();
+            dirpanel->setDirectory(filepanel->getDirectory(), true);
+        }
+    }
+    prevTab = FXMIN(oldCurrent, (FXuint)NMAX_TABS - 1);
+    if (!nbActiveTabs)
+    {
+        prevTab = currentTab = 0;
+        recalc();
+        return 1;
     }
     
     // Change fonts and states
@@ -276,8 +455,8 @@ long TabButtons::onCmdCloseButton(FXObject* sender, FXSelector sel, void* ptr)
     closeButtons[currentTab]->setState(STATE_DOWN);
 
     // Change frame background color
-    closeButtons[prevTab]->getParent()->setBackColor(basecolor);
-    closeButtons[currentTab]->getParent()->setBackColor(shadecolor);
+    setTabColor(prevTab, basecolor);
+    setTabColor(currentTab, shadecolor);
 
     return 1;
 }
@@ -286,6 +465,8 @@ long TabButtons::onCmdCloseButton(FXObject* sender, FXSelector sel, void* ptr)
 // Add a new tab
 long TabButtons::onCmdNewTab(FXObject*, FXSelector, void*)
 {
+    filepanel->setActive();
+    filepanel->finishPathEditing();
     // Read new tab directory mode
     FXuint newtabdirmode = getApp()->reg().readUnsignedEntry("OPTIONS", "newtabdir_mode", NEWTAB_HOMEDIR);
 
@@ -298,7 +479,7 @@ long TabButtons::onCmdNewTab(FXObject*, FXSelector, void*)
     else if (newtabdirmode == NEWTAB_CURRENTDIR)
     {
         // Current path
-        pathname = filepanel->getCurrent()->getDirectory();
+        pathname = filepanel->getDirectory();
     }
     else // Root directory
     {
@@ -316,38 +497,54 @@ long TabButtons::onCmdNewTab(FXObject*, FXSelector, void*)
 // Remove all tabs
 long TabButtons::onCmdRemoveAllTabs(FXObject*, FXSelector, void*)
 {
+    filepanel->setActive();
     if (BOX_CLICKED_CANCEL == MessageBox::question(FXApp::instance()->getActiveWindow(), BOX_OK_CANCEL,
                                                    _("Confirm Remove Tabs"),
-                                                   _("Do you really want to remove all tabs?")))
+                                                   _("Do you really want to close all tabs in this pane?")))
     {
         return 0;
     }
     else
     {
         appLog(APP_LOG_UI, "all-tabs-removed", FXString("count=") + FXStringVal(nbActiveTabs));
-        for (FXuint i = 0; i < nbActiveTabs; i++)
-        {
-            tabButtons[i]->setText("");
-            tabPaths[i] = "";
-            tabButtons[i]->hide();
-            tabButtons[i]->getParent()->hide();
-            closeButtons[i]->hide();        
-        }
-        
-        nbActiveTabs = 0;
-        prevTab = 0;
-        currentTab = 0;
+        clearTabs();
     }
 
     return 1;
 }
 
 
+// Close all tabs without asking
+void TabButtons::clearTabs(void)
+{
+    for (FXuint i = 0; i < nbActiveTabs; i++)
+    {
+        tabButtons[i]->setText("");
+        tabPaths[i] = "";
+        tabButtons[i]->hide();
+        tabButtons[i]->getParent()->hide();
+        closeButtons[i]->hide();
+        tabButtons[i]->setFont(normalFont);
+        tabButtons[i]->setState(STATE_UP);
+        closeButtons[i]->setState(STATE_UP);
+        setTabColor(i, basecolor);
+    }
+
+    nbActiveTabs = 0;
+    prevTab = 0;
+    currentTab = 0;
+}
+
+
 // Update current tab path
 long TabButtons::onUpdCurrentTab(FXObject* senderbj, FXSelector sel, void* ptr)
 {
+    if (!nbActiveTabs)
+    {
+        return 0;
+    }
     // Current path
-    FXString pathname = filepanel->getCurrent()->getDirectory();
+    FXString pathname = filepanel->getDirectory();
     
     // Set current name and path
     tabPaths[currentTab] = pathname;
@@ -415,6 +612,20 @@ long TabButtons::onQueryTip(FXObject* sender, FXSelector sel, void* ptr)
 
 
 // Context menu
+long TabButtons::onBlankMenu(FXObject*, FXSelector, void*)
+{
+    FXMenuPane menu(this);
+    new FXMenuCommand(&menu, _("New &Tab"), mininewtabicon, this, ID_NEW_TAB);
+    menu.create();
+    int x, y;
+    FXuint state;
+    getRoot()->getCursorPosition(x, y, state);
+    menu.popup(NULL, x, y);
+    getApp()->runModalWhileShown(&menu);
+    return 1;
+}
+
+
 long TabButtons::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
 {
     // Index of button
@@ -463,11 +674,13 @@ long TabButtons::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
 // Move tab left
 long TabButtons::onCmdMoveLeft(FXObject* sender, FXSelector sel, void* ptr)
 {
+    filepanel->setActive();
+    onUpdCurrentTab(this, 0, NULL);
     // Index of button
     FXuint index = FXSELID(sel) - ID_START_MOVE_LEFT;
 
     // Shift left
-    if (index > 0)
+    if (index > 0 && index < nbActiveTabs)
     {
         FXString left_label = tabButtons[index - 1]->getText();
         FXString left_path = tabPaths[index - 1];
@@ -483,14 +696,12 @@ long TabButtons::onCmdMoveLeft(FXObject* sender, FXSelector sel, void* ptr)
         {
             prevTab = index;
             currentTab = index - 1;
-            filepanel->getCurrent()->setDirectory(tabPaths[currentTab]);
 
         }
         else if (index == currentTab + 1)
         {
             prevTab = currentTab;
             currentTab = index;
-            filepanel->getCurrent()->setDirectory(tabPaths[currentTab]);
         }        
 
         // Change fonts and states
@@ -500,6 +711,8 @@ long TabButtons::onCmdMoveLeft(FXObject* sender, FXSelector sel, void* ptr)
         tabButtons[currentTab]->setFont(highlightFont);
         tabButtons[currentTab]->setState(STATE_DOWN);
         closeButtons[currentTab]->setState(STATE_DOWN);
+        setTabColor(prevTab, basecolor);
+        setTabColor(currentTab, shadecolor);
     }
 
     return 1;
@@ -509,11 +722,13 @@ long TabButtons::onCmdMoveLeft(FXObject* sender, FXSelector sel, void* ptr)
 // Move tab right
 long TabButtons::onCmdMoveRight(FXObject* sender, FXSelector sel, void* ptr)
 {
+    filepanel->setActive();
+    onUpdCurrentTab(this, 0, NULL);
     // Index of button
     FXuint index = FXSELID(sel) - ID_START_MOVE_RIGHT;
 
     // Shift right
-    if (index < nbActiveTabs - 1)
+    if (index < nbActiveTabs && index + 1 < nbActiveTabs)
     {
         FXString right_label = tabButtons[index + 1]->getText();
         FXString right_path = tabPaths[index + 1];
@@ -529,13 +744,11 @@ long TabButtons::onCmdMoveRight(FXObject* sender, FXSelector sel, void* ptr)
         {
             prevTab = index;
             currentTab = index + 1;
-            filepanel->getCurrent()->setDirectory(tabPaths[currentTab]);
         }
         else if (index == currentTab - 1)
         {
             prevTab = currentTab;
             currentTab = index;
-            filepanel->getCurrent()->setDirectory(tabPaths[currentTab]);
         }        
 
         // Change fonts and states
@@ -545,6 +758,8 @@ long TabButtons::onCmdMoveRight(FXObject* sender, FXSelector sel, void* ptr)
         tabButtons[currentTab]->setFont(highlightFont);
         tabButtons[currentTab]->setState(STATE_DOWN);
         closeButtons[currentTab]->setState(STATE_DOWN);
+        setTabColor(prevTab, basecolor);
+        setTabColor(currentTab, shadecolor);
     }
 
     return 1;
@@ -592,6 +807,10 @@ long TabButtons::onUpdMoveRight(FXObject* sender, FXSelector sel, void* ptr)
 // Set current tab from index
 void TabButtons::setCurrentTab(FXuint index)
 {
+    if (index >= nbActiveTabs)
+    {
+        return;
+    }
     // Update previous and current tab indices
     prevTab = currentTab;
     currentTab = index;
@@ -603,8 +822,12 @@ void TabButtons::setCurrentTab(FXuint index)
 
     // Set directory
     FXString pathname = tabPaths[index];
-    filepanel->getCurrent()->setDirectory(pathname);
-    dirpanel->setDirectory(pathname, true);
+    filepanel->setDirectory(pathname);
+    filepanel->updatePath();
+    if (filepanel->isActive())
+    {
+        dirpanel->setDirectory(filepanel->getDirectory(), true);
+    }
 
     // Change font and state
     tabButtons[prevTab]->setFont(normalFont);
@@ -613,4 +836,50 @@ void TabButtons::setCurrentTab(FXuint index)
     tabButtons[currentTab]->setFont(highlightFont);
     tabButtons[currentTab]->setState(STATE_DOWN);
     closeButtons[currentTab]->setState(STATE_DOWN);
+    setTabColor(prevTab, basecolor);
+    setTabColor(currentTab, shadecolor);
+}
+
+
+void TabButtons::saveTabs(const char* section)
+{
+    onUpdCurrentTab(this, 0, NULL);
+    getApp()->reg().deleteSection(section);
+    for (FXuint i = 0; i < nbActiveTabs; i++)
+    {
+        FXString key = "tab" + FXStringVal(i);
+        getApp()->reg().writeStringEntry(section, key.text(), tabPaths[i].text());
+    }
+    getApp()->reg().writeUnsignedEntry(section, "current_tab", currentTab);
+}
+
+
+FXbool TabButtons::restoreTabs(const char* section, FXuint selected)
+{
+    FXuint restoredSelection = 0;
+    for (FXuint i = 0; i < NMAX_TABS; i++)
+    {
+        FXString key = "tab" + FXStringVal(i);
+        FXString path = getApp()->reg().readStringEntry(section, key.text(), "");
+        if (path.empty())
+        {
+            break;
+        }
+        if (!xf_isdirectory(path) || !xf_isreadexecutable(path))
+        {
+            appLog(APP_LOG_ERRORS, "tab-restore-unavailable", FXString("pane=") + section + " path=\"" + path + "\"");
+            continue;
+        }
+        if (i <= selected)
+        {
+            restoredSelection = nbActiveTabs;
+        }
+        addTab(path, false);
+    }
+    if (!nbActiveTabs)
+    {
+        return false;
+    }
+    setCurrentTab(restoredSelection);
+    return true;
 }

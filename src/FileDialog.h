@@ -1,6 +1,8 @@
 #ifndef FILEDIALOG_H
 #define FILEDIALOG_H
 
+#include <vector>
+
 #include "ComboBox.h"
 #include "DialogBox.h"
 #include "FileList.h"
@@ -44,6 +46,10 @@ protected:
     HistInputDialog* filterdialog = NULL;
     FXButton* closefilter = NULL;
     FXColor attentioncolor = FXRGB(255, 0, 0);
+    FXSplitter* sidesplit = NULL;               // Splitter between sidebar and file list
+    FXVerticalFrame* sideframe = NULL;          // Sidebar container
+    FXList* sidebar = NULL;                     // Recent, places and devices
+    std::vector<FXString> sidebarpaths;         // Folder for each sidebar item (empty for headings)
 
     FXuint single_click = SINGLE_CLICK_NONE;
 
@@ -85,6 +91,8 @@ public:
     long onCmdKeyRelease(FXObject*, FXSelector, void*);
     long onCmdItemFilter(FXObject*, FXSelector, void*);
     long onUpdItemFilter(FXObject*, FXSelector, void*);
+    long onCmdSidebar(FXObject*, FXSelector, void*);
+    long onQuerySidebarTip(FXObject*, FXSelector, void*);
 public:
     enum
     {
@@ -102,9 +110,16 @@ public:
         ID_NEWDIR,
         ID_NEWFILE,
         ID_FILTER,
+        ID_SIDEBAR,
         ID_LAST
     };
 public:
+
+    // Rebuild the Recent, Places and Devices sidebar
+    void fillSidebar();
+
+    // Remember the current folder in the Recent sidebar section
+    void rememberRecentDirectory();
 
     // Constructor
     FileSelector(FXComposite* p, FXObject* tgt = NULL, FXSelector sel = 0,
@@ -251,7 +266,6 @@ private:
     FileDialog& operator=(const FileDialog&);
 
 public:
-
     // Construct File Dialog Box
     FileDialog(FXWindow* owner, const FXString& name, FXuint opts = 0, int x = 0, int y = 0, int w = 500, int h = 300);
 

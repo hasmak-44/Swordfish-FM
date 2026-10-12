@@ -14,7 +14,7 @@
 #define NUM_COLORS    12
 
 // Number of default themes
-#define NUM_DEFAULT_THEMES    9
+#define NUM_DEFAULT_THEMES    14
 
 
 struct Theme
@@ -120,6 +120,7 @@ private:
     FXCheckButton* relativeresize = NULL;
     FXCheckButton* alwaysshowtabbar = NULL;
     FXCheckButton* restoretabs = NULL;
+    FXCheckButton* commonaddressbar = NULL;
     FXCheckButton* showpathlink = NULL;
     FXRadioButton* systemapps = NULL;
     FXRadioButton* internalapps = NULL;
@@ -156,6 +157,7 @@ private:
     FXRadioButton* dirpanel_placesstartup = NULL;
     FXRadioButton* dirpanel_treestartup = NULL;
     FXSpinner* spindpi = NULL;
+    FXSpinner* spinshade = NULL;
     FXSpinner* bigthumb_spin = NULL;
     FXSpinner* minithumb_spin = NULL;
     FXDataTarget startdirtarget;

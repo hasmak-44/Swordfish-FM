@@ -31,6 +31,8 @@ protected:
     
     FXColor shadecolor = FXRGB(0, 0, 0);                // Base color
     FXColor basecolor = FXRGB(0, 0, 0);                 // Shade color
+
+    void setTabColor(int, FXColor);
     
     TabButtons()
     {
@@ -73,13 +75,14 @@ public:
     long onCmdMoveLeft(FXObject*, FXSelector, void*);
     long onCmdMoveRight(FXObject*, FXSelector, void*);
 
-    void addTab(FXString);
+    void addTab(FXString, FXbool activate = true);
     long onQueryTip(FXObject*, FXSelector, void*);
     long onCmdNewTab(FXObject*, FXSelector, void*);
     long onCmdRemoveAllTabs(FXObject*, FXSelector, void*);
     long onUpdCurrentTab(FXObject*, FXSelector, void*);
 
     long onCmdPopupMenu(FXObject*, FXSelector, void*);
+    long onBlankMenu(FXObject*, FXSelector, void*);
     long onUpdMoveLeft(FXObject* sender, FXSelector sel, void* ptr);
     long onUpdMoveRight(FXObject* sender, FXSelector sel, void* ptr);
     
@@ -123,6 +126,9 @@ public:
     
     // Set current tab from index
     void setCurrentTab(FXuint);
+    void clearTabs(void);
+    void saveTabs(const char* section);
+    FXbool restoreTabs(const char* section, FXuint selected);
 
 };
 

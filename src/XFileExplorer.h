@@ -103,7 +103,8 @@ protected:
     FXToolBar* paneltoolbar = NULL;
     FXToolBar* addresstoolbar = NULL;
     FXToolBar* tabtoolbar = NULL;
-    TabButtons* tabbuttons = NULL;
+    PathLinker* commonpathlink = NULL;
+    FXbool editingCommonPath = false;
     HistComboBox* addressbox = NULL;
     DirPanel* dirpanel = NULL;
     FilePanel* lpanel = NULL;
@@ -169,6 +170,9 @@ protected:
 
     typedef std::vector<FXMenuCommand*> vector_FXMenuCommand;
     vector_FXMenuCommand bookmarkmc;
+    FXMenuPane* tabgroupsmenu = NULL;
+    vector_FXMenuCommand tabgroupmc;
+    void clearBookmarkItems(void);
 
 public:
     enum
@@ -218,6 +222,10 @@ public:
         ID_BOOKMARK,
         ID_ADD_BOOKMARK,
         ID_REMOVE_ALL_BOOKMARKS,
+        ID_BOOKMARK_SELECTED,
+        ID_ADD_TAB_GROUP,
+        ID_TAB_GROUP,
+        ID_MANAGE_BOOKMARKS,
         ID_REBUILD_BOOKMARKS_MENU,
         ID_HARVEST,
         ID_QUIT,
@@ -242,7 +250,7 @@ public:
     virtual void create();
 
     ~XFileExplorer();
-    void saveConfig();
+    void saveConfig(FXbool restarting = false);
 
     void openFiles(vector_FXString);
     long onSigHarvest(FXObject*, FXSelector, void*);
@@ -269,6 +277,17 @@ public:
     long onCmdNewTab(FXObject*, FXSelector, void*);
     long onCmdGotoBookmark(FXObject*, FXSelector, void*);
     long onCmdAddBookmark(FXObject*, FXSelector, void*);
+    long onCmdBookmarkSelected(FXObject*, FXSelector, void*);
+    long onUpdBookmarkSelected(FXObject*, FXSelector, void*);
+    long onCmdAddTabGroup(FXObject*, FXSelector, void*);
+    long onCmdOpenTabGroup(FXObject*, FXSelector, void*);
+    long onCmdManageBookmarks(FXObject*, FXSelector, void*);
+    void rebuildTabGroupsMenu(void);
+    int getNumTabGroups(void);
+    FXString getTabGroupName(int);
+    FXbool openTabGroup(int);
+    void renameTabGroup(int);
+    void removeTabGroup(int);
     long onCmdRemoveAllBookmarks(FXObject*, FXSelector, void*);
     long onUpdBookmarksMenu(FXObject*, FXSelector, void*);
     long onCmdRebuildBookmarksMenu(FXObject*, FXSelector, void*);
@@ -406,7 +425,7 @@ public:
     // Return a pointer on the tab buttons
     TabButtons* getTabButtons(void)
     {
-        return tabbuttons;
+        return getCurrentPanel()->getTabButtons();
     }
 
     int readScriptDir(FXWindow*, FXMenuPane*, FXString);

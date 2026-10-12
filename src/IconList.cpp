@@ -254,7 +254,7 @@ void IconItem::drawDetails(IconList* list, FXDC& dc, int x, int y, int, int h) c
 {
     FXHeader* header = list->getHeader();
     FXFont* font = list->getFont();
-    int iw = 0, ih = 0, tw = 0, th = 0, yt, beg, end, hi, drw, space, used, dw, xx, dx = 0;
+    int iw = 0, ih = 0, tw = 0, th = 0, yt, beg, end, tbeg, hi, drw, space, used, dw, xx, dx = 0;
     FXbool highlight;
 
     // Icon list type
@@ -302,6 +302,37 @@ void IconItem::drawDetails(IconList* list, FXDC& dc, int x, int y, int, int h) c
         dc.drawFocusRectangle(x + 1, y + 1, header->getTotalSize() - 2, h - 2);
     }
     xx = x + SIDE_SPACING / 2;
+    int treeoff = 0;
+    if (treeMark >= 0)
+    {
+        // Expander arrow and indentation, placed before the icon
+        int ix = x + SIDE_SPACING / 2 + treeDepth * TREE_INDENT;
+        if (treeMark > 0)
+        {
+            int cy = y + h / 2;
+            int ax = ix + 3;
+            FXPoint pts[3];
+            if (treeMark == 2)
+            {
+                pts[0].x = ax;      pts[0].y = cy - 2;
+                pts[1].x = ax + 8;  pts[1].y = cy - 2;
+                pts[2].x = ax + 4;  pts[2].y = cy + 3;
+            }
+            else
+            {
+                pts[0].x = ax + 1;  pts[0].y = cy - 4;
+                pts[1].x = ax + 1;  pts[1].y = cy + 4;
+                pts[2].x = ax + 6;  pts[2].y = cy;
+            }
+            dc.setForeground(isSelected() ? list->getSelTextColor() : list->getTextColor());
+            dc.fillPolygon(pts, 3);
+        }
+    }
+    if (treeMark >= 0)
+    {
+        treeoff = treeDepth * TREE_INDENT + TREE_MARK_W;
+        xx += treeoff;
+    }
     if (miniIcon)
     {
         FXColor* tmpdata;
@@ -369,7 +400,7 @@ void IconItem::drawDetails(IconList* list, FXDC& dc, int x, int y, int, int h) c
         {
             dc.setForeground(list->getTextColor());
         }
-        used = iw + DETAIL_TEXT_SPACING + SIDE_SPACING / 2;
+        used = iw + DETAIL_TEXT_SPACING + SIDE_SPACING / 2 + treeoff;
 
         for (hi = beg = 0; beg < label.length() && hi < header->getNumItems(); hi++, beg = end + 1)
         {
@@ -377,46 +408,59 @@ void IconItem::drawDetails(IconList* list, FXDC& dc, int x, int y, int, int h) c
             for (end = beg; end < label.length() && label[end] != '\t'; end++)
             {
             }
+            tbeg = beg;
+            if (hi == 0 && treeMark >= 0 && treeDepth > 0)
+            {
+                // Nested rows store their relative path; show the file name only
+                for (int k = end; k > beg; k--)
+                {
+                    if (label[k - 1] == '/')
+                    {
+                        tbeg = k;
+                        break;
+                    }
+                }
+            }
             if (end > beg)
             {
-                drw = end - beg;
-                tw = font->getTextWidth(&label[beg], drw);
+                drw = end - tbeg;
+                tw = font->getTextWidth(&label[tbeg], drw);
 
                 // Right justify the file size column
                 if (!(options & ICONLIST_STANDARD) && (header->getItemText(hi) == _("Size")))
                 {
                     if (tw > space - 20)
                     {
-                        while ((tw = font->getTextWidth(&label[beg], drw)) + dw > space - 4 && drw > 1)
+                        while ((tw = font->getTextWidth(&label[tbeg], drw)) + dw > space - 4 && drw > 1)
                         {
                             drw--;
                         }
                         dc.setClipRectangle(xx, y, space, h);
-                        dc.drawText(xx + 2, yt + font->getFontAscent() + 2, &label[beg], drw);
+                        dc.drawText(xx + 2, yt + font->getFontAscent() + 2, &label[tbeg], drw);
                         dc.drawText(xx + tw + 2, yt + font->getFontAscent() + 2, "...", 3);
                         dc.clearClipRectangle();
                     }
                     else
                     {
-                        dc.drawText(xx + space - tw - 20, yt + font->getFontAscent() + 2, &label[beg], drw);
+                        dc.drawText(xx + space - tw - 20, yt + font->getFontAscent() + 2, &label[tbeg], drw);
                     }
                 }
                 else
                 {
                     if (tw > space - 4)
                     {
-                        while ((tw = font->getTextWidth(&label[beg], drw)) + dw > space - 4 && drw > 1)
+                        while ((tw = font->getTextWidth(&label[tbeg], drw)) + dw > space - 4 && drw > 1)
                         {
                             drw--;
                         }
                         dc.setClipRectangle(xx, y, space, h);
-                        dc.drawText(xx + 2, yt + font->getFontAscent() + 2, &label[beg], drw);
+                        dc.drawText(xx + 2, yt + font->getFontAscent() + 2, &label[tbeg], drw);
                         dc.drawText(xx + tw + 2, yt + font->getFontAscent() + 2, "...", 3);
                         dc.clearClipRectangle();
                     }
                     else
                     {
-                        dc.drawText(xx + 2, yt + font->getFontAscent() + 2, &label[beg], drw);
+                        dc.drawText(xx + 2, yt + font->getFontAscent() + 2, &label[tbeg], drw);
                     }
                 }
             }

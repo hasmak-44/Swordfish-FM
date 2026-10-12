@@ -313,6 +313,36 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
                       FXRGB(238, 238, 238), FXRGB(99, 119, 146), FXRGB(255, 0, 0), FXRGB(238, 238, 238));
     Themes.push_back(theme);
 
+    theme = Theme("Charcoal", _("A charcoal grey theme"), FXRGB(52, 52, 52), FXRGB(105, 105, 105),
+                      FXRGB(56, 56, 56), FXRGB(215, 215, 215), FXRGB(49, 86, 124), FXRGB(255, 255, 255),
+                      FXRGB(63, 63, 63), FXRGB(215, 215, 215), FXRGB(69, 69, 69), FXRGB(49, 86, 124),
+                      FXRGB(255, 0, 0), FXRGB(72, 72, 72));
+    Themes.push_back(theme);
+
+    theme = Theme("Forest Green", _("A teal theme with dark grey bars"), FXRGB(41, 53, 59), FXRGB(125, 125, 125),
+                      FXRGB(0, 147, 147), FXRGB(255, 255, 255), FXRGB(82, 129, 148), FXRGB(255, 255, 255),
+                      FXRGB(0, 128, 128), FXRGB(0, 0, 0), FXRGB(0, 123, 128), FXRGB(82, 129, 148),
+                      FXRGB(255, 0, 0), FXRGB(156, 186, 205));
+    Themes.push_back(theme);
+
+    theme = Theme("Forest Green 2", _("A teal theme with bright cyan selections"), FXRGB(41, 53, 59), FXRGB(0, 0, 255),
+                      FXRGB(0, 147, 147), FXRGB(255, 255, 255), FXRGB(0, 255, 255), FXRGB(0, 0, 0),
+                      FXRGB(0, 128, 128), FXRGB(255, 255, 255), FXRGB(6, 143, 148), FXRGB(82, 129, 148),
+                      FXRGB(255, 0, 0), FXRGB(156, 186, 205));
+    Themes.push_back(theme);
+
+    theme = Theme("Gray On Blue", _("A dark blue grey theme with yellow selected text"), FXRGB(41, 53, 59),
+                      FXRGB(125, 125, 125), FXRGB(30, 36, 45), FXRGB(240, 248, 255),
+                      FXRGB(28, 69, 137), FXRGB(255, 255, 0), FXRGB(30, 36, 45), FXRGB(240, 248, 255),
+                      FXRGB(43, 51, 64), FXRGB(82, 129, 148), FXRGB(255, 0, 0), FXRGB(156, 186, 205));
+    Themes.push_back(theme);
+
+    theme = Theme("Gray-Blue", _("A dark blue grey theme with charcoal bars"), FXRGB(39, 47, 48),
+                      FXRGB(125, 125, 125), FXRGB(30, 36, 45), FXRGB(240, 248, 255),
+                      FXRGB(28, 69, 137), FXRGB(255, 255, 0), FXRGB(30, 36, 45), FXRGB(240, 248, 255),
+                      FXRGB(43, 51, 64), FXRGB(82, 129, 148), FXRGB(255, 0, 0), FXRGB(156, 186, 205));
+    Themes.push_back(theme);
+
     // Custom themes
     if (getApp()->reg().readStringEntry("THEMES", "theme0", NULL))
     {
@@ -591,6 +621,10 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     new FXRadioButton(matrix, _("Open new tab in current folder") + FXString(" "), this, PreferencesBox::ID_NEWTAB_CURRENTDIR);
     restoretabs = new FXCheckButton(matrix, _("Restore tabs on startup") + FXString(" "), this, ID_RESTORE_TABS);
     new FXRadioButton(matrix, _("Open new tab in root folder") + FXString(" "), this, PreferencesBox::ID_NEWTAB_ROOTDIR);
+
+    group = new FXGroupBox(settings, _("Address Bars"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    commonaddressbar = new FXCheckButton(group, _("Use a common address bar (unchecked: separate bars per pane)"));
+    commonaddressbar->setCheck(getApp()->reg().readUnsignedEntry("OPTIONS", "common_addressbar", false));
 
     group = new FXGroupBox(settings, _("Scrolling"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
@@ -1049,6 +1083,17 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
     colorsBox->appendItem(_("Attention color"));
     colorsBox->appendItem(_("Scrollbar color"));
     colorsBox->setCurrentItem(0);
+
+    // Shading of the tool, address, tab and status bars
+    FXMatrix* shadematrix = new FXMatrix(colors, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP);
+    new FXLabel(shadematrix, _("Bar shading (%):") + FXString(" "), NULL,
+                JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
+    spinshade = new FXSpinner(shadematrix, 3, NULL, 0, JUSTIFY_RIGHT | LAYOUT_FILL_X | LAYOUT_FILL_ROW, 0, 0, 0, 0, 2,
+                              2, 1, 1);
+    spinshade->setRange(0, 20);
+    spinshade->setValue(getApp()->reg().readUnsignedEntry("SETTINGS", "bar_shading", 7));
+    spinshade->setTipText(_("Darkens (or lightens, with dark themes) the tool bars, address bars, tab bars and "
+                            "status bars so they stand apart. 0 disables shading."));
 
     // Monitor resolution
     FXGroupBox* ui = new FXGroupBox(visual, _("Screen Resolution"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
@@ -2177,7 +2222,7 @@ long PreferencesBox::onCmdChangeKeyBindings(FXObject*, FXSelector, void*)
     xfeBindingsDict->insert("tree_two_panels", str.text());
 
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "clear_address", "Ctrl-L");
-    str = _("Clear address bar") + TAB + key;
+    str = _("Edit Path") + TAB + key;
     xfeBindingsDict->insert("clear_address", str.text());
 
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "rename", "F2");
@@ -3073,6 +3118,7 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
 
     // Restore tabs
     getApp()->reg().writeUnsignedEntry("OPTIONS", "restore_tabs", (FXuint)restoretabs->getCheck());
+    getApp()->reg().writeUnsignedEntry("OPTIONS", "common_addressbar", (FXuint)commonaddressbar->getCheck());
 
     // Path linker
     FXbool show_pathlink = showpathlink->getCheck();
@@ -3149,6 +3195,14 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     if (minithumb_size != minithumb_size_prev)
     {
         getApp()->reg().writeUnsignedEntry("SETTINGS", "minithumb_size", minithumb_size);
+    }
+
+    // Bar shading
+    if ((FXuint)spinshade->getValue() != getApp()->reg().readUnsignedEntry("SETTINGS", "bar_shading", 7))
+    {
+        getApp()->reg().writeUnsignedEntry("SETTINGS", "bar_shading", (FXuint)spinshade->getValue());
+        getApp()->reg().write();
+        restart_theme = true;
     }
 
     // UI DPI
@@ -3287,6 +3341,7 @@ long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
     relativeresize->setCheck(relativeresize_prev);
     alwaysshowtabbar->setCheck(alwaysshowtabbar_prev);
     restoretabs->setCheck(restoretabs_prev);
+    commonaddressbar->setCheck(getApp()->reg().readUnsignedEntry("OPTIONS", "common_addressbar", false));
     showpathlink->setCheck(show_pathlink_prev);
     dirpanel_mode = dirpanel_mode_prev;
     dirpanel_list_startup = dirpanel_list_startup_prev;
@@ -3387,6 +3442,7 @@ long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
     }
     spindpi->setValue(uidpi_prev);
     uidpi = uidpi_prev;
+    spinshade->setValue(getApp()->reg().readUnsignedEntry("SETTINGS", "bar_shading", 7));
 
     // Seventh tab - Fonts
     normalfont->setText(oldnormalfont);

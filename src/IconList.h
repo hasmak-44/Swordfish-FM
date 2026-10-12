@@ -29,6 +29,10 @@ enum
 };
 
 
+#define TREE_INDENT            14       // Indentation per nesting level in the expandable file list
+#define TREE_MARK_W            14       // Width of the expander arrow
+
+
 // Icon item
 class FXAPI IconItem : public FXObject
 {
@@ -42,6 +46,8 @@ protected:
     FXIcon* miniIconBadge = NULL;                       // Mini icon badge of item
     void* data = NULL;                                  // Item user data pointer
     FXuint state = 0;                                   // Item state flags
+    int treeDepth = 0;                                  // Nesting depth (expandable folders)
+    int treeMark = -1;                                  // Expander: -1 none and no room, 0 room only, 1 collapsed, 2 expanded
     FXApp* app = NULL;
 private:
     IconItem(const IconItem&);

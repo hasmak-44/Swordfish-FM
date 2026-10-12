@@ -1058,6 +1058,7 @@ long XFileArchive::onCmdFileOpenWith(FXObject*, FXSelector, void*)
     }
     opendialog->setDirectory(ROOTDIR);
     opendialog->sortItems();
+    opendialog->appendInstalledApplications();
 
     if (opendialog->execute())
     {

@@ -17,6 +17,7 @@
 // Typedef for the map between program string identifiers and integer indexes
 typedef std::map<FXString, int>   progsmap;
 
+class TabButtons;
 
 class FilePanel : public FXVerticalFrame
 {
@@ -27,6 +28,11 @@ protected:
     FilePanel* next = NULL;
     DirPanel* dirpanel = NULL;
     PathLinker* pathlink = NULL;
+    TabButtons* tabbuttons = NULL;
+    FXHorizontalFrame* tabbar = NULL;
+    FXHorizontalFrame* addressbar = NULL;
+    FXTextField* pathedit = NULL;
+    FXbool editingPath = false;
     FXPacker* statusbar = NULL;
     FXLabel* statuslabel = NULL;
     FXLabel* filterlabel = NULL;
@@ -132,6 +138,20 @@ public:
         ID_ADD_TO_ARCH,
         ID_GO_HOME,
         ID_GO_TRASH,
+        ID_PANE_BACK,
+        ID_PANE_FORWARD,
+        ID_PANE_UP,
+        ID_PANE_HOME,
+        ID_PANE_ROOT,
+        ID_PANE_DESKTOP,
+        ID_PANE_HISTORY,
+        ID_EDIT_PATH,
+        ID_ENTER_PATH,
+        ID_PANE_HISTORY_FIRST,
+        ID_PANE_HISTORY_LAST = ID_PANE_HISTORY_FIRST + 63,
+        ID_NEW_TAB,
+        ID_REMOVE_ALL_TABS,
+        ID_CLOSE_TAB,
         ID_COPY_CLIPBOARD,
         ID_COPYNAME_CLIPBOARD,
         ID_CUT_CLIPBOARD,
@@ -181,6 +201,34 @@ public:
     long onCmdDirectoryUp(FXObject*, FXSelector, void*);
     long onCmdGoHome(FXObject*, FXSelector, void*);
     long onCmdGoTrash(FXObject*, FXSelector, void*);
+    long onCmdPaneNavigation(FXObject*, FXSelector, void*);
+    long onUpdPaneNavigation(FXObject*, FXSelector, void*);
+    long onCmdEditPath(FXObject*, FXSelector, void*);
+    long onCmdEnterPath(FXObject*, FXSelector, void*);
+    long onPathKeyPress(FXObject*, FXSelector, void*);
+    long onCmdTabs(FXObject*, FXSelector, void*);
+    TabButtons* getTabButtons() const
+    {
+        return tabbuttons;
+    }
+    void showTabbar(FXbool visible)
+    {
+        if (visible)
+        {
+            tabbar->show();
+        }
+        else
+        {
+            tabbar->hide();
+        }
+    }
+    void showAddressbar(FXbool visible)
+    {
+        visible ? addressbar->show() : addressbar->hide();
+    }
+    void finishPathEditing();
+    FXbool navigatePane(const FXString& path);
+    int resolveNetworkPath(const FXString& text, FXString& localpath);
     long onCmdEdit(FXObject*, FXSelector, void*);
     long onCmdCompare(FXObject*, FXSelector, void*);
     long onCmdProperties(FXObject*, FXSelector, void*);

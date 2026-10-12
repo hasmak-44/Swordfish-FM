@@ -13,6 +13,7 @@ class PlacesList : public FXList
 
 protected:
     FXStringDict* places = NULL;        // String dictionary of places
+    FXString desktopDirectory;
 
 public:
     PlacesList(FXWindow*, FXComposite*, FXObject*, FXSelector, FXColor listbackcolor = FXRGB(255, 255, 255),
@@ -22,6 +23,10 @@ public:
     }
     virtual void create();
     ~PlacesList();
+    FXString getDesktopDirectory() const
+    {
+        return desktopDirectory;
+    }
 
     // Get current item name
     FXString getCurrentItem(void)
@@ -114,6 +119,8 @@ protected:
     vector_FXString bookmarks;               // String vector of bookmarks
     double scalefrac = 1.0;                  // Icon scaling factor
     FileDict* associations = NULL;           // Association table
+    FXDragType tabType = 0;                  // Tab dragged from a tab bar
+    FXDragType uriType = 0;                  // Files dragged from a file list
 
 
 
@@ -245,6 +252,12 @@ public:
 
     // Display tooltip
     long onQueryTip(FXObject*, FXSelector, void*);
+
+    // Bookmark tabs and folders dropped on the list
+    long onDNDEnter(FXObject*, FXSelector, void*);
+    long onDNDMotion(FXObject*, FXSelector, void*);
+    long onDNDDrop(FXObject*, FXSelector, void*);
+    int bookmarkFolder(const FXString&);
 };
 
 #endif

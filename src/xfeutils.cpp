@@ -2327,3 +2327,72 @@ FXulong xf_hashfile(const FXchar* filename)
 
     return (FXulong)FXMAX(hash, 0);
 }
+
+
+// Background color of a bar, shaded from the base color (level 0 = base color)
+// The shading percentage per level is read from SETTINGS/bar_shading (0 disables shading)
+FXColor xf_barcolor(FXApp* app, int level)
+{
+    FXColor base = app->getBaseColor();
+    int percent = FXCLAMP(0, (int)app->reg().readUnsignedEntry("SETTINGS", "bar_shading", 7), 20);
+
+    if ((level <= 0) || (percent == 0))
+    {
+        return base;
+    }
+
+    int amount = FXMIN(percent * level, 60);
+    int r = FXREDVAL(base);
+    int g = FXGREENVAL(base);
+    int b = FXBLUEVAL(base);
+
+    // Darken light themes, lighten dark themes
+    if ((r * 299 + g * 587 + b * 114) / 1000 >= 96)
+    {
+        r = r * (100 - amount) / 100;
+        g = g * (100 - amount) / 100;
+        b = b * (100 - amount) / 100;
+    }
+    else
+    {
+        r = r + (255 - r) * amount / 100;
+        g = g + (255 - g) * amount / 100;
+        b = b + (255 - b) * amount / 100;
+    }
+
+    return FXRGBA(r, g, b, FXALPHAVAL(base));
+}
+
+
+// Apply a bar color to a bar and its children that use the base color
+// Text fields, lists, breadcrumbs and tabs keep their own colors
+void xf_shadebar(FXWindow* w, FXColor color)
+{
+    if (!w)
+    {
+        return;
+    }
+
+    FXColor base = w->getApp()->getBaseColor();
+    if (w->getBackColor() == base)
+    {
+        w->setBackColor(color);
+    }
+
+    if (w->isMemberOf(FXMETACLASS(FXTextField)) || w->isMemberOf(FXMETACLASS(FXComboBox)) ||
+        w->isMemberOf(FXMETACLASS(FXScrollArea)) || w->isMemberOf(FXMETACLASS(FXMenuPane)))
+    {
+        return;
+    }
+
+    FXString classname = w->getClassName();
+    if ((classname == "PathLinker") || (classname == "TabButtons") || (classname == "ComboBox"))
+    {
+        return;
+    }
+
+    for (FXWindow* child = w->getFirst(); child; child = child->getNext())
+    {
+        xf_shadebar(child, color);
+    }
+}

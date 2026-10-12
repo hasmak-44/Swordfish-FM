@@ -1,4 +1,5 @@
 #include "config.h"
+#include <set>
 #include "i18n.h"
 
 #include "AppLogger.h"
@@ -22,6 +23,7 @@
 #include "startupnotification.h"
 #include "FileDialog.h"
 #include "FileList.h"
+#include "TabButtons.h"
 #include "Places.h"
 #include "Properties.h"
 #include "XFileExplorer.h"
@@ -92,6 +94,15 @@ static void logFileOpen(const char* event, FXApp* app, const FXString& pathname,
 // Map
 FXDEFMAP(FilePanel) FilePanelMap[] =
 {
+    FXMAPFUNCS(SEL_COMMAND, FilePanel::ID_PANE_BACK, FilePanel::ID_PANE_HISTORY, FilePanel::onCmdPaneNavigation),
+    FXMAPFUNCS(SEL_UPDATE, FilePanel::ID_PANE_BACK, FilePanel::ID_PANE_HISTORY, FilePanel::onUpdPaneNavigation),
+    FXMAPFUNCS(SEL_COMMAND, FilePanel::ID_PANE_HISTORY_FIRST, FilePanel::ID_PANE_HISTORY_LAST, FilePanel::onCmdPaneNavigation),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_EDIT_PATH, FilePanel::onCmdEditPath),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_ENTER_PATH, FilePanel::onCmdEnterPath),
+    FXMAPFUNC(SEL_KEYPRESS, FilePanel::ID_ENTER_PATH, FilePanel::onPathKeyPress),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_NEW_TAB, FilePanel::onCmdTabs),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_REMOVE_ALL_TABS, FilePanel::onCmdTabs),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_CLOSE_TAB, FilePanel::onCmdTabs),
     FXMAPFUNC(SEL_CLIPBOARD_LOST, 0, FilePanel::onClipboardLost),
     FXMAPFUNC(SEL_CLIPBOARD_GAINED, 0, FilePanel::onClipboardGained),
     FXMAPFUNC(SEL_CLIPBOARD_REQUEST, 0, FilePanel::onClipboardRequest),
@@ -297,6 +308,437 @@ static FXString archiveHostEnv()
 #endif
 
 
+#if defined(linux)
+// A network address typed in the address bar
+struct NetworkAddress
+{
+    FXString scheme;
+    FXString domain;
+    FXString user;
+    FXString password;
+    FXString host;
+    FXString share;
+    FXString subpath;
+};
+
+
+static FXchar networkLastChar(const FXString& str)
+{
+    return str.empty() ? '\0' : str[str.length() - 1];
+}
+
+
+static FXString networkDecode(const FXString& str)
+{
+    FXString out;
+    for (int i = 0; i < str.length(); i++)
+    {
+        if (str[i] == '%' && i + 2 < str.length() && Ascii::isHexDigit(str[i + 1]) && Ascii::isHexDigit(str[i + 2]))
+        {
+            out += (FXchar)((Ascii::digitValue(str[i + 1]) << 4) | Ascii::digitValue(str[i + 2]));
+            i += 2;
+        }
+        else
+        {
+            out += str[i];
+        }
+    }
+    return out;
+}
+
+
+static FXString networkEncode(const FXString& str, FXbool keepslash = false)
+{
+    const char* hex = "0123456789ABCDEF";
+    FXString out;
+    for (int i = 0; i < str.length(); i++)
+    {
+        FXuchar c = (FXuchar)str[i];
+        if (Ascii::isAlphaNumeric(c) || c == '-' || c == '.' || c == '_' || c == '~' || (keepslash && c == '/'))
+        {
+            out += (FXchar)c;
+        }
+        else
+        {
+            out += '%';
+            out += hex[c >> 4];
+            out += hex[c & 15];
+        }
+    }
+    return out;
+}
+
+
+// Recognize smb://, the smb// typo, \\server\share and other GVFS schemes
+static FXbool networkParseAddress(FXString text, NetworkAddress& addr)
+{
+    text.trim();
+    FXString rest;
+    if (text.left(2) == "\\\\")
+    {
+        addr.scheme = "smb";
+        rest = text.mid(2, text.length() - 2);
+        rest.substitute('\\', '/');
+    }
+    else
+    {
+        int pos = text.find("//");
+        if (pos < 3)
+        {
+            return false;
+        }
+        FXString scheme = text.left(pos).lower();
+        if (networkLastChar(scheme) == ':')
+        {
+            scheme.trunc(scheme.length() - 1);
+        }
+        if (scheme == "ssh")
+        {
+            scheme = "sftp";
+        }
+        if (scheme != "smb" && scheme != "sftp" && scheme != "ftp" && scheme != "ftps" &&
+            scheme != "dav" && scheme != "davs" && scheme != "afp" && scheme != "nfs")
+        {
+            return false;
+        }
+        addr.scheme = scheme;
+        rest = text.mid(pos + 2, text.length() - pos - 2);
+    }
+
+    FXString authority = rest.before('/');
+    FXString path = rest.after('/');
+    while (networkLastChar(path) == '/')
+    {
+        path.trunc(path.length() - 1);
+    }
+    if (authority.find('@') >= 0)
+    {
+        FXString userinfo = authority.rbefore('@');
+        authority = authority.rafter('@');
+        if (userinfo.find(':') >= 0)
+        {
+            addr.password = networkDecode(userinfo.after(':'));
+            userinfo = userinfo.before(':');
+        }
+        if (userinfo.find(';') >= 0)
+        {
+            addr.domain = networkDecode(userinfo.before(';'));
+            userinfo = userinfo.after(';');
+        }
+        addr.user = networkDecode(userinfo);
+    }
+    addr.host = authority;
+    if (addr.scheme == "smb")
+    {
+        addr.share = networkDecode(path.before('/'));
+        addr.subpath = networkDecode(path.after('/'));
+    }
+    else
+    {
+        addr.subpath = networkDecode(path);
+    }
+    return true;
+}
+
+
+// URI of the mount root (credentials included so GVFS doesn't ask for them on stdin)
+static FXString networkMountUri(const NetworkAddress& addr, FXbool withuser)
+{
+    FXString uri = addr.scheme + "://";
+    if (withuser && !addr.user.empty())
+    {
+        if (addr.scheme == "smb")
+        {
+            uri += networkEncode(addr.domain) + ";";
+        }
+        uri += networkEncode(addr.user) + "@";
+    }
+    uri += addr.host + "/";
+    if (!addr.share.empty())
+    {
+        uri += networkEncode(addr.share) + "/";
+    }
+    return uri;
+}
+
+
+static FXString networkLastLine(FXString out)
+{
+    out.trim();
+    if (out.find('\n') >= 0)
+    {
+        out = out.rafter('\n');
+    }
+    return out;
+}
+
+
+// Local FUSE path of a mounted GVFS location, or an empty string when it isn't mounted
+static FXString networkLocalPath(const FXString& gio, const FXString& uri)
+{
+    FXString out = xf_getcommandoutput(archiveHostEnv() + xf_quote(gio) + " info -a standard::name " + xf_quote(uri));
+    int pos = out.find("local path: ");
+    if (pos < 0)
+    {
+        return FXString::null;
+    }
+    FXString path = out.mid(pos + 12, out.length()).before('\n');
+    path.trim();
+    return xf_isdirectory(path) ? path : FXString::null;
+}
+
+
+// Simple credentials prompt
+static FXbool networkAskCredentials(FXWindow* owner, const NetworkAddress& addr, FXString& domain, FXString& user,
+                                    FXString& password, FXbool& save, const FXString& error)
+{
+    DialogBox dialog(owner, _("Connect to Server"), DECOR_TITLE | DECOR_BORDER | DECOR_CLOSE);
+    FXVerticalFrame* contents = new FXVerticalFrame(&dialog, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    FXString where = addr.scheme + "://" + addr.host + "/" + addr.share;
+    new FXLabel(contents, FXString(_("Login required for ")) + where, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    if (!error.empty())
+    {
+        new FXLabel(contents, error, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    }
+    FXMatrix* matrix = new FXMatrix(contents, 2, MATRIX_BY_COLUMNS | LAYOUT_FILL_X);
+    FXTextField* domainfield = NULL;
+    if (addr.scheme == "smb")
+    {
+        new FXLabel(matrix, _("Domain:"), NULL, JUSTIFY_LEFT);
+        domainfield = new FXTextField(matrix, 30, NULL, 0, TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN | LAYOUT_FILL_X);
+        domainfield->setText(domain);
+    }
+    new FXLabel(matrix, _("User name:"), NULL, JUSTIFY_LEFT);
+    FXTextField* userfield = new FXTextField(matrix, 30, NULL, 0, TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN | LAYOUT_FILL_X);
+    userfield->setText(user);
+    new FXLabel(matrix, _("Password:"), NULL, JUSTIFY_LEFT);
+    FXTextField* passfield = new FXTextField(matrix, 30, NULL, 0,
+                                             TEXTFIELD_NORMAL | TEXTFIELD_PASSWD | LAYOUT_FILL_COLUMN | LAYOUT_FILL_X);
+    new FXFrame(matrix, 0);
+    FXCheckButton* savebtn = new FXCheckButton(matrix, _("Save password"));
+    savebtn->setCheck(save);
+
+    FXHorizontalFrame* buttons = new FXHorizontalFrame(contents, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10, 5, 5);
+    FXButton* accept = new FXButton(buttons, _("&Accept"), NULL, &dialog, DialogBox::ID_ACCEPT,
+                                    FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
+    accept->addHotKey(KEY_Return);
+    new FXButton(buttons, _("&Cancel"), NULL, &dialog, DialogBox::ID_CANCEL,
+                 FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
+
+    dialog.create();
+    if (user.empty())
+    {
+        userfield->setFocus();
+    }
+    else
+    {
+        passfield->setFocus();
+    }
+    if (!dialog.execute(PLACEMENT_OWNER))
+    {
+        return false;
+    }
+    if (domainfield)
+    {
+        domain = domainfield->getText();
+    }
+    user = userfield->getText();
+    password = passfield->getText();
+    save = savebtn->getCheck();
+    return !user.empty();
+}
+
+
+// Shares of an SMB server, through GVFS browsing and then smbclient
+static FXString networkListShares(const FXString& gio, const NetworkAddress& addr)
+{
+    FXString hostenv = archiveHostEnv();
+    FXString uri = "smb://" + addr.host + "/";
+    FXString shares;
+    xf_getcommandoutput(hostenv + xf_quote(gio) + " mount -a " + xf_quote(uri) + " </dev/null");
+    FXString out = xf_getcommandoutput(hostenv + xf_quote(gio) + " list " + xf_quote(uri));
+    if (out.find("gio:") < 0)
+    {
+        for (int i = 0; i < out.contains('\n') + 1; i++)
+        {
+            FXString name = out.section('\n', i);
+            name.trim();
+            if (!name.empty() && networkLastChar(name) != '$')
+            {
+                shares += name + "\n";
+            }
+        }
+    }
+    FXString smbclient = archiveFindProgram("smbclient");
+    if (shares.empty() && !smbclient.empty())
+    {
+        out = xf_getcommandoutput(hostenv + xf_quote(smbclient) + " -g -N -L " + xf_quote(addr.host));
+        for (int i = 0; i < out.contains('\n') + 1; i++)
+        {
+            FXString line = out.section('\n', i);
+            if (line.left(5) == "Disk|" && networkLastChar(line.section('|', 1)) != '$')
+            {
+                shares += line.section('|', 1) + "\n";
+            }
+        }
+    }
+    shares.trim();
+    return shares;
+}
+#endif
+
+
+// Mount a typed network address with GVFS and return its local folder.
+// Returns 0 if the text isn't a network address, 1 on success and -1 on failure or cancel.
+int FilePanel::resolveNetworkPath(const FXString& text, FXString& localpath)
+{
+#if defined(linux)
+    NetworkAddress addr;
+    if (!networkParseAddress(text, addr))
+    {
+        return 0;
+    }
+    if (addr.host.empty())
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Please type a server name, for example %s://server/share"),
+                          addr.scheme.text());
+        return -1;
+    }
+    FXString gio = archiveFindProgram("gio");
+    if (gio.empty())
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("gio command was not found on your system.\n\n\
+Please install gio and gvfs to be able to connect to a server..."));
+        return -1;
+    }
+    FXString hostenv = archiveHostEnv();
+
+    getApp()->beginWaitCursor();
+    if (addr.scheme == "smb" && addr.share.empty())
+    {
+        FXString shares = networkListShares(gio, addr);
+        getApp()->endWaitCursor();
+        if (shares.empty())
+        {
+            MessageBox::error(this, BOX_OK, _("Error"), _("No shared folders were found on %s.\n\n\
+Please type the share name, for example smb://%s/share"), addr.host.text(), addr.host.text());
+            return -1;
+        }
+        FXint choice = FXChoiceBox::ask(this, 0, _("Shared Folders"),
+                                        FXString(_("Shared folders on ")) + addr.host + ":", NULL, shares);
+        if (choice < 0)
+        {
+            return -1;
+        }
+        addr.share = shares.section('\n', choice);
+        getApp()->beginWaitCursor();
+    }
+
+    // Already mounted (with or without the typed user name)?
+    FXString mounted = networkLocalPath(gio, networkMountUri(addr, true));
+    if (mounted.empty() && !addr.user.empty())
+    {
+        mounted = networkLocalPath(gio, networkMountUri(addr, false));
+    }
+
+    FXString error;
+    if (mounted.empty() && addr.user.empty() && addr.password.empty())
+    {
+        // Guest access first
+        FXString out = xf_getcommandoutput(hostenv + xf_quote(gio) + " mount -a " +
+                                           xf_quote(networkMountUri(addr, false)) + " </dev/null");
+        mounted = networkLocalPath(gio, networkMountUri(addr, false));
+        if (mounted.empty())
+        {
+            error = networkLastLine(out);
+        }
+    }
+
+    FXString domain = addr.domain;
+    FXString user = addr.user;
+    FXString password = addr.password;
+    FXbool save = false;
+    if (mounted.empty() && password.empty() && !user.empty() && addr.scheme == "smb")
+    {
+        // Password saved by Connect to Server
+        FXString secret = archiveFindProgram("secret-tool");
+        if (!secret.empty())
+        {
+            FXString out = xf_getcommandoutput(hostenv + xf_quote(secret) + " search sharetype smb server " +
+                                               xf_quote(addr.host) + " share " + xf_quote(addr.share) +
+                                               " user " + xf_quote(user));
+            int pos = out.find("secret = ");
+            if (pos >= 0)
+            {
+                password = out.mid(pos + 9, out.length()).before('\n');
+                if (domain.empty() && out.find("attribute.domain = ") >= 0)
+                {
+                    domain = out.mid(out.find("attribute.domain = ") + 19, out.length()).before('\n');
+                }
+            }
+        }
+    }
+
+    for (int attempt = 0; mounted.empty(); attempt++)
+    {
+        if (password.empty() || attempt > 0)
+        {
+            getApp()->endWaitCursor();
+            if (!networkAskCredentials(this, addr, domain, user, password, save, error))
+            {
+                return -1;
+            }
+            getApp()->beginWaitCursor();
+        }
+        if (addr.scheme == "smb" && domain.empty())
+        {
+            // An empty domain makes GVFS ask for it on stdin before the password
+            domain = "WORKGROUP";
+        }
+        NetworkAddress login = addr;
+        login.domain = domain;
+        login.user = user;
+        FXString out = xf_getcommandoutput("printf '%s\\n' " + xf_quote(password) + " | " + hostenv +
+                                           xf_quote(gio) + " mount " + xf_quote(networkMountUri(login, true)));
+        mounted = networkLocalPath(gio, networkMountUri(login, true));
+        if (mounted.empty())
+        {
+            error = networkLastLine(out);
+            if (error.empty())
+            {
+                error = _("Connection failed, please check your parameters...");
+            }
+            appLog(APP_LOG_ERRORS, "network-mount-failed",
+                   "uri=\"" + networkMountUri(addr, false) + "\" error=\"" + error + "\"");
+        }
+        else if (save && addr.scheme == "smb")
+        {
+            FXString secret = archiveFindProgram("secret-tool");
+            if (!secret.empty())
+            {
+                xf_getcommandoutput("printf '%s' " + xf_quote(password) + " | " + hostenv + xf_quote(secret) +
+                                    " store --label='SMB Share' sharetype smb server " + xf_quote(addr.host) +
+                                    " share " + xf_quote(addr.share) + " domain " + xf_quote(domain) +
+                                    " user " + xf_quote(user));
+            }
+        }
+    }
+    getApp()->endWaitCursor();
+
+    localpath = mounted;
+    if (!addr.subpath.empty())
+    {
+        localpath += PATHSEPSTRING + addr.subpath;
+    }
+    appLog(APP_LOG_FILE_OPERATIONS, "network-mounted",
+           "uri=\"" + networkMountUri(addr, false) + "\" path=\"" + localpath + "\"");
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+
 FXIMPLEMENT(FilePanel, FXVerticalFrame, FilePanelMap, ARRAYNUMBER(FilePanelMap))
 
 
@@ -308,6 +750,7 @@ FilePanel::FilePanel(FXWindow* owner, const char* nm, FXComposite* p, DirPanel* 
                      FXColor attentioncolor, FXbool smoothscroll, FXuint opts, int x, int y, int w, int h) :
     FXVerticalFrame(p, opts, x, y, w, h, 0, 0, 0, 0)
 {
+    setFrameStyle(FRAME_LINE);
     nbCols = nc;
     name = nm;
     dirpanel = dp;
@@ -318,8 +761,15 @@ FilePanel::FilePanel(FXWindow* owner, const char* nm, FXComposite* p, DirPanel* 
                                                 0, 0, 0, 0, 0, 0, 0, 0, 0, 1);
 
     // Container for the path linker
-    FXHorizontalFrame* pathframe = new FXHorizontalFrame(cont, LAYOUT_LEFT | JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_NONE,
-                                                         0, 0, 0, 0, 0, 0, 2, 2);
+    FXHorizontalFrame* pathframe = new FXHorizontalFrame(cont, LAYOUT_LEFT | JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_LINE,
+                                                         0, 0, 0, 0, 2, 2, 2, 2);
+    addressbar = pathframe;
+
+    tabbar = new FXHorizontalFrame(cont, FRAME_NONE | LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 0, 0);
+    FXScrollWindow* tabscroll = new FXScrollWindow(tabbar, LAYOUT_FILL_X | LAYOUT_FIX_HEIGHT | VSCROLLER_NEVER);
+    tabscroll->setHeight(getApp()->getNormalFont()->getFontHeight() + 12 +
+                         tabscroll->horizontalScrollBar()->getDefaultHeight());
+    tabbuttons = new TabButtons(tabscroll, this, dirpanel, FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
     // File list
 
@@ -396,12 +846,37 @@ FilePanel::FilePanel(FXWindow* owner, const char* nm, FXComposite* p, DirPanel* 
     activeicon = new FXButton(pathframe, "", minigraybuttonicon, this, FilePanel::ID_FILELIST, BUTTON_TOOLBAR |
                               JUSTIFY_LEFT | LAYOUT_LEFT);
 
+    new FXButton(pathframe, TAB + _("Go to Previous Folder"), minidirbackicon, this, ID_PANE_BACK,
+                 BUTTON_TOOLBAR | LAYOUT_CENTER_Y);
+    FXArrowButton* history = new FXArrowButton(pathframe, this, ID_PANE_HISTORY,
+                                               ARROW_DOWN | ARROW_TOOLBAR | LAYOUT_CENTER_Y);
+    history->setTipText(_("Folder History"));
+    new FXButton(pathframe, TAB + _("Go to Next Folder"), minidirforwardicon, this, ID_PANE_FORWARD,
+                 BUTTON_TOOLBAR | LAYOUT_CENTER_Y);
+    new FXButton(pathframe, TAB + _("Go to Parent Folder"), minidirupicon, this, ID_PANE_UP,
+                 BUTTON_TOOLBAR | LAYOUT_CENTER_Y);
+    new FXVerticalSeparator(pathframe, SEPARATOR_GROOVE | LAYOUT_FILL_Y);
+    FXString pathkey = getApp()->reg().readStringEntry("KEYBINDINGS", "clear_address", "Ctrl-L");
+    new FXButton(pathframe, TAB + _("Edit Path") + PARS(pathkey), miniediticon, this, ID_EDIT_PATH,
+                 BUTTON_NORMAL | FRAME_RAISED | LAYOUT_CENTER_Y);
+
     // Path text
     pathtext = new TextLabel(pathframe, 0, this, ID_FILELIST, LAYOUT_FILL_X | LAYOUT_FILL_Y);
     pathtext->setBackColor(getApp()->getBaseColor());
 
     // Path linker
     pathlink = new PathLinker(pathframe, list, dirpanel->getList(), JUSTIFY_LEFT | LAYOUT_LEFT | LAYOUT_FILL_X);
+    pathlink->setEditTarget(this, ID_EDIT_PATH);
+    pathedit = new FXTextField(pathframe, 1, this, ID_ENTER_PATH,
+                               TEXTFIELD_ENTER_ONLY | FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X | LAYOUT_CENTER_Y);
+    pathedit->hide();
+    new FXVerticalSeparator(pathframe, SEPARATOR_GROOVE | LAYOUT_FILL_Y);
+    new FXButton(pathframe, TAB + _("Go to Home Folder"), minihomeicon, this, ID_PANE_HOME,
+                 BUTTON_TOOLBAR | LAYOUT_CENTER_Y);
+    new FXButton(pathframe, TAB + _("Root Folder"), miniharddriveicon, this, ID_PANE_ROOT,
+                 BUTTON_TOOLBAR | LAYOUT_CENTER_Y);
+    new FXButton(pathframe, TAB + _("Desktop"), minidesktopicon, this, ID_PANE_DESKTOP,
+                 BUTTON_TOOLBAR | LAYOUT_CENTER_Y);
 
     // Status bar
     statusbar = new FXHorizontalFrame(cont, LAYOUT_LEFT | JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_NONE, 0, 0, 0, 0, 3, 3,
@@ -480,6 +955,11 @@ FilePanel::FilePanel(FXWindow* owner, const char* nm, FXComposite* p, DirPanel* 
     progs["<audioplayer>"] = AUDIOPLAYER;
     progs["<videoplayer>"] = VIDEOPLAYER;
     progs["<archiver>"] = ARCHIVER;
+
+    // Shade the address, tab and status bars so they are distinct from the file list
+    xf_shadebar(addressbar, xf_barcolor(getApp(), 1));
+    xf_shadebar(tabbar, xf_barcolor(getApp(), 2));
+    xf_shadebar(statusbar, xf_barcolor(getApp(), 1));
 }
 
 
@@ -518,6 +998,7 @@ void FilePanel::create()
 // Destructor
 FilePanel::~FilePanel()
 {
+    delete tabbuttons;
     delete list;
     delete current;
     delete next;
@@ -1350,6 +1831,11 @@ void FilePanel::execFile(FXString filepath)
 // Keyboard press
 long FilePanel::onKeyPress(FXObject* sender, FXSelector sel, void* ptr)
 {
+    if (editingPath)
+    {
+        return FXVerticalFrame::onKeyPress(sender, sel, ptr);
+    }
+
     FXEvent* event = (FXEvent*)ptr;
 
     int currentitem = current->list->getCurrentItem();
@@ -1810,6 +2296,226 @@ long FilePanel::onCmdDirectoryUp(FXObject* sender, FXSelector sel, void* ptr)
 
 
 // Go to home directory
+long FilePanel::onCmdTabs(FXObject* sender, FXSelector sel, void* ptr)
+{
+    TabButtons* tabs = current->getTabButtons();
+    if (FXSELID(sel) == ID_NEW_TAB)
+    {
+        return tabs->onCmdNewTab(sender, FXSEL(SEL_COMMAND, TabButtons::ID_NEW_TAB), ptr);
+    }
+    if (FXSELID(sel) == ID_CLOSE_TAB)
+    {
+        return tabs->onCmdCloseButton(sender, FXSEL(SEL_COMMAND, TabButtons::ID_START_CLOSE + tabs->getCurrentTab()), ptr);
+    }
+    return tabs->onCmdRemoveAllTabs(sender, FXSEL(SEL_COMMAND, TabButtons::ID_REMOVE_ALL_TABS), ptr);
+}
+
+
+FXbool FilePanel::navigatePane(const FXString& pathname)
+{
+    if (!xf_isdirectory(pathname))
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Folder %s doesn't exist"), pathname.text());
+        return false;
+    }
+    if (!xf_isreadexecutable(pathname))
+    {
+        MessageBox::error(this, BOX_OK_SU, _("Error"), _(" Permission to: %s denied."), pathname.text());
+        return false;
+    }
+    setActive();
+    list->setDirectory(pathname);
+    updatePath();
+    updateLocation();
+    dirpanel->setDirectory(list->getDirectory(), true);
+    finishPathEditing();
+    list->setFocus();
+    return true;
+}
+
+
+long FilePanel::onCmdPaneNavigation(FXObject* sender, FXSelector sel, void* ptr)
+{
+    FXuint id = FXSELID(sel);
+    if (id == ID_PANE_HISTORY)
+    {
+        FXMenuPane menu(this);
+        int count = 0;
+        if (list->backhist)
+        {
+            for (StringItem* item = list->backhist->getFirst(); item && count < 64;
+                 item = list->backhist->getNext(item), count++)
+            {
+                FXString path = list->backhist->getString(item);
+                new FXMenuCommand(&menu, path.substitute("&", "&&"), NULL, this, ID_PANE_HISTORY_FIRST + count);
+            }
+        }
+        if (count)
+        {
+            setActive();
+            menu.create();
+            int x, y;
+            FXuint state;
+            getRoot()->getCursorPosition(x, y, state);
+            menu.popup(NULL, x, y);
+            getApp()->runModalWhileShown(&menu);
+        }
+        return 1;
+    }
+    if (id == ID_PANE_BACK || id == ID_PANE_FORWARD ||
+        (id >= ID_PANE_HISTORY_FIRST && id <= ID_PANE_HISTORY_LAST))
+    {
+        FXbool forward = id == ID_PANE_FORWARD;
+        StringList* history = forward ? list->forwardhist : list->backhist;
+        int steps = (id >= ID_PANE_HISTORY_FIRST) ? id - ID_PANE_HISTORY_FIRST + 1 : 1;
+        if (history && history->getNumItems() >= steps)
+        {
+            setActive();
+            finishPathEditing();
+            XFileExplorer* window = (XFileExplorer*)mainWindow;
+            for (int i = 0; i < steps; i++)
+            {
+                if (forward)
+                {
+                    window->onCmdDirForward(sender, sel, ptr);
+                }
+                else
+                {
+                    window->onCmdDirBack(sender, sel, ptr);
+                }
+            }
+        }
+        return 1;
+    }
+    FXString path;
+    switch (id)
+    {
+    case ID_PANE_UP:
+        path = FXPath::upLevel(list->getDirectory());
+        break;
+    case ID_PANE_HOME:
+        path = FXSystem::getHomeDirectory();
+        break;
+    case ID_PANE_ROOT:
+        path = ROOTDIR;
+        break;
+    case ID_PANE_DESKTOP:
+        path = dirpanel->getDesktopDirectory();
+        break;
+    default:
+        return 0;
+    }
+    navigatePane(path);
+    return 1;
+}
+
+
+long FilePanel::onUpdPaneNavigation(FXObject* sender, FXSelector sel, void* ptr)
+{
+    FXbool enabled = true;
+    switch (FXSELID(sel))
+    {
+    case ID_PANE_BACK:
+    case ID_PANE_HISTORY:
+        enabled = backhistGetNumItems() > 0;
+        break;
+    case ID_PANE_FORWARD:
+        enabled = forwardhistGetNumItems() > 0;
+        break;
+    case ID_PANE_UP:
+        enabled = list->getDirectory() != ROOTDIR;
+        break;
+    }
+    sender->handle(this, FXSEL(SEL_COMMAND, enabled ? ID_ENABLE : ID_DISABLE), ptr);
+    return 1;
+}
+
+
+void FilePanel::finishPathEditing()
+{
+    editingPath = false;
+    pathedit->hide();
+    if (getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true))
+    {
+        pathlink->show();
+        pathtext->hide();
+    }
+    else
+    {
+        pathtext->show();
+        pathlink->hide();
+    }
+    recalc();
+}
+
+
+long FilePanel::onCmdEditPath(FXObject* sender, FXSelector, void*)
+{
+    if (editingPath && sender != mainWindow)
+    {
+        finishPathEditing();
+        list->setFocus();
+        return 1;
+    }
+    setActive();
+    editingPath = true;
+    pathlink->hide();
+    pathtext->hide();
+    pathedit->setText(list->getDirectory());
+    pathedit->show();
+    recalc();
+    pathedit->setFocus();
+    pathedit->selectAll();
+    return 1;
+}
+
+
+long FilePanel::onCmdEnterPath(FXObject*, FXSelector, void*)
+{
+    FXString path = pathedit->getText();
+    if (path.empty())
+    {
+        MessageBox::warning(this, BOX_OK, _("Warning"), _("File name is empty, operation cancelled"));
+        pathedit->setFocus();
+        return 1;
+    }
+    FXString netpath;
+    int network = resolveNetworkPath(path, netpath);
+    if (network < 0)
+    {
+        pathedit->setFocus();
+        return 1;
+    }
+    path = (network > 0) ? netpath : xf_filefromuri(path);
+    if (path == "~")
+    {
+        path = FXSystem::getHomeDirectory();
+    }
+    else if (path.find("~/") == 0)
+    {
+        path.replace(0, 1, FXSystem::getHomeDirectory());
+    }
+    if (!navigatePane(FXPath::absolute(list->getDirectory(), path)))
+    {
+        pathedit->setFocus();
+    }
+    return 1;
+}
+
+
+long FilePanel::onPathKeyPress(FXObject*, FXSelector, void* ptr)
+{
+    FXEvent* event = (FXEvent*)ptr;
+    if (event->code == KEY_Escape)
+    {
+        finishPathEditing();
+        list->setFocus();
+        return 1;
+    }
+    return 0;
+}
+
+
 long FilePanel::onCmdGoHome(FXObject* sender, FXSelector sel, void* ptr)
 {
     current->list->setDirectory(homedir);
@@ -4704,6 +5410,7 @@ long FilePanel::onCmdOpenWith(FXObject*, FXSelector, void*)
     }
     opendialog->setDirectory(ROOTDIR);
     opendialog->sortItems();
+    opendialog->appendInstalledApplications();
     if (opendialog->execute())
     {
         cmd = opendialog->getText();
@@ -5455,7 +6162,7 @@ long FilePanel::onCmdAddToArch(FXObject* sender, FXSelector, void*)
                 break;
             }
         }
-        archive = name;
+        archive = FXPath::name(name);
     }
 
     // Initial archive name with full path and default extension
@@ -7160,8 +7867,13 @@ long FilePanel::onUpdStatus(FXObject* sender, FXSelector, void*)
 // Update the path text and the path link
 void FilePanel::updatePath()
 {
+    tabbuttons->onUpdCurrentTab(this, 0, NULL);
     pathlink->setPath(list->getDirectory());
     pathtext->setText(list->getDirectory());
+    if (!editingPath)
+    {
+        pathedit->setText(list->getDirectory());
+    }
 }
 
 

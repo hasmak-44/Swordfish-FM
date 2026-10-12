@@ -12,9 +12,210 @@
 #include "FileDialog.h"
 #include "HistInputDialog.h"
 
+#include <dirent.h>
+#include <algorithm>
+#include <set>
+
 
 // Global variables
 extern FXString homedir;
+
+
+namespace
+{
+struct DesktopApplication
+{
+    FXString name;
+    FXString command;
+};
+
+
+void addDataDirs(std::vector<FXString>& dirs, const char* hostvar, const char* var, const FXString& fallback)
+{
+    const char* value = getenv(hostvar);
+    if (!value || !*value)
+    {
+        value = getenv(var);
+    }
+    FXString list = (value && *value) ? FXString(value) : fallback;
+    for (FXint i = 0; i < list.contains(':') + 1; i++)
+    {
+        FXString dir = list.section(':', i);
+        if (!dir.empty() && std::find(dirs.begin(), dirs.end(), dir) == dirs.end())
+        {
+            dirs.push_back(dir);
+        }
+    }
+}
+
+
+// Remove desktop-entry field codes; Open With appends the selected files itself
+FXString desktopExecCommand(const FXString& exec)
+{
+    FXString cmd;
+    for (FXint i = 0; i < exec.length(); i++)
+    {
+        if (exec[i] == '%' && i + 1 < exec.length())
+        {
+            if (exec[i + 1] == '%')
+            {
+                cmd += '%';
+            }
+            i++;
+            continue;
+        }
+        cmd += exec[i];
+    }
+    cmd = cmd.simplify();
+
+    // Unquote a quoted executable when it can be safely represented without quotes
+    if (!cmd.empty() && cmd[0] == '"')
+    {
+        FXint end = cmd.find('"', 1);
+        FXString program = (end > 0) ? cmd.mid(1, end - 1) : FXString("");
+        if (!program.empty() && program.find(' ') < 0)
+        {
+            cmd = program + cmd.mid(end + 1, cmd.length());
+        }
+    }
+    return cmd;
+}
+
+
+FXString localizedKey(const FXString& key, const char* locale)
+{
+    return key + "[" + locale + "]";
+}
+
+
+FXbool readDesktopApplication(const FXString& path, DesktopApplication& app)
+{
+    FILE* fp = fopen(path.text(), "r");
+    if (!fp)
+    {
+        return false;
+    }
+
+    FXString locale = getenv("LC_ALL") ? getenv("LC_ALL") : "";
+    if (locale.empty())
+    {
+        locale = getenv("LC_MESSAGES") ? getenv("LC_MESSAGES") : "";
+    }
+    if (locale.empty())
+    {
+        locale = getenv("LANG") ? getenv("LANG") : "";
+    }
+    locale = locale.before('.').before('@');
+    FXString language = locale.before('_');
+
+    FXString name, localname, languagename, exec, tryexec, type;
+    FXbool inentry = false, hidden = false, terminal = false;
+    char line[4096];
+    while (fgets(line, sizeof(line), fp))
+    {
+        FXString text = FXString(line).trim();
+        if (text.empty() || text[0] == '#')
+        {
+            continue;
+        }
+        if (text[0] == '[')
+        {
+            inentry = (text == "[Desktop Entry]");
+            continue;
+        }
+        if (!inentry || text.find('=') < 0)
+        {
+            continue;
+        }
+        FXString key = text.before('=').trim();
+        FXString value = text.after('=').trim();
+        if (key == "Type")
+        {
+            type = value;
+        }
+        else if (key == "Name")
+        {
+            name = value;
+        }
+        else if (!locale.empty() && key == localizedKey("Name", locale.text()))
+        {
+            localname = value;
+        }
+        else if (!language.empty() && key == localizedKey("Name", language.text()))
+        {
+            languagename = value;
+        }
+        else if (key == "Exec")
+        {
+            exec = value;
+        }
+        else if (key == "TryExec")
+        {
+            tryexec = value;
+        }
+        else if ((key == "NoDisplay" || key == "Hidden") && value.lower() == "true")
+        {
+            hidden = true;
+        }
+        else if (key == "Terminal" && value.lower() == "true")
+        {
+            terminal = true;
+        }
+    }
+    fclose(fp);
+
+    app.name = !localname.empty() ? localname : (!languagename.empty() ? languagename : name);
+    app.command = desktopExecCommand(exec);
+    return type == "Application" && !hidden && !terminal && !app.name.empty() && !app.command.empty() &&
+           (tryexec.empty() || xf_existcommand(tryexec)) && xf_existcommand(app.command);
+}
+
+
+void scanApplications(const FXString& root, const FXString& dir, std::set<FXString>& ids,
+                      std::vector<DesktopApplication>& apps, int depth)
+{
+    DIR* dp = opendir(dir.text());
+    if (!dp)
+    {
+        return;
+    }
+    struct dirent* entry;
+    while ((entry = readdir(dp)) != NULL)
+    {
+        FXString file = entry->d_name;
+        if (file == "." || file == "..")
+        {
+            continue;
+        }
+        FXString path = dir + PATHSEPSTRING + file;
+        if (xf_isdirectory(path))
+        {
+            if (depth < 4)
+            {
+                scanApplications(root, path, ids, apps, depth + 1);
+            }
+            continue;
+        }
+        if (FXPath::extension(file) != "desktop")
+        {
+            continue;
+        }
+
+        // Earlier XDG data directories override later desktop files with the same ID
+        FXString id = path.mid(root.length() + 1, path.length()).substitute(PATHSEPCHAR, '-');
+        if (!ids.insert(id).second)
+        {
+            continue;
+        }
+        DesktopApplication app;
+        if (readDesktopApplication(path, app))
+        {
+            apps.push_back(app);
+        }
+    }
+    closedir(dp);
+}
+}
 
 
 // Object implementation
@@ -204,6 +405,64 @@ long HistInputDialog::onCmdBrowsePath(FXObject* sender, FXSelector sel, void* pt
 void HistInputDialog::setDirectory(const FXString& path)
 {
     initialdir = path;
+}
+
+
+FXString HistInputDialog::getHistoryItem(int pos)
+{
+    for (int i = 0, count = 0; i < input->getNumItems(); i++)
+    {
+        if (input->getItemData(i) == NULL && count++ == pos)
+        {
+            return input->getItemText(i);
+        }
+    }
+    return FXString::null;
+}
+
+
+int HistInputDialog::getHistorySize()
+{
+    int count = 0;
+    for (int i = 0; i < input->getNumItems(); i++)
+    {
+        if (input->getItemData(i) == NULL)
+        {
+            count++;
+        }
+    }
+    return count;
+}
+
+
+void HistInputDialog::appendInstalledApplications()
+{
+    std::vector<FXString> datadirs;
+    addDataDirs(datadirs, "SWORDFISH_HOST_XDG_DATA_HOME", "XDG_DATA_HOME", homedir + "/.local/share");
+    addDataDirs(datadirs, "SWORDFISH_HOST_XDG_DATA_DIRS", "XDG_DATA_DIRS", "/usr/local/share:/usr/share");
+
+    std::set<FXString> ids;
+    std::vector<DesktopApplication> apps;
+    for (size_t i = 0; i < datadirs.size(); i++)
+    {
+        FXString root = datadirs[i] + "/applications";
+        scanApplications(root, root, ids, apps, 0);
+    }
+    std::sort(apps.begin(), apps.end(), [](const DesktopApplication& a, const DesktopApplication& b)
+    {
+        return comparecase(a.name, b.name) < 0;
+    });
+
+    for (size_t i = 0; i < apps.size(); i++)
+    {
+        if (std::find(appnames.begin(), appnames.end(), apps[i].name) != appnames.end())
+        {
+            continue;
+        }
+        appnames.push_back(apps[i].name);
+        appcommands.push_back(apps[i].command);
+        input->appendItem(apps[i].name, (void*)1);
+    }
 }
 
 

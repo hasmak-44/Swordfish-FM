@@ -19,6 +19,8 @@
 #include <FXTIFIcon.h>
 #if defined(linux)
 #include <mntent.h>
+#include <vector>
+#include <map>
 #endif
 
 #include "xfedefs.h"
@@ -76,10 +78,23 @@ int FileList::dirname_index = -1;
 FXIMPLEMENT(FileItem, IconItem, NULL, 0)
 
 
+// Folder read job when listing expanded sub folders
+#define MAX_EXPAND_DEPTH 8
+struct ExpandJob
+{
+    FXString dir;
+    FXString prefix;
+    FileItem* parent = NULL;
+    int depth = 0;
+};
+
+
 // Map
 FXDEFMAP(FileList) FileListMap[] =
 {
     FXMAPFUNC(SEL_DRAGGED, 0, FileList::onDragged),
+    FXMAPFUNC(SEL_LEFTBUTTONPRESS, 0, FileList::onLeftBtnPress),
+    FXMAPFUNC(SEL_KEYPRESS, 0, FileList::onKeyPress),
     FXMAPFUNC(SEL_TIMEOUT, FileList::ID_REFRESH_TIMER, FileList::onCmdRefreshTimer),
     FXMAPFUNC(SEL_TIMEOUT, FileList::ID_OPEN_TIMER, FileList::onOpenTimer),
     FXMAPFUNC(SEL_DND_ENTER, 0, FileList::onDNDEnter),
@@ -560,6 +575,12 @@ long FileList::onDNDMotion(FXObject* sender, FXSelector sel, void* ptr)
         // What is being done (move,copy,link)
         dropaction = inquireDNDAction();
 
+        // Dropping on a nested file goes to the folder that contains it
+        if ((0 <= index) && !isItemDirectory(index) && (((FileItem*)items[index])->treeDepth > 0))
+        {
+            dropdirectory = FXPath::directory(getItemPathname(index));
+        }
+
         // We will open up a folder if we can hover over it for a while
         if ((0 <= index) && isItemDirectory(index))
         {
@@ -623,6 +644,7 @@ long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
     FXuchar* data;
     FXuint len;
     FXbool showdialog = true;
+    FXbool waitcursor = false;
     File* f = NULL;
     int ret;
 
@@ -847,6 +869,7 @@ long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
 
             f->showProgressDialog();
             getApp()->beginWaitCursor();
+            waitcursor = true;
 
             // Move the source file
             if (dropaction == DRAG_MOVE)
@@ -958,8 +981,13 @@ long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
             p = q;
 
             getApp()->endWaitCursor();
+            waitcursor = false;
         }
 out:
+        if (waitcursor)
+        {
+            getApp()->endWaitCursor();
+        }
         delete f;
         FXFREE(&data);
         return 1;
@@ -3197,6 +3225,39 @@ end:
 int FileList::compare(const IconItem* pa, const IconItem* pb,
                       FXbool igncase, FXbool asc, FXbool mixdir, FXuint jmp)
 {
+    const FileItem* x = (const FileItem*)pa;
+    const FileItem* y = (const FileItem*)pb;
+
+    // Nested rows follow their expanded parent, siblings are compared normally
+    if (x->treeDepth || y->treeDepth)
+    {
+        while (x->treeDepth > y->treeDepth && x->parentitem)
+        {
+            x = x->parentitem;
+        }
+        while (y->treeDepth > x->treeDepth && y->parentitem)
+        {
+            y = y->parentitem;
+        }
+        if (x == y)
+        {
+            return (int)((FileItem*)pa)->treeDepth - (int)((FileItem*)pb)->treeDepth;
+        }
+        while (x->parentitem != y->parentitem && x->parentitem && y->parentitem)
+        {
+            x = x->parentitem;
+            y = y->parentitem;
+        }
+        return compareFlat(x, y, igncase, asc, mixdir, jmp);
+    }
+    return compareFlat(pa, pb, igncase, asc, mixdir, jmp);
+}
+
+
+// Compare two sibling items
+int FileList::compareFlat(const IconItem* pa, const IconItem* pb,
+                          FXbool igncase, FXbool asc, FXbool mixdir, FXuint jmp)
+{
     const FileItem* a = (FileItem*)pa;
     const FileItem* b = (FileItem*)pb;
     char* p = (char*)a->label.text();
@@ -4242,6 +4303,30 @@ void FileList::setDirectory(const FXString& pathname, const FXbool histupdate, F
         }
         if (directory != path)
         {
+            // Remember the expanded folders of each directory, so a refresh (which bounces
+            // through the root directory) or coming back to a folder restores them
+            if (!directory.empty())
+            {
+                if (expandedmemory.size() > 64)
+                {
+                    expandedmemory.clear();
+                }
+                if (expandedset.empty())
+                {
+                    expandedmemory.erase(directory.text());
+                }
+                else
+                {
+                    expandedmemory[directory.text()] = expandedset;
+                }
+            }
+            expandedset.clear();
+            std::map<std::string, std::set<std::string> >::iterator mit = expandedmemory.find(xf_cleanpath(path).text());
+            if (mit != expandedmemory.end())
+            {
+                expandedset = mit->second;
+            }
+            expandedstamp = 0;
             directory = xf_cleanpath(path);
             clearItems();
             list = NULL;
@@ -4571,6 +4656,101 @@ int FileList::getHeaderSize(FXuint index)
 
 
 // Update refresh timer if the window is unminimized
+// Expand or collapse the folder at index (forcestate: 1 expand, 0 collapse, -1 toggle)
+void FileList::toggleExpand(int index, int forcestate)
+{
+    if ((index < 0) || (index >= items.no()) || (options & FILELIST_SEARCH) ||
+        (options & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS)))
+    {
+        return;
+    }
+    FileItem* item = (FileItem*)items[index];
+    if (item->treeMark < 1)
+    {
+        return;
+    }
+    std::string rel = item->label.section('\t', 0).text();
+    FXbool expanded = (expandedset.count(rel) > 0);
+    FXbool want = (forcestate < 0) ? !expanded : (forcestate == 1);
+    if (want == expanded)
+    {
+        return;
+    }
+    if (want)
+    {
+        expandedset.insert(rel);
+    }
+    else
+    {
+        // Collapse the folder and everything below it
+        std::string sub = rel + "/";
+        for (std::set<std::string>::iterator it = expandedset.begin(); it != expandedset.end();)
+        {
+            if ((*it == rel) || (it->compare(0, sub.length(), sub) == 0))
+            {
+                it = expandedset.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
+    listItems(false);
+    sortItems();
+}
+
+
+// Click on the expander arrow of a folder
+long FileList::onLeftBtnPress(FXObject* sender, FXSelector sel, void* ptr)
+{
+    FXEvent* event = (FXEvent*)ptr;
+
+    if (isEnabled() && !(options & FILELIST_SEARCH) && !(options & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS)))
+    {
+        int index = getItemAt(event->win_x, event->win_y, event->state);
+        if ((index >= 0) && (index < items.no()))
+        {
+            FileItem* item = (FileItem*)items[index];
+            int mx = pos_x + 2 + item->treeDepth * TREE_INDENT;
+            if ((item->treeMark > 0) && (event->win_x >= mx) && (event->win_x < mx + TREE_MARK_W))
+            {
+                setFocus();
+                toggleExpand(index);
+                return 1;
+            }
+        }
+    }
+    return IconList::onLeftBtnPress(sender, sel, ptr);
+}
+
+
+// Right and Left keys expand and collapse the current folder
+long FileList::onKeyPress(FXObject* sender, FXSelector sel, void* ptr)
+{
+    FXEvent* event = (FXEvent*)ptr;
+
+    if (isEnabled() && (current >= 0) && !(event->state & (SHIFTMASK | CONTROLMASK | ALTMASK)) &&
+        ((event->code == KEY_Right) || (event->code == KEY_Left) ||
+         (event->code == KEY_KP_Right) || (event->code == KEY_KP_Left)))
+    {
+        FileItem* item = (FileItem*)items[current];
+        FXbool right = (event->code == KEY_Right) || (event->code == KEY_KP_Right);
+        if ((item->treeMark == 1) && right)
+        {
+            toggleExpand(current, 1);
+            return 1;
+        }
+        if ((item->treeMark == 2) && !right)
+        {
+            toggleExpand(current, 0);
+            return 1;
+        }
+    }
+    return IconList::onKeyPress(sender, sel, ptr);
+}
+
+
 long FileList::onUpdRefreshTimer(FXObject*, FXSelector, void*)
 {
     static FXbool prevMinimized = true;
@@ -4635,7 +4815,33 @@ void FileList::scan(FXbool force)
                 fusedir = (counter % 3 == 0);
             }
 #endif
-            if (force || (timestamp != newdate) || (counter == 0) || fusedir)
+            // Changes inside expanded sub folders don't change the date of the current folder
+            FXbool subchanged = false;
+            if (!expandedset.empty())
+            {
+                if (options & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS))
+                {
+                    subchanged = true;
+                }
+                else
+                {
+                    FXTime sum = 0;
+                    for (std::set<std::string>::iterator it = expandedset.begin(); it != expandedset.end(); ++it)
+                    {
+                        struct stat sinfo;
+                        if (xf_info(FXPath::absolute(directory, it->c_str()), sinfo))
+                        {
+                            sum += (FXTime)FXMAX(sinfo.st_mtime, sinfo.st_ctime);
+                        }
+                    }
+                    if (sum != expandedstamp)
+                    {
+                        expandedstamp = sum;
+                        subchanged = true;
+                    }
+                }
+            }
+            if (force || subchanged || (timestamp != newdate) || (counter == 0) || fusedir)
             {
                 // And do the refresh
 #if defined(linux)
@@ -5464,8 +5670,27 @@ void FileList::listItems(FXbool force)
             onUpdHeader(0, 0, 0); // Force update header
         }
 
+        // Folders to read: the current one, then the expanded sub folders
+        FXbool detailed = !inTrash && !(options & FILELIST_SEARCH) &&
+                          !(options & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS));
+        if (!detailed)
+        {
+            expandedset.clear();
+        }
+        std::vector<ExpandJob> jobs;
+        ExpandJob rootjob;
+        rootjob.dir = dirname;
+        jobs.push_back(rootjob);
+
+        for (size_t jobidx = 0; jobidx < jobs.size(); jobidx++)
+        {
+        dirname = jobs[jobidx].dir;
+        FXString prefix = jobs[jobidx].prefix;
+        FileItem* jobparent = jobs[jobidx].parent;
+        int jobdepth = jobs[jobidx].depth;
+
         // Get directory stream pointer
-        dirp = opendir(directory.text());
+        dirp = opendir(dirname.text());
 
         // Managed to open directory
         if (dirp)
@@ -5475,6 +5700,12 @@ void FileList::listItems(FXbool force)
             {
                 // Directory entry name
                 name = dp->d_name;
+
+                // Nested folders never show . and ..
+                if (jobdepth > 0 && name[0] == '.' && (name[1] == 0 || (name[1] == '.' && name[2] == 0)))
+                {
+                    continue;
+                }
 
                 // Hidden file (.xxx) or directory (. or .yyy) normally not shown,
                 // but directory .. is always shown so we can navigate up or down
@@ -5488,6 +5719,7 @@ void FileList::listItems(FXbool force)
 
                 // Build full pathname
                 pathname = dirname + name;
+                FXString relname = prefix + name;
 
                 // Get file/link info and indicate if it is a link
                 if (xf_lstat(pathname.text(), &linfo) != 0)
@@ -5544,7 +5776,7 @@ void FileList::listItems(FXbool force)
                 // Find it, and take it out from the old list if found
                 for (pp = po; (item = *pp) != NULL; pp = &item->link)
                 {
-                    if (fileequal(item->label, name))
+                    if (fileequal(item->label, relname))
                     {
                         *pp = item->link;
                         item->link = NULL;
@@ -5560,6 +5792,55 @@ void FileList::listItems(FXbool force)
 fnd:
                 *pn = item;
                 pn = &item->link;
+
+                // Expandable folder state
+                item->treeDepth = jobdepth;
+                item->parentitem = jobparent;
+                if (detailed)
+                {
+                    FXbool realdir = (S_ISDIR(linfo.st_mode) || isLinkToDir) && (name != "..");
+                    if (realdir)
+                    {
+                        // Folders without visible content get no arrow
+                        FXbool hascontent = false;
+                        DIR* sd = opendir(pathname.text());
+                        if (sd)
+                        {
+                            struct dirent* sp;
+                            while ((sp = readdir(sd)) != NULL)
+                            {
+                                if (sp->d_name[0] == '.' && ((sp->d_name[1] == 0) ||
+                                    (sp->d_name[1] == '.' && sp->d_name[2] == 0)))
+                                {
+                                    continue;
+                                }
+                                if (sp->d_name[0] == '.' && !(options & FILELIST_SHOWHIDDEN))
+                                {
+                                    continue;
+                                }
+                                hascontent = true;
+                                break;
+                            }
+                            closedir(sd);
+                        }
+                        realdir = hascontent;
+                    }
+                    FXbool isexp = realdir && (expandedset.count(relname.text()) > 0);
+                    item->treeMark = realdir ? (isexp ? 2 : 1) : 0;
+                    if (isexp && jobdepth < MAX_EXPAND_DEPTH)
+                    {
+                        ExpandJob job;
+                        job.dir = pathname + PATHSEPSTRING;
+                        job.prefix = relname + PATHSEPSTRING;
+                        job.parent = item;
+                        job.depth = jobdepth + 1;
+                        jobs.push_back(job);
+                    }
+                }
+                else
+                {
+                    item->treeMark = -1;
+                }
 
                 // Append
                 if (item == curitem)
@@ -5955,6 +6236,14 @@ fnd:
                         }
                     }
 
+                    // Links to folders keep the folder icon
+                    if (isLink && !isBrokenLink && (item->state & FileItem::FOLDER) &&
+                        !(fileassoc && fileassoc->miniicon))
+                    {
+                        big = xf_isreadexecutable(pathname) ? bigfoldericon : bigfolderlockedicon;
+                        mini = xf_isreadexecutable(pathname) ? minifoldericon : minifolderlockedicon;
+                    }
+
                     // Don't display the file size for directories and links
                     FXString hsize;
                     if (S_ISDIR(linfo.st_mode) || S_ISLNK(linfo.st_mode))
@@ -6146,7 +6435,7 @@ fnd:
 #endif
 
                     // Order labels
-                    setItemLabels(idCol, idColTrash, inTrash, name, "", hsize, filetype, ext, mod, usrid, grpid,
+                    setItemLabels(idCol, idColTrash, inTrash, relname, "", hsize, filetype, ext, mod, usrid, grpid,
                                   perms, linkpath, origpath, del, pathname, labels);
 
                     // Set labels
@@ -6186,6 +6475,7 @@ fnd:
                 }
             }
             closedir(dirp);
+        }
         }
     }
 

@@ -67,6 +67,7 @@ PlacesList::PlacesList(FXWindow* owner, FXComposite* p, FXObject* tgt, FXSelecto
     places = new FXStringDict();
 
     FXString name, pathname;
+    desktopDirectory = FXSystem::getHomeDirectory() + PATHSEPSTRING + "Desktop";
 
     // Number of displayed items
     FXuint num = 0;
@@ -101,6 +102,10 @@ PlacesList::PlacesList(FXWindow* owner, FXComposite* p, FXObject* tgt, FXSelecto
         // Desktop directory
         FXString xdgdirname = "XDG_DESKTOP_DIR";
         pathname = getXDGDirPath(xdgdirname, str);
+        if (str.find(xdgdirname + "=") >= 0 && !pathname.empty())
+        {
+            desktopDirectory = pathname;
+        }
 
         if (pathname != FXSystem::getHomeDirectory())
         {
@@ -650,6 +655,9 @@ long MountsList::onQueryTip(FXObject* sender, FXSelector, void* ptr)
 FXDEFMAP(BookmarksList) BookmarksListMap[] =
 {
     FXMAPFUNC(SEL_QUERY_TIP, 0, BookmarksList::onQueryTip),
+    FXMAPFUNC(SEL_DND_ENTER, 0, BookmarksList::onDNDEnter),
+    FXMAPFUNC(SEL_DND_MOTION, 0, BookmarksList::onDNDMotion),
+    FXMAPFUNC(SEL_DND_DROP, 0, BookmarksList::onDNDDrop),
 };
 
 
@@ -669,6 +677,9 @@ BookmarksList::BookmarksList(FXWindow* owner, FXComposite* p, FXObject* tgt, FXS
     // Colors
     setTextColor(listforecolor);
     setBackColor(listbackcolor);
+
+    // Tabs and folders can be dropped to bookmark them
+    dropEnable();
 
     // Read bookmark keys from registry
     if (getApp()->reg().readStringEntry("BOOKMARKS", "bookmark0", NULL))
@@ -1113,4 +1124,110 @@ long BookmarksList::onQueryTip(FXObject* sender, FXSelector, void* ptr)
     }
 
     return 0;
+}
+
+
+long BookmarksList::onDNDEnter(FXObject* sender, FXSelector sel, void* ptr)
+{
+    FXList::onDNDEnter(sender, sel, ptr);
+    if (!tabType)
+    {
+        tabType = getApp()->registerDragType(TABBUTTONS_DRAG_TYPE);
+        uriType = getApp()->registerDragType(FXString("text/uri-list"));
+    }
+    return 1;
+}
+
+
+long BookmarksList::onDNDMotion(FXObject* sender, FXSelector sel, void* ptr)
+{
+    if (FXList::onDNDMotion(sender, sel, ptr))
+    {
+        return 1;
+    }
+    if (offeredDNDType(FROM_DRAGNDROP, tabType) || offeredDNDType(FROM_DRAGNDROP, uriType))
+    {
+        acceptDrop(DRAG_COPY);
+        return 1;
+    }
+    return 0;
+}
+
+
+// Add a folder as a bookmark named after it (a number is appended if the name is taken)
+int BookmarksList::bookmarkFolder(const FXString& folder)
+{
+    FXString pathname = folder;
+    if (!xf_isdirectory(pathname))
+    {
+        return 0;
+    }
+    FXString base = (pathname == PATHSEPSTRING) ? pathname : FXPath::name(pathname);
+    FXString name = base;
+    for (int n = 2; ; n++)
+    {
+        FXbool taken = false;
+        for (FXuint i = 0; i < nbBookmarks; i++)
+        {
+            if (getBookmarkPathname(i) == pathname)
+            {
+                FXString existing = getBookmarkName(i);
+                setBookmark(existing);
+                return 0;
+            }
+            if (getBookmarkName(i) == name)
+            {
+                taken = true;
+            }
+        }
+        if (!taken)
+        {
+            break;
+        }
+        name = base + " (" + FXStringVal(n) + ")";
+    }
+    FXString icon = "";
+    return appendBookmark(name, pathname, icon);
+}
+
+
+long BookmarksList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
+{
+    if (FXList::onDNDDrop(sender, sel, ptr))
+    {
+        return 1;
+    }
+    FXuchar* data = NULL;
+    FXuint len = 0;
+    int added = 0;
+    if (getDNDData(FROM_DRAGNDROP, tabType, data, len))
+    {
+        FXString path((FXchar*)data, len);
+        FXFREE(&data);
+        added += bookmarkFolder(path);
+    }
+    else if (getDNDData(FROM_DRAGNDROP, uriType, data, len))
+    {
+        FXString list((FXchar*)data, len);
+        FXFREE(&data);
+        list.substitute("\r", "");
+        for (int i = 0; i < list.contains('\n') + 1; i++)
+        {
+            FXString uri = list.section('\n', i);
+            if (!uri.empty())
+            {
+                added += bookmarkFolder(FXURL::decode(FXURL::fileFromURL(uri)));
+            }
+        }
+    }
+    else
+    {
+        return 0;
+    }
+    if (added)
+    {
+        setCurrentItem(getNumItems() - 1);
+        selectItem(getNumItems() - 1);
+    }
+    return 1;
 }

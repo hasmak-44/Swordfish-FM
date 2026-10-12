@@ -1,0 +1,43 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -eq 0 ]; then
+    printf 'Usage: swordfish-open FILE...\n' >&2
+    exit 2
+fi
+
+if [ -n "${SWORDFISH_PORTABLE:-}" ]; then
+    export PATH="${SWORDFISH_HOST_PATH:-/usr/bin:/bin}"
+    export XDG_CONFIG_HOME="${SWORDFISH_HOST_XDG_CONFIG_HOME:-$HOME/.config}"
+    export XDG_DATA_HOME="${SWORDFISH_HOST_XDG_DATA_HOME:-$HOME/.local/share}"
+    export XDG_CONFIG_DIRS="${SWORDFISH_HOST_XDG_CONFIG_DIRS:-/etc/xdg}"
+    export XDG_DATA_DIRS="${SWORDFISH_HOST_XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
+    if [ -n "${SWORDFISH_HOST_LD_LIBRARY_PATH:-}" ]; then
+        export LD_LIBRARY_PATH="$SWORDFISH_HOST_LD_LIBRARY_PATH"
+    else
+        unset LD_LIBRARY_PATH
+    fi
+
+    unset SWORDFISH_PORTABLE SWORDFISH_PORTABLE_DATA SWORDFISH_HOST_PATH
+    unset SWORDFISH_HOST_LD_LIBRARY_PATH SWORDFISH_HOST_XDG_CONFIG_HOME
+    unset SWORDFISH_HOST_XDG_DATA_HOME SWORDFISH_HOST_XDG_CONFIG_DIRS
+    unset SWORDFISH_HOST_XDG_DATA_DIRS
+fi
+
+if command -v xdg-open >/dev/null 2>&1; then
+    opener=xdg-open
+elif command -v gio >/dev/null 2>&1; then
+    opener=gio
+else
+    printf 'No desktop file opener found; install xdg-utils or GLib gio.\n' >&2
+    exit 127
+fi
+
+for file do
+    if [ "$opener" = gio ]; then
+        gio open "$file"
+    else
+        xdg-open "$file"
+    fi
+done

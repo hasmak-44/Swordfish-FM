@@ -1026,6 +1026,7 @@ long SearchPanel::onCmdOpenWith(FXObject*, FXSelector, void*)
         opendialog->appendItem(OpenHistory[i]);
     }
     opendialog->sortItems();
+    opendialog->appendInstalledApplications();
     opendialog->setDirectory(ROOTDIR);
     if (opendialog->execute())
     {

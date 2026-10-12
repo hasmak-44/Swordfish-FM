@@ -1,6 +1,8 @@
 #ifndef HISTINPUTDIALOG_H
 #define HISTINPUTDIALOG_H
 
+#include <vector>
+
 #include "ComboBox.h"
 #include "DialogBox.h"
 
@@ -51,6 +53,8 @@ protected:
     HistComboBox* input = NULL;
     FXuint browsetype = 0;
     FXString initialdir;
+    std::vector<FXString> appnames;
+    std::vector<FXString> appcommands;
 private:
     HistInputDialog()
     {
@@ -72,7 +76,15 @@ public:
 
     FXString getText()
     {
-        return input->getText();
+        FXString text = input->getText();
+        for (size_t i = 0; i < appnames.size(); i++)
+        {
+            if (text == appnames[i])
+            {
+                return appcommands[i];
+            }
+        }
+        return text;
     }
 
     void setText(const FXString& text)
@@ -91,17 +103,16 @@ public:
     void clearItems()
     {
         input->clearItems();
+        appnames.clear();
+        appcommands.clear();
     }
 
-    FXString getHistoryItem(int pos)
-    {
-        return input->getItemText(pos);
-    }
+    // History excludes installed applications, which are listed after it
+    FXString getHistoryItem(int pos);
+    int getHistorySize();
 
-    int getHistorySize()
-    {
-        return input->getNumItems();
-    }
+    // Add installed desktop applications after the history entries
+    void appendInstalledApplications();
 
     void setDirectory(const FXString&);
 

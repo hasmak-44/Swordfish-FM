@@ -7,6 +7,11 @@
 #include <fxkeys.h>
 #include <FXPNGIcon.h>
 
+#include <dirent.h>
+#include <mntent.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "xfedefs.h"
 #include "icons.h"
 #include "xfeutils.h"
@@ -54,6 +59,8 @@ FXDEFMAP(FileSelector) FileSelectorMap[] =
     FXMAPFUNC(SEL_COMMAND, FileSelector::ID_POPUP_MENU, FileSelector::onCmdPopupMenu),
     FXMAPFUNC(SEL_COMMAND, FileSelector::ID_FILTER, FileSelector::onCmdItemFilter),
     FXMAPFUNC(SEL_UPDATE, FileSelector::ID_FILTER, FileSelector::onUpdItemFilter),
+    FXMAPFUNC(SEL_COMMAND, FileSelector::ID_SIDEBAR, FileSelector::onCmdSidebar),
+    FXMAPFUNC(SEL_QUERY_TIP, FileSelector::ID_SIDEBAR, FileSelector::onQuerySidebarTip),
     FXMAPFUNC(SEL_KEYPRESS, 0, FileSelector::onCmdKeyPress),
     FXMAPFUNC(SEL_KEYRELEASE, 0, FileSelector::onCmdKeyRelease),
 };
@@ -167,7 +174,16 @@ FileSelector::FileSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXuint
     }
     nbCols = i;
 
-    list = new FileList(this, cont, idCol, nbCols, this, ID_FILELIST, showthumbnails, 0, 0, options);
+    // Sidebar with recent folders, places and mounted devices, then the file list
+    sidesplit = new FXSplitter(cont, SPLITTER_HORIZONTAL | SPLITTER_TRACKING | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    sideframe = new FXVerticalFrame(sidesplit, LAYOUT_FILL_Y | FRAME_LINE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    sidebar = new FXList(sideframe, this, ID_SIDEBAR, LIST_BROWSESELECT | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    sidebar->setTextColor(getApp()->reg().readColorEntry("SETTINGS", "listforecolor", FXRGB(0, 0, 0)));
+    sidebar->setBackColor(getApp()->reg().readColorEntry("SETTINGS", "listbackcolor", FXRGB(255, 255, 255)));
+    sideframe->setWidth(getApp()->reg().readUnsignedEntry("FILEDIALOG", "sidebar_width", 180));
+    FXVerticalFrame* listframe = new FXVerticalFrame(sidesplit, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_LINE,
+                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    list = new FileList(this, listframe, idCol, nbCols, this, ID_FILELIST, showthumbnails, 0, 0, options);
 
     // Set list colors and columns size for detailed mode
     list->setTextColor(getApp()->reg().readColorEntry("SETTINGS", "listforecolor", FXRGB(0, 0, 0)));
@@ -380,6 +396,7 @@ FileSelector::FileSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXuint
     setDirectory(FXSystem::getCurrentDirectory());              // Update file list
     pathlink->setPath(FXSystem::getCurrentDirectory());         // Update path linker
     pathtext->setText(FXSystem::getCurrentDirectory());         // Update path text
+    fillSidebar();
 
     list->setFocus();
     accept->hide();
@@ -452,6 +469,7 @@ long FileSelector::onCmdItemDoubleClicked(FXObject*, FXSelector, void* ptr)
             FXSelector sel = accept->getSelector();
             if (tgt)
             {
+                rememberRecentDirectory();
                 tgt->handle(accept, FXSEL(SEL_COMMAND, sel), (void*)1);
             }
         }
@@ -512,6 +530,7 @@ long FileSelector::onCmdItemClicked(FXObject*, FXSelector, void* ptr)
                 FXSelector sel = accept->getSelector();
                 if (tgt)
                 {
+                    rememberRecentDirectory();
                     tgt->handle(accept, FXSEL(SEL_COMMAND, sel), (void*)1);
                 }
             }
@@ -656,6 +675,7 @@ long FileSelector::onCmdAccept(FXObject*, FXSelector, void*)
             {
                 if (tgt)
                 {
+                    rememberRecentDirectory();
                     tgt->handle(accept, FXSEL(SEL_COMMAND, sel), (void*)1);
                 }
                 return 1;
@@ -680,6 +700,7 @@ long FileSelector::onCmdAccept(FXObject*, FXSelector, void*)
             {
                 if (tgt)
                 {
+                    rememberRecentDirectory();
                     tgt->handle(accept, FXSEL(SEL_COMMAND, sel), (void*)1);
                 }
                 return 1;
@@ -691,6 +712,7 @@ long FileSelector::onCmdAccept(FXObject*, FXSelector, void*)
                 {
                     if (tgt)
                     {
+                        rememberRecentDirectory();
                         tgt->handle(accept, FXSEL(SEL_COMMAND, sel), (void*)1);
                     }
                     return 1;
@@ -705,6 +727,7 @@ long FileSelector::onCmdAccept(FXObject*, FXSelector, void*)
                     {
                         if (tgt)
                         {
+                            rememberRecentDirectory();
                             tgt->handle(accept, FXSEL(SEL_COMMAND, sel), (void*)1);
                         }
                         return 1;
@@ -720,6 +743,7 @@ long FileSelector::onCmdAccept(FXObject*, FXSelector, void*)
                     {
                         if (tgt)
                         {
+                            rememberRecentDirectory();
                             tgt->handle(accept, FXSEL(SEL_COMMAND, sel), (void*)1);
                         }
                         return 1;
@@ -1802,6 +1826,7 @@ void FileSelector::showThumbnails(FXbool shown)
 FileSelector::~FileSelector()
 {
     // Write options to the registry
+    getApp()->reg().writeUnsignedEntry("FILEDIALOG", "sidebar_width", sideframe->getWidth());
     getApp()->reg().writeUnsignedEntry("FILEDIALOG", "name_size", list->getHeaderSize(0)); // Name is at position 0
 
     FXbool isShown;
@@ -1958,6 +1983,471 @@ long FileSelector::onCmdKeyRelease(FXObject* sender, FXSelector sel, void* ptr)
 {
     if (this->onKeyRelease(sender, sel, ptr))
     {
+        return 1;
+    }
+
+    return 0;
+}
+
+
+// Sidebar helpers
+
+#define SIDEBAR_RECENT_MAX    8
+
+// Return true if path is an existing readable folder
+static FXbool sidebarIsFolder(const FXString& path)
+{
+    struct stat info;
+
+    return !path.empty() && stat(path.text(), &info) == 0 && S_ISDIR(info.st_mode) && access(path.text(), R_OK | X_OK) == 0;
+}
+
+
+// Read an XDG user directory from user-dirs.dirs contents
+static FXString sidebarXdgDir(const FXString& contents, const FXString& key)
+{
+    int pos = contents.find(key + "=");
+
+    if (pos < 0)
+    {
+        return FXString::null;
+    }
+    pos += key.length() + 1;
+    int end = contents.find('\n', pos);
+    if (end < 0)
+    {
+        end = contents.length();
+    }
+
+    FXString value = contents.mid(pos, end - pos).trim();
+    if ((value.length() >= 2) && (value[0] == '"') && (value[value.length() - 1] == '"'))
+    {
+        value = value.mid(1, value.length() - 2);
+    }
+    value.substitute("$HOME", FXSystem::getHomeDirectory());
+
+    return xf_cleanpath(value);
+}
+
+
+// Read a small text file
+static FXString sidebarReadFile(const FXString& path)
+{
+    FXString contents;
+    FILE* fp = fopen(path.text(), "r");
+
+    if (fp)
+    {
+        char buf[4096];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), fp)) > 0)
+        {
+            contents.append(buf, (int)n);
+        }
+        fclose(fp);
+    }
+
+    return contents;
+}
+
+
+// Decode a file:// URI to a local path
+static FXString sidebarUriToPath(const FXString& uri)
+{
+    if (uri.left(7) != "file://")
+    {
+        return FXString::null;
+    }
+
+    FXString encoded = uri.mid(7, uri.length() - 7);
+    if ((encoded.length() > 0) && (encoded[0] != '/'))
+    {
+        // Skip a host name such as file://localhost/path
+        int slash = encoded.find('/');
+        if (slash < 0)
+        {
+            return FXString::null;
+        }
+        encoded = encoded.mid(slash, encoded.length() - slash);
+    }
+
+    FXString path;
+    for (int i = 0; i < encoded.length(); i++)
+    {
+        if ((encoded[i] == '%') && (i + 2 < encoded.length()) && isxdigit((FXuchar)encoded[i + 1]) &&
+            isxdigit((FXuchar)encoded[i + 2]))
+        {
+            char hex[3] = { encoded[i + 1], encoded[i + 2], 0 };
+            path.append((FXchar)strtol(hex, NULL, 16));
+            i += 2;
+        }
+        else
+        {
+            path.append(encoded[i]);
+        }
+    }
+
+    return path;
+}
+
+
+// Return true if a mount should be shown as a device or network place
+static FXbool sidebarKeepMount(const FXString& fsname, const FXString& dir, const FXString& type)
+{
+    if ((dir == ROOTDIR) || dir.empty())
+    {
+        return false;
+    }
+
+    FXbool network = (type == "cifs") || (type == "smb3") || (type == "smbfs") || (type == "nfs") ||
+                     (type == "nfs4") || (type == "fuse.sshfs") || (type == "davfs") || (type == "fuse.rclone");
+    FXbool removable = (dir.left(7) == "/media/") || (dir.left(11) == "/run/media/") || (dir.left(5) == "/mnt/");
+
+    if (!network && !removable && (fsname.left(5) != "/dev/"))
+    {
+        return false;
+    }
+    if (!removable && (fsname.left(9) == "/dev/loop"))
+    {
+        return false;
+    }
+
+    static const char* hidden[] = { "/boot", "/efi", "/snap", "/var", "/usr", "/opt", "/sys", "/proc", "/dev", "/run",
+                                    "/tmp", "/etc", "/srv", "/home", "/root", "/workspaces", NULL };
+    if (!removable && !network)
+    {
+        for (int i = 0; hidden[i]; i++)
+        {
+            FXString prefix = hidden[i];
+            if ((dir == prefix) || (dir.left(prefix.length() + 1) == prefix + PATHSEPSTRING))
+            {
+                return false;
+            }
+        }
+    }
+
+    // Hidden mount points are usually internal to the system or a container
+    if (dir.find("/.") >= 0)
+    {
+        return false;
+    }
+
+    return sidebarIsFolder(dir);
+}
+
+
+// Rebuild the Recent, Places and Devices sidebar
+void FileSelector::fillSidebar()
+{
+    sidebar->clearItems();
+    sidebarpaths.clear();
+
+    std::vector<FXString> used;
+    FXString home = FXSystem::getHomeDirectory();
+
+    // Add a disabled section heading
+    auto addHeading = [&](const FXString& title)
+    {
+        sidebar->appendItem(title);
+        sidebar->disableItem(sidebar->getNumItems() - 1);
+        sidebarpaths.push_back(FXString::null);
+    };
+
+    // Add a folder entry once in its section
+    auto addItem = [&](std::vector<FXString>& seen, const FXString& label, const FXString& path, FXIcon* icon)
+    {
+        FXString clean = xf_cleanpath(path);
+        if (!sidebarIsFolder(clean))
+        {
+            return false;
+        }
+        for (size_t i = 0; i < seen.size(); i++)
+        {
+            if (seen[i] == clean)
+            {
+                return false;
+            }
+        }
+        seen.push_back(clean);
+        sidebar->appendItem(label, icon);
+        sidebarpaths.push_back(clean);
+        return true;
+    };
+
+    // Recent: folders accepted in this dialog first, then folders from the desktop recent files list
+    std::vector<FXString> recent;
+    for (int i = 0; i < SIDEBAR_RECENT_MAX; i++)
+    {
+        FXString key;
+        key.format("recent_dir%d", i);
+        FXString path = getApp()->reg().readStringEntry("FILEDIALOG", key.text(), "");
+        if (!path.empty() && sidebarIsFolder(path))
+        {
+            FXbool dup = false;
+            for (size_t j = 0; j < recent.size(); j++)
+            {
+                dup = dup || (recent[j] == path);
+            }
+            if (!dup)
+            {
+                recent.push_back(path);
+            }
+        }
+    }
+
+    const char* datahome = getenv("SWORDFISH_HOST_XDG_DATA_HOME");
+    if (!datahome || !datahome[0])
+    {
+        datahome = getenv("XDG_DATA_HOME");
+    }
+    FXString xbel = (datahome && datahome[0]) ? FXString(datahome) : home + "/.local/share";
+    FXString contents = sidebarReadFile(xbel + "/recently-used.xbel");
+    std::vector<FXString> xbelrecent;
+    for (int pos = contents.find("href=\""); pos >= 0; pos = contents.find("href=\"", pos))
+    {
+        pos += 6;
+        int end = contents.find('"', pos);
+        if (end < 0)
+        {
+            break;
+        }
+        FXString path = sidebarUriToPath(contents.mid(pos, end - pos));
+        if (!path.empty())
+        {
+            if (!sidebarIsFolder(path))
+            {
+                path = FXPath::directory(path);
+            }
+            xbelrecent.push_back(path);
+        }
+        pos = end;
+    }
+
+    // Newer bookmarks are normally appended to the end of the file
+    for (int i = (int)xbelrecent.size() - 1; i >= 0 && recent.size() < SIDEBAR_RECENT_MAX; i--)
+    {
+        FXbool dup = false;
+        for (size_t j = 0; j < recent.size(); j++)
+        {
+            dup = dup || (recent[j] == xbelrecent[i]);
+        }
+        if (!dup && sidebarIsFolder(xbelrecent[i]))
+        {
+            recent.push_back(xbelrecent[i]);
+        }
+    }
+
+    if (recent.size() > 0)
+    {
+        addHeading(_("Recent"));
+        std::vector<FXString> seenrecent;
+        for (size_t i = 0; i < recent.size(); i++)
+        {
+            FXString label = (recent[i] == ROOTDIR) ? FXString(ROOTDIR) : FXPath::name(recent[i]);
+            addItem(seenrecent, label, recent[i], minifoldericon);
+        }
+    }
+
+    // Places
+    addHeading(_("Places"));
+    addItem(used, _("Home"), home, minifolderhomeicon);
+
+    FXString userdirs = sidebarReadFile(home + "/.config/user-dirs.dirs");
+    FXString desktop = sidebarXdgDir(userdirs, "XDG_DESKTOP_DIR");
+    addItem(used, _("Desktop"), desktop.empty() ? home + "/Desktop" : desktop, minidesktopicon);
+
+    static const struct
+    {
+        const char* key;
+        const char* fallback;
+        const char* label;
+    }
+    xdgdirs[] =
+    {
+        { "XDG_DOCUMENTS_DIR", "Documents", N_("Documents") },
+        { "XDG_DOWNLOAD_DIR", "Downloads", N_("Downloads") },
+        { "XDG_MUSIC_DIR", "Music", N_("Music") },
+        { "XDG_PICTURES_DIR", "Pictures", N_("Pictures") },
+        { "XDG_VIDEOS_DIR", "Videos", N_("Videos") },
+    };
+    FXIcon* xdgicons[] =
+    {
+        minifolderdocumentsicon, minifolderdownloadicon, minifoldermusicicon, minifolderimagesicon, minifoldervideosicon
+    };
+    for (size_t i = 0; i < ARRAYNUMBER(xdgdirs); i++)
+    {
+        FXString path = sidebarXdgDir(userdirs, xdgdirs[i].key);
+        if (path.empty())
+        {
+            path = home + PATHSEPSTRING + xdgdirs[i].fallback;
+        }
+        if (path != home)
+        {
+            addItem(used, _(xdgdirs[i].label), path, xdgicons[i]);
+        }
+    }
+    addItem(used, _("File System"), ROOTDIR, miniharddriveicon);
+
+    // Swordfish bookmarks (name;path;icon)
+    for (int i = 0; i < 100; i++)
+    {
+        FXString key;
+        key.format("bookmark%d", i);
+        FXString entry = getApp()->reg().readStringEntry("BOOKMARKS", key.text(), "");
+        if (entry.empty())
+        {
+            break;
+        }
+        FXString name = entry.section(';', 0);
+        FXString path = entry.section(';', 1);
+        addItem(used, name.empty() ? FXPath::name(path) : name, path, minifolderlinkicon);
+    }
+
+    // Mounted partitions, removable drives and network shares
+    FILE* mtab = setmntent(MTAB_PATH, "r");
+    FXbool headed = false;
+    std::vector<FXString> devices;
+    if (mtab)
+    {
+        struct mntent* mnt;
+        while ((mnt = getmntent(mtab)))
+        {
+            FXString fsname = mnt->mnt_fsname;
+            FXString dir = mnt->mnt_dir;
+            FXString type = mnt->mnt_type;
+            if (!sidebarKeepMount(fsname, dir, type))
+            {
+                continue;
+            }
+
+            FXbool network = (fsname.left(5) != "/dev/");
+            if (!network)
+            {
+                // Show a bind-mounted device only once
+                FXbool dup = false;
+                for (size_t i = 0; i < devices.size(); i++)
+                {
+                    dup = dup || (devices[i] == fsname);
+                }
+                if (dup)
+                {
+                    continue;
+                }
+                devices.push_back(fsname);
+            }
+            FXIcon* icon = network ? mininetdriveicon : ((type == "iso9660" || type == "udf") ? minicdromicon : miniharddriveicon);
+            FXString label = FXPath::name(dir);
+            if (!headed)
+            {
+                addHeading(_("Devices"));
+                headed = true;
+            }
+            addItem(used, label, dir, icon);
+        }
+        endmntent(mtab);
+    }
+
+    // GVFS network locations
+    FXString gvfs;
+    gvfs.format("/run/user/%u/gvfs", (unsigned)getuid());
+    DIR* dp = opendir(gvfs.text());
+    if (dp)
+    {
+        struct dirent* de;
+        while ((de = readdir(dp)))
+        {
+            if (de->d_name[0] == '.')
+            {
+                continue;
+            }
+            if (!headed)
+            {
+                addHeading(_("Devices"));
+                headed = true;
+            }
+            addItem(used, de->d_name, gvfs + PATHSEPSTRING + de->d_name, mininetdriveicon);
+        }
+        closedir(dp);
+    }
+}
+
+
+// Remember the folder of the accepted selection in the Recent sidebar section
+void FileSelector::rememberRecentDirectory()
+{
+    FXString path = getFilename();
+
+    if (path.empty() || !sidebarIsFolder(path))
+    {
+        path = path.empty() ? list->getDirectory() : FXPath::directory(path);
+    }
+    if (!sidebarIsFolder(path))
+    {
+        return;
+    }
+
+    std::vector<FXString> recent;
+    recent.push_back(path);
+    for (int i = 0; i < SIDEBAR_RECENT_MAX && (int)recent.size() < SIDEBAR_RECENT_MAX; i++)
+    {
+        FXString key;
+        key.format("recent_dir%d", i);
+        FXString old = getApp()->reg().readStringEntry("FILEDIALOG", key.text(), "");
+        if (!old.empty() && (old != path))
+        {
+            recent.push_back(old);
+        }
+    }
+    for (int i = 0; i < SIDEBAR_RECENT_MAX; i++)
+    {
+        FXString key;
+        key.format("recent_dir%d", i);
+        if (i < (int)recent.size())
+        {
+            getApp()->reg().writeStringEntry("FILEDIALOG", key.text(), recent[i].text());
+        }
+        else
+        {
+            getApp()->reg().deleteEntry("FILEDIALOG", key.text());
+        }
+    }
+}
+
+
+// Go to the clicked sidebar folder
+long FileSelector::onCmdSidebar(FXObject*, FXSelector, void* ptr)
+{
+    int index = (int)(FXival)ptr;
+
+    if ((index < 0) || (index >= (int)sidebarpaths.size()) || sidebarpaths[index].empty())
+    {
+        return 1;
+    }
+    if (!sidebarIsFolder(sidebarpaths[index]))
+    {
+        fillSidebar();
+        return 1;
+    }
+
+    setDirectory(sidebarpaths[index]);
+    list->setFocus();
+
+    return 1;
+}
+
+
+// Show the full folder path as sidebar tooltip
+long FileSelector::onQuerySidebarTip(FXObject* sender, FXSelector, void*)
+{
+    int x, y;
+    FXuint state;
+
+    sidebar->getCursorPosition(x, y, state);
+    int index = sidebar->getItemAt(x, y);
+    if ((index >= 0) && (index < (int)sidebarpaths.size()) && !sidebarpaths[index].empty())
+    {
+        FXString tip = sidebarpaths[index];
+        sender->handle(this, FXSEL(SEL_COMMAND, ID_SETSTRINGVALUE), (void*)&tip);
         return 1;
     }
 

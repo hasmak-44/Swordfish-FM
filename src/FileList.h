@@ -2,6 +2,7 @@
 #define FILELIST_H
 
 #include <set>
+#include <map>
 #include <string>
 #include "xfedefs.h"
 #include "StringList.h"
@@ -31,6 +32,7 @@ class FXAPI FileItem : public IconItem
 protected:
     FileAssoc* assoc = NULL;                       // File association record
     FileItem* link = NULL;                         // Link to next item
+    FileItem* parentitem = NULL;                   // Expanded parent folder item, if nested
     FXulong size = 0;                              // File size
     FXTime date = 0;                               // File date (mtime)
     FXTime cdate = 0;                              // Changed date (ctime)
@@ -143,6 +145,9 @@ protected:
     FXTime timestamp = 0;                               // Time when last refreshed
     FXuint counter = 0;                                 // Refresh counter
     FXuint boostcount = 0;                              // Remaining seconds of full rescans after a mount or script
+    std::set<std::string> expandedset;                  // Expanded sub folders (paths relative to the directory)
+    std::map<std::string, std::set<std::string> > expandedmemory; // Expanded folders remembered per directory
+    FXTime expandedstamp = 0;                           // Sum of the dates of the expanded folders
     std::set<std::string> knownnames;                   // Names present when a boosted refresh started
     FXString boostname;                                 // Name of the new item being tracked
     FXString boostdir;                                  // Directory watched for new items
@@ -195,6 +200,18 @@ private:
 public:
     long onCmdRefresh(FXObject*, FXSelector, void*);
     long onCmdRefreshTimer(FXObject*, FXSelector, void*);
+    long onLeftBtnPress(FXObject*, FXSelector, void*);
+    long onKeyPress(FXObject*, FXSelector, void*);
+    void toggleExpand(int index, int forcestate = -1);
+    std::set<std::string> getExpanded() const
+    {
+        return expandedset;
+    }
+    void setExpanded(const std::set<std::string>& e)
+    {
+        expandedset = e;
+        expandedstamp = 0;
+    }
     void boostRefresh(FXuint seconds = 30);
     long onOpenTimer(FXObject*, FXSelector, void*);
     long onDNDEnter(FXObject*, FXSelector, void*);
@@ -258,6 +275,7 @@ public:
 
 public:
     static int compare(const IconItem*, const IconItem*, FXbool, FXbool, FXbool, FXuint);
+    static int compareFlat(const IconItem*, const IconItem*, FXbool, FXbool, FXbool, FXuint);
     static int ascending(const IconItem*, const IconItem*);
     static int descending(const IconItem*, const IconItem*);
     static int ascendingCase(const IconItem*, const IconItem*);

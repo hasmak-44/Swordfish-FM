@@ -431,4 +431,7 @@ enum
 #define RPM_PKG      1
 #define OTHER_PKG    2
 
+// Drag type of a tab dragged out of the tab bar (data is the tab folder)
+#define TABBUTTONS_DRAG_TYPE "application/x-swordfish-tab"
+
 #endif
