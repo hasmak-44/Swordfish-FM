@@ -20,7 +20,7 @@ jobs:
   build-portable:
     runs-on: ubuntu-24.04
     permissions:
-      contents: read
+      contents: write
       pages: write
       id-token: write
     environment:
@@ -64,6 +64,26 @@ jobs:
           cp -a build/Swordfish-Portable build/portable-download/
           mkdir -p build/pages
           (cd build && zip -qr pages/Swordfish-Portable.zip Swordfish-Portable)
+          (cd build/pages && sha256sum Swordfish-Portable.zip > Swordfish-Portable.zip.sha256)
+
+      - name: Publish portable release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          flags=()
+          if [[ "$RELEASE_VERSION" == *-rc* ]]; then
+            flags+=(--prerelease)
+          fi
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag \
+              --title "Swordfish Portable $RELEASE_VERSION" \
+              --notes-file RELEASE-NOTES.txt "${flags[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" \
+            build/pages/Swordfish-Portable.zip \
+            build/pages/Swordfish-Portable.zip.sha256 --clobber
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

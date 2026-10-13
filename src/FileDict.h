@@ -9,14 +9,33 @@ struct FileAssoc
     FXString key;                            // Key extension (ex: zip, cpp, ...)
     FXString command;                        // Command to execute
     FXString originalCommand;                // Stored association before application mode is applied
+    FXbool userCommand = false;
     FXString extension;                      // Full extension name (ex: ZIP Archive, C++ Source, ...)
     FXString mimetype;                       // Mime type name
     FXIcon* bigicon = NULL;                  // Big normal icon
     FXIcon* bigiconopen = NULL;              // Big open icon
     FXIcon* miniicon = NULL;                 // Mini normal icon
-    FXIcon* miniiconopen;                    // Mini open icon
+    FXIcon* miniiconopen = NULL;             // Mini open icon
     FXDragType dragtype = 0;                 // Registered drag type
     FXuint flags = 0;                        // Flags
+
+    FXbool opensWithAssociation(FXbool executable, const FXString& pathname = FXString::null) const
+    {
+        if (userCommand)
+        {
+            return true;
+        }
+
+        return !executable && !isRunnableFile(pathname);
+    }
+
+    // Files that are run by Swordfish even without the executable bit
+    static FXbool isRunnableFile(const FXString& pathname)
+    {
+        FXString ext = FXPath::extension(pathname).lower();
+        return ext == "appimage" || ext == "bash" || ext == "exe" || ext == "jar" || ext == "lua" ||
+               ext == "msi" || ext == "pl" || ext == "py" || ext == "rb" || ext == "sh";
+    }
 };
 
 
@@ -220,6 +239,11 @@ public:
 
     // Find file association from registry
     FileAssoc* associate(const char* key);
+
+    // Remember a command chosen by the user, kept in every program mode
+    // (comma separated open,view,edit commands; empty parts keep the mode default)
+    static void setUserCommand(FXSettings& settings, const FXString& key, const FXString& command);
+    static FXString associationExtension(const FXString& pathname);
 
 /*
  * Determine binding for the given file.

@@ -641,6 +641,7 @@ FXString xf_mimetype(FXString);
 FXlong xf_getavailablespace(const FXString&);
 FXHotKey xf_parseaccel(const FXString&);
 FXbool xf_existcommand(const FXString);
+void xf_restorehostenv();
 FXString xf_getkeybinding(FXEvent*);
 
 int xf_mkpath(const char*, mode_t);
@@ -692,6 +693,12 @@ FXbool xf_isidentical(const FXString&, const FXString&);
 
 int xf_setwaitcursor(FXApp*, FXuint);
 int xf_runst(FXString);
+FXString xf_terminalcommand(const FXString&, const FXString&, const FXString& = FXString::null);
+FXString xf_terminalprogram(FXApp*);
+FXString xf_hostcommand(const FXString&);
+FXuint xf_missingassociation(FXWindow*, const FXString&);
+FXbool xf_filemimetype(FXWindow*, const FXString&, FXString&);
+FXString xf_commandprogram(const FXString&);
 FXString xf_getcommandoutput(FXString);
 FXIcon* xf_loadiconfile(FXApp*, const FXString, const FXString, const double, const FXColor,
                         const FXbool blend = true);

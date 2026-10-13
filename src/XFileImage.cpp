@@ -2148,8 +2148,11 @@ long XFileImage::onUpdFileView(FXObject* sender, FXSelector sel, void* ptr)
 // Harvest the zombies
 long XFileImage::onSigHarvest(FXObject*, FXSelector, void*)
 {
-    while (waitpid(-1, NULL, WNOHANG) > 0)
+    int status;
+    pid_t child;
+    while ((child = waitpid(-1, &status, WNOHANG)) > 0)
     {
+        handleCommandExit(this, child, status);
     }
 
     return 1;
@@ -3316,7 +3319,7 @@ int main(int argc, char* argv[])
     XFileImage* window = new XFileImage(application, smoothscroll, listbackcolor, listforecolor, highlightcolor);
 
     // Catch SIGCHLD to harvest zombie child processes
-    application->addSignal(SIGCHLD, window, XFileImage::ID_HARVEST, true);
+    application->addSignal(SIGCHLD, window, XFileImage::ID_HARVEST);
 
     // Handle interrupt to save stuff nicely
     application->addSignal(SIGINT, window, XFileImage::ID_QUIT);

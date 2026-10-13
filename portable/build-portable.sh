@@ -6,10 +6,11 @@ build_root="$source_root/build"
 output_dir=${1:-"$build_root/Swordfish-Portable"}
 output_dir=$(realpath -m -- "$output_dir")
 docker_command=${DOCKER:-docker}
-image=swordfish-portable-builder:debian12
+base_image=${BASE_IMAGE:-debian:buster-slim}
+image=swordfish-portable-builder:${base_image//[:\/]/-}
 
 if ! command -v "$docker_command" >/dev/null 2>&1; then
-    printf 'Docker is required to build against the Debian 12 glibc baseline.\n' >&2
+    printf 'Docker is required to build against an old glibc baseline.\n' >&2
     exit 1
 fi
 
@@ -44,6 +45,7 @@ mkdir -p "$build_root"
 
 "$docker_command" build \
         --tag "$image" \
+        --build-arg BASE_IMAGE="$base_image" \
         --file "$source_root/portable/Dockerfile" \
         "$source_root/portable"
 

@@ -1345,8 +1345,11 @@ void XFileArchive::saveConfig()
 // Harvest the zombies
 long XFileArchive::onSigHarvest(FXObject*, FXSelector, void*)
 {
-    while (waitpid(-1, NULL, WNOHANG) > 0)
+    int status;
+    pid_t child;
+    while ((child = waitpid(-1, &status, WNOHANG)) > 0)
     {
+        handleCommandExit(this, child, status);
     }
     return 1;
 }
@@ -2317,7 +2320,7 @@ int main(int argc, char* argv[])
     XFileArchive* window = new XFileArchive(application);
 
     // Catch SIGCHLD to harvest zombie child processes
-    application->addSignal(SIGCHLD, window, XFileArchive::ID_HARVEST, true);
+    application->addSignal(SIGCHLD, window, XFileArchive::ID_HARVEST);
 
     // Smooth scrolling
     window->setSmoothScroll(smoothscroll);

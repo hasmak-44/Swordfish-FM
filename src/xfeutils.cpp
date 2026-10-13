@@ -22,6 +22,9 @@
 #include "xfedefs.h"
 #include "icons.h"
 #include "xfeutils.h"
+#include "FileDict.h"
+#include "AppLogger.h"
+#include "MessageBox.h"
 #include "../st/x.h"
 
 
@@ -246,19 +249,111 @@ FXHotKey xf_parseaccel(const FXString& string)
 }
 
 
+// In a portable bundle, give a child process the host library path, but keep the bundle
+// tools (swordfish-open, swfw, ...) first on PATH, followed by the host PATH.
+// Called in a forked child just before exec.
+void xf_restorehostenv()
+{
+    const char* host_ld = getenv("SWORDFISH_HOST_LD_LIBRARY_PATH");
+    if (host_ld)
+    {
+        if (*host_ld)
+        {
+            setenv("LD_LIBRARY_PATH", host_ld, 1);
+        }
+        else
+        {
+            unsetenv("LD_LIBRARY_PATH");
+        }
+    }
+
+    const char* host_path = getenv("SWORDFISH_HOST_PATH");
+    if (host_path && *host_path)
+    {
+        char exe[MAXPATHLEN];
+        ssize_t len = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+        if (len > 0)
+        {
+            exe[len] = '\0';
+            char* slash = strrchr(exe, '/');
+            if (slash && slash != exe)
+            {
+                *slash = '\0';
+                FXString path = FXString(exe) + ":" + host_path;
+                setenv("PATH", path.text(), 1);
+                return;
+            }
+        }
+        setenv("PATH", host_path, 1);
+    }
+}
+
+
+FXString xf_commandprogram(const FXString& command)
+{
+    FXString result;
+    char quote = 0;
+    FXbool escaped = false;
+    for (FXint i = 0; i < command.length(); i++)
+    {
+        char ch = command[i];
+        if (escaped)
+        {
+            result += ch;
+            escaped = false;
+        }
+        else if (ch == '\\' && quote != '\'')
+        {
+            escaped = true;
+        }
+        else if (quote)
+        {
+            if (ch == quote)
+            {
+                quote = 0;
+            }
+            else
+            {
+                result += ch;
+            }
+        }
+        else if (ch == '\'' || ch == '"')
+        {
+            quote = ch;
+        }
+        else if (Ascii::isSpace(ch))
+        {
+            if (!result.empty())
+            {
+                break;
+            }
+        }
+        else
+        {
+            result += ch;
+        }
+    }
+    return quote || escaped ? FXString::null : result;
+}
+
+
 // Find if the specified command exists
 FXbool xf_existcommand(const FXString cmd)
 {
     struct stat linfo;
 
     // Command file path
-    FXString cmdpath = cmd.before(' ');
+    FXString cmdpath = xf_commandprogram(cmd);
+    if (cmdpath.empty())
+    {
+        return false;
+    }
 
     // If first character is '/' then cmdpath is an absolute path
     if (cmdpath[0] == PATHSEPCHAR)
     {
         // Check if command file name exists and is not a directory
-        if (!cmdpath.empty() && (xf_lstat(cmdpath.text(), &linfo) == 0) && !S_ISDIR(linfo.st_mode))
+        if ((xf_stat(cmdpath.text(), &linfo) == 0) && S_ISREG(linfo.st_mode) && access(cmdpath.text(), X_OK) == 0)
         {
             return true;
         }
@@ -270,7 +365,7 @@ FXbool xf_existcommand(const FXString cmd)
         cmdpath = FXSystem::getHomeDirectory() + cmdpath.after('~');
 
         // Check if command file name exists and is not a directory
-        if (!cmdpath.empty() && (xf_lstat(cmdpath.text(), &linfo) == 0) && !S_ISDIR(linfo.st_mode))
+        if ((xf_stat(cmdpath.text(), &linfo) == 0) && S_ISREG(linfo.st_mode) && access(cmdpath.text(), X_OK) == 0)
         {
             return true;
         }
@@ -280,6 +375,15 @@ FXbool xf_existcommand(const FXString cmd)
     {
         // Get exec path
         FXString execpath = FXSystem::getExecPath();
+        const char* host_path = getenv("SWORDFISH_HOST_PATH");
+        if (host_path && *host_path)
+        {
+            if (!execpath.empty())
+            {
+                execpath += ":";
+            }
+            execpath += host_path;
+        }
 
         if (execpath != "")
         {
@@ -296,7 +400,7 @@ FXbool xf_existcommand(const FXString cmd)
                 path += PATHSEPSTRING + cmdpath;
 
                 // Check if command file name exists and is not a directory
-                if (!path.empty() && (xf_lstat(path.text(), &linfo) == 0) && !S_ISDIR(linfo.st_mode))
+                if ((xf_stat(path.text(), &linfo) == 0) && S_ISREG(linfo.st_mode) && access(path.text(), X_OK) == 0)
                 {
                     return true;
                 }
@@ -595,7 +699,14 @@ int xf_create_trashinfo(FXString pathname, FXString trashpathname,
 // Makes use of the Unix file command, thus this function may be slow
 FXString xf_mimetype(FXString pathname)
 {
-    FXString cmd = "/usr/bin/file -b -i " + pathname;
+    FXString cmd = "/usr/bin/file -b -i " + xf_quote(pathname);
+
+    // In a portable bundle, run the host tool with the host libraries
+    const char* host_ld = getenv("SWORDFISH_HOST_LD_LIBRARY_PATH");
+    if (host_ld)
+    {
+        cmd = (*host_ld ? "env LD_LIBRARY_PATH=" + xf_quote(host_ld) + " " : FXString("env -u LD_LIBRARY_PATH ")) + cmd;
+    }
     FILE* filecmd = popen(cmd.text(), "r");
 
     if (!filecmd)
@@ -629,7 +740,7 @@ int xf_istextfile(FXString pathname)
         // Loop to find the file towards the link (or chain of links) points
         while (1)
         {
-            FXString linkpath = FXPath::directory(filepath) + PATHSEPSTRING + FXFile::symlink(filepath.text());
+            FXString linkpath = FXPath::absolute(FXPath::directory(filepath), FXFile::symlink(filepath.text()));
 
             if (xf_existfile(linkpath))
             {
@@ -1880,6 +1991,203 @@ int xf_setwaitcursor(FXApp* app, FXuint type)
 }
 
 
+FXString xf_terminalprogram(FXApp* app)
+{
+    FXString terminal = app->reg().readStringEntry("PROGS", "xterm", "");
+    if (!terminal.empty())
+    {
+        return terminal;
+    }
+    if (xf_existcommand("xdg-terminal-exec"))
+    {
+        return "xdg-terminal-exec";
+    }
+    const char* desktop = getenv("XDG_CURRENT_DESKTOP");
+    if (desktop && FXString(desktop).lower().find("xfce") >= 0 && xf_existcommand("exo-open"))
+    {
+        return "exo-open --launch TerminalEmulator";
+    }
+    if (xf_existcommand("x-terminal-emulator"))
+    {
+        return "x-terminal-emulator";
+    }
+    return FXString::null;
+}
+
+FXString xf_hostcommand(const FXString& command)
+{
+    FXString environment = "env";
+    const char* hostld = getenv("SWORDFISH_HOST_LD_LIBRARY_PATH");
+    if (hostld && !*hostld)
+    {
+        environment += " -u LD_LIBRARY_PATH";
+    }
+    const char* names[] = {"PATH", "LD_LIBRARY_PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+                          "XDG_CONFIG_DIRS", "XDG_DATA_DIRS"};
+    for (FXuint i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+    {
+        FXString host = FXString("SWORDFISH_HOST_") + names[i];
+        const char* value = getenv(host.text());
+        if (value && *value)
+        {
+            environment += FXString(" ") + names[i] + "=" + xf_quote(value);
+        }
+    }
+    return environment + " " + command;
+}
+
+class MissingAssociationDialog : public FXDialogBox
+{
+public:
+    MissingAssociationDialog(FXWindow* owner, const FXString& message) :
+        FXDialogBox(owner, _("No application configured"), DECOR_TITLE | DECOR_BORDER | DECOR_CLOSE)
+    {
+        FXVerticalFrame* frame = new FXVerticalFrame(this, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        new FXLabel(frame, message, NULL, JUSTIFY_LEFT);
+        FXHorizontalFrame* buttons = new FXHorizontalFrame(frame, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+        new FXButton(buttons, _("Open With..."), NULL, this, 1, BUTTON_NORMAL | LAYOUT_FILL_X);
+        new FXButton(buttons, _("Settings"), NULL, this, 2, BUTTON_NORMAL | LAYOUT_FILL_X);
+        new FXButton(buttons, _("Cancel"), NULL, this, 3, BUTTON_NORMAL | LAYOUT_FILL_X);
+    }
+    long handle(FXObject* sender, FXSelector selector, void* ptr)
+    {
+        if (FXSELTYPE(selector) == SEL_COMMAND && FXSELID(selector) >= 1 && FXSELID(selector) <= 3)
+        {
+            getApp()->stopModal(this, FXSELID(selector));
+            hide();
+            return 1;
+        }
+        return FXDialogBox::handle(sender, selector, ptr);
+    }
+};
+
+static FXbool queryHostAssociation(const FXString& command, FXString& output)
+{
+    FXString query = xf_hostcommand(command) + " 2>&1";
+    FILE* pipe = popen(query.text(), "r");
+    if (!pipe)
+    {
+        output = strerror(errno);
+        return false;
+    }
+    char buffer[1024];
+    while (fgets(buffer, sizeof(buffer), pipe))
+    {
+        output += buffer;
+    }
+    int status = pclose(pipe);
+    output.trim();
+    return status >= 0 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+FXbool xf_filemimetype(FXWindow* owner, const FXString& pathname, FXString& mimetype)
+{
+    mimetype.clear();
+    if (!queryHostAssociation("xdg-mime query filetype " + xf_quote(pathname), mimetype) ||
+        mimetype.empty() || mimetype.find('\n') >= 0 || mimetype.find('/') < 0)
+    {
+        appLog(APP_LOG_ERRORS, "mime-query-failed", pathname + ": " + mimetype);
+        MessageBox::error(owner, BOX_OK, _("Unable to determine file type"),
+                          _("Could not query the system file type for %s.\n\n%s"),
+                          pathname.text(), mimetype.text());
+        return false;
+    }
+    return true;
+}
+
+FXuint xf_missingassociation(FXWindow* owner, const FXString& pathname)
+{
+    if (!xf_existcommand("xdg-mime"))
+    {
+        appLog(APP_LOG_ERRORS, "association-query-unavailable", pathname);
+        MessageBox::warning(owner, BOX_OK, _("Warning"),
+                            _("Cannot read system file associations. Please install xdg-utils or use Open With."));
+        return 3;
+    }
+    FXString type;
+    if (!queryHostAssociation("xdg-mime query filetype " + xf_quote(pathname), type) ||
+        type.empty() || type.find('/') <= 0 || type.find('\n') >= 0)
+    {
+        appLog(APP_LOG_ERRORS, "association-query-failed", FXString("file=\"") + pathname + "\" error=\"" + type + "\"");
+        MessageBox::warning(owner, BOX_OK, _("Warning"), _("Cannot determine the file type:\n%s\n\nUse Open With to choose an application."),
+                            type.text());
+        return 3;
+    }
+    FXString desktop;
+    if (!queryHostAssociation("xdg-mime query default " + xf_quote(type), desktop))
+    {
+        appLog(APP_LOG_ERRORS, "association-query-failed", desktop);
+        MessageBox::warning(owner, BOX_OK, _("Warning"), _("Cannot read the system's default application:\n%s"), desktop.text());
+        return 3;
+    }
+    if (!desktop.empty() && desktop.find('\n') < 0 && desktop.right(8) == ".desktop")
+    {
+        return 0;
+    }
+    appLog(APP_LOG_ERRORS, "association-not-configured", FXString("file=\"") + pathname + "\" type=\"" + type + "\"");
+    FXString extension = FileDict::associationExtension(pathname);
+    FXString message;
+    if (extension.empty())
+    {
+        message = _("No application is configured for this file.\nUse Open With to choose an application, or configure one in Settings.");
+    }
+    else
+    {
+        message.format(_("No application is configured for .%s files.\nUse Open With to choose an application, or configure one in Settings."),
+                       extension.text());
+    }
+    MissingAssociationDialog dialog(owner, message);
+    FXuint answer = dialog.execute(PLACEMENT_OWNER);
+    return answer ? answer : 3;
+}
+
+
+FXString xf_terminalcommand(const FXString& terminal, const FXString& directory, const FXString& command)
+{
+    FXString result = terminal;
+    FXString program = FXPath::name(xf_commandprogram(terminal));
+    FXbool desktopLauncher = program == "xdg-terminal-exec" || program == "exo-open";
+    if (desktopLauncher)
+    {
+        result = xf_hostcommand(result);
+    }
+    if (program == "xfce4-terminal" || program == "exo-open" ||
+        program == "gnome-terminal" || program == "mate-terminal")
+    {
+        result += " --working-directory=" + xf_quote(directory);
+    }
+    else if (program == "xdg-terminal-exec")
+    {
+        result += " --dir=" + xf_quote(directory);
+    }
+    if (!command.empty())
+    {
+        if (program == "exo-open")
+        {
+            result += " " + xf_quote("/bin/sh -c " + xf_quote(command));
+        }
+        else
+        {
+            if (program == "xfce4-terminal")
+            {
+                result += " -x";
+            }
+            else if (program == "xdg-terminal-exec" || program == "gnome-terminal" ||
+                     program == "mate-terminal" || program == "tilix")
+            {
+                result += " --";
+            }
+            else
+            {
+                result += " -e";
+            }
+            result += " /bin/sh -c " + xf_quote("cd " + xf_quote(directory) + " && " + command);
+        }
+    }
+    return result;
+}
+
+
 // Run a command in an internal st terminal
 // Return 0 if success, -1 else
 // N.B.: zombie process should be dealt with in the main application class
@@ -1960,6 +2268,7 @@ int xf_runst(FXString cmd)
     {
         if (childpid == 0) // Child
         {
+            xf_restorehostenv();
             st(nbargs, args);
             exit(EXIT_SUCCESS);
         }

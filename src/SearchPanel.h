@@ -75,7 +75,12 @@ public:
         ID_EDIT,
         ID_COMPARE,
         ID_OPEN,
+        ID_OPEN_DEFAULT_APP,
         ID_OPEN_WITH,
+        ID_EDIT_WITH,
+        ID_EXECUTE,
+        ID_RUN_AS_ADMINISTRATOR,
+        ID_RUN_IN_TERMINAL,
         ID_SELECT_ALL,
         ID_DESELECT_ALL,
         ID_SELECT_INVERSE,
@@ -113,7 +118,8 @@ public:
     virtual void create();
 
     virtual ~SearchPanel();
-    void execFile(FXString);
+    void execFile(FXString, FXbool explicitAction = false);
+    void runInTerminal(FXString);
     int readScriptDir(FXMenuPane*, FXString);
     long appendItem(FXString&);
 
@@ -127,6 +133,10 @@ public:
     long onCmdGotoParentdir(FXObject*, FXSelector, void*);
     long onCmdOpenWith(FXObject*, FXSelector, void*);
     long onCmdOpen(FXObject*, FXSelector, void*);
+    long onCmdOpenDefaultApp(FXObject*, FXSelector, void*);
+    long onCmdExecute(FXObject*, FXSelector, void*);
+    long onCmdRunAsAdministrator(FXObject*, FXSelector, void*);
+    long onCmdRunInTerminal(FXObject*, FXSelector, void*);
     long onCmdEdit(FXObject*, FXSelector, void*);
     long onCmdCompare(FXObject*, FXSelector, void*);
     long onCmdRefresh(FXObject*, FXSelector, void*);

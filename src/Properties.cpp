@@ -492,16 +492,7 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString file, FXString path, FXbool
     else
     {
         // Try to use association table
-        extension2 = FXPath::name(pathname).rafter('.', 2).lower();
-        if ((extension2 == "tar.gz") || (extension2 == "tar.bz2") || (extension2 == "tar.xz") ||
-            (extension2 == "tar.zst") || (extension2 == "tar.z"))
-        {
-            extension = extension2;
-        }
-        else
-        {
-            extension = FXPath::name(pathname).rafter('.', 1).lower();
-        }
+        extension = FileDict::associationExtension(pathname);
 
         if (extension != "")
         {
@@ -596,16 +587,7 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString file, FXString path, FXbool
             else
             {
                 // Try to use association table
-                extension2 = FXPath::name(referredpath).rafter('.', 2).lower();
-                if ((extension2 == "tar.gz") || (extension2 == "tar.bz2") || (extension2 == "tar.xz") ||
-                    (extension2 == "tar.zst") || (extension2 == "tar.z"))
-                {
-                    extension = extension2;
-                }
-                else
-                {
-                    extension = FXPath::name(referredpath).rafter('.', 1).lower();
-                }
+                extension = FileDict::associationExtension(referredpath);
 
                 if (extension != "")
                 {
@@ -946,6 +928,14 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString file, FXString path, FXbool
     source = file;
     num = 1;
 
+    FXString associationKey = FileDict::associationExtension(pathname);
+    open->setText(associationKey.empty() ? "" :
+                  FXString(getApp()->reg().readStringEntry("USER_ASSOCIATIONS", associationKey.text(), "")).section(',', 0));
+    open->setTipText(_("Swordfish-only application override. Leave empty to use the system default."));
+    if (associationKey.empty())
+    {
+        fassoctab->disable();
+    }
     descr_prev = descr->getText();
     open_prev = open->getText();
     view_prev = view->getText();
@@ -1103,16 +1093,7 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString* file, int n, FXString* pat
             nbselfiles++;
 
             // Try to use association table
-            extension2 = files[i].rafter('.', 2).lower();
-            if ((extension2 == "tar.gz") || (extension2 == "tar.bz2") || (extension2 == "tar.xz") ||
-                (extension2 == "tar.zst") || (extension2 == "tar.z"))
-            {
-                extension = extension2;
-            }
-            else
-            {
-                extension = files[i].rafter('.', 1).lower();
-            }
+            extension = FileDict::associationExtension(files[i]);
 
             if (extension != "")
             {
@@ -1444,6 +1425,12 @@ long PropertiesBox::onCmdAcceptSingle(FXObject* sender, FXSelector sel, void* pt
             {
                 FXString command = fileassoc.section('=', 1);
                 getApp()->reg().writeStringEntry("FILETYPES", ext->getText().text(), command.text());
+
+                // Keep edited commands whatever the program mode is
+                if (op != open_prev)
+                {
+                    FileDict::setUserCommand(getApp()->reg(), ext->getText(), op);
+                }
 
                 // Handle file association
                 str = new char* [2];

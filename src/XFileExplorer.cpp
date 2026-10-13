@@ -4028,8 +4028,11 @@ long XFileExplorer::onKeyRelease(FXObject* sender, FXSelector sel, void* ptr)
 // Harvest the zombies
 long XFileExplorer::onSigHarvest(FXObject*, FXSelector, void*)
 {
-    while (waitpid(-1, NULL, WNOHANG) > 0)
+    int status;
+    pid_t child;
+    while ((child = waitpid(-1, &status, WNOHANG)) > 0)
     {
+        handleCommandExit(this, child, status);
     }
     return 1;
 }
@@ -4752,7 +4755,15 @@ long XFileExplorer::onCmdNewTab(FXObject*, FXSelector, void*)
 long XFileExplorer::onCmdXTerm(FXObject*, FXSelector, void*)
 {
     getApp()->beginWaitCursor();
-    FXString xterm = getApp()->reg().readStringEntry("PROGS", "xterm", "xterm -sb");
+    FXString xterm = xf_terminalprogram(getApp());
+
+    if (xterm.empty() || !xf_existcommand(xterm))
+    {
+        getApp()->endWaitCursor();
+        MessageBox::warning(this, BOX_OK, _("Warning"),
+                            _("Terminal unavailable. Please select a terminal in Preferences."));
+        return 0;
+    }
 
     // By default use current directory as target directory
     FXString tgtdirectory = lpanel->getCurrent()->getDirectory();
@@ -4771,52 +4782,22 @@ long XFileExplorer::onCmdXTerm(FXObject*, FXSelector, void*)
         }
     }
 
-    int ret = chdir(tgtdirectory.text());
+    FXString cmd = xf_terminalcommand(xterm, tgtdirectory);
+    appLog(APP_LOG_UI, "terminal-launch",
+           FXString("command=\"") + cmd + "\" directory=\"" + tgtdirectory + "\"");
+#ifdef STARTUP_NOTIFICATION
+    int ret = runcmd(cmd, xterm.before(' '), tgtdirectory, startlocation, false, "");
+#else
+    int ret = runcmd(cmd, tgtdirectory, startlocation);
+#endif
+    getApp()->endWaitCursor();
     if (ret < 0)
     {
-        int errcode = errno;
-        if (errcode)
-        {
-            MessageBox::error(this, BOX_OK, _("Error"), _("Can't enter folder %s: %s"), tgtdirectory.text(),
-                              strerror(errcode));
-        }
-        else
-        {
-            MessageBox::error(this, BOX_OK, _("Error"), _("Can't enter folder %s"), tgtdirectory.text());
-        }
-
-        return 0;
-    }
-
-    FXString cmd = xterm;
-    cmd += " &";
-
-    ret = system(cmd.text());
-    if (ret < 0)
-    {
-        MessageBox::error(this, BOX_OK, _("Error"), _("Can't execute command %s"), cmd.text());
+        MessageBox::error(this, BOX_OK, _("Error"), _("Can't execute command %s"), xterm.text());
         return 0;
     }
 
     lpanel->getCurrent()->setFocusOnList();
-    ret = chdir(startlocation.text());
-    if (ret < 0)
-    {
-        int errcode = errno;
-        if (errcode)
-        {
-            MessageBox::error(this, BOX_OK, _("Error"), _("Can't enter folder %s: %s"), startlocation.text(),
-                              strerror(errcode));
-        }
-        else
-        {
-            MessageBox::error(this, BOX_OK, _("Error"), _("Can't enter folder %s"), startlocation.text());
-        }
-
-        return 0;
-    }
-
-    getApp()->endWaitCursor();
     return 1;
 }
 

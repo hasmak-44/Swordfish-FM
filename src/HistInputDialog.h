@@ -6,6 +6,17 @@
 #include "ComboBox.h"
 #include "DialogBox.h"
 
+struct DesktopApplication
+{
+    FXString id;
+    FXString name;
+    FXString command;
+    FXString mimetypes;
+    FXString categories;
+};
+
+std::vector<DesktopApplication> xf_installedApplications();
+
 // Browse types
 enum
 {
@@ -48,6 +59,8 @@ class HistInputDialog : public DialogBox
 protected:
     FXHorizontalFrame* buttons = NULL;
     FXHorizontalFrame* checkbutton = NULL;
+    FXCheckButton* associationOption = NULL;
+    FXLabel* messageLabel = NULL;
     FXButton* accept = NULL;
     FXButton* cancel = NULL;
     HistComboBox* input = NULL;
@@ -113,6 +126,11 @@ public:
 
     // Add installed desktop applications after the history entries
     void appendInstalledApplications();
+    void setAssociationOption(const FXString&, FXbool editing = false);
+    void setMessage(const FXString& text)
+    {
+        messageLabel->setText(text);
+    }
 
     void setDirectory(const FXString&);
 

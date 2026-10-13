@@ -588,7 +588,7 @@ int main(int argc, char* argv[])
                                    minixfeicon);
 
     // Catch SIGCHLD to harvest zombie child processes
-    application->addSignal(SIGCHLD, mainWindow, XFileExplorer::ID_HARVEST, true);
+    application->addSignal(SIGCHLD, mainWindow, XFileExplorer::ID_HARVEST);
 
     // Also catch interrupt so we can gracefully terminate
     application->addSignal(SIGINT, mainWindow, XFileExplorer::ID_QUIT);

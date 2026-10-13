@@ -101,7 +101,8 @@ public:
     void updateLocation();
     void showCorner(FXbool);
     void showActiveIcon(FXbool);
-    void execFile(FXString);
+    void execFile(FXString, FXbool explicitAction = false);
+    void runInTerminal(FXString);
     int readScriptDir(FXWindow*, FXMenuPane*, FXString);
 
     enum
@@ -159,7 +160,12 @@ public:
         ID_ADDCUT_CLIPBOARD,
         ID_PASTE_CLIPBOARD,
         ID_OPEN,
+        ID_OPEN_DEFAULT_APP,
         ID_OPEN_WITH,
+        ID_EDIT_WITH,
+        ID_EXECUTE,
+        ID_RUN_AS_ADMINISTRATOR,
+        ID_RUN_IN_TERMINAL,
         ID_FILTER,
         ID_FILTER_CURRENT,
         ID_STATUS,
@@ -242,7 +248,11 @@ public:
     long onCmdNewSymlink(FXObject*, FXSelector, void*);
     long onCmdAddBookmark(FXObject*, FXSelector, void*);
     long onCmdOpen(FXObject*, FXSelector, void*);
+    long onCmdOpenDefaultApp(FXObject*, FXSelector, void*);
     long onCmdOpenWith(FXObject*, FXSelector, void*);
+    long onCmdExecute(FXObject*, FXSelector, void*);
+    long onCmdRunAsAdministrator(FXObject*, FXSelector, void*);
+    long onCmdRunInTerminal(FXObject*, FXSelector, void*);
     long onCmdXTerm(FXObject*, FXSelector, void*);
     long onCmdExtract(FXObject*, FXSelector, void*);
     long onCmdExtractToFolder(FXObject*, FXSelector, void*);

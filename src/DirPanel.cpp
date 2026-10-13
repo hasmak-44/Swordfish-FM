@@ -16,6 +16,7 @@
 #include "xfedefs.h"
 #include "icons.h"
 #include "xfeutils.h"
+#include "startupnotification.h"
 #include "File.h"
 #include "DirList.h"
 #include "Places.h"
@@ -3780,55 +3781,33 @@ long DirPanel::onCmdNewDir(FXObject*, FXSelector, void*)
 // Run Terminal in the selected directory
 long DirPanel::onCmdXTerm(FXObject*, FXSelector, void*)
 {
-    int ret;
-
-    getApp()->beginWaitCursor();
-    DirItem* item = (DirItem*)dirlist->getCurrentItem();
-    FXString buf = dirlist->getItemPathname((TreeItem*)item);
-    ret = chdir(buf.text());
-    if (ret < 0)
+    FXString terminal = xf_terminalprogram(getApp());
+    if (terminal.empty() || !xf_existcommand(terminal))
     {
-        int errcode = errno;
-        if (errcode)
-        {
-            MessageBox::error(this, BOX_OK, _("Error"), _("Can't enter folder %s: %s"), buf.text(), strerror(errcode));
-        }
-        else
-        {
-            MessageBox::error(this, BOX_OK, _("Error"), _("Can't enter folder %s"), buf.text());
-        }
-
+        MessageBox::warning(this, BOX_OK, _("Warning"),
+                            _("Terminal unavailable. Please select a terminal in Preferences."));
         return 0;
     }
-
-    FXString cmd = getApp()->reg().readStringEntry("PROGS", "xterm", "xterm -sb");
-    cmd += " &";
-
-    ret = system(cmd.text());
+    DirItem* item = (DirItem*)dirlist->getCurrentItem();
+    if (!item)
+    {
+        return 0;
+    }
+    FXString buf = dirlist->getItemPathname((TreeItem*)item);
+    FXString cmd = xf_terminalcommand(terminal, buf);
+    getApp()->beginWaitCursor();
+#ifdef STARTUP_NOTIFICATION
+    int ret = runcmd(cmd, terminal.before(' '), buf, startlocation, false, "");
+#else
+    int ret = runcmd(cmd, buf, startlocation);
+#endif
+    getApp()->endWaitCursor();
     if (ret < 0)
     {
         MessageBox::error(this, BOX_OK, _("Error"), _("Can't execute command %s"), cmd.text());
         return 0;
     }
 
-    ret = chdir(startlocation.text());
-    if (ret < 0)
-    {
-        int errcode = errno;
-        if (errcode)
-        {
-            MessageBox::error(this, BOX_OK, _("Error"), _("Can't enter folder %s: %s"),
-                              startlocation.text(), strerror(errcode));
-        }
-        else
-        {
-            MessageBox::error(this, BOX_OK, _("Error"), _("Can't enter folder %s"), startlocation.text());
-        }
-
-        return 0;
-    }
-
-    getApp()->endWaitCursor();
     return 1;
 }
 

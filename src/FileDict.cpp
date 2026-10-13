@@ -93,41 +93,73 @@ const char FileDict::defaultExecBinding[] = "defaultexecbinding";
 const char FileDict::defaultDirBinding[] = "defaultdirbinding";
 const char FileDict::defaultFileBinding[] = "defaultfilebinding";
 
-static FXString internalProgramForAssociation(const FXString& program)
+static FXString commandForProgramMode(const FXString& command, FXuint)
 {
-    if (program == "<txtviewer>")
-    {
-        return DEFAULT_TXTVIEWER;
-    }
-    if (program == "<txteditor>")
-    {
-        return DEFAULT_TXTEDITOR;
-    }
-    if (program == "<imgviewer>")
-    {
-        return DEFAULT_IMGVIEWER;
-    }
-    if (program == "<archiver>")
-    {
-        return DEFAULT_ARCHIVER;
-    }
-
-    return "swordfish-open";
+    return "swordfish-open," + command.section(',', 1) + "," + command.section(',', 2);
 }
 
-static FXString commandForProgramMode(const FXString& command, FXuint programMode)
+static const char userAssociationsSection[] = "USER_ASSOCIATIONS";
+
+// Commands set with "Open with... / Associate" or the Properties dialog win over the program mode
+static FXString applyUserCommand(FXSettings* settings, const char* key, const FXString& command)
 {
-    if (programMode == PROGRAM_MODE_SYSTEM_DEFAULTS)
+    FXString user = settings->readStringEntry(userAssociationsSection, key, "");
+    if (user.empty())
     {
-        return "swordfish-open,swordfish-open,swordfish-open";
+        return command;
     }
-    if (programMode == PROGRAM_MODE_INTERNAL)
+
+    FXString result;
+    for (int i = 0; i < 3; i++)
     {
-        return internalProgramForAssociation(command.section(',', 0)) + "," +
-               internalProgramForAssociation(command.section(',', 1)) + "," +
-               internalProgramForAssociation(command.section(',', 2));
+        FXString part = user.section(',', i).trim();
+        if (part.empty())
+        {
+            part = command.section(',', i);
+        }
+        result += (i ? "," : "") + part;
     }
-    return command;
+    return result;
+}
+
+
+void FileDict::setUserCommand(FXSettings& settings, const FXString& key, const FXString& command)
+{
+    FXString lowkey = key;
+    lowkey.lower();
+    if (lowkey.empty())
+    {
+        return;
+    }
+
+    FXString trimmed = command;
+    if (trimmed.trim().empty())
+    {
+        settings.deleteEntry(userAssociationsSection, lowkey.text());
+    }
+    else
+    {
+        settings.writeStringEntry(userAssociationsSection, lowkey.text(), command.text());
+    }
+}
+
+FXString FileDict::associationExtension(const FXString& pathname)
+{
+    FXString filename = FXPath::name(pathname).lower();
+    const char* compounds[] = {"tar.gz", "tar.bz2", "tar.xz", "tar.zst", "tar.z", "tar.lz", "tar.lzma"};
+    for (FXuint i = 0; i < sizeof(compounds) / sizeof(compounds[0]); i++)
+    {
+        FXString suffix = FXString(".") + compounds[i];
+        if (filename.length() > suffix.length() && filename.right(suffix.length()) == suffix)
+        {
+            return compounds[i];
+        }
+    }
+    if (filename.find('.', 1) < 0)
+    {
+        return FXString::null;
+    }
+    return FXPath::extension(filename);
 }
 
 // Object implementation
@@ -357,6 +389,7 @@ FileAssoc* FileDict::systemDefaultBinding()
     systemDefault.miniiconopen = NULL;
     systemDefault.dragtype = 0;
     systemDefault.flags = 0;
+    systemDefault.userCommand = false;
     return &systemDefault;
 }
 
@@ -379,7 +412,9 @@ FileAssoc* FileDict::associate(const char* key)
         record->key = lowkey;
         FXuint programMode =
             settings->readUnsignedEntry("OPTIONS", "program_mode", PROGRAM_MODE_SYSTEM_DEFAULTS);
-        record->command = commandForProgramMode(record->originalCommand, programMode);
+        record->command = applyUserCommand(settings, lowkey,
+                                           commandForProgramMode(record->originalCommand, programMode));
+        record->userCommand = !FXString(settings->readStringEntry(userAssociationsSection, lowkey, "")).empty();
         return record;
     }
 
@@ -393,7 +428,9 @@ FileAssoc* FileDict::associate(const char* key)
         record->key = lowkey;
         FXuint programMode =
             settings->readUnsignedEntry("OPTIONS", "program_mode", PROGRAM_MODE_SYSTEM_DEFAULTS);
-        record->command = commandForProgramMode(record->originalCommand, programMode);
+        record->command = applyUserCommand(settings, lowkey,
+                                           commandForProgramMode(record->originalCommand, programMode));
+        record->userCommand = !FXString(settings->readStringEntry(userAssociationsSection, lowkey, "")).empty();
         return record;
     }
 
@@ -408,6 +445,22 @@ FileAssoc* FileDict::findFileBinding(const char* pathname)
     const char* filename = pathname;
     const char* p = pathname;
     FileAssoc* record;
+    FXString extension = associationExtension(pathname);
+    FXString user = extension.empty() ? FXString::null :
+                    settings->readStringEntry(userAssociationsSection, extension.text(), "");
+    if (!user.empty())
+    {
+        record = associate(extension.text());
+        if (!record)
+        {
+            record = (FileAssoc*)FXDict::insert(extension.text(), "swordfish-open,swordfish-open,swordfish-open;File;;;;");
+        }
+        record->key = extension;
+        record->command = applyUserCommand(settings, extension.text(),
+                                          commandForProgramMode(record->originalCommand, 0));
+        record->userCommand = true;
+        return record;
+    }
 
     while (*p)
     {
@@ -426,20 +479,15 @@ FileAssoc* FileDict::findFileBinding(const char* pathname)
             return record;
         }
 
-        FXuint programMode =
-            settings->readUnsignedEntry("OPTIONS", "program_mode", PROGRAM_MODE_SYSTEM_DEFAULTS);
-        if (programMode != PROGRAM_MODE_CUSTOM)
-        {
-            return systemDefaultBinding();
-        }
-
-        return NULL;
+        return systemDefaultBinding();
     }
 
     record = associate(filename);
 
     if (record)
     {
+        record->userCommand = false;
+        record->command = commandForProgramMode(record->originalCommand, 0);
         return record;
     }
 
@@ -453,6 +501,8 @@ FileAssoc* FileDict::findFileBinding(const char* pathname)
         }
         if (record)
         {
+            record->userCommand = false;
+            record->command = commandForProgramMode(record->originalCommand, 0);
             return record;
         }
         filename = strchr(filename + 1, '.');
@@ -461,12 +511,12 @@ FileAssoc* FileDict::findFileBinding(const char* pathname)
     record = associate(defaultFileBinding);
     if (record)
     {
+        record->userCommand = false;
+        record->command = commandForProgramMode(record->originalCommand, 0);
         return record;
     }
 
-    FXuint programMode =
-        settings->readUnsignedEntry("OPTIONS", "program_mode", PROGRAM_MODE_SYSTEM_DEFAULTS);
-    return programMode != PROGRAM_MODE_CUSTOM ? systemDefaultBinding() : NULL;
+    return systemDefaultBinding();
 }
 
 

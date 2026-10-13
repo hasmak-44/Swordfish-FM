@@ -27,6 +27,7 @@
 #include "OverwriteBox.h"
 #include "CommandWindow.h"
 #include "ExecuteBox.h"
+#include "Execution.h"
 #include "XFileExplorer.h"
 #include "SearchPanel.h"
 
@@ -67,7 +68,12 @@ FXDEFMAP(SearchPanel) SearchPanelMap[] =
     FXMAPFUNC(SEL_KEYPRESS, 0, SearchPanel::onKeyPress),
     FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_GOTO_PARENTDIR, SearchPanel::onCmdGotoParentdir),
     FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_OPEN_WITH, SearchPanel::onCmdOpenWith),
+    FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_EDIT_WITH, SearchPanel::onCmdOpenWith),
     FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_OPEN, SearchPanel::onCmdOpen),
+    FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_OPEN_DEFAULT_APP, SearchPanel::onCmdOpenDefaultApp),
+    FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_EXECUTE, SearchPanel::onCmdExecute),
+    FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_RUN_AS_ADMINISTRATOR, SearchPanel::onCmdRunAsAdministrator),
+    FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_RUN_IN_TERMINAL, SearchPanel::onCmdRunInTerminal),
     FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_VIEW, SearchPanel::onCmdEdit),
     FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_EDIT, SearchPanel::onCmdEdit),
     FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_COMPARE, SearchPanel::onCmdCompare),
@@ -546,7 +552,7 @@ long SearchPanel::onCmdItemDoubleClicked(FXObject* sender, FXSelector sel, void*
                 }
 
                 // If there is an association
-                if (association)
+                if (association && (association->userCommand || xf_executionKind(pathname) == EXECUTION_DOCUMENT))
                 {
                     // Use it to open the file
                     if (association->command.section(',', 0) != "")
@@ -594,7 +600,8 @@ long SearchPanel::onCmdItemDoubleClicked(FXObject* sender, FXSelector sel, void*
                         }
 
                         // If command exists, run it
-                        if (xf_existcommand(cmdname))
+                        if (xf_prepareAssociation(this, cmdname, pathname,
+                                                  ID_OPEN_WITH, mainWindow, XFileExplorer::ID_PREFS))
                         {
                             cmd = cmdname + " " + xf_quote(pathname);
 #ifdef STARTUP_NOTIFICATION
@@ -603,16 +610,9 @@ long SearchPanel::onCmdItemDoubleClicked(FXObject* sender, FXSelector sel, void*
                             runcmd(cmd, parentdir, searchdir);
 #endif
                         }
-                        // If command does not exist, call the "Open with..." dialog
-                        else
-                        {
-                            getApp()->endWaitCursor();
-                            MessageBox::warning(this, BOX_OK, _("Warning"), _("Program %s not found"), cmdname.text());
-                            handle(this, FXSEL(SEL_COMMAND, ID_OPEN_WITH), NULL);
-                        }
                     }
                     // Or execute the file
-                    else if (list->isItemExecutable(item))
+                    else if (xf_executionKind(pathname) != EXECUTION_DOCUMENT)
                     {
                         execFile(pathname);
                     }
@@ -624,7 +624,7 @@ long SearchPanel::onCmdItemDoubleClicked(FXObject* sender, FXSelector sel, void*
                     }
                 }
                 // If no association but executable
-                else if (list->isItemExecutable(item))
+                else if (xf_executionKind(pathname) != EXECUTION_DOCUMENT)
                 {
                     execFile(pathname);
                 }
@@ -751,7 +751,7 @@ long SearchPanel::onCmdItemClicked(FXObject* sender, FXSelector sel, void* ptr)
                     }
 
                     // If there is an association
-                    if (association)
+                    if (association && (association->userCommand || xf_executionKind(pathname) == EXECUTION_DOCUMENT))
                     {
                         // Use it to open the file
                         if (association->command.section(',', 0) != "")
@@ -799,7 +799,8 @@ long SearchPanel::onCmdItemClicked(FXObject* sender, FXSelector sel, void* ptr)
                             }
 
                             // If command exists, run it
-                            if (xf_existcommand(cmdname))
+                            if (xf_prepareAssociation(this, cmdname, pathname,
+                                                      ID_OPEN_WITH, mainWindow, XFileExplorer::ID_PREFS))
                             {
                                 cmd = cmdname + " " + xf_quote(pathname);
 #ifdef STARTUP_NOTIFICATION
@@ -808,16 +809,9 @@ long SearchPanel::onCmdItemClicked(FXObject* sender, FXSelector sel, void* ptr)
                                 runcmd(cmd, parentdir, searchdir);
 #endif
                             }
-                            // If command does not exist, call the "Open with..." dialog
-                            else
-                            {
-                                getApp()->endWaitCursor();
-                                MessageBox::warning(this, BOX_OK, _("Warning"), _("Program %s not found"), cmdname.text());
-                                handle(this, FXSEL(SEL_COMMAND, ID_OPEN_WITH), NULL);
-                            }
                         }
                         // Or execute the file
-                        else if (list->isItemExecutable(item))
+                        else if (xf_executionKind(pathname) != EXECUTION_DOCUMENT)
                         {
                             execFile(pathname);
                         }
@@ -829,7 +823,7 @@ long SearchPanel::onCmdItemClicked(FXObject* sender, FXSelector sel, void* ptr)
                         }
                     }
                     // If no association but executable
-                    else if (list->isItemExecutable(item))
+                    else if (xf_executionKind(pathname) != EXECUTION_DOCUMENT)
                     {
                         execFile(pathname);
                     }
@@ -856,154 +850,198 @@ long SearchPanel::onCmdItemClicked(FXObject* sender, FXSelector sel, void* ptr)
 }
 
 
-// Execute file with an optional confirm dialog
-void SearchPanel::execFile(FXString filepath)
+// Run a file in a terminal
+void SearchPanel::runInTerminal(FXString filepath)
 {
-    FXString cmd, cmdname, parentdir, str;
-
-#ifdef STARTUP_NOTIFICATION
-    // Startup notification option and exceptions (if any)
-    FXbool usesn = getApp()->reg().readUnsignedEntry("OPTIONS", "use_startup_notification", true);
-    FXString snexcepts = getApp()->reg().readStringEntry("OPTIONS", "startup_notification_exceptions", "");
-#endif
-
-    // Parent directory
-    parentdir = FXPath::directory(filepath);
-
-    // Text file
-    int ret = xf_istextfile(filepath);
-    if (ret == 1)
+    if (!xf_executeFile(this, filepath, FXPath::directory(filepath), searchdir,
+                        EXECUTION_EXPLICIT, true))
     {
-        // Execution forbidden, edit the file
-        FXbool no_script = getApp()->reg().readUnsignedEntry("OPTIONS", "no_script", false);
-        if (no_script)
-        {
-            FXString txteditor = getApp()->reg().readStringEntry("PROGS", "txteditor", DEFAULT_TXTEDITOR);
-            cmd = txteditor;
-            cmdname = cmd;
-
-            // If command exists, run it
-            if (xf_existcommand(cmdname))
-            {
-                cmd = cmdname + " " + xf_quote(filepath);
-#ifdef STARTUP_NOTIFICATION
-                runcmd(cmd, cmdname, parentdir, searchdir, usesn, snexcepts);
-#else
-                runcmd(cmd, parentdir, searchdir);
-#endif
-            }
-            // If command does not exist, call the "Open with..." dialog
-            else
-            {
-                MessageBox::warning(this, BOX_OK, _("Warning"), _("Program %s not found"), cmdname.text());
-                handle(this, FXSEL(SEL_COMMAND, ID_OPEN_WITH), NULL);
-            }
-        }
-        // Execution allowed, execute file with optional confirmation dialog
-        else
-        {
-            // With confirmation dialog
-            FXbool confirm_execute = getApp()->reg().readUnsignedEntry("OPTIONS", "confirm_execute", true);
-            if (confirm_execute)
-            {
-                FXString msg;
-                msg.format(_("File %s is an executable text file, what do you want to do?"), filepath.text());
-                ExecuteBox* dlg = new ExecuteBox(this, _("Confirm Execute"), msg);
-                FXuint answer = dlg->execute(PLACEMENT_CURSOR);
-                delete dlg;
-
-                // Execute
-                if (answer == EXECBOX_CLICKED_EXECUTE)
-                {
-                    cmdname = FXPath::name(filepath);
-                    cmd = xf_quote(filepath);
-#ifdef STARTUP_NOTIFICATION
-                    // No startup notification in this case
-                    runcmd(cmd, cmdname, parentdir, searchdir, false, "");
-#else
-                    runcmd(cmd, parentdir, searchdir);
-#endif
-                }
-
-                // Execute in console mode
-                if (answer == EXECBOX_CLICKED_CONSOLE)
-                {
-                    int ret = chdir(parentdir.text());
-                    if (ret < 0)
-                    {
-                        int errcode = errno;
-                        if (errcode)
-                        {
-                            MessageBox::error(this, BOX_OK, _("Error"), _("Can't enter folder %s: %s"),
-                                              parentdir.text(), strerror(errcode));
-                        }
-                        else
-                        {
-                            MessageBox::error(this, BOX_OK, _("Error"), _("Can't enter folder %s"), parentdir.text());
-                        }
-                    }
-
-                    cmdname = FXPath::name(filepath);
-                    cmd = xf_quote(filepath);
-
-                    // Make and show command window
-                    // The CommandWindow object will delete itself when closed!
-                    CommandWindow* cmdwin = new CommandWindow(getApp(), _("Command Log"), cmd, 30, 80);
-                    cmdwin->create();
-                    cmdwin->setIcon(minirunicon);
-                }
-
-                // Edit
-                if (answer == EXECBOX_CLICKED_EDIT)
-                {
-                    FXString txteditor = getApp()->reg().readStringEntry("PROGS", "txteditor", DEFAULT_TXTEDITOR);
-                    cmd = txteditor;
-                    cmdname = cmd;
-
-                    // If command exists, run it
-                    if (xf_existcommand(cmdname))
-                    {
-                        cmd = cmdname + " " + xf_quote(filepath);
-#ifdef STARTUP_NOTIFICATION
-                        runcmd(cmd, cmdname, parentdir, searchdir, usesn, snexcepts);
-#else
-                        runcmd(cmd, parentdir, searchdir);
-#endif
-                    }
-                    // If command does not exist, call the "Open with..." dialog
-                    else
-                    {
-                        MessageBox::warning(this, BOX_OK, _("Warning"), _("Program %s not found"), cmdname.text());
-                        handle(this, FXSEL(SEL_COMMAND, ID_OPEN_WITH), NULL);
-                    }
-                }
-            }
-        }
-    }
-    // Binary file, execute it
-    else if (ret == 0)
-    {
-        cmdname = FXPath::name(filepath);
-        cmd = xf_quote(filepath);
-#ifdef STARTUP_NOTIFICATION
-        runcmd(cmd, cmdname, searchdir, searchdir, usesn, snexcepts);
-#else
-        runcmd(cmd, searchdir, searchdir);
-#endif
-    }
-    // Broken link
-    else  // ret = -1
-    {
-        return;
+        handle(this, FXSEL(SEL_COMMAND, ID_EDIT_WITH), NULL);
     }
 }
 
 
-// Open with
-long SearchPanel::onCmdOpenWith(FXObject*, FXSelector, void*)
+// Execute file with an optional confirm dialog
+void SearchPanel::execFile(FXString filepath, FXbool explicitAction)
 {
-    char** str = NULL;
+    if (!xf_executeFile(this, filepath, FXPath::directory(filepath), searchdir,
+                        explicitAction ? EXECUTION_EXPLICIT : EXECUTION_OPEN))
+    {
+        handle(this, FXSEL(SEL_COMMAND, ID_EDIT_WITH), NULL);
+    }
+}
 
+
+// Execute command from menu/shortcut
+long SearchPanel::onCmdExecute(FXObject*, FXSelector, void*)
+{
+    int num, itm;
+    num = list->getNumSelectedItems(&itm);
+    if (num == 0)
+    {
+        return 0;
+    }
+
+    for (int u = 0; u < list->getNumItems(); u++)
+    {
+        if (list->isItemSelected(u))
+        {
+            FXString pathname = list->getItemFullPathname(u);
+            execFile(pathname, true);
+        }
+    }
+    return 1;
+}
+
+long SearchPanel::onCmdRunAsAdministrator(FXObject*, FXSelector, void*)
+{
+    int item;
+    FXint selected = list->getNumSelectedItems(&item);
+    FXString path = selected == 1 ? list->getItemFullPathname(item) : FXString::null;
+    if (xf_administratorActionAvailable(selected, path))
+    {
+        if (!xf_executeFile(this, path, FXPath::directory(path), searchdir,
+                            EXECUTION_ADMINISTRATOR))
+        {
+            handle(this, FXSEL(SEL_COMMAND, ID_EDIT_WITH), NULL);
+        }
+    }
+    return 1;
+}
+
+
+// Run in terminal command from menu/shortcut
+long SearchPanel::onCmdRunInTerminal(FXObject*, FXSelector, void*)
+{
+    int num, itm;
+    num = list->getNumSelectedItems(&itm);
+    if (num == 0)
+    {
+        return 0;
+    }
+
+    for (int u = 0; u < list->getNumItems(); u++)
+    {
+        if (list->isItemSelected(u))
+        {
+            FXString pathname = list->getItemFullPathname(u);
+            runInTerminal(pathname);
+        }
+    }
+    return 1;
+}
+
+
+// Open with default app command from menu/shortcut
+long SearchPanel::onCmdOpenDefaultApp(FXObject*, FXSelector, void*)
+{
+    int num, itm;
+    num = list->getNumSelectedItems(&itm);
+    if (num == 0)
+    {
+        return 0;
+    }
+
+    getApp()->beginWaitCursor();
+
+    FXString txtviewer = getApp()->reg().readStringEntry("PROGS", "txtviewer", DEFAULT_TXTVIEWER);
+    FXString txteditor = getApp()->reg().readStringEntry("PROGS", "txteditor", DEFAULT_TXTEDITOR);
+    FXString imgviewer = getApp()->reg().readStringEntry("PROGS", "imgviewer", DEFAULT_IMGVIEWER);
+    FXString imgeditor = getApp()->reg().readStringEntry("PROGS", "imgeditor", DEFAULT_IMGEDITOR);
+    FXString pdfviewer = getApp()->reg().readStringEntry("PROGS", "pdfviewer", DEFAULT_PDFVIEWER);
+    FXString audioplayer = getApp()->reg().readStringEntry("PROGS", "audioplayer", DEFAULT_AUDIOPLAYER);
+    FXString videoplayer = getApp()->reg().readStringEntry("PROGS", "videoplayer", DEFAULT_VIDEOPLAYER);
+    FXString archiver = getApp()->reg().readStringEntry("PROGS", "archiver", DEFAULT_ARCHIVER);
+
+    FileDict* assocdict = new FileDict(getApp());
+
+    for (int u = 0; u < list->getNumItems(); u++)
+    {
+        if (list->isItemSelected(u))
+        {
+            FXString pathname = list->getItemFullPathname(u);
+            FXString cmd;
+            FileAssoc* association = NULL;
+            if (xf_islink(pathname))
+            {
+                association = assocdict->findFileBinding(xf_readlink(pathname).text());
+            }
+            else
+            {
+                association = assocdict->findFileBinding(pathname.text());
+            }
+
+            if (xf_executionKind(pathname) != EXECUTION_DOCUMENT &&
+                (!association || !association->userCommand))
+            {
+                getApp()->endWaitCursor();
+                execFile(pathname);
+                continue;
+            }
+            if (association && !association->command.empty())
+            {
+                cmd = association->command.section(',', 0);
+            }
+            if (cmd.empty() || cmd == "swordfish-open")
+            {
+                cmd = "swordfish-open";
+            }
+            else
+            {
+                switch (progs[cmd])
+                {
+                case TXTVIEWER:
+                    cmd = txtviewer;
+                    break;
+                case TXTEDITOR:
+                    cmd = txteditor;
+                    break;
+                case IMGVIEWER:
+                    cmd = imgviewer;
+                    break;
+                case IMGEDITOR:
+                    cmd = imgeditor;
+                    break;
+                case PDFVIEWER:
+                    cmd = pdfviewer;
+                    break;
+                case AUDIOPLAYER:
+                    cmd = audioplayer;
+                    break;
+                case VIDEOPLAYER:
+                    cmd = videoplayer;
+                    break;
+                case ARCHIVER:
+                    cmd = archiver;
+                    break;
+                default:
+                    break;
+                }
+            }
+            if (!xf_prepareAssociation(this, cmd, pathname,
+                                        ID_OPEN_WITH, mainWindow, XFileExplorer::ID_PREFS))
+            {
+                continue;
+            }
+            FXString fullcmd = cmd + " " + xf_quote(pathname);
+            FXString parentdir = FXPath::directory(pathname);
+#ifdef STARTUP_NOTIFICATION
+            runcmd(fullcmd, cmd, parentdir, searchdir, true, "");
+#else
+            runcmd(fullcmd, parentdir, searchdir);
+#endif
+        }
+    }
+    delete assocdict;
+    getApp()->endWaitCursor();
+    return 1;
+}
+
+
+// Open with
+long SearchPanel::onCmdOpenWith(FXObject*, FXSelector sel, void*)
+{
+    FXbool editing = FXSELID(sel) == ID_EDIT_WITH;
     if (list->getNumSelectedItems() == 0)
     {
         return 0;
@@ -1016,6 +1054,29 @@ long SearchPanel::onCmdOpenWith(FXObject*, FXSelector, void*)
                                          bigfileopenicon, false, true, HIST_INPUT_EXECUTABLE_FILE, true, _("A&ssociate"));
     }
     opendialog->setText(cmd);
+    opendialog->setTitle(editing ? _("Edit With") : _("Open With"));
+    opendialog->setMessage(editing ? _("Choose an installed application to edit the selected file(s):") :
+                                    _("Open selected file(s) with:"));
+    FXString associationExtension;
+    FXbool firstExtension = true;
+    for (int u = 0; u < list->getNumItems(); ++u)
+    {
+        if (list->isItemSelected(u))
+        {
+            FXString ext = FileDict::associationExtension(list->getItemFilename(u));
+            if (firstExtension)
+            {
+                associationExtension = ext;
+                firstExtension = false;
+            }
+            if (ext.empty() || ext != associationExtension)
+            {
+                associationExtension.clear();
+                break;
+            }
+        }
+    }
+    opendialog->setAssociationOption(associationExtension, editing);
 
     // Dialog with history list and associate checkbox
     opendialog->CursorEnd();
@@ -1030,76 +1091,23 @@ long SearchPanel::onCmdOpenWith(FXObject*, FXSelector, void*)
     opendialog->setDirectory(ROOTDIR);
     if (opendialog->execute())
     {
-        cmd = opendialog->getText();
-        if (cmd == "")
+        FXString basecmd = opendialog->getText().trim();
+        if (basecmd == "")
         {
             MessageBox::warning(this, BOX_OK, _("Warning"), _("File name is empty, operation cancelled"));
             return 0;
         }
 
+        FXString cmdname = xf_commandprogram(basecmd);
+
+        FXString fullcmd = basecmd;
+
         for (int u = 0; u < list->getNumItems(); u++)
         {
             if (list->isItemSelected(u))
             {
-                // Handles "associate" checkbox for "open with..." dialog
-                if (opendialog->getOption())
-                {
-                    FXString filename = list->getItemFilename(u);
-                    FXString ext = filename.rafter('.', 2).lower();
-
-                    if ((ext == "tar.gz") || (ext == "tar.bz2") || (ext == "tar.xz") || (ext == "tar.zst") ||
-                        (ext == "tar.z")) // Special cases
-                    {
-                    }
-                    else
-                    {
-                        ext = FXPath::extension(filename).lower();
-                    }
-
-                    if (ext == "")
-                    {
-                        ext = FXPath::name(filename);
-                    }
-
-                    FileAssoc* association = list->getItemAssoc(u);
-
-                    if (association)
-                    {
-                        // Update existing association
-                        FXString oldfileassoc = getApp()->reg().readStringEntry("FILETYPES", ext.text(), "");
-                        oldfileassoc.erase(0, oldfileassoc.section(';', 0).section(',', 0).length());
-                        oldfileassoc.prepend(opendialog->getText());
-                        getApp()->reg().writeStringEntry("FILETYPES", ext.text(), oldfileassoc.text());
-
-                        // Handle file association
-                        str = new char* [2];
-                        str[0] = new char[strlen(ext.text()) + 1];
-                        str[1] = new char[strlen(oldfileassoc.text()) + 1];
-                        xf_strlcpy(str[0], ext.text(), ext.length() + 1);
-                        xf_strlcpy(str[1], oldfileassoc.text(), oldfileassoc.length() + 1);
-                        mainWindow->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_FILE_ASSOC), str);
-                    }
-                    else
-                    {
-                        // New association
-                        FXString newcmd = opendialog->getText().append(";Document;;;;");
-                        getApp()->reg().writeStringEntry("FILETYPES", ext.text(), newcmd.text());
-
-                        // Handle file association
-                        str = new char* [2];
-                        str[0] = new char[strlen(ext.text()) + 1];
-                        str[1] = new char[strlen(newcmd.text()) + 1];
-                        xf_strlcpy(str[0], ext.text(), ext.length() + 1);
-                        xf_strlcpy(str[1], newcmd.text(), newcmd.length() + 1);
-                        mainWindow->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_FILE_ASSOC), str);
-                    }
-                }
-                // End
-
                 FXString pathname = list->getItemFullPathname(u);
-                cmdname = cmd;
-                cmd += " ";
-                cmd = cmd + xf_quote(pathname);
+                fullcmd += " " + xf_quote(pathname);
             }
         }
 
@@ -1115,10 +1123,26 @@ long SearchPanel::onCmdOpenWith(FXObject*, FXSelector, void*)
         // If command exists, run it
         if (xf_existcommand(cmdname))
         {
+            if (opendialog->getOption() && !associationExtension.empty())
+            {
+                if (editing)
+                {
+                    getApp()->reg().writeStringEntry("EDIT_ASSOCIATIONS", associationExtension.text(), basecmd.text());
+                }
+                else
+                {
+                    FileDict::setUserCommand(getApp()->reg(), associationExtension, basecmd);
+                }
+            }
+            if (editing && FXPath::name(cmdname) != "swordfish-open" &&
+                FXPath::name(cmdname) != "swfw" && FXPath::name(cmdname) != "xfw")
+            {
+                fullcmd = xf_hostcommand(fullcmd);
+            }
 #ifdef STARTUP_NOTIFICATION
-            runcmd(cmd, cmdname, searchdir, searchdir, usesn, snexcepts);
+            runcmd(fullcmd, cmdname, searchdir, searchdir, usesn, snexcepts);
 #else
-            runcmd(cmd, searchdir, searchdir);
+            runcmd(fullcmd, searchdir, searchdir);
 #endif
         }
         // If command does not exist, call the "Open with..." dialog
@@ -1126,7 +1150,7 @@ long SearchPanel::onCmdOpenWith(FXObject*, FXSelector, void*)
         {
             getApp()->endWaitCursor();
             MessageBox::warning(this, BOX_OK, _("Warning"), _("Program %s not found"), cmdname.text());
-            this->handle(this, FXSEL(SEL_COMMAND, ID_OPEN_WITH), NULL);
+            this->handle(this, FXSEL(SEL_COMMAND, editing ? ID_EDIT_WITH : ID_OPEN_WITH), NULL);
             return 1;
         }
 
@@ -1239,7 +1263,7 @@ long SearchPanel::onCmdOpen(FXObject*, FXSelector, void*)
                 association = assocdict->findFileBinding(pathname.text());
             }
 
-            if (association)
+            if (association && (association->userCommand || xf_executionKind(pathname) == EXECUTION_DOCUMENT))
             {
                 FXString cmd = association->command.section(',', 0);
 
@@ -1286,6 +1310,11 @@ long SearchPanel::onCmdOpen(FXObject*, FXSelector, void*)
                 // A command exists
                 if (cmd != "")
                 {
+                    if (!xf_prepareAssociation(this, cmd, pathname,
+                                                ID_OPEN_WITH, mainWindow, XFileExplorer::ID_PREFS))
+                    {
+                        continue;
+                    }
                     // Check if the command is already in the list
                     FXuint j;
                     FXbool found = false;
@@ -1313,7 +1342,7 @@ long SearchPanel::onCmdOpen(FXObject*, FXSelector, void*)
                 }
             }
             // Or execute the file
-            else if (list->isItemExecutable(u))
+            else if (xf_executionKind(pathname) != EXECUTION_DOCUMENT)
             {
                 execFile(pathname);
             }
@@ -1377,6 +1406,23 @@ long SearchPanel::onCmdOpen(FXObject*, FXSelector, void*)
 // View/Edit files
 long SearchPanel::onCmdEdit(FXObject*, FXSelector sel, void*)
 {
+    if (FXSELID(sel) == ID_EDIT)
+    {
+        vector_FXString paths;
+        for (int i = 0; i < list->getNumItems(); i++)
+        {
+            if (list->isItemSelected(i) && xf_isfile(list->getItemFullPathname(i)))
+            {
+                paths.push_back(list->getItemFullPathname(i));
+            }
+        }
+        if (!xf_editFiles(this, paths, searchdir, searchdir,
+                          ID_EDIT_WITH, mainWindow, XFileExplorer::ID_PREFS))
+        {
+            handle(this, FXSEL(SEL_COMMAND, ID_EDIT_WITH), NULL);
+        }
+        return 1;
+    }
     // Wait cursor
     getApp()->beginWaitCursor();
 
@@ -2530,8 +2576,15 @@ long SearchPanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         FXbool ar = false;
         if (list->getItem(itm) && list->isItemFile(itm))
         {
-            new FXMenuCommand(menu, _("Open &with..."), minifileopenicon, this, SearchPanel::ID_OPEN_WITH);
-            new FXMenuCommand(menu, _("&Open"), minifileopenicon, this, SearchPanel::ID_OPEN);
+            new FXMenuCommand(menu, _("E&xecute"), miniexecicon, this, SearchPanel::ID_EXECUTE);
+            if (xf_administratorActionAvailable(num, list->getItemFullPathname(itm)))
+            {
+                new FXMenuCommand(menu, _("Run as Administrator..."), miniexecicon, this,
+                                  SearchPanel::ID_RUN_AS_ADMINISTRATOR);
+            }
+            new FXMenuCommand(menu, _("Run from &Terminal"), minishellicon, this, SearchPanel::ID_RUN_IN_TERMINAL);
+            new FXMenuCommand(menu, _("Open with &Default App"), minifileopenicon, this, SearchPanel::ID_OPEN_DEFAULT_APP);
+            new FXMenuCommand(menu, _("Open &With..."), minifileopenicon, this, SearchPanel::ID_OPEN_WITH);
             FXString name = this->list->getItemText(itm).section('\t', 0);
 
             // Last and before last file extensions
@@ -2572,6 +2625,7 @@ long SearchPanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
             {
                 new FXMenuCommand(menu, _("&View"), miniviewicon, this, SearchPanel::ID_VIEW);
                 new FXMenuCommand(menu, _("&Edit"), miniediticon, this, SearchPanel::ID_EDIT);
+                new FXMenuCommand(menu, _("Edit With..."), miniediticon, this, SearchPanel::ID_EDIT_WITH);
                 if (num == 1)
                 {
                     new FXMenuCommand(menu, _("Com&pare..."), minicompareicon, this, SearchPanel::ID_COMPARE);

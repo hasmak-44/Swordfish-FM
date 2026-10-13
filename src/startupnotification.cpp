@@ -4,14 +4,134 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <sys/wait.h>
 #include <errno.h>
 #include <assert.h>
+#include <map>
 
 #include <fx.h>
 
 #include "xfedefs.h"
 #include "xfeutils.h"
 #include "startupnotification.h"
+#include "AppLogger.h"
+#include "MessageBox.h"
+
+struct LaunchedCommand
+{
+    FXString command;
+    FXString errorFile;
+};
+
+static std::map<pid_t, LaunchedCommand> launchedCommands;
+
+struct LaunchFileCleanup
+{
+    ~LaunchFileCleanup()
+    {
+        for (std::map<pid_t, LaunchedCommand>::const_iterator entry = launchedCommands.begin();
+             entry != launchedCommands.end(); ++entry)
+        {
+            unlink(entry->second.errorFile.text());
+        }
+    }
+};
+
+static LaunchFileCleanup launchFileCleanup;
+
+static int launchCommand(const FXString& command
+#ifdef STARTUP_NOTIFICATION
+                         , SnLauncherContext* context = NULL
+#endif
+                         )
+{
+    char errorFile[] = "/tmp/swordfish-launch-XXXXXX";
+    int fd = mkstemp(errorFile);
+    if (fd < 0)
+    {
+        perror("Cannot create launch error log");
+        return -1;
+    }
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        if (dup2(fd, STDERR_FILENO) < 0)
+        {
+            perror("Cannot redirect launch errors");
+            _exit(127);
+        }
+        close(fd);
+        xf_restorehostenv();
+#ifdef STARTUP_NOTIFICATION
+        if (context)
+        {
+            sn_launcher_context_setup_child_process(context);
+        }
+#endif
+        execl("/bin/sh", "sh", "-c", command.text(), (char*)NULL);
+        perror("Cannot start command");
+        _exit(127);
+    }
+    close(fd);
+    if (pid < 0)
+    {
+        unlink(errorFile);
+        perror("Cannot fork command");
+        return -1;
+    }
+    LaunchedCommand launched;
+    launched.command = command;
+    launched.errorFile = errorFile;
+    launchedCommands[pid] = launched;
+    return 0;
+}
+
+void handleCommandExit(FXWindow* owner, pid_t pid, int status)
+{
+    std::map<pid_t, LaunchedCommand>::iterator entry = launchedCommands.find(pid);
+    if (entry == launchedCommands.end())
+    {
+        return;
+    }
+    LaunchedCommand launched = entry->second;
+    launchedCommands.erase(entry);
+    FXString details;
+    FILE* errors = fopen(launched.errorFile.text(), "r");
+    if (errors)
+    {
+        char buffer[1024];
+        while (details.length() < 8192 && fgets(buffer, sizeof(buffer), errors))
+        {
+            details += buffer;
+        }
+        fclose(errors);
+    }
+    unlink(launched.errorFile.text());
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+    {
+        return;
+    }
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 126 &&
+        FXPath::name(xf_commandprogram(launched.command)) == "pkexec")
+    {
+        appLog(APP_LOG_UI, "administrator-launch-cancelled", launched.command);
+        return;
+    }
+    FXString message;
+    FXString reason;
+    if (WIFEXITED(status))
+    {
+        reason.format(_("Exit status: %d"), WEXITSTATUS(status));
+    }
+    else if (WIFSIGNALED(status))
+    {
+        reason.format(_("Terminated by signal: %d"), WTERMSIG(status));
+    }
+    message.format(_("Application failed to run:\n%s\n\n%s\n%s"),
+                   launched.command.text(), reason.text(), details.text());
+    appLog(APP_LOG_ERRORS, "application-launch-failed", message);
+    MessageBox::error(owner, BOX_OK, _("Application error"), "%s", message.text());
+}
 
 
 #ifdef STARTUP_NOTIFICATION  // Use startup notification
@@ -152,48 +272,18 @@ int runcmd(FXString cmd, FXString cmdname, FXString dir, FXString startdir, FXbo
         timestamp = gettimestamp(xdisplay);
         sn_launcher_context_initiate(context, "SwordFish", cmd.text(), timestamp);
 
-        // Run command in background
-        cmd += " &";
-        static pid_t child_pid = 0;
-        switch ((child_pid = fork()))
-        {
-        case -1:
-            fprintf(stderr, _("Error: Fork failed: %s\n"), strerror(errno));
-            break;
-
-        case 0: // Child
-            sn_launcher_context_setup_child_process(context);
-            execl("/bin/sh", "sh", "-c", cmd.text(), (char*)NULL);
-            _exit(EXIT_SUCCESS);
-            break;
-        }
+        ret = launchCommand(cmd, context);
         sn_launcher_context_unref(context);
+        sn_display_unref(display);
         XCloseDisplay(xdisplay);
     }
     // Run command without startup notification
     else
     {
-        // Replace single quotes with double quotes to avoid problems with sh -c
-        // Apparently, this can't be done in a single step because file names may contain single or double quotes
-        cmd.substitute("\"", "\"\"", true);
-        cmd.substitute("'\\''", "\\", true);
-        cmd.substitute('\'', '"', true);
-        cmd.substitute("\\", "'\\''", true);
-
-        // Run command in background through a shell (to avoid problems with pkexec)
-        FXString shcmd = "sh -c \'" + cmd + "\' &";
-
-        int ret = system(shcmd.text());
-        if (ret < 0)
-        {
-            fprintf(stderr, _("Error: Can't execute command %s"), shcmd.text());
-            return -1;
-        }
-
-        // Display the wait cursor
-        sleep(SIMULATED_STARTUP_TIME);
+        ret = launchCommand(cmd);
     }
 
+    int launchResult = ret;
     // Go back to startup directory
     ret = chdir(startdir.text());
     if (ret < 0)
@@ -211,7 +301,7 @@ int runcmd(FXString cmd, FXString cmdname, FXString dir, FXString startdir, FXbo
         return -1;
     }
 
-    return 0;
+    return launchResult;
 }
 
 
@@ -237,21 +327,7 @@ int runcmd(FXString cmd, FXString dir, FXString startdir)
         return -1;
     }
 
-    // Replace quotes with double quotes to avoid problems with sh -c
-    cmd.substitute('\'', '"', true);
-
-    // Run command in background through a shell (to avoid problems with pkexec)
-    FXString shcmd = "sh -c '" + cmd + "' &";
-    ret = system(shcmd.text());
-
-    if (ret < 0)
-    {
-        fprintf(stderr, _("Error: Can't execute command %s"), shcmd.text());
-        return -1;
-    }
-
-    // Display the wait cursor
-    sleep(SIMULATED_STARTUP_TIME);
+    int launchResult = launchCommand(cmd);
 
     // Go back to startup directory
     ret = chdir(startdir.text());
@@ -270,7 +346,7 @@ int runcmd(FXString cmd, FXString dir, FXString startdir)
         return -1;
     }
 
-    return 0;
+    return launchResult;
 }
 
 #endif

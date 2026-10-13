@@ -9,6 +9,18 @@
 #include "KeyBindings.h"
 #include "SystemIcons.h"
 
+class ProgramChoice : public ComboBox
+{
+private:
+    std::vector<FXString> names;
+    std::vector<FXString> commands;
+public:
+    ProgramChoice(FXComposite* parent);
+    void addApplication(const FXString& name, const FXString& command);
+    void setText(const FXString& command);
+    FXString getText() const;
+};
+
 
 // Number of modifiable colors
 #define NUM_COLORS    12
@@ -68,22 +80,52 @@ private:
     std::vector<FXString> iconthemepaths;
     std::vector<SystemTheme> iconthemesystem;
     std::vector<int> iconthemesysindex;
-    FXTextField* txtviewer = NULL;
-    FXTextField* txteditor = NULL;
-    FXTextField* filecomparator = NULL;
+    ProgramChoice* txtviewer = NULL;
+    ProgramChoice* txteditor = NULL;
+    ProgramChoice* filecomparator = NULL;
     FXTextField* timeformat = NULL;
     FXTextField* copysuffix = NULL;
-    FXTextField* imgviewer = NULL;
-    FXTextField* xterm = NULL;
-    FXTextField* imgeditor = NULL;
-    FXTextField* archiver = NULL;
-    FXTextField* pdfviewer = NULL;
-    FXTextField* videoplayer = NULL;
-    FXTextField* audioplayer = NULL;
+    ProgramChoice* imgviewer = NULL;
+    ProgramChoice* xterm = NULL;
+    ProgramChoice* imgeditor = NULL;
+    ProgramChoice* archiver = NULL;
+    ProgramChoice* pdfviewer = NULL;
+    ProgramChoice* pdfeditor = NULL;
+    ProgramChoice* videoplayer = NULL;
+    ProgramChoice* audioplayer = NULL;
     FXTextField* normalfont = NULL;
     FXTextField* textfont = NULL;
     FXTextField* mountcmd = NULL;
     FXTextField* umountcmd = NULL;
+    FXList* associationlist = NULL;
+    FXTextField* associationcommand = NULL;
+    FXLabel* associationstatus = NULL;
+    FXButton* associationapply = NULL;
+    FXButton* associationreset = NULL;
+    FXButton* restoreprogramdefaults = NULL;
+    struct AssociationOverride
+    {
+        FXString extension;
+        FXString command;
+    };
+    struct AssociationEntry
+    {
+        FXString extension;
+        FXString mimetype;
+        FXString systemApplication;
+        FXString systemError;
+    };
+    std::vector<AssociationOverride> associationoverrides;
+    std::vector<AssociationEntry> associationentries;
+    FXbool restoreprogramsettings = false;
+    static void applyAssociationChanges(FXSettings&, const std::vector<AssociationOverride>&, FXbool);
+    static void applyPreferredToolDefaults(FXSettings&);
+    static void discardAssociationChanges(std::vector<AssociationOverride>&, FXbool&);
+    static FXString associationApplicationStatus(const FXString&);
+    static FXString associationEntryStatus(const AssociationEntry&);
+    static FXbool querySystemDefaultApplication(const FXString&, FXString&, FXString&);
+    void populateProgramChoices();
+    friend class ProgramSettingsSmokeTest;
 #if defined(linux) && defined(XFE_AUTOMOUNTER)
     FXGroupBox* automountgroup = NULL;
 #endif
@@ -108,6 +150,7 @@ private:
     FXString oldimgeditor;
     FXString oldarchiver;
     FXString oldpdfviewer;
+    FXString oldpdfeditor;
     FXString oldaudioplayer;
     FXString oldvideoplayer;
     FXString oldmountcmd;
@@ -122,12 +165,6 @@ private:
     FXCheckButton* restoretabs = NULL;
     FXCheckButton* commonaddressbar = NULL;
     FXCheckButton* showpathlink = NULL;
-    FXRadioButton* systemapps = NULL;
-    FXRadioButton* internalapps = NULL;
-    FXRadioButton* customapps = NULL;
-    FXDataTarget programmodetarget;
-    FXuint programmode = PROGRAM_MODE_SYSTEM_DEFAULTS;
-    FXuint oldprogrammode = 0;
 #if defined(linux) && defined(XFE_AUTOMOUNTER)
     FXCheckButton* automountbutton = NULL;
     FXCheckButton* autoopenbutton = NULL;
@@ -169,7 +206,12 @@ private:
 #ifdef STARTUP_NOTIFICATION
     FXCheckButton* usesn = NULL;
 #endif
-    FXCheckButton* noscript = NULL;
+    FXRadioButton* script_always = NULL;
+    FXRadioButton* script_ask = NULL;
+    FXRadioButton* script_never = NULL;
+    FXDataTarget script_action_target;
+    FXuint script_action = 1;
+    FXuint old_script_action = 1;
     FXCheckButton* sizecol = NULL;
     FXCheckButton* typecol = NULL;
     FXCheckButton* extcol = NULL;
@@ -246,7 +288,7 @@ private:
 #ifdef STARTUP_NOTIFICATION
     FXbool usesn_prev = 0;
 #endif
-    FXbool noscript_prev = false;
+    FXuint script_action_prev = 1;
 #if defined(linux)
     FXbool mountwarn_prev = false;
     FXbool show_mount_prev = false;
@@ -275,8 +317,10 @@ public:
         ID_BROWSE_TXTEDIT,
         ID_BROWSE_FILECOMP,
         ID_BROWSE_IMGVIEW,
+        ID_BROWSE_IMGEDIT,
         ID_BROWSE_ARCHIVER,
         ID_BROWSE_PDFVIEW,
+        ID_BROWSE_PDFEDIT,
         ID_BROWSE_VIDEOPLAY,
         ID_BROWSE_AUDIOPLAY,
         ID_BROWSE_XTERM,
@@ -331,6 +375,10 @@ public:
         ID_LISTCOL_DOWN,
         ID_BIGTHUMB_SIZE,
         ID_MINITHUMB_SIZE,
+        ID_ASSOCIATION_LIST,
+        ID_ASSOCIATION_APPLY,
+        ID_ASSOCIATION_RESET,
+        ID_RESTORE_PROGRAM_DEFAULTS,
         ID_LAST,
     };
 
@@ -343,6 +391,12 @@ public:
 
     long onCmdAccept(FXObject*, FXSelector, void*);
     long onCmdBrowse(FXObject*, FXSelector, void*);
+    long onCmdAssociationSelected(FXObject*, FXSelector, void*);
+    long onCmdAssociationApply(FXObject*, FXSelector, void*);
+    long onCmdAssociationReset(FXObject*, FXSelector, void*);
+    long onCmdRestoreProgramDefaults(FXObject*, FXSelector, void*);
+    void loadAssociations();
+    void updateAssociationSelection();
     long onCmdColor(FXObject*, FXSelector, void*);
     long onUpdColor(FXObject*, FXSelector, void*);
     long onCmdPopupMenu(FXObject*, FXSelector, void*);

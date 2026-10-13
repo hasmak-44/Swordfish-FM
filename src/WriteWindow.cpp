@@ -1571,8 +1571,11 @@ void WriteWindow::saveConfig()
 // Harvest the zombies
 long WriteWindow::onSigHarvest(FXObject*, FXSelector, void*)
 {
-    while (waitpid(-1, NULL, WNOHANG) > 0)
+    int status;
+    pid_t child;
+    while ((child = waitpid(-1, &status, WNOHANG)) > 0)
     {
+        handleCommandExit(this, child, status);
     }
     return 1;
 }

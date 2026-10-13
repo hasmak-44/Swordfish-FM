@@ -336,47 +336,47 @@ enum
 
 // Default text viewer program
 #ifndef DEFAULT_TXTVIEWER
-#define DEFAULT_TXTVIEWER    "swfw -r"
+#define DEFAULT_TXTVIEWER    "swordfish-open"
 #endif
 
 // Default text editor program
 #ifndef DEFAULT_TXTEDITOR
-#define DEFAULT_TXTEDITOR    "swfw"
+#define DEFAULT_TXTEDITOR    "swordfish-open"
 #endif
 
 // Default file comparator program
 #ifndef DEFAULT_FILECOMPARATOR
-#define DEFAULT_FILECOMPARATOR    "meld"
+#define DEFAULT_FILECOMPARATOR    ""
 #endif
 
 // Default image editor program
 #ifndef DEFAULT_IMGEDITOR
-#define DEFAULT_IMGEDITOR    "gimp"
+#define DEFAULT_IMGEDITOR    ""
 #endif
 
 // Default image viewer program
 #ifndef DEFAULT_IMGVIEWER
-#define DEFAULT_IMGVIEWER    "swfi"
+#define DEFAULT_IMGVIEWER    "swordfish-open"
 #endif
 
 // Default archiver program
 #ifndef DEFAULT_ARCHIVER
-#define DEFAULT_ARCHIVER    "swfa"
+#define DEFAULT_ARCHIVER    "swordfish-open"
 #endif
 
 // Default PDF viewer program
 #ifndef DEFAULT_PDFVIEWER
-#define DEFAULT_PDFVIEWER    "atril"
+#define DEFAULT_PDFVIEWER    "swordfish-open"
 #endif
 
 // Default audio player program
 #ifndef DEFAULT_AUDIOPLAYER
-#define DEFAULT_AUDIOPLAYER    "audacious"
+#define DEFAULT_AUDIOPLAYER    "swordfish-open"
 #endif
 
 // Default video player program
 #ifndef DEFAULT_VIDEOPLAYER
-#define DEFAULT_VIDEOPLAYER    "vlc"
+#define DEFAULT_VIDEOPLAYER    "swordfish-open"
 #endif
 
 // Default mount command

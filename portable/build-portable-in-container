@@ -13,10 +13,7 @@ case "$relative_output" in
         ;;
 esac
 
-if [ "$(getconf GNU_LIBC_VERSION)" != "glibc 2.36" ]; then
-    printf 'Expected Debian 12 glibc 2.36, found %s\n' "$(getconf GNU_LIBC_VERSION)" >&2
-    exit 1
-fi
+glibc_version=$(getconf GNU_LIBC_VERSION)
 
 mkdir -p "$source_copy" "$(dirname -- "$output_dir")" "$HOME"
 tar -C "$source_root" \
@@ -40,6 +37,13 @@ mkdir -p "$linuxdeploy_dir"
 linuxdeploy="$linuxdeploy_dir/squashfs-root/AppRun"
 
 cd "$source_copy"
+# Never reuse objects compiled on the host: they may need a newer glibc.
+find . \( -name '*.o' -o -name '*.a' -o -name '.dirstamp' \) -type f -delete
+find . -name '.deps' -type d -prune -exec rm -rf {} +
+rm -f src/swordfish src/swfa src/swfi src/swfp src/swfw config.status config.cache
+# Older bases ship an older gettext; match the requested version to it.
+gettext_version=$(gettext --version | sed -n '1s/.* \([0-9]*\.[0-9]*\(\.[0-9]*\)\{0,1\}\).*$/\1/p')
+sed -i "s/^AM_GNU_GETTEXT_VERSION(\[[0-9.]*\])/AM_GNU_GETTEXT_VERSION([$gettext_version])/" configure.ac
 autoreconf -fi
 ./configure --prefix=/usr
 make -j"${JOBS:-1}"
@@ -65,6 +69,7 @@ if [ -z "$rsvg_convert" ]; then
     exit 1
 fi
 deploy_args+=(--executable "$rsvg_convert")
+deploy_args+=(--executable "$(command -v unzip)")
 
 desktop_file="$output_dir/usr/share/applications/swordfish.desktop"
 if [ ! -f "$desktop_file" ]; then
@@ -97,6 +102,8 @@ install -m 755 portable/AppRun "$output_dir/AppRun"
 install -m 644 portable/README.md "$output_dir/README.md"
 mkdir -p "$output_dir/usr/share/doc/swordfish"
 install -m 644 COPYING "$output_dir/usr/share/doc/swordfish/COPYING"
+mkdir -p "$output_dir/usr/share/doc/unzip"
+install -m 644 /usr/share/doc/unzip/copyright "$output_dir/usr/share/doc/unzip/copyright"
 for program in swfa swfi swfp swfw; do
     ln -s AppRun "$output_dir/run-$program"
 done
@@ -105,4 +112,4 @@ for directory in config data cache state scripts themes icons addons; do
     mkdir -p "$output_dir/portable-data/$directory"
 done
 
-printf 'Built portable folder against Debian 12 / glibc 2.36 at %s\n' "$output_dir"
+printf 'Built portable folder against %s (%s) at %s\n' "$(. /etc/os-release; printf '%s' "$PRETTY_NAME")" "$glibc_version" "$output_dir"

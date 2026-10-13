@@ -23,13 +23,6 @@ extern FXString homedir;
 
 namespace
 {
-struct DesktopApplication
-{
-    FXString name;
-    FXString command;
-};
-
-
 void addDataDirs(std::vector<FXString>& dirs, const char* hostvar, const char* var, const FXString& fallback)
 {
     const char* value = getenv(hostvar);
@@ -153,6 +146,14 @@ FXbool readDesktopApplication(const FXString& path, DesktopApplication& app)
         {
             tryexec = value;
         }
+        else if (key == "MimeType")
+        {
+            app.mimetypes = value;
+        }
+        else if (key == "Categories")
+        {
+            app.categories = value;
+        }
         else if ((key == "NoDisplay" || key == "Hidden") && value.lower() == "true")
         {
             hidden = true;
@@ -210,6 +211,7 @@ void scanApplications(const FXString& root, const FXString& dir, std::set<FXStri
         DesktopApplication app;
         if (readDesktopApplication(path, app))
         {
+            app.id = id;
             apps.push_back(app);
         }
     }
@@ -268,7 +270,7 @@ HistInputDialog::HistInputDialog(FXWindow* w, FXString inp, FXString message, FX
 
     if (option)
     {
-        new FXCheckButton(checkbutton, optiontext + FXString(" "), this, ID_TOGGLE_OPTION);
+        associationOption = new FXCheckButton(checkbutton, optiontext + FXString(" "), this, ID_TOGGLE_OPTION);
     }
 
     // Vertical frame
@@ -277,7 +279,7 @@ HistInputDialog::HistInputDialog(FXWindow* w, FXString inp, FXString message, FX
     // Icon and first line
     FXMatrix* matrix1 = new FXMatrix(contents, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     new FXLabel(matrix1, "", ic, LAYOUT_LEFT | LAYOUT_CENTER_Y | LAYOUT_FILL_ROW);
-    new FXLabel(matrix1, message, NULL, LAYOUT_LEFT | LAYOUT_CENTER_Y | LAYOUT_FILL_ROW | FRAME_NONE);
+    messageLabel = new FXLabel(matrix1, message, NULL, LAYOUT_LEFT | LAYOUT_CENTER_Y | LAYOUT_FILL_ROW | FRAME_NONE);
 
     // Label and input field (combo box)
     FXMatrix* matrix2 = new FXMatrix(contents, 3, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
@@ -303,6 +305,31 @@ void HistInputDialog::create()
 {
     DialogBox::create();
     input->setFocus();
+}
+
+void HistInputDialog::setAssociationOption(const FXString& extension, FXbool editing)
+{
+    _option = 0;
+    if (!associationOption)
+    {
+        return;
+    }
+    associationOption->setCheck(false);
+    if (extension.empty())
+    {
+        associationOption->setText(_("Saving requires files with the same non-empty extension"));
+        associationOption->disable();
+    }
+    else
+    {
+        FXString label;
+        label.format(editing ? _("Always use this application to edit .%s files in Swordfish") :
+                               _("Always use this application for .%s files in Swordfish"), extension.text());
+        associationOption->setText(label);
+        associationOption->enable();
+    }
+    associationOption->setTipText(editing ? _("Only editing in Swordfish is affected. Open and system defaults will not change.") :
+                                           _("Your system's default applications will not be changed."));
 }
 
 
@@ -435,7 +462,7 @@ int HistInputDialog::getHistorySize()
 }
 
 
-void HistInputDialog::appendInstalledApplications()
+std::vector<DesktopApplication> xf_installedApplications()
 {
     std::vector<FXString> datadirs;
     addDataDirs(datadirs, "SWORDFISH_HOST_XDG_DATA_HOME", "XDG_DATA_HOME", homedir + "/.local/share");
@@ -452,7 +479,12 @@ void HistInputDialog::appendInstalledApplications()
     {
         return comparecase(a.name, b.name) < 0;
     });
+    return apps;
+}
 
+void HistInputDialog::appendInstalledApplications()
+{
+    std::vector<DesktopApplication> apps = xf_installedApplications();
     for (size_t i = 0; i < apps.size(); i++)
     {
         if (std::find(appnames.begin(), appnames.end(), apps[i].name) != appnames.end())

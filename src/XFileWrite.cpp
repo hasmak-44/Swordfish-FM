@@ -400,7 +400,7 @@ int main(int argc, char* argv[])
             window = new WriteWindow(application, _("untitled"), readonly);
 
             // Catch SIGCHLD to harvest zombie child processes
-            application->addSignal(SIGCHLD, window, WriteWindow::ID_HARVEST, true);
+            application->addSignal(SIGCHLD, window, WriteWindow::ID_HARVEST);
 
             window->setSmoothScroll(smoothscroll);
             window->create();
@@ -414,7 +414,7 @@ int main(int argc, char* argv[])
         window = new WriteWindow(application, _("untitled"), readonly);
 
         // Catch SIGCHLD to harvest zombie child processes
-        application->addSignal(SIGCHLD, window, WriteWindow::ID_HARVEST, true);
+        application->addSignal(SIGCHLD, window, WriteWindow::ID_HARVEST);
 
         window->setSmoothScroll(smoothscroll);
         window->create();

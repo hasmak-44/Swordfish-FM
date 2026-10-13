@@ -1,0 +1,38 @@
+Swordfish Portable 0.0.1 RC2
+==========================
+
+RC2 supersedes RC1, which has known application-launching and terminal issues.
+Download Swordfish-Portable.zip under Assets, not the automatic source archive.
+Extract into a new folder and start AppRun. Keep the previous build as a fallback.
+
+Highlights
+----------
+- Portable Linux x86_64 build targeting Debian 10 / glibc 2.28 and newer.
+- Correct host libraries and desktop settings when launching external apps.
+- Desktop-default terminal support, correct current folder and terminal runs.
+- Improved application associations, installed-app selection and MIME discovery.
+- Programs settings show discovered system defaults and applicable alternatives.
+- Improved script interpreter handling, runnable JARs, Wine/MSI and managed Mono.
+- Explicit launch errors and administrator execution via system authentication.
+- Settings Cancel/Accept and local-only opening/editing preferences.
+
+Validation
+----------
+Host build and three integration harnesses passed, covering settings, application
+discovery, executable policies, panes/search, terminal directories, external Edit,
+real Java JAR launching and child reaping. A portable build of earlier RC2 work
+started on Debian 10; the release pipeline builds the final tagged source cleanly.
+
+Limitations and future work
+--------------------------
+This is a release candidate, not a guarantee that every desktop is supported.
+Real administrator authentication still needs testing on the target desktop;
+dispatch, errors and cancellation were tested with a mock.
+
+RC2 is the tested intermediate implementation. It still includes legacy companion
+applications, the per-extension settings section and the earlier three-way script
+policy. Their planned removal/replacement is NOT complete. The subsequent design
+calls for external-only content handling, text-only Edit, two executable-text
+opening choices, system-first launch fallback, and a Slate Blue fresh-install
+default. Network discovery, menu customization and operation improvements are
+also roadmap work, not claims about RC2.

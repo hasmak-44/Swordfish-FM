@@ -5,10 +5,14 @@ x86_64. It includes the Swordfish programs, installed resources, and shared
 libraries collected by `linuxdeploy`. Run `AppRun` from the generated folder;
 do not run `make install` as root.
 
-The build uses Docker to compile against Debian 12 (glibc 2.36), a compatible
-baseline for older Linux systems than the Ubuntu 24.04 environment used by
-the first prototype. It downloads a checksum-pinned `linuxdeploy` release to
-collect shared libraries. Docker and internet access are required to build:
+The build uses Docker to compile against Debian 10 (glibc 2.28), so the bundle
+runs on Linux systems with glibc 2.28 or newer (for example Debian 10+,
+Ubuntu 18.10+/20.04+, Linux Mint 20+, MX Linux 19+, Fedora 29+ and RHEL 8+).
+Debian 10 is the oldest practical base: Debian 9 lacks the GLVND OpenGL
+libraries the bundle relies on. Set `BASE_IMAGE` to build on another Debian
+release, for example `BASE_IMAGE=debian:bookworm-slim`. It downloads a
+checksum-pinned `linuxdeploy` release to collect shared libraries. Docker and
+internet access are required to build:
 
 ```sh
 ./portable/build-portable.sh
@@ -22,19 +26,60 @@ The bundle also provides the original Xfe executable names (`xfa`, `xfi`,
 `xfp`, and `xfw`) as compatibility aliases for saved settings and file
 associations.
 
-Preferences under Programs offers three application modes: use the host
-desktop's default applications for every file, use Swordfish's built-in
-applications where available (and the desktop defaults for other files), or
-customize each program and file association individually. The default is to
-use desktop defaults. Host XDG application associations are used without
-moving Swordfish's own configuration out of the portable sidecar.
+Documents open with the host desktop's default application unless the user
+has saved a Swordfish-only extension override. Under Programs, "Swordfish default
+programs" shows the configured desktop application by name and offers installed
+alternatives declaring support for the relevant MIME type. Finding an installed
+application does not automatically select it. Text, image, PDF, archive, audio,
+and video viewing follow system defaults unless explicitly overridden. Image
+and PDF editing have no inferred default: select an editor or use Edit With.
+The grouped entries use representative MIME types (plain text, PNG, PDF, ZIP,
+MP3, and MP4); the per-extension list above shows exact file-type defaults.
+These action preferences remain separate from extension associations.
+Host XDG associations are read without modifying them.
+File types are resolved using the host's shared MIME database, including when
+the bundled extension entry has no MIME metadata. "Not configured" means that
+the desktop query succeeded but returned no default; unresolved file types and
+query failures have separate status messages. Built-in tools do not replace
+missing system defaults.
+
+Open With uses another application once unless "Always use this application
+for .EXT files in Swordfish" is explicitly checked. Overrides are stored in
+the portable configuration, match extensions case-insensitively, and preserve
+recognized compound archive suffixes such as `.tar.gz` and `.tar.xz`.
+Extensionless files cannot receive a saved association. Use system default
+removes one override; Restore System Defaults removes all application overrides
+after confirmation, leaving unrelated preferences and host settings unchanged.
+Changes in Preferences are applied only on Accept.
+
+Edit is distinct from Open: text uses the system default application unless a
+text-editor override is saved. Images and PDFs use an explicitly configured
+editor under Programs; otherwise Edit With asks the user to choose an installed
+application. Installation or MIME support alone does not prove an application
+can edit a file. Other types also ask rather than guessing or editing binary
+data in the text editor. Edit With can save an extension-specific editing
+choice, separate from normal Open associations and desktop defaults. Its saving
+checkbox is unchecked each time. Missing editors are reported before asking.
+
+Programs run without script confirmation; scripts use Always run, Ask (the
+default), or Don't run for normal opening. An explicit Execute remains available
+with confirmation when Don't run is selected. Script interpreter declarations
+are respected rather than forcing every `.sh` file through the same shell.
+Launching never silently changes executable permissions. Missing runtimes,
+permissions, associations, and launch failures are reported explicitly.
+
+Run from Terminal uses the desktop default terminal, unless a Swordfish-only
+terminal override is configured, and keeps output visible until Enter is pressed.
+Run as Administrator is restricted to one program or script at a time and uses
+the system authentication service. Swordfish never collects or stores passwords
+and does not elevate the entire file-manager session.
 
 Pushing a tag named `SwordFish-Portable-*` or `swordfish-portable-*` builds the
 portable folder, updates the direct download at
 `https://hasmak-44.github.io/Swordfish-FM/Swordfish-Portable.zip`, and stores a
-copy as a GitHub Actions artifact for 90 days. The workflow deploys the download
-using GitHub Pages and does not publish a GitHub Release; tag pages continue
-to show GitHub's automatic source archives.
+copy as a GitHub Actions artifact for 90 days. The workflow also publishes the
+portable ZIP and SHA256 checksum as GitHub Release assets. RC tags are marked
+as prereleases; use the explicit release link in the main README.
 
 For user download and launch steps, see the main
 [README](../README.md#download-and-start-swordfish).
@@ -60,7 +105,20 @@ keystrokes or mouse movement. Coverage will expand as more actions are
 instrumented.
 
 The portable launcher leaves `HOME` unchanged, so file navigation still starts
-from the user's real home directory. Portable mode reads settings from the
+from the user's real home directory. Terminal launches restore the host library
+environment, including shells started by the internal terminal, so system
+terminals and shell commands do not load incompatible bundled libraries.
+Leave the Terminal field in Preferences empty to follow the desktop default.
+Swordfish uses `xdg-terminal-exec` when available, Xfce's preferred-terminal
+service on Xfce, or Debian's `x-terminal-emulator` alternative. These services
+read the host's configuration, not the portable configuration. If no supported
+service is available, Swordfish asks you to configure a terminal explicitly.
+A command entered in the Terminal field overrides this choice only in Swordfish;
+existing saved terminal commands are preserved.
+The toolbar/menu terminal opens in the current folder (or the selected folder).
+For `xfce4-terminal`, Swordfish passes the working directory explicitly and uses
+its `--execute` argument convention for Run from Terminal, including search results.
+Portable mode reads settings from the
 sidecar, uses resources from its own `usr/share/swordfish`, and does not load
 installed XFE or Swordfish registry defaults. Icon themes can be selected from
 the bundled resources or from folders under the sidecar `themes` and `icons`.
@@ -85,8 +143,8 @@ The current program supports custom scripts and configurable icon paths; the
 archive libraries. Core system libraries and interfaces such as glibc, the C++
 runtime, X11, font handling, and graphics drivers remain host-provided. The
 generic GLVND OpenGL dispatch libraries are bundled, while graphics drivers are
-loaded from the host. The bundle is built using glibc 2.36, but still cannot
-guarantee compatibility with Linux systems older than Debian 12 or with every
+loaded from the host. The bundle is built using glibc 2.28, but still cannot
+guarantee compatibility with Linux systems older than Debian 10 or with every
 graphics stack. Test the folder on the target systems before relying on it.
 
 The first build is not yet an AppImage; it creates the relocatable directory

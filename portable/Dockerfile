@@ -1,6 +1,18 @@
-FROM debian:bookworm-slim
+ARG BASE_IMAGE=debian:buster-slim
+FROM ${BASE_IMAGE}
+ARG BASE_IMAGE
+
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+# End-of-life Debian releases are only available from archive.debian.org.
+RUN case "$BASE_IMAGE" in \
+        *buster*|*stretch*) \
+            codename=${BASE_IMAGE#*:}; codename=${codename%-slim}; \
+            printf 'deb http://archive.debian.org/debian %s main\n' "$codename" > /etc/apt/sources.list; \
+            printf 'deb http://archive.debian.org/debian-security %s/updates main\n' "$codename" >> /etc/apt/sources.list; \
+            printf 'Acquire::Check-Valid-Until "false";\n' > /etc/apt/apt.conf.d/99archive ;; \
+    esac
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
@@ -24,7 +36,7 @@ RUN apt-get update \
         libtool \
         libx11-dev \
         libx11-xcb-dev \
-        libxcb-util-dev \
+        $(apt-cache show libxcb-util-dev >/dev/null 2>&1 && echo libxcb-util-dev || echo libxcb-util0-dev) \
         libxcb1-dev \
         libxft-dev \
         libxrandr-dev \
@@ -32,6 +44,7 @@ RUN apt-get update \
         pkg-config \
         librsvg2-bin \
         python3 \
+        unzip \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 

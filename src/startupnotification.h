@@ -2,6 +2,9 @@
 #define STARTUPNOTIFICATION_H
 
 #include <fx.h>
+#include <sys/types.h>
+
+void handleCommandExit(FXWindow*, pid_t, int);
 
 #ifdef STARTUP_NOTIFICATION
 

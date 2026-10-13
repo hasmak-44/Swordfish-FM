@@ -9,16 +9,75 @@
 #include "AppLogger.h"
 #include <dirent.h>
 #include <algorithm>
+#include <map>
+#include <string>
+#include <errno.h>
 
 #include "icons.h"
 #include "xfedefs.h"
 #include "xfeutils.h"
 #include "FileDialog.h"
 #include "FontDialog.h"
+#include "FileDict.h"
 #include "XFileExplorer.h"
 #include "MessageBox.h"
 #include "KeyBindings.h"
 #include "Preferences.h"
+#include "HistInputDialog.h"
+
+ProgramChoice::ProgramChoice(FXComposite* parent) :
+    ComboBox(parent, 30, false, false, NULL, 0, COMBOBOX_NORMAL |
+             LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW | LAYOUT_FILL_X)
+{
+    setNumVisible(8);
+}
+
+void ProgramChoice::addApplication(const FXString& name, const FXString& command)
+{
+    FXString label = name;
+    if (std::find(names.begin(), names.end(), label) != names.end())
+    {
+        label += " [" + command + "]";
+    }
+    names.push_back(label);
+    commands.push_back(command);
+    appendItem(label);
+}
+
+void ProgramChoice::setText(const FXString& command)
+{
+    if (command.empty() && !names.empty())
+    {
+        ComboBox::setText(names[0]);
+        return;
+    }
+    for (size_t i = 0; i < commands.size(); i++)
+    {
+        if (commands[i] == command)
+        {
+            ComboBox::setText(names[i]);
+            return;
+        }
+    }
+    ComboBox::setText(command);
+}
+
+FXString ProgramChoice::getText() const
+{
+    FXString text = ComboBox::getText();
+    if (text.empty() && !commands.empty())
+    {
+        return commands[0];
+    }
+    for (size_t i = 0; i < names.size(); i++)
+    {
+        if (names[i] == text)
+        {
+            return commands[i];
+        }
+    }
+    return text;
+}
 
 
 FXbool Theme::operator !=(const Theme& t)
@@ -37,6 +96,90 @@ FXbool Theme::operator !=(const Theme& t)
 // Main window
 extern FXMainWindow* mainWindow;
 extern FXString execpath;
+
+
+static FXbool isExtensionAssociationKey(const FXString& key)
+{
+    return !key.empty() && key[0] != '/' && key != FileDict::defaultExecBinding &&
+           key != FileDict::defaultDirBinding && key != FileDict::defaultFileBinding;
+}
+
+static std::map<std::string, FXString> hostExtensionMimeTypes()
+{
+    std::map<std::string, FXString> types;
+    std::map<std::string, int> weights;
+    const char* home = getenv("SWORDFISH_HOST_XDG_DATA_HOME");
+    if (!home)
+    {
+        home = getenv("XDG_DATA_HOME");
+    }
+    FXString directories = home && *home ? FXString(home) : FXSystem::getHomeDirectory() + "/.local/share";
+    const char* system = getenv("SWORDFISH_HOST_XDG_DATA_DIRS");
+    if (!system)
+    {
+        system = getenv("XDG_DATA_DIRS");
+    }
+    directories += ":" + FXString(system && *system ? system : "/usr/local/share:/usr/share");
+    for (int i = 0; i <= directories.contains(':'); i++)
+    {
+        FXString directory = directories.section(':', i);
+        if (directory.empty())
+        {
+            continue;
+        }
+        FXString path = directory + "/mime/globs2";
+        FILE* file = fopen(path.text(), "r");
+        FXbool legacy = false;
+        if (!file && errno == ENOENT)
+        {
+            path = directory + "/mime/globs";
+            file = fopen(path.text(), "r");
+            legacy = true;
+        }
+        if (!file)
+        {
+            if (errno != ENOENT)
+            {
+                appLog(APP_LOG_ERRORS, "mime-database-read-failed", path + ": " + strerror(errno));
+            }
+            continue;
+        }
+        char buffer[4096];
+        while (fgets(buffer, sizeof(buffer), file))
+        {
+            FXString line = FXString(buffer).trim();
+            if (line.empty() || line[0] == '#')
+            {
+                continue;
+            }
+            FXString mime = line.section(':', legacy ? 0 : 1);
+            FXString pattern = line.section(':', legacy ? 1 : 2);
+            if (pattern.left(2) != "*." || mime.find('/') < 0)
+            {
+                continue;
+            }
+            FXString extension = pattern.mid(2, pattern.length() - 2).lower();
+            if (extension.empty() || extension.find_first_of("*?[]/") >= 0)
+            {
+                continue;
+            }
+            int weight = legacy ? 50 : atoi(line.section(':', 0).text());
+            std::string key(extension.text());
+            if (types.find(key) == types.end() || weight > weights[key])
+            {
+                types[key] = mime;
+                weights[key] = weight;
+            }
+        }
+        if (ferror(file))
+        {
+            appLog(APP_LOG_ERRORS, "mime-database-read-failed", path + ": " + strerror(errno));
+        }
+        fclose(file);
+    }
+    return types;
+}
+
 
 class PreferencesScrollWindow : public FXScrollWindow
 {
@@ -156,11 +299,18 @@ FXDEFMAP(PreferencesBox) PreferencesMap[] =
 {
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_ACCEPT, PreferencesBox::onCmdAccept),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_CANCEL, PreferencesBox::onCmdCancel),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_ASSOCIATION_LIST, PreferencesBox::onCmdAssociationSelected),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_ASSOCIATION_APPLY, PreferencesBox::onCmdAssociationApply),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_ASSOCIATION_RESET, PreferencesBox::onCmdAssociationReset),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_RESTORE_PROGRAM_DEFAULTS,
+              PreferencesBox::onCmdRestoreProgramDefaults),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_BROWSE_TXTEDIT, PreferencesBox::onCmdBrowse),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_BROWSE_TXTVIEW, PreferencesBox::onCmdBrowse),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_BROWSE_IMGVIEW, PreferencesBox::onCmdBrowse),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_BROWSE_IMGEDIT, PreferencesBox::onCmdBrowse),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_BROWSE_ARCHIVER, PreferencesBox::onCmdBrowse),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_BROWSE_PDFVIEW, PreferencesBox::onCmdBrowse),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_BROWSE_PDFEDIT, PreferencesBox::onCmdBrowse),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_BROWSE_VIDEOPLAY, PreferencesBox::onCmdBrowse),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_BROWSE_AUDIOPLAY, PreferencesBox::onCmdBrowse),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_BROWSE_XTERM, PreferencesBox::onCmdBrowse),
@@ -439,7 +589,16 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
 #ifdef STARTUP_NOTIFICATION
     usesn = new FXCheckButton(group, _("Notify when applications start up") + FXString(" "));
 #endif
-    noscript = new FXCheckButton(group, _("Don't execute script files") + FXString(" "));
+
+    FXGroupBox* script_group = new FXGroupBox(group, _("Executable scripts"),
+                                              GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    FXVerticalFrame* script_vframe = new FXVerticalFrame(script_group, FRAME_NONE | LAYOUT_FILL_X);
+    script_always = new FXRadioButton(script_vframe, _("Always run") + FXString(" "),
+                                      &script_action_target, FXDataTarget::ID_OPTION + 0);
+    script_ask = new FXRadioButton(script_vframe, _("Ask") + FXString(" "),
+                                   &script_action_target, FXDataTarget::ID_OPTION + 1);
+    script_never = new FXRadioButton(script_vframe, _("Don't run") + FXString(" "),
+                                     &script_action_target, FXDataTarget::ID_OPTION + 2);
 
     FXMatrix* matrix = new FXMatrix(group, 3, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP);
     FXVerticalFrame* vframe = new FXVerticalFrame(matrix,
@@ -790,9 +949,22 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     usesn->setCheck(use_sn);
 #endif
 
-    // Do not run script files
+    // Executable scripts preference: 0 = Always run, 1 = Ask, 2 = Don't run
+    script_action = getApp()->reg().readUnsignedEntry("OPTIONS", "script_action", 1);
     FXbool no_script = getApp()->reg().readUnsignedEntry("OPTIONS", "no_script", false);
-    noscript->setCheck(no_script);
+    if (no_script)
+    {
+        script_action = 2;
+    }
+    else if (!getApp()->reg().readUnsignedEntry("OPTIONS", "confirm_execute", true))
+    {
+        script_action = 0;
+    }
+    old_script_action = script_action;
+    script_action_target.connect(script_action);
+    script_always->setCheck(script_action == 0);
+    script_ask->setCheck(script_action == 1);
+    script_never->setCheck(script_action == 2);
 
     // Fourth tab - Columns order
     new FXTabItem(tabbook, _("File &List"), NULL);
@@ -918,102 +1090,115 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     group = new FXGroupBox(programs, _("Application Handling"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     vframe = new FXVerticalFrame(group, FRAME_NONE | LAYOUT_FILL_X);
-    systemapps = new FXRadioButton(vframe, _("Use system default applications for all files") + FXString(" "),
-                                   &programmodetarget, FXDataTarget::ID_OPTION + PROGRAM_MODE_SYSTEM_DEFAULTS);
-    internalapps = new FXRadioButton(vframe, _("Use Swordfish built-in applications where available") + FXString(" "),
-                                    &programmodetarget, FXDataTarget::ID_OPTION + PROGRAM_MODE_INTERNAL);
-    customapps = new FXRadioButton(vframe, _("Customize each program individually") + FXString(" "),
-                                   &programmodetarget, FXDataTarget::ID_OPTION + PROGRAM_MODE_CUSTOM);
-    programmode = getApp()->reg().readUnsignedEntry(
-        "OPTIONS", "program_mode", PROGRAM_MODE_SYSTEM_DEFAULTS);
-    oldprogrammode = programmode;
-    programmodetarget.connect(programmode);
-    systemapps->setCheck(programmode == PROGRAM_MODE_SYSTEM_DEFAULTS);
-    internalapps->setCheck(programmode == PROGRAM_MODE_INTERNAL);
-    customapps->setCheck(programmode == PROGRAM_MODE_CUSTOM);
-    group = new FXGroupBox(programs, _("Default Programs"),
+    new FXLabel(vframe, _("Files use the system's XDG application by default. Local overrides affect only "
+                          "the selected file type."), NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    restoreprogramdefaults = new FXButton(vframe, _("Restore System Defaults..."), NULL, this,
+                                           ID_RESTORE_PROGRAM_DEFAULTS,
+                                           FRAME_GROOVE | LAYOUT_LEFT);
+
+    group = new FXGroupBox(programs, _("Per-extension associations"),
+                           GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    FXVerticalFrame* assocframe = new FXVerticalFrame(group, FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    associationlist = new FXList(assocframe, this, ID_ASSOCIATION_LIST,
+                                 LIST_BROWSESELECT | FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    associationlist->setNumVisible(7);
+    FXHorizontalFrame* associationedit = new FXHorizontalFrame(assocframe, FRAME_NONE | LAYOUT_FILL_X);
+    new FXLabel(associationedit, _("Open command:"), NULL, JUSTIFY_LEFT | LAYOUT_CENTER_Y);
+    associationcommand = new FXTextField(associationedit, 40, NULL, 0,
+                                          TEXTFIELD_NORMAL | LAYOUT_FILL_X);
+    FXHorizontalFrame* associationbuttons = new FXHorizontalFrame(assocframe, FRAME_NONE | LAYOUT_FILL_X);
+    associationapply = new FXButton(associationbuttons, _("Set Local Override"), NULL, this,
+                                    ID_ASSOCIATION_APPLY, FRAME_GROOVE | LAYOUT_LEFT);
+    associationreset = new FXButton(associationbuttons, _("Use System Default"), NULL, this,
+                                    ID_ASSOCIATION_RESET, FRAME_GROOVE | LAYOUT_LEFT);
+    associationstatus = new FXLabel(assocframe, FXString::null, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    loadAssociations();
+
+    group = new FXGroupBox(programs, _("Swordfish default programs"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     matrix = new FXMatrix(group, 3, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
     new FXLabel(matrix, _("Text viewer:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
-    txtviewer = new FXTextField(matrix, 30, NULL, 0,
-                                TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW | LAYOUT_FILL_X);
+    txtviewer = new ProgramChoice(matrix);
     new FXButton(matrix, _("\tSelect file..."), minifiledialogicon, this, ID_BROWSE_TXTVIEW,
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     oldtxtviewer = getApp()->reg().readStringEntry("PROGS", "txtviewer", DEFAULT_TXTVIEWER);
     txtviewer->setText(oldtxtviewer);
 
     new FXLabel(matrix, _("Text editor:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
-    txteditor = new FXTextField(matrix, 30, NULL, 0,
-                                TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW | LAYOUT_FILL_X);
+    txteditor = new ProgramChoice(matrix);
     new FXButton(matrix, _("\tSelect file..."), minifiledialogicon, this, ID_BROWSE_TXTEDIT,
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     oldtxteditor = getApp()->reg().readStringEntry("PROGS", "txteditor", DEFAULT_TXTEDITOR);
     txteditor->setText(oldtxteditor);
+    txteditor->setTipText(_("swordfish-open uses the system default application. A custom command overrides it only in Swordfish."));
 
     new FXLabel(matrix, _("File / folder comparator:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
-    filecomparator = new FXTextField(matrix, 30, NULL, 0,
-                                     TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW | LAYOUT_FILL_X);
-    new FXButton(matrix, _("\tSelect file..."), minifiledialogicon, this, ID_BROWSE_TXTEDIT,
+    filecomparator = new ProgramChoice(matrix);
+    new FXButton(matrix, _("\tSelect file..."), minifiledialogicon, this, ID_BROWSE_FILECOMP,
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     oldfilecomparator = getApp()->reg().readStringEntry("PROGS", "filecomparator", DEFAULT_FILECOMPARATOR);
     filecomparator->setText(oldfilecomparator);
 
-    new FXLabel(matrix, _("Image editor:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
-    imgeditor = new FXTextField(matrix, 30, NULL, 0,
-                                TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW | LAYOUT_FILL_X);
-    new FXButton(matrix, _("\tSelect file..."), minifiledialogicon, this, ID_BROWSE_IMGVIEW,
+    new FXLabel(matrix, _("Image editor (ask if empty):"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
+    imgeditor = new ProgramChoice(matrix);
+    new FXButton(matrix, _("\tSelect file..."), minifiledialogicon, this, ID_BROWSE_IMGEDIT,
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     oldimgeditor = getApp()->reg().readStringEntry("PROGS", "imgeditor", DEFAULT_IMGEDITOR);
     imgeditor->setText(oldimgeditor);
 
     new FXLabel(matrix, _("Image viewer:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
-    imgviewer = new FXTextField(matrix, 30, NULL, 0,
-                                TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW | LAYOUT_FILL_X);
+    imgviewer = new ProgramChoice(matrix);
     new FXButton(matrix, _("\tSelect file..."), minifiledialogicon, this, ID_BROWSE_IMGVIEW,
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     oldimgviewer = getApp()->reg().readStringEntry("PROGS", "imgviewer", DEFAULT_IMGVIEWER);
     imgviewer->setText(oldimgviewer);
 
     new FXLabel(matrix, _("Archiver:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
-    archiver = new FXTextField(matrix, 30, NULL, 0,
-                               TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW | LAYOUT_FILL_X);
+    archiver = new ProgramChoice(matrix);
     new FXButton(matrix, _("\tSelect file..."), minifiledialogicon, this, ID_BROWSE_ARCHIVER,
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     oldarchiver = getApp()->reg().readStringEntry("PROGS", "archiver", DEFAULT_ARCHIVER);
     archiver->setText(oldarchiver);
 
     new FXLabel(matrix, _("Pdf viewer:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
-    pdfviewer = new FXTextField(matrix, 30, NULL, 0,
-                                TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW | LAYOUT_FILL_X);
+    pdfviewer = new ProgramChoice(matrix);
     new FXButton(matrix, _("\tSelect file..."), minifiledialogicon, this, ID_BROWSE_PDFVIEW,
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     oldpdfviewer = getApp()->reg().readStringEntry("PROGS", "pdfviewer", DEFAULT_PDFVIEWER);
     pdfviewer->setText(oldpdfviewer);
 
+    new FXLabel(matrix, _("PDF editor (ask if empty):"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
+    pdfeditor = new ProgramChoice(matrix);
+    new FXButton(matrix, _("\tSelect file..."), minifiledialogicon, this, ID_BROWSE_PDFEDIT,
+                 FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
+    oldpdfeditor = getApp()->reg().readStringEntry("PROGS", "pdfeditor", "");
+    pdfeditor->setText(oldpdfeditor);
+    pdfeditor->setTipText(_("Leave empty to choose an installed application when editing. No editor will be guessed."));
+    imgeditor->setTipText(_("Leave empty to choose an installed application when editing. No editor will be guessed."));
+
     new FXLabel(matrix, _("Audio player:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
-    audioplayer = new FXTextField(matrix, 30, NULL, 0,
-                                  TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW | LAYOUT_FILL_X);
+    audioplayer = new ProgramChoice(matrix);
     new FXButton(matrix, _("\tSelect file..."), minifiledialogicon, this, ID_BROWSE_AUDIOPLAY,
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     oldaudioplayer = getApp()->reg().readStringEntry("PROGS", "audioplayer", DEFAULT_AUDIOPLAYER);
     audioplayer->setText(oldaudioplayer);
 
     new FXLabel(matrix, _("Video player:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
-    videoplayer = new FXTextField(matrix, 30, NULL, 0,
-                                  TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW | LAYOUT_FILL_X);
+    videoplayer = new ProgramChoice(matrix);
     new FXButton(matrix, _("\tSelect file..."), minifiledialogicon, this, ID_BROWSE_VIDEOPLAY,
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     oldvideoplayer = getApp()->reg().readStringEntry("PROGS", "videoplayer", DEFAULT_VIDEOPLAYER);
     videoplayer->setText(oldvideoplayer);
 
     new FXLabel(matrix, _("Terminal:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
-    xterm = new FXTextField(matrix, 30, NULL, 0,
-                            TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW | LAYOUT_FILL_X);
+    xterm = new ProgramChoice(matrix);
     new FXButton(matrix, _("\tSelect file..."), minifiledialogicon, this, ID_BROWSE_XTERM,
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
-    oldxterm = getApp()->reg().readStringEntry("PROGS", "xterm", DEFAULT_TERMINAL);
+    oldxterm = getApp()->reg().readStringEntry("PROGS", "xterm", "");
     xterm->setText(oldxterm);
+    xterm->setTipText(_("Leave empty to use your desktop's default terminal. Changes apply only to Swordfish."));
+    populateProgramChoices();
 
     group = new FXGroupBox(programs, _("Volume Management"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
@@ -1034,6 +1219,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     oldumountcmd = getApp()->reg().readStringEntry("PROGS", "unmount", DEFAULT_UMOUNTCMD);
     umountcmd->setText(oldumountcmd);
+    loadAssociations();
 
     // Sixth tab - Appearance
     new FXTabItem(tabbook, _("&Appearance"), NULL);
@@ -1893,6 +2079,516 @@ long PreferencesBox::onCmdIconTheme(FXObject*, FXSelector, void*)
 }
 
 
+void PreferencesBox::populateProgramChoices()
+{
+    std::vector<DesktopApplication> applications = xf_installedApplications();
+    struct Tool
+    {
+        ProgramChoice* choice;
+        const char* key;
+        const char* mime;
+        const char* defaultCommand;
+        FXString* previous;
+        FXbool editing;
+    };
+    Tool tools[] = {
+        {txtviewer, "txtviewer", "text/plain", DEFAULT_TXTVIEWER, &oldtxtviewer, false},
+        {txteditor, "txteditor", "text/plain", DEFAULT_TXTEDITOR, &oldtxteditor, false},
+        {imgviewer, "imgviewer", "image/png", DEFAULT_IMGVIEWER, &oldimgviewer, false},
+        {imgeditor, "imgeditor", "image/png", "", &oldimgeditor, true},
+        {archiver, "archiver", "application/zip", DEFAULT_ARCHIVER, &oldarchiver, false},
+        {pdfviewer, "pdfviewer", "application/pdf", DEFAULT_PDFVIEWER, &oldpdfviewer, false},
+        {pdfeditor, "pdfeditor", "application/pdf", "", &oldpdfeditor, true},
+        {audioplayer, "audioplayer", "audio/mpeg", DEFAULT_AUDIOPLAYER, &oldaudioplayer, false},
+        {videoplayer, "videoplayer", "video/mp4", DEFAULT_VIDEOPLAYER, &oldvideoplayer, false},
+        {filecomparator, "filecomparator", "", "", &oldfilecomparator, true},
+        {xterm, "xterm", "", "", &oldxterm, false}
+    };
+    std::map<std::string, std::pair<FXString, FXString> > defaults;
+    for (size_t i = 0; i < sizeof(tools) / sizeof(tools[0]); i++)
+    {
+        Tool& tool = tools[i];
+        FXString label = _("Not configured");
+        if (!tool.editing && *tool.mime)
+        {
+            std::string key(tool.mime);
+            if (defaults.find(key) == defaults.end())
+            {
+                FXString application, error;
+                querySystemDefaultApplication(tool.mime, application, error);
+                defaults[key] = std::make_pair(application, error);
+            }
+            const std::pair<FXString, FXString>& result = defaults[key];
+            if (!result.second.empty())
+            {
+                label = result.second;
+            }
+            else if (!result.first.empty())
+            {
+                label = result.first;
+                for (size_t j = 0; j < applications.size(); j++)
+                {
+                    if (applications[j].id == result.first)
+                    {
+                        label = applications[j].name;
+                        break;
+                    }
+                }
+                label += _(" (system default)");
+            }
+        }
+        else if (tool.choice == xterm)
+        {
+            FXString terminal = xf_terminalprogram(getApp());
+            if (!terminal.empty())
+            {
+                label = _("Desktop default") + FXString(" (") + terminal + ")";
+            }
+        }
+        tool.choice->addApplication(label, tool.defaultCommand);
+        for (size_t j = 0; j < applications.size(); j++)
+        {
+            const DesktopApplication& application = applications[j];
+            FXbool applicable = *tool.mime &&
+                (FXString(";") + application.mimetypes).find(FXString(";") + tool.mime + ";") >= 0;
+            if (tool.choice == xterm)
+            {
+                applicable = (FXString(";") + application.categories).find(";TerminalEmulator;") >= 0;
+            }
+            if (applicable)
+            {
+                tool.choice->addApplication(application.name, application.command);
+            }
+        }
+        FXString command = getApp()->reg().readStringEntry("PROGS", tool.key, tool.defaultCommand);
+        tool.choice->setText(command);
+        *tool.previous = tool.choice->getText();
+        tool.choice->setTipText(
+            _("Choose a listed application or enter a command. Choices affect Swordfish only. "
+              "MIME support identifies compatible applications, not proof that an app can edit. "
+              "Use the per-extension list above for exact file-type defaults."));
+    }
+}
+
+// Query the host XDG default application for a MIME type (read-only).
+FXbool PreferencesBox::querySystemDefaultApplication(const FXString& mimetype, FXString& application,
+                                                     FXString& error)
+{
+    application = FXString::null;
+    error = FXString::null;
+    if (mimetype.empty())
+    {
+        error = _("Unable to determine file type");
+        return false;
+    }
+#if defined(linux)
+    // Diagnostics stay on stderr so they are never mistaken for an application name
+    FXString cmd = xf_hostcommand("xdg-mime query default " + xf_quote(mimetype));
+    FILE* stream = popen(cmd.text(), "r");
+    if (!stream)
+    {
+        error = _("Unable to query system defaults");
+        appLog(APP_LOG_ERRORS, "XDG default query failed to start", cmd);
+        return false;
+    }
+
+    FXString output;
+    char buffer[1024];
+    while (fgets(buffer, sizeof(buffer), stream) != NULL)
+    {
+        output += buffer;
+    }
+    int status = pclose(stream);
+    if (status == -1 || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+    {
+        int code = (status != -1 && WIFEXITED(status)) ? WEXITSTATUS(status) : -1;
+        if (code == 127)
+        {
+            error = _("Unable to query system defaults (xdg-mime not found)");
+        }
+        else
+        {
+            error = _("Unable to query system defaults");
+        }
+        appLog(APP_LOG_ERRORS, "XDG default query failed",
+               mimetype + ": exit status " + FXStringVal(code) + ", command: " + cmd);
+        return false;
+    }
+
+    output.trim();
+    if (output.empty())
+    {
+        return true;
+    }
+
+    FXString suffix = output.right(8);
+    if (output.find('\n') >= 0 || output.length() <= 8 || suffix.lower() != ".desktop")
+    {
+        error = _("Unable to query system defaults");
+        appLog(APP_LOG_ERRORS, "XDG default query returned unexpected output", mimetype + ": " + output);
+        return false;
+    }
+    application = output;
+    return true;
+#else
+    error = _("Unable to query system defaults");
+    return false;
+#endif
+}
+
+
+FXString PreferencesBox::associationEntryStatus(const AssociationEntry& entry)
+{
+    return entry.systemError.empty() ? associationApplicationStatus(entry.systemApplication) : entry.systemError;
+}
+
+
+FXString PreferencesBox::associationApplicationStatus(const FXString& application)
+{
+    return application.empty() ? _("Not configured") : application;
+}
+
+
+void PreferencesBox::applyPreferredToolDefaults(FXSettings& settings)
+{
+    const char* keys[] = {"txtviewer", "txteditor", "filecomparator", "imgeditor", "imgviewer",
+                          "archiver", "pdfviewer", "pdfeditor", "audioplayer", "videoplayer", "xterm"};
+    for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
+    {
+        settings.deleteEntry("PROGS", keys[i]);
+    }
+    settings.writeUnsignedEntry("OPTIONS", "program_mode", PROGRAM_MODE_SYSTEM_DEFAULTS);
+}
+
+
+void PreferencesBox::discardAssociationChanges(std::vector<AssociationOverride>& overrides, FXbool& restore)
+{
+    overrides.clear();
+    restore = false;
+}
+
+
+void PreferencesBox::loadAssociations()
+{
+    FXint selected = associationlist->getCurrentItem();
+    associationentries.clear();
+    associationlist->clearItems();
+    std::map<std::string, std::pair<FXString, FXString> > systemApplications;
+    std::map<std::string, FXString> mimeTypes = hostExtensionMimeTypes();
+
+    FXStringDict* filetypes = getApp()->reg().find("FILETYPES");
+    if (filetypes)
+    {
+        for (int i = filetypes->first(); i < filetypes->size(); i = filetypes->next(i))
+        {
+            AssociationEntry entry;
+            entry.extension = filetypes->key(i);
+            if (!isExtensionAssociationKey(entry.extension))
+            {
+                continue;
+            }
+            entry.mimetype = FXString(filetypes->data(i)).section(';', 4).trim();
+            associationentries.push_back(entry);
+        }
+    }
+
+    FXStringDict* local = getApp()->reg().find("USER_ASSOCIATIONS");
+    if (local)
+    {
+        for (int i = local->first(); i < local->size(); i = local->next(i))
+        {
+            FXString extension = local->key(i);
+            if (!isExtensionAssociationKey(extension))
+            {
+                continue;
+            }
+            FXbool found = false;
+            for (size_t j = 0; j < associationentries.size(); j++)
+            {
+                if (associationentries[j].extension == extension)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                AssociationEntry entry;
+                entry.extension = extension;
+                entry.systemApplication = FXString::null;
+                associationentries.push_back(entry);
+            }
+        }
+    }
+
+    for (size_t i = 0; i < associationentries.size(); i++)
+    {
+        AssociationEntry& entry = associationentries[i];
+        std::map<std::string, FXString>::const_iterator type = mimeTypes.find(FXString(entry.extension).lower().text());
+        if (type != mimeTypes.end())
+        {
+            entry.mimetype = type->second;
+        }
+        std::string mimeKey(entry.mimetype.text());
+        std::map<std::string, std::pair<FXString, FXString> >::iterator cached = systemApplications.find(mimeKey);
+        if (cached == systemApplications.end())
+        {
+            FXString application;
+            FXString error;
+            querySystemDefaultApplication(entry.mimetype, application, error);
+            cached = systemApplications.insert(std::make_pair(
+                mimeKey, std::make_pair(application, error))).first;
+        }
+        entry.systemApplication = cached->second.first;
+        entry.systemError = cached->second.second;
+        FXString localCommand;
+        if (!restoreprogramsettings)
+        {
+            for (size_t j = 0; j < associationoverrides.size(); j++)
+            {
+                if (associationoverrides[j].extension == entry.extension)
+                {
+                    localCommand = associationoverrides[j].command;
+                    break;
+                }
+            }
+            if (localCommand.empty())
+            {
+                FXbool stagedForRow = false;
+                for (size_t j = 0; j < associationoverrides.size(); j++)
+                {
+                    if (associationoverrides[j].extension == entry.extension)
+                    {
+                        stagedForRow = true;
+                        break;
+                    }
+                }
+                if (!stagedForRow)
+                {
+                    localCommand = getApp()->reg().readStringEntry("USER_ASSOCIATIONS",
+                                                                    entry.extension.text(), "");
+                }
+            }
+        }
+        FXString label = entry.extension;
+        if (!entry.mimetype.empty())
+        {
+            label += " (" + entry.mimetype + ")";
+        }
+        label += ": ";
+        label += associationEntryStatus(entry);
+        FXbool stagedReset = false;
+        for (size_t j = 0; j < associationoverrides.size(); j++)
+        {
+            if (associationoverrides[j].extension == entry.extension && associationoverrides[j].command.empty())
+            {
+                stagedReset = true;
+                break;
+            }
+        }
+        if (restoreprogramsettings)
+        {
+            label += _(" [Will be cleared on Accept]");
+        }
+        else if (stagedReset)
+        {
+            label += _(" [Will use system default on Accept]");
+        }
+        else if (!localCommand.empty())
+        {
+            label += _(" [Local override]");
+        }
+        associationlist->appendItem(label);
+    }
+
+    if (!associationentries.empty())
+    {
+        selected = FXCLAMP(selected, 0, (FXint)associationentries.size() - 1);
+        associationlist->setCurrentItem(selected);
+        associationlist->selectItem(selected);
+    }
+    updateAssociationSelection();
+}
+
+
+void PreferencesBox::updateAssociationSelection()
+{
+    FXint selected = associationlist->getCurrentItem();
+    if (selected < 0 || selected >= (FXint)associationentries.size())
+    {
+        associationcommand->setText(FXString::null);
+        associationstatus->setText(_("Select a file type to view its system application."));
+        return;
+    }
+
+    const AssociationEntry& entry = associationentries[selected];
+    FXString localCommand;
+    FXbool stagedForRow = false;
+    for (size_t i = 0; i < associationoverrides.size(); i++)
+    {
+        if (associationoverrides[i].extension == entry.extension)
+        {
+            localCommand = associationoverrides[i].command;
+            stagedForRow = true;
+            break;
+        }
+    }
+    if (localCommand.empty() && !stagedForRow && !restoreprogramsettings)
+    {
+        localCommand = getApp()->reg().readStringEntry("USER_ASSOCIATIONS", entry.extension.text(), "");
+    }
+
+    associationcommand->setText(localCommand.section(',', 0));
+    FXString status = _("System default: ");
+    status += associationEntryStatus(entry);
+    if (restoreprogramsettings)
+    {
+        status += _(" | Local overrides will be cleared on Accept");
+    }
+    else if (stagedForRow && localCommand.empty())
+    {
+        status += _(" | Will use system default on Accept");
+    }
+    else
+    {
+        status += localCommand.empty() ? _(" | Using system default") : _(" | Local override");
+    }
+    associationstatus->setText(status);
+}
+
+
+void PreferencesBox::applyAssociationChanges(FXSettings& settings,
+                                              const std::vector<AssociationOverride>& overrides,
+                                              FXbool restore)
+{
+    if (restore)
+    {
+        const char* sections[] = {"USER_ASSOCIATIONS", "EDIT_ASSOCIATIONS"};
+        for (size_t section = 0; section < sizeof(sections) / sizeof(sections[0]); section++)
+        {
+            FXStringDict* local = settings.find(sections[section]);
+            if (local)
+            {
+                std::vector<FXString> keys;
+                for (int i = local->first(); i < local->size(); i = local->next(i))
+                {
+                    keys.push_back(local->key(i));
+                }
+                for (size_t i = 0; i < keys.size(); i++)
+                {
+                    settings.deleteEntry(sections[section], keys[i].text());
+                }
+            }
+        }
+    }
+
+    for (size_t i = 0; i < overrides.size(); i++)
+    {
+        FileDict::setUserCommand(settings, overrides[i].extension, overrides[i].command);
+    }
+}
+
+
+long PreferencesBox::onCmdAssociationSelected(FXObject*, FXSelector, void*)
+{
+    updateAssociationSelection();
+    return 1;
+}
+
+
+long PreferencesBox::onCmdAssociationApply(FXObject*, FXSelector, void*)
+{
+    FXint selected = associationlist->getCurrentItem();
+    FXString command = associationcommand->getText().trim();
+    if (selected < 0 || selected >= (FXint)associationentries.size() || command.empty())
+    {
+        return 1;
+    }
+
+    const FXString extension = associationentries[selected].extension;
+    FXString userCommand = command + ",,";
+    FXbool replaced = false;
+    for (size_t i = 0; i < associationoverrides.size(); i++)
+    {
+        if (associationoverrides[i].extension == extension)
+        {
+            associationoverrides[i].command = userCommand;
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced)
+    {
+        AssociationOverride entry;
+        entry.extension = extension;
+        entry.command = userCommand;
+        associationoverrides.push_back(entry);
+    }
+    loadAssociations();
+    return 1;
+}
+
+
+long PreferencesBox::onCmdAssociationReset(FXObject*, FXSelector, void*)
+{
+    FXint selected = associationlist->getCurrentItem();
+    if (selected < 0 || selected >= (FXint)associationentries.size())
+    {
+        return 1;
+    }
+
+    const FXString extension = associationentries[selected].extension;
+    FXbool replaced = false;
+    for (size_t i = 0; i < associationoverrides.size(); i++)
+    {
+        if (associationoverrides[i].extension == extension)
+        {
+            associationoverrides[i].command = FXString::null;
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced)
+    {
+        AssociationOverride entry;
+        entry.extension = extension;
+        entry.command = FXString::null;
+        associationoverrides.push_back(entry);
+    }
+    associationcommand->setText(FXString::null);
+    loadAssociations();
+    return 1;
+}
+
+
+long PreferencesBox::onCmdRestoreProgramDefaults(FXObject*, FXSelector, void*)
+{
+    if (BOX_CLICKED_YES != MessageBox::question(
+            this, BOX_YES_NO, _("Restore System Defaults"),
+            _("This clears all local opening and editing associations and preferred tool overrides for Swordfish only. "
+              "Your desktop's system application settings and other preferences are unchanged. Continue?")))
+    {
+        return 1;
+    }
+
+    restoreprogramsettings = true;
+    associationoverrides.clear();
+    txtviewer->setText(DEFAULT_TXTVIEWER);
+    txteditor->setText(DEFAULT_TXTEDITOR);
+    filecomparator->setText(DEFAULT_FILECOMPARATOR);
+    imgeditor->setText(DEFAULT_IMGEDITOR);
+    imgviewer->setText(DEFAULT_IMGVIEWER);
+    archiver->setText(DEFAULT_ARCHIVER);
+    pdfviewer->setText(DEFAULT_PDFVIEWER);
+    pdfeditor->setText(FXString::null);
+    audioplayer->setText(DEFAULT_AUDIOPLAYER);
+    videoplayer->setText(DEFAULT_VIDEOPLAYER);
+    xterm->setText(FXString::null);
+    loadAssociations();
+    return 1;
+}
+
+
 // Browse file system
 long PreferencesBox::onCmdBrowse(FXObject* sender, FXSelector sel, void* ptr)
 {
@@ -1926,6 +2622,9 @@ long PreferencesBox::onCmdBrowse(FXObject* sender, FXSelector sel, void* ptr)
         case ID_BROWSE_IMGVIEW:
             imgviewer->setText(path);
             break;
+        case ID_BROWSE_IMGEDIT:
+            imgeditor->setText(path);
+            break;
 
         case ID_BROWSE_ARCHIVER:
             archiver->setText(path);
@@ -1933,6 +2632,9 @@ long PreferencesBox::onCmdBrowse(FXObject* sender, FXSelector sel, void* ptr)
 
         case ID_BROWSE_PDFVIEW:
             pdfviewer->setText(path);
+            break;
+        case ID_BROWSE_PDFEDIT:
+            pdfeditor->setText(xf_quote(path) + " --draw");
             break;
 
         case ID_BROWSE_AUDIOPLAY:
@@ -2568,416 +3270,37 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
         restart_textfont = true;
     }
 
-    // Note: code below is for compatibility with pre 1.40 Xfe versions
-    // To be removed in the future!
-
-    // Text viewer has changed
-    if (oldtxtviewer != txtviewer->getText())
+    // Preferred tools are independent of file-type associations. Changing one must not rewrite FILETYPES.
+    if (restoreprogramsettings)
     {
-        // Update the txtviewer string
-        FXString newtxtviewer = txtviewer->getText().text();
-        getApp()->reg().writeStringEntry("PROGS", "txtviewer", newtxtviewer.text());
-
-        // Update each filetype where the old txtviewer was used
-        FXStringDict* strdict = getApp()->reg().find("FILETYPES");
-        FileDict* assoc = new FileDict(getApp());
-
-        FXString key, value, newvalue;
-        FXString strtmp, open, view, edit, command;
-        for (int i = strdict->first(); i < strdict->size(); i = strdict->next(i))
-        {
-            // Read key and value of each filetype
-            key = strdict->key(i);
-            value = strdict->data(i);
-
-            // Replace the old txtviewer string with the new one
-            if (value.contains(oldtxtviewer))
-            {
-                // Obtain the open, view, edit and command strings
-                strtmp = value.before(';', 1);
-                command = value.after(';', 1);
-                open = strtmp.section(',', 0);
-                view = strtmp.section(',', 1);
-                edit = strtmp.section(',', 2);
-
-                // Replace only the view string, if needed
-                if (view == oldtxtviewer)
-                {
-                    view = "<txtviewer>";
-                }
-
-                // Replace with the new value
-                value = open + "," + view + "," + edit + ";" + command;
-                assoc->replace(key.text(), value.text());
-            }
-        }
-        delete assoc;
+        applyPreferredToolDefaults(getApp()->reg());
     }
-
-    // Text editor has changed
-    if (oldtxteditor != txteditor->getText())
+    else
     {
-        // Update the txteditor string
-        FXString newtxteditor = txteditor->getText().text();
-        getApp()->reg().writeStringEntry("PROGS", "txteditor", newtxteditor.text());
-
-        // Note: code below is for compatibility with pre 1.40 Xfe versions
-        // To be removed in the future!
-
-        // Update each filetype where the old txteditor was used
-        FXStringDict* strdict = getApp()->reg().find("FILETYPES");
-        FileDict* assoc = new FileDict(getApp());
-
-        FXString key, value, newvalue;
-        FXString strtmp, open, view, edit, command;
-        for (int i = strdict->first(); i < strdict->size(); i = strdict->next(i))
-        {
-            // Read key and value of each filetype
-            key = strdict->key(i);
-            value = strdict->data(i);
-
-            // Replace the old txteditor string with the new one
-            if (value.contains(oldtxteditor))
-            {
-                // Obtain the open, view, edit and command strings
-                strtmp = value.before(';', 1);
-                command = value.after(';', 1);
-                open = strtmp.section(',', 0);
-                view = strtmp.section(',', 1);
-                edit = strtmp.section(',', 2);
-
-                // Replace only the open and edit strings, if needed
-                if (open == oldtxteditor)
-                {
-                    open = "<txteditor>";
-                }
-                if (edit == oldtxteditor)
-                {
-                    edit = "<txteditor>";
-                }
-
-                // Replace with the new value
-                value = open + "," + view + "," + edit + ";" + command;
-                assoc->replace(key.text(), value.text());
-            }
-        }
-        delete assoc;
-    }
-
-    // File comparator has changed
-    if (oldfilecomparator != filecomparator->getText())
-    {
-        // Update the filecomparator string
-        FXString newfilecomparator = filecomparator->getText().text();
-        getApp()->reg().writeStringEntry("PROGS", "filecomparator", newfilecomparator.text());
-    }
-
-    // Image editor has changed
-    if (oldimgeditor != imgeditor->getText())
-    {
-        // Update the imgeditor string
-        FXString newimgeditor = imgeditor->getText().text();
-        getApp()->reg().writeStringEntry("PROGS", "imgeditor", newimgeditor.text());
-
-        // Note: code below is for compatibility with pre 1.40 Xfe versions
-        // To be removed in the future!
-
-        // Update each filetype where the old imgeditor was used
-        FXStringDict* strdict = getApp()->reg().find("FILETYPES");
-        FileDict* assoc = new FileDict(getApp());
-
-        FXString key, value, newvalue;
-        FXString strtmp, open, view, edit, command;
-        for (int i = strdict->first(); i < strdict->size(); i = strdict->next(i))
-        {
-            // Read key and value of each filetype
-            key = strdict->key(i);
-            value = strdict->data(i);
-
-            // Replace the old imgeditor string with the new one
-            if (value.contains(oldimgeditor))
-            {
-                // Obtain the open, view, edit and command strings
-                strtmp = value.before(';', 1);
-                command = value.after(';', 1);
-                open = strtmp.section(',', 0);
-                view = strtmp.section(',', 1);
-                edit = strtmp.section(',', 2);
-
-                // Replace only the open and edit strings, if needed
-                if (open == oldimgeditor)
-                {
-                    open = "<imgeditor>";
-                }
-                if (edit == oldimgeditor)
-                {
-                    edit = "<imgeditor>";
-                }
-
-                // Replace with the new value
-                value = open + "," + view + "," + edit + ";" + command;
-                assoc->replace(key.text(), value.text());
-            }
-        }
-        delete assoc;
-    }
-
-    // Image viewer has changed
-    if (oldimgviewer != imgviewer->getText())
-    {
-        // Update the imgviewer string
-        FXString newimgviewer = imgviewer->getText().text();
-        getApp()->reg().writeStringEntry("PROGS", "imgviewer", newimgviewer.text());
-
-        // Note: code below is for compatibility with pre 1.40 Xfe versions
-        // To be removed in the future!
-
-        // Update each filetype where the old imgviewer was used
-        FXStringDict* strdict = getApp()->reg().find("FILETYPES");
-        FileDict* assoc = new FileDict(getApp());
-
-        FXString key, value, newvalue;
-        FXString strtmp, open, view, edit, command;
-        for (int i = strdict->first(); i < strdict->size(); i = strdict->next(i))
-        {
-            // Read key and value of each filetype
-            key = strdict->key(i);
-            value = strdict->data(i);
-
-            // Replace the old imgviewer string with the new one
-            if (value.contains(oldimgviewer))
-            {
-                // Obtain the open, view, edit and command strings
-                strtmp = value.before(';', 1);
-                command = value.after(';', 1);
-                open = strtmp.section(',', 0);
-                view = strtmp.section(',', 1);
-                edit = strtmp.section(',', 2);
-
-                // Replace the open and view string, if needed
-                if (open == oldimgviewer)
-                {
-                    open = "<imgviewer>";
-                }
-                if (view == oldimgviewer)
-                {
-                    view = "<imgviewer>";
-                }
-
-                // Replace with the new value
-                value = open + "," + view + "," + edit + ";" + command;
-                assoc->replace(key.text(), value.text());
-            }
-        }
-        delete assoc;
-    }
-
-    // Archiver has changed
-    if (oldarchiver != archiver->getText())
-    {
-        // Update the archiver string
-        FXString newarchiver = archiver->getText().text();
-        getApp()->reg().writeStringEntry("PROGS", "archiver", newarchiver.text());
-
-        // Note: code below is for compatibility with pre 1.40 Xfe versions
-        // To be removed in the future!
-
-        // Update each filetype where the old archiver was used
-        FXStringDict* strdict = getApp()->reg().find("FILETYPES");
-        FileDict* assoc = new FileDict(getApp());
-
-        FXString key, value, newvalue;
-        FXString strtmp, open, view, edit, command;
-        for (int i = strdict->first(); i < strdict->size(); i = strdict->next(i))
-        {
-            // Read key and value of each filetype
-            key = strdict->key(i);
-            value = strdict->data(i);
-
-            // Replace the old archiver string with the new one
-            if (value.contains(oldarchiver))
-            {
-                // Obtain the open, view, edit and command strings
-                strtmp = value.before(';', 1);
-                command = value.after(';', 1);
-                open = strtmp.section(',', 0);
-                view = strtmp.section(',', 1);
-                edit = strtmp.section(',', 2);
-
-                // Replace the open, view and edit strings, if needed
-                if (open == oldarchiver)
-                {
-                    open = "<archiver>";
-                }
-                if (view == oldarchiver)
-                {
-                    view = "<archiver>";
-                }
-                if (edit == oldarchiver)
-                {
-                    edit = "<archiver>";
-                }
-
-                // Replace with the new value
-                value = open + "," + view + "," + edit + ";" + command;
-                assoc->replace(key.text(), value.text());
-            }
-        }
-        delete assoc;
-    }
-
-    // PDF viewer has changed
-    if (oldpdfviewer != pdfviewer->getText())
-    {
-        // Update the PDF viewer string
-        FXString newpdfviewer = pdfviewer->getText().text();
-        getApp()->reg().writeStringEntry("PROGS", "pdfviewer", newpdfviewer.text());
-
-        // Note: code below is for compatibility with pre 1.40 Xfe versions
-        // To be removed in the future!
-
-        // Update each filetype where the old PDF viewer was used
-        FXStringDict* strdict = getApp()->reg().find("FILETYPES");
-        FileDict* assoc = new FileDict(getApp());
-
-        FXString key, value, newvalue;
-        FXString strtmp, open, view, edit, command;
-        for (int i = strdict->first(); i < strdict->size(); i = strdict->next(i))
-        {
-            // Read key and value of each filetype
-            key = strdict->key(i);
-            value = strdict->data(i);
-
-            // Replace the old PDF viewer string with the new one
-            if (value.contains(oldpdfviewer))
-            {
-                // Obtain the open, view, edit and command strings
-                strtmp = value.before(';', 1);
-                command = value.after(';', 1);
-                open = strtmp.section(',', 0);
-                view = strtmp.section(',', 1);
-                edit = strtmp.section(',', 2);
-
-                // Replace the open, view and edit strings, if needed
-                if (open == oldpdfviewer)
-                {
-                    open = "<pdfviewer>";
-                }
-                if (view == oldpdfviewer)
-                {
-                    view = "<pdfviewer>";
-                }
-
-                // Replace with the new value
-                value = open + "," + view + "," + edit + ";" + command;
-                assoc->replace(key.text(), value.text());
-            }
-        }
-        delete assoc;
-    }
-
-    // Audio player has changed
-    if (oldaudioplayer != audioplayer->getText())
-    {
-        // Update the audio player string
-        FXString newaudioplayer = audioplayer->getText().text();
-        getApp()->reg().writeStringEntry("PROGS", "audioplayer", newaudioplayer.text());
-
-        // Note: code below is for compatibility with pre 1.40 Xfe versions
-        // To be removed in the future!
-
-        // Update each filetype where the old audio player was used
-        FXStringDict* strdict = getApp()->reg().find("FILETYPES");
-        FileDict* assoc = new FileDict(getApp());
-
-        FXString key, value, newvalue;
-        FXString strtmp, open, view, edit, command;
-        for (int i = strdict->first(); i < strdict->size(); i = strdict->next(i))
-        {
-            // Read key and value of each filetype
-            key = strdict->key(i);
-            value = strdict->data(i);
-
-            // Replace the old audio player string with the new one
-            if (value.contains(oldaudioplayer))
-            {
-                // Obtain the open, view, edit and command strings
-                strtmp = value.before(';', 1);
-                command = value.after(';', 1);
-                open = strtmp.section(',', 0);
-                view = strtmp.section(',', 1);
-                edit = strtmp.section(',', 2);
-
-                // Replace the open, view and edit strings, if needed
-                if (open == oldaudioplayer)
-                {
-                    open = "<audioplayer>";
-                }
-                if (view == oldaudioplayer)
-                {
-                    view = "<audioplayer>";
-                }
-
-                // Replace with the new value
-                value = open + "," + view + "," + edit + ";" + command;
-                assoc->replace(key.text(), value.text());
-            }
-        }
-        delete assoc;
-    }
-
-    // Video player has changed
-    if (oldvideoplayer != videoplayer->getText())
-    {
-        // Update the video player string
-        FXString newvideoplayer = videoplayer->getText().text();
-        getApp()->reg().writeStringEntry("PROGS", "videoplayer", newvideoplayer.text());
-
-        // Note: code below is for compatibility with pre 1.40 Xfe versions
-        // To be removed in the future!
-
-        // Update each filetype where the old video player was used
-        FXStringDict* strdict = getApp()->reg().find("FILETYPES");
-        FileDict* assoc = new FileDict(getApp());
-
-        FXString key, value, newvalue;
-        FXString strtmp, open, view, edit, command;
-        for (int i = strdict->first(); i < strdict->size(); i = strdict->next(i))
-        {
-            // Read key and value of each filetype
-            key = strdict->key(i);
-            value = strdict->data(i);
-
-            // Replace the old video player string with the new one
-            if (value.contains(oldvideoplayer))
-            {
-                // Obtain the open, view, edit and command strings
-                strtmp = value.before(';', 1);
-                command = value.after(';', 1);
-                open = strtmp.section(',', 0);
-                view = strtmp.section(',', 1);
-                edit = strtmp.section(',', 2);
-
-                // Replace the open, view and edit strings, if needed
-                if (open == oldvideoplayer)
-                {
-                    open = "<videoplayer>";
-                }
-                if (view == oldvideoplayer)
-                {
-                    view = "<videoplayer>";
-                }
-
-                // Replace with the new value
-                value = open + "," + view + "," + edit + ";" + command;
-                assoc->replace(key.text(), value.text());
-            }
-        }
-        delete assoc;
+        if (oldtxtviewer != txtviewer->getText())
+            getApp()->reg().writeStringEntry("PROGS", "txtviewer", txtviewer->getText().text());
+        if (oldtxteditor != txteditor->getText())
+            getApp()->reg().writeStringEntry("PROGS", "txteditor", txteditor->getText().text());
+        if (oldfilecomparator != filecomparator->getText())
+            getApp()->reg().writeStringEntry("PROGS", "filecomparator", filecomparator->getText().text());
+        if (oldimgeditor != imgeditor->getText())
+            getApp()->reg().writeStringEntry("PROGS", "imgeditor", imgeditor->getText().text());
+        if (oldimgviewer != imgviewer->getText())
+            getApp()->reg().writeStringEntry("PROGS", "imgviewer", imgviewer->getText().text());
+        if (oldarchiver != archiver->getText())
+            getApp()->reg().writeStringEntry("PROGS", "archiver", archiver->getText().text());
+        if (oldpdfviewer != pdfviewer->getText())
+            getApp()->reg().writeStringEntry("PROGS", "pdfviewer", pdfviewer->getText().text());
+        if (oldpdfeditor != pdfeditor->getText())
+            getApp()->reg().writeStringEntry("PROGS", "pdfeditor", pdfeditor->getText().text());
+        if (oldaudioplayer != audioplayer->getText())
+            getApp()->reg().writeStringEntry("PROGS", "audioplayer", audioplayer->getText().text());
+        if (oldvideoplayer != videoplayer->getText())
+            getApp()->reg().writeStringEntry("PROGS", "videoplayer", videoplayer->getText().text());
     }
 
     // Terminal has changed
-    if (oldxterm != xterm->getText())
+    if (!restoreprogramsettings && oldxterm != xterm->getText())
     {
         getApp()->reg().writeStringEntry("PROGS", "xterm", xterm->getText().text());
     }
@@ -3019,21 +3342,18 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     getApp()->reg().writeUnsignedEntry("OPTIONS", "automount_open", autoopenbutton->getCheck());
 #endif
     getApp()->reg().writeUnsignedEntry("OPTIONS", "root_mode", rootmode->getCheck());
-    getApp()->reg().writeUnsignedEntry("OPTIONS", "program_mode", programmode);
     FXString settingDetails;
-    settingDetails.format("program_mode=%u root_mode=%u dirpanel_mode=%u", programmode,
+    settingDetails.format("root_mode=%u dirpanel_mode=%u",
                           static_cast<FXuint>(rootmode->getCheck()), dirpanel_mode);
     appLog(APP_LOG_SETTINGS, "preferences-saved", settingDetails);
-    if (programmode != oldprogrammode)
-    {
-        restart_fileopen = true;
-    }
     getApp()->reg().writeStringEntry("OPTIONS", "sudo_cmd", sudocmd->getText().text());
     getApp()->reg().writeStringEntry("OPTIONS", "su_cmd", sucmd->getText().text());
 #ifdef STARTUP_NOTIFICATION
     getApp()->reg().writeUnsignedEntry("OPTIONS", "use_startup_notification", usesn->getCheck());
 #endif
-    getApp()->reg().writeUnsignedEntry("OPTIONS", "no_script", noscript->getCheck());
+    getApp()->reg().writeUnsignedEntry("OPTIONS", "script_action", script_action);
+    getApp()->reg().writeUnsignedEntry("OPTIONS", "no_script", script_action == 2);
+    getApp()->reg().writeUnsignedEntry("OPTIONS", "confirm_execute", script_action == 1);
 #if defined(linux)
     getApp()->reg().writeUnsignedEntry("OPTIONS", "mount_warn", mountwarn->getCheck());
     getApp()->reg().writeUnsignedEntry("OPTIONS", "mount_messages", show_mount->getCheck());
@@ -3313,6 +3633,8 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
         }
     }
 
+    applyAssociationChanges(getApp()->reg(), associationoverrides, restoreprogramsettings);
+
     // Update the registry
     getApp()->reg().write();
 
@@ -3329,6 +3651,7 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
 long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
 {
     // Reset preferences to their previous values
+    discardAssociationChanges(associationoverrides, restoreprogramsettings);
 
     // First tab - General options
     trashcan->setCheck(trashcan_prev);
@@ -3350,7 +3673,10 @@ long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
 #ifdef STARTUP_NOTIFICATION
     usesn->setCheck(usesn_prev);
 #endif
-    noscript->setCheck(noscript_prev);
+    script_action = script_action_prev;
+    script_always->setCheck(script_action == 0);
+    script_ask->setCheck(script_action == 1);
+    script_never->setCheck(script_action == 2);
     timeformat->setText(oldtimeformat);
     copysuffix->setText(oldcopysuffix);
 
@@ -3422,6 +3748,7 @@ long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
     imgviewer->setText(oldimgviewer);
     archiver->setText(oldarchiver);
     pdfviewer->setText(oldpdfviewer);
+    pdfeditor->setText(oldpdfeditor);
     audioplayer->setText(oldaudioplayer);
     videoplayer->setText(oldvideoplayer);
     xterm->setText(oldxterm);
@@ -3460,6 +3787,9 @@ long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
 FXuint PreferencesBox::execute(FXuint placement)
 {
     // Save current preferences to restore them if cancel is pressed
+    associationoverrides.clear();
+    restoreprogramsettings = false;
+    loadAssociations();
 
     // First tab - Options
     trashcan_prev = trashcan->getCheck();
@@ -3476,7 +3806,7 @@ FXuint PreferencesBox::execute(FXuint placement)
 #ifdef STARTUP_NOTIFICATION
     usesn_prev = usesn->getCheck();
 #endif
-    noscript_prev = noscript->getCheck();
+    script_action_prev = script_action;
 
     copysuffix_pos_prev = copysuffix_pos;
     dirpanel_mode_prev = dirpanel_mode;
@@ -3538,6 +3868,7 @@ FXuint PreferencesBox::execute(FXuint placement)
     oldimgviewer = imgviewer->getText();
     oldarchiver = archiver->getText();
     oldpdfviewer = pdfviewer->getText();
+    oldpdfeditor = pdfeditor->getText();
     oldaudioplayer = audioplayer->getText();
     oldvideoplayer = videoplayer->getText();
     oldxterm = xterm->getText();
@@ -3826,7 +4157,7 @@ long PreferencesBox::onUpdSingleClickFileopen(FXObject* sender, FXSelector, void
 // Update exec text files button
 long PreferencesBox::onUpdExecTextFiles(FXObject* sender, FXSelector, void*)
 {
-    if (!noscript->getCheck())
+    if (script_action != 2)
     {
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
     }

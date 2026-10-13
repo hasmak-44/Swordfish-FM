@@ -20,6 +20,7 @@ swordfish_SOURCES = ../st/x.c \
 			  DirList.cpp \
 			  DirPanel.cpp \
 			  ExecuteBox.cpp \
+			  Execution.cpp \
               File.cpp \
 			  FileDialog.cpp \
 			  FileDict.cpp \
@@ -266,6 +267,7 @@ EXTRA_DIST =  ../libsn/sn-common.h	\
 			  DirList.h \
 			  DirPanel.h \
 			  ExecuteBox.h \
+			  Execution.h \
               File.h \
 			  FileDialog.h \
 			  FileDict.h \
