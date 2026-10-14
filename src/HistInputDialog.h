@@ -2,6 +2,7 @@
 #define HISTINPUTDIALOG_H
 
 #include <vector>
+#include <map>
 
 #include "ComboBox.h"
 #include "DialogBox.h"
@@ -13,9 +14,11 @@ struct DesktopApplication
     FXString command;
     FXString mimetypes;
     FXString categories;
+    FXString icon;
 };
 
-std::vector<DesktopApplication> xf_installedApplications();
+std::vector<DesktopApplication> xf_installedApplications(FXbool includeUnlisted = false);
+std::map<FXString, FXString> xf_defaultApplications(FXString& error);
 
 // Browse types
 enum
@@ -68,6 +71,20 @@ protected:
     FXString initialdir;
     std::vector<FXString> appnames;
     std::vector<FXString> appcommands;
+    FXVerticalFrame* contents = NULL;
+    FXMatrix* customCommand = NULL;
+    FXTextField* appFilter = NULL;
+    FXList* applicationList = NULL;
+    FXButton* customToggle = NULL;
+    FXLabel* emptyApplications = NULL;
+    std::vector<DesktopApplication> applications;
+    std::vector<FXString> rowCommands;
+    std::vector<FXIcon*> applicationIcons;
+    FXString contextPath, contextMime, contextExtension, defaultApplication, savedCommand;
+    FXbool editingAssociation = false;
+    FXbool customVisible = false;
+    void rebuildApplications();
+    FXIcon* applicationIcon(const FXString&);
 private:
     HistInputDialog()
     {
@@ -76,16 +93,26 @@ public:
     enum
     {
         ID_BROWSE_PATH=DialogBox::ID_LAST,
+        ID_FILTER_APPLICATIONS,
+        ID_APPLICATION_SELECTED,
+        ID_CUSTOM_COMMAND,
         ID_LAST
     };
     HistInputDialog(FXWindow*, FXString, FXString, FXString, FXString label = "", FXIcon* ic = NULL,
                     FXbool addr = false, FXbool clrbtn = false, FXuint browse = HIST_INPUT_FILE,
                     FXbool option = false, FXString = FXString::null);
     virtual void create();
+    virtual ~HistInputDialog();
+    FXuint execute(FXuint placement = PLACEMENT_CURSOR);
 
     long onCmdKeyPress(FXObject*, FXSelector, void*);
     long onCmdBrowsePath(FXObject*, FXSelector, void*);
     long onUpdAccept(FXObject*, FXSelector, void*);
+    long onFilterApplications(FXObject*, FXSelector, void*);
+    long onApplicationSelected(FXObject*, FXSelector, void*);
+    long onApplicationOpened(FXObject*, FXSelector, void*);
+    long onCustomCommand(FXObject*, FXSelector, void*);
+    long onAccept(FXObject*, FXSelector, void*);
 
     FXString getText()
     {
@@ -126,6 +153,7 @@ public:
 
     // Add installed desktop applications after the history entries
     void appendInstalledApplications();
+    void setOpenWithContext(const FXString& pathname, FXint count);
     void setAssociationOption(const FXString&, FXbool editing = false);
     void setMessage(const FXString& text)
     {

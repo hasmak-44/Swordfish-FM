@@ -2,6 +2,7 @@
 #define PREFERENCES_H
 
 #include <string.h>
+#include <map>
 
 #include "ColorSelector.h"
 #include "ComboBox.h"
@@ -118,12 +119,14 @@ private:
     std::vector<AssociationOverride> associationoverrides;
     std::vector<AssociationEntry> associationentries;
     FXbool restoreprogramsettings = false;
+    std::map<FXString, FXString> systemdefaults;
+    FXString systemdefaultserror;
     static void applyAssociationChanges(FXSettings&, const std::vector<AssociationOverride>&, FXbool);
     static void applyPreferredToolDefaults(FXSettings&);
     static void discardAssociationChanges(std::vector<AssociationOverride>&, FXbool&);
     static FXString associationApplicationStatus(const FXString&);
     static FXString associationEntryStatus(const AssociationEntry&);
-    static FXbool querySystemDefaultApplication(const FXString&, FXString&, FXString&);
+    FXbool querySystemDefaultApplication(const FXString&, FXString&, FXString&);
     void populateProgramChoices();
     friend class ProgramSettingsSmokeTest;
 #if defined(linux) && defined(XFE_AUTOMOUNTER)

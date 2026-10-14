@@ -168,6 +168,8 @@ FXDEFMAP(FilePanel) FilePanelMap[] =
     FXMAPFUNC(SEL_DOUBLECLICKED, FilePanel::ID_KEY_RETURN, FilePanel::onCmdItemDoubleClicked),
     FXMAPFUNC(SEL_KEYPRESS, 0, FilePanel::onKeyPress),
     FXMAPFUNC(SEL_CLICKED, FilePanel::ID_FILELIST, FilePanel::onCmdItemClicked),
+    FXMAPFUNC(SEL_SELECTED, FilePanel::ID_FILELIST, FilePanel::onCmdPreviewSelection),
+    FXMAPFUNC(SEL_DESELECTED, FilePanel::ID_FILELIST, FilePanel::onCmdPreviewSelection),
     FXMAPFUNC(SEL_FOCUSIN, FilePanel::ID_FILELIST, FilePanel::onCmdFocus),
     FXMAPFUNC(SEL_UPDATE, FilePanel::ID_STATUS, FilePanel::onUpdStatus),
     FXMAPFUNC(SEL_UPDATE, FilePanel::ID_DIRECTORY_UP, FilePanel::onUpdUp),
@@ -1872,7 +1874,7 @@ long FilePanel::onCmdOpenDefaultApp(FXObject*, FXSelector, void*)
 // Keyboard press
 long FilePanel::onKeyPress(FXObject* sender, FXSelector sel, void* ptr)
 {
-    if (editingPath)
+    if (editingPath && pathedit->hasFocus())
     {
         return FXVerticalFrame::onKeyPress(sender, sel, ptr);
     }
@@ -2114,6 +2116,7 @@ long FilePanel::onCmdItemClicked(FXObject* sender, FXSelector sel, void* ptr)
 {
     // Make panel active
     setActive();
+    onCmdPreviewSelection(sender, sel, ptr);
 
     if (single_click != SINGLE_CLICK_NONE)
     {
@@ -2303,6 +2306,22 @@ long FilePanel::onCmdItemClicked(FXObject* sender, FXSelector sel, void* ptr)
         }
 
         getApp()->endWaitCursor();
+    }
+    return 1;
+}
+
+long FilePanel::onCmdPreviewSelection(FXObject*, FXSelector, void*)
+{
+    XFileExplorer* window = (XFileExplorer*)mainWindow;
+    int index = -1;
+    if (current->list->getNumSelectedItems(&index) == 1 && index >= 0 &&
+        !current->list->isItemDirectory(index))
+    {
+        window->showImagePreview(current->list->getItemFullPathname(index));
+    }
+    else
+    {
+        window->showImagePreview("");
     }
     return 1;
 }
@@ -5450,11 +5469,16 @@ long FilePanel::onCmdOpenWith(FXObject*, FXSelector sel, void*)
     opendialog->setMessage(editing ? _("Choose an installed application to edit the selected file(s):") :
                                     _("Open selected file(s) with:"));
     FXString associationExtension;
+    FXString firstPath;
     FXbool firstExtension = true;
     for (int u = 0; u < current->list->getNumItems(); ++u)
     {
         if (current->list->isItemSelected(u))
         {
+            if (firstPath.empty())
+            {
+                firstPath = current->list->getItemPathname(u);
+            }
             FXString ext = FileDict::associationExtension(current->list->getItemFilename(u));
             if (firstExtension)
             {
@@ -5469,6 +5493,7 @@ long FilePanel::onCmdOpenWith(FXObject*, FXSelector sel, void*)
         }
     }
     opendialog->setAssociationOption(associationExtension, editing);
+    opendialog->setOpenWithContext(firstPath, current->list->getNumSelectedItems());
 
     // Dialog with history list and associate checkbox
     opendialog->CursorEnd();
@@ -5775,7 +5800,13 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuCommand(menu, _("&Paste"), minipasteicon, current, FilePanel::ID_PASTE_CLIPBOARD);
         new FXMenuSeparator(menu);
         new FXMenuCheck(menu, _("&Hidden Files"), current->list, FileList::ID_TOGGLE_HIDDEN);
-        new FXMenuCheck(menu, _("Thum&bnails"), current->list, FileList::ID_TOGGLE_THUMBNAILS);
+        new FXMenuCheck(menu, _("Thum&bnail View"), current->list, FileList::ID_TOGGLE_THUMBNAIL_VIEW);
+        FXMenuPane* thumbsize = new FXMenuPane(this);
+        new FXMenuRadio(thumbsize, _("64"), current->list, FileList::ID_THUMB_SIZE_64);
+        new FXMenuRadio(thumbsize, _("96"), current->list, FileList::ID_THUMB_SIZE_96);
+        new FXMenuRadio(thumbsize, _("128"), current->list, FileList::ID_THUMB_SIZE_128);
+        new FXMenuRadio(thumbsize, _("160"), current->list, FileList::ID_THUMB_SIZE_160);
+        new FXMenuCascade(menu, _("Thumbnail Si&ze"), NULL, thumbsize);
         new FXMenuSeparator(menu);
         new FXMenuRadio(menu, _("B&ig Icons"), current->list, IconList::ID_SHOW_BIG_ICONS);
         new FXMenuRadio(menu, _("&Small Icons"), current->list, IconList::ID_SHOW_MINI_ICONS);
@@ -5820,7 +5851,13 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuCommand(submenu, _("&Paste"), minipasteicon, current, FilePanel::ID_PASTE_CLIPBOARD);
         new FXMenuSeparator(submenu);
         new FXMenuCheck(submenu, _("&Hidden Files"), current->list, FileList::ID_TOGGLE_HIDDEN);
-        new FXMenuCheck(submenu, _("Thum&bnails"), current->list, FileList::ID_TOGGLE_THUMBNAILS);
+        new FXMenuCheck(submenu, _("Thum&bnail View"), current->list, FileList::ID_TOGGLE_THUMBNAIL_VIEW);
+        FXMenuPane* thumbsize = new FXMenuPane(this);
+        new FXMenuRadio(thumbsize, _("64"), current->list, FileList::ID_THUMB_SIZE_64);
+        new FXMenuRadio(thumbsize, _("96"), current->list, FileList::ID_THUMB_SIZE_96);
+        new FXMenuRadio(thumbsize, _("128"), current->list, FileList::ID_THUMB_SIZE_128);
+        new FXMenuRadio(thumbsize, _("160"), current->list, FileList::ID_THUMB_SIZE_160);
+        new FXMenuCascade(submenu, _("Thumbnail Si&ze"), NULL, thumbsize);
         new FXMenuSeparator(submenu);
         new FXMenuRadio(submenu, _("B&ig Icons"), current->list, IconList::ID_SHOW_BIG_ICONS);
         new FXMenuRadio(submenu, _("&Small Icons"), current->list, IconList::ID_SHOW_MINI_ICONS);
@@ -7880,12 +7917,12 @@ long FilePanel::onUpdStatus(FXObject* sender, FXSelector, void*)
 
 
 // Update the path text and the path link
-void FilePanel::updatePath()
+void FilePanel::updatePath(FXbool resetEditor)
 {
     tabbuttons->onUpdCurrentTab(this, 0, NULL);
     pathlink->setPath(list->getDirectory());
     pathtext->setText(list->getDirectory());
-    if (!editingPath)
+    if (!editingPath || resetEditor)
     {
         pathedit->setText(list->getDirectory());
     }

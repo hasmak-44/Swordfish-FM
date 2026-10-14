@@ -1058,11 +1058,16 @@ long SearchPanel::onCmdOpenWith(FXObject*, FXSelector sel, void*)
     opendialog->setMessage(editing ? _("Choose an installed application to edit the selected file(s):") :
                                     _("Open selected file(s) with:"));
     FXString associationExtension;
+    FXString firstPath;
     FXbool firstExtension = true;
     for (int u = 0; u < list->getNumItems(); ++u)
     {
         if (list->isItemSelected(u))
         {
+            if (firstPath.empty())
+            {
+                firstPath = list->getItemFullPathname(u);
+            }
             FXString ext = FileDict::associationExtension(list->getItemFilename(u));
             if (firstExtension)
             {
@@ -1077,6 +1082,7 @@ long SearchPanel::onCmdOpenWith(FXObject*, FXSelector sel, void*)
         }
     }
     opendialog->setAssociationOption(associationExtension, editing);
+    opendialog->setOpenWithContext(firstPath, list->getNumSelectedItems());
 
     // Dialog with history list and associate checkbox
     opendialog->CursorEnd();

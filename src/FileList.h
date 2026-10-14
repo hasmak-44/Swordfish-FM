@@ -264,6 +264,10 @@ public:
     long onUpdHeader(FXObject*, FXSelector, void*);
     long onCmdToggleThumbnails(FXObject*, FXSelector, void*);
     long onUpdToggleThumbnails(FXObject*, FXSelector, void*);
+    long onCmdToggleThumbnailView(FXObject*, FXSelector, void*);
+    long onUpdToggleThumbnailView(FXObject*, FXSelector, void*);
+    long onCmdThumbnailSize(FXObject*, FXSelector, void*);
+    long onUpdThumbnailSize(FXObject*, FXSelector, void*);
     long onCmdDirsFirst(FXObject*, FXSelector, void*);
     long onUpdDirsFirst(FXObject*, FXSelector, void*);
     long onCmdDragCopy(FXObject*, FXSelector, void*);
@@ -274,6 +278,7 @@ public:
     long onCmdCloseFilter(FXObject*, FXSelector, void*);
 
 public:
+    static FXbool compareParents(const IconItem*&, const IconItem*&, int&);
     static int compare(const IconItem*, const IconItem*, FXbool, FXbool, FXbool, FXuint);
     static int compareFlat(const IconItem*, const IconItem*, FXbool, FXbool, FXbool, FXuint);
     static int ascending(const IconItem*, const IconItem*);
@@ -377,6 +382,11 @@ public:
         ID_HIDE_HIDDEN,
         ID_TOGGLE_HIDDEN,
         ID_TOGGLE_THUMBNAILS,
+        ID_TOGGLE_THUMBNAIL_VIEW,
+        ID_THUMB_SIZE_64,
+        ID_THUMB_SIZE_96,
+        ID_THUMB_SIZE_128,
+        ID_THUMB_SIZE_160,
         ID_REFRESH_TIMER,
         ID_REFRESH,
         ID_OPEN_TIMER,

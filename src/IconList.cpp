@@ -998,7 +998,7 @@ IconList::IconList(FXComposite* p, FXuint *ic, FXuint nc, FXObject* tgt, FXSelec
     highlightColor = getApp()->reg().readColorEntry("SETTINGS", "highlightcolor", FXRGB(238, 238, 238));
 
     // Sort colors for detailed mode
-    FXColor listbackColor = getApp()->reg().readColorEntry("SETTINGS", "listbackcolor", FXRGB(255, 255, 255));
+    FXColor listbackColor = getApp()->reg().readColorEntry("SETTINGS", "listbackcolor", FXRGB(197, 194, 197));
     FXuint R, G, B;
     R = (FXuint)(DARKEN_SORT * FXREDVAL(listbackColor));
     G = (FXuint)(DARKEN_SORT * FXGREENVAL(listbackColor));
@@ -1142,7 +1142,7 @@ void IconList::moveContents(int x, int y)
         top = header->getDefaultHeight();
         header->setPosition(x);
     }
-    scroll(0, top, viewport_w, viewport_h, dx, dy);
+    scroll(0, top, FXMAX(1, viewport_w - getBackgroundGutter()), viewport_h, dx, dy);
 }
 
 
@@ -1278,7 +1278,13 @@ int IconList::getContentWidth()
     {
         return ncols * itemSpace;
     }
-    return header->getDefaultWidth();
+    return header->getDefaultWidth() + getBackgroundGutter();
+}
+
+int IconList::getBackgroundGutter() const
+{
+    return (options & ICONLIST_FILELIST) && !(options & (ICONLIST_MINI_ICONS | ICONLIST_BIG_ICONS)) ?
+        2 * itemHeight : 0;
 }
 
 
@@ -1289,7 +1295,7 @@ int IconList::getContentHeight()
     {
         recompute();
     }
-    return nrows * itemHeight;
+    return nrows * itemHeight + getBackgroundGutter();
 }
 
 
@@ -1302,7 +1308,7 @@ void IconList::layout()
     // In detail mode
     if (!(options & (ICONLIST_MINI_ICONS | ICONLIST_BIG_ICONS)))
     {
-        header->position(0, 0, viewport_w, header->getDefaultHeight());
+        header->position(0, 0, FXMAX(1, viewport_w - getBackgroundGutter()), header->getDefaultHeight());
         header->show();
     }
     else
@@ -1879,6 +1885,13 @@ int IconList::getItemAt(int x, int y, int state)
     int ix, iy;
     int r, c, index;
 
+    if (getBackgroundGutter() &&
+        (x >= viewport_w - getBackgroundGutter() || x - pos_x >= header->getDefaultWidth()))
+    {
+        allowTooltip = false;
+        setDefaultCursor(getApp()->getDefaultCursor(DEF_ARROW_CURSOR));
+        return -1;
+    }
     y -= pos_y;
     x -= pos_x;
 
@@ -1946,6 +1959,10 @@ int IconList::getItemAt(int x, int y, int state)
         }
 
         y -= header->getDefaultHeight();
+        if (y < 0)
+        {
+            return -1;
+        }
         index = y / itemHeight;
 
 
@@ -2867,6 +2884,11 @@ long IconList::onPaint(FXObject*, FXSelector, void* ptr)
     // Detailed mode
     else
     {
+        int gutter = getBackgroundGutter();
+        if (gutter)
+        {
+            dc.setClipRectangle(0, header->getDefaultHeight(), FXMAX(1, viewport_w - gutter), viewport_h);
+        }
         // Exposed rows
         rlo = (event->rect.y - pos_y - header->getDefaultHeight()) / itemHeight;
         rhi = (event->rect.y + event->rect.h - pos_y - header->getDefaultHeight()) / itemHeight;
@@ -2893,6 +2915,12 @@ long IconList::onPaint(FXObject*, FXSelector, void* ptr)
         {
             dc.setForeground(backColor);
             dc.fillRectangle(event->rect.x, y, event->rect.w, event->rect.y + event->rect.h - y);
+        }
+        if (gutter)
+        {
+            dc.setClipRectangle(FXMAX(0, viewport_w - gutter), 0, gutter, height);
+            dc.setForeground(backColor);
+            dc.fillRectangle(FXMAX(0, viewport_w - gutter), 0, gutter, height);
         }
     }
 

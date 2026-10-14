@@ -262,7 +262,6 @@ void TabButtons::addTab(FXString pathname, FXbool activate)
         if (activate)
         {
             filepanel->setActive();
-            filepanel->finishPathEditing();
         }
         onUpdCurrentTab(this, 0, NULL);
         // Update previous and current tab indices
@@ -326,7 +325,7 @@ void TabButtons::addTab(FXString pathname, FXbool activate)
 
         // Set directory
         filepanel->setDirectory(pathname);
-        filepanel->updatePath();
+        filepanel->updatePath(true);
         if (filepanel->isActive())
         {
             dirpanel->setDirectory(filepanel->getDirectory(), true);
@@ -352,7 +351,6 @@ long TabButtons::onCmdPathButton(FXObject* sender, FXSelector sel, void* ptr)
 {
     // Set the focus on the file list
     filepanel->setActive();
-    filepanel->finishPathEditing();
     onUpdCurrentTab(this, 0, NULL);
 
     // Index of pressed button
@@ -370,7 +368,7 @@ long TabButtons::onCmdPathButton(FXObject* sender, FXSelector sel, void* ptr)
            " path=\"" + filePath + "\"");
 
     filepanel->setDirectory(filePath);
-    filepanel->updatePath();
+    filepanel->updatePath(true);
     dirpanel->setDirectory(filePath, true);
 
     // Change fonts and states
@@ -399,7 +397,6 @@ long TabButtons::onCmdCloseButton(FXObject* sender, FXSelector sel, void* ptr)
         return 0;
     }
     filepanel->setActive();
-    filepanel->finishPathEditing();
     onUpdCurrentTab(this, 0, NULL);
     FXuint oldCurrent = currentTab;
     
@@ -434,7 +431,7 @@ long TabButtons::onCmdCloseButton(FXObject* sender, FXSelector sel, void* ptr)
         if (nbActiveTabs)
         {
             filepanel->setDirectory(tabPaths[currentTab]);
-            filepanel->updatePath();
+            filepanel->updatePath(true);
             dirpanel->setDirectory(filepanel->getDirectory(), true);
         }
     }
@@ -466,7 +463,6 @@ long TabButtons::onCmdCloseButton(FXObject* sender, FXSelector sel, void* ptr)
 long TabButtons::onCmdNewTab(FXObject*, FXSelector, void*)
 {
     filepanel->setActive();
-    filepanel->finishPathEditing();
     // Read new tab directory mode
     FXuint newtabdirmode = getApp()->reg().readUnsignedEntry("OPTIONS", "newtabdir_mode", NEWTAB_HOMEDIR);
 
@@ -823,7 +819,7 @@ void TabButtons::setCurrentTab(FXuint index)
     // Set directory
     FXString pathname = tabPaths[index];
     filepanel->setDirectory(pathname);
-    filepanel->updatePath();
+    filepanel->updatePath(true);
     if (filepanel->isActive())
     {
         dirpanel->setDirectory(filepanel->getDirectory(), true);

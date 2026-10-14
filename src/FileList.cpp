@@ -129,6 +129,11 @@ FXDEFMAP(FileList) FileListMap[] =
     FXMAPFUNC(SEL_COMMAND, FileList::ID_HIDE_HIDDEN, FileList::onCmdHideHidden),
     FXMAPFUNC(SEL_COMMAND, FileList::ID_TOGGLE_HIDDEN, FileList::onCmdToggleHidden),
     FXMAPFUNC(SEL_COMMAND, FileList::ID_TOGGLE_THUMBNAILS, FileList::onCmdToggleThumbnails),
+    FXMAPFUNC(SEL_COMMAND, FileList::ID_TOGGLE_THUMBNAIL_VIEW, FileList::onCmdToggleThumbnailView),
+    FXMAPFUNC(SEL_COMMAND, FileList::ID_THUMB_SIZE_64, FileList::onCmdThumbnailSize),
+    FXMAPFUNC(SEL_COMMAND, FileList::ID_THUMB_SIZE_96, FileList::onCmdThumbnailSize),
+    FXMAPFUNC(SEL_COMMAND, FileList::ID_THUMB_SIZE_128, FileList::onCmdThumbnailSize),
+    FXMAPFUNC(SEL_COMMAND, FileList::ID_THUMB_SIZE_160, FileList::onCmdThumbnailSize),
     FXMAPFUNC(SEL_COMMAND, FileList::ID_HEADER_CHANGE, FileList::onCmdHeader),
     FXMAPFUNC(SEL_COMMAND, FileList::ID_REFRESH, FileList::onCmdRefresh),
     FXMAPFUNC(SEL_COMMAND, FileList::ID_CLOSE_FILTER, FileList::onCmdCloseFilter),
@@ -154,6 +159,11 @@ FXDEFMAP(FileList) FileListMap[] =
     FXMAPFUNC(SEL_UPDATE, FileList::ID_HIDE_HIDDEN, FileList::onUpdHideHidden),
     FXMAPFUNC(SEL_UPDATE, FileList::ID_TOGGLE_HIDDEN, FileList::onUpdToggleHidden),
     FXMAPFUNC(SEL_UPDATE, FileList::ID_TOGGLE_THUMBNAILS, FileList::onUpdToggleThumbnails),
+    FXMAPFUNC(SEL_UPDATE, FileList::ID_TOGGLE_THUMBNAIL_VIEW, FileList::onUpdToggleThumbnailView),
+    FXMAPFUNC(SEL_UPDATE, FileList::ID_THUMB_SIZE_64, FileList::onUpdThumbnailSize),
+    FXMAPFUNC(SEL_UPDATE, FileList::ID_THUMB_SIZE_96, FileList::onUpdThumbnailSize),
+    FXMAPFUNC(SEL_UPDATE, FileList::ID_THUMB_SIZE_128, FileList::onUpdThumbnailSize),
+    FXMAPFUNC(SEL_UPDATE, FileList::ID_THUMB_SIZE_160, FileList::onUpdThumbnailSize),
     FXMAPFUNC(SEL_UPDATE, 0, FileList::onUpdRefreshTimer),
 };
 
@@ -547,8 +557,8 @@ long FileList::onDNDMotion(FXObject* sender, FXSelector sel, void* ptr)
         return 1;
     }
 
-    // Dropping list of filenames
-    if (offeredDNDType(FROM_DRAGNDROP, urilistType))
+    // Dropping list of filenames, or files saved by the source itself (archive managers)
+    if (offeredDNDType(FROM_DRAGNDROP, urilistType) || offeredDNDType(FROM_DRAGNDROP, xf_xdsdragtype(getApp())))
     {
         index = getItemAt(event->win_x, event->win_y);
         if ((prevIndex != -1) && (prevIndex != index))
@@ -679,15 +689,20 @@ long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
         }
     }
 
+    // Archive managers offer XdndDirectSave0 instead of a list of existing files
+    FXbool xdsdrop = !offeredDNDType(FROM_DRAGNDROP, urilistType) &&
+                     offeredDNDType(FROM_DRAGNDROP, xf_xdsdragtype(getApp()));
+
     // Get DND data
     // This is done before displaying the popup menu to fix a drag and drop problem
     // with Konqueror and Dolphin file managers
-    FXbool dnd = getDNDData(FROM_DRAGNDROP, urilistType, data, len);
+    FXbool dnd = !xdsdrop && getDNDData(FROM_DRAGNDROP, urilistType, data, len);
 
     int xx, yy, index = -1;
 
     // Display the dnd dialog if the control or shift key were not pressed
-    if (confirm_dnd && !ctrlshiftkey)
+    // Direct save drops are always extracted (copied), so there is nothing to choose
+    if (confirm_dnd && !ctrlshiftkey && !xdsdrop)
     {
         // Get item index
         FXuint state;
@@ -719,6 +734,24 @@ long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
     }
     // Restore original directory
     setDirectory(orgdirectory);
+
+    if (xdsdrop)
+    {
+        FXuint time = (ptr != NULL) ? ((FXEvent*)ptr)->time : 0;
+        ret = xf_xdsdrop(this, dropdirectory, time);
+        if (ret == XDS_DROP_TIMEOUT)
+        {
+            MessageBox::information(this, BOX_OK, _("Information"),
+                                    _("The source application is still saving the dropped items.\nThey will appear when it has finished."));
+        }
+        else if (ret == XDS_DROP_ERROR)
+        {
+            MessageBox::error(this, BOX_OK, _("Error"),
+                              _("The dropped items could not be saved in:\n%s"), dropdirectory.text());
+        }
+        handle(this, FXSEL(SEL_COMMAND, ID_REFRESH), NULL);
+        return 1;
+    }
 
     // Get uri-list of files being dropped
     if (dnd) // See comment upper
@@ -1160,6 +1193,22 @@ long FileList::onCmdToggleThumbnails(FXObject*, FXSelector, void*)
 }
 
 
+long FileList::onCmdToggleThumbnailView(FXObject*, FXSelector, void*)
+{
+    FXbool show = !(shownThumbnails() && (getListStyle() & ICONLIST_BIG_ICONS));
+    showThumbnails(show);
+    if (show)
+    {
+        handle(this, FXSEL(SEL_COMMAND, IconList::ID_SHOW_BIG_ICONS), NULL);
+    }
+    else
+    {
+        handle(this, FXSEL(SEL_COMMAND, IconList::ID_SHOW_DETAILS), NULL);
+    }
+    return 1;
+}
+
+
 // Update toggle thumbnails button
 long FileList::onUpdToggleThumbnails(FXObject* sender, FXSelector, void*)
 {
@@ -1171,6 +1220,76 @@ long FileList::onUpdToggleThumbnails(FXObject* sender, FXSelector, void*)
     {
         sender->handle(this, FXSEL(SEL_COMMAND, ID_UNCHECK), NULL);
     }
+    return 1;
+}
+
+
+long FileList::onUpdToggleThumbnailView(FXObject* sender, FXSelector, void*)
+{
+    if (shownThumbnails() && (getListStyle() & ICONLIST_BIG_ICONS))
+    {
+        sender->handle(this, FXSEL(SEL_COMMAND, ID_CHECK), NULL);
+    }
+    else
+    {
+        sender->handle(this, FXSEL(SEL_COMMAND, ID_UNCHECK), NULL);
+    }
+    return 1;
+}
+
+
+long FileList::onCmdThumbnailSize(FXObject*, FXSelector sel, void*)
+{
+    FXuint size = 96;
+    switch (FXSELID(sel))
+    {
+    case ID_THUMB_SIZE_64:
+        size = 64;
+        break;
+    case ID_THUMB_SIZE_96:
+        size = 96;
+        break;
+    case ID_THUMB_SIZE_128:
+        size = 128;
+        break;
+    case ID_THUMB_SIZE_160:
+        size = 160;
+        break;
+    default:
+        break;
+    }
+    getApp()->reg().writeUnsignedEntry("SETTINGS", "bigthumb_size", size);
+    getApp()->reg().writeUnsignedEntry("SETTINGS", "minithumb_size", FXMAX(16, size / 2));
+    if (shownThumbnails())
+    {
+        onCmdRefresh(NULL, 0, NULL);
+    }
+    return 1;
+}
+
+
+long FileList::onUpdThumbnailSize(FXObject* sender, FXSelector sel, void*)
+{
+    FXuint size = getApp()->reg().readUnsignedEntry("SETTINGS", "bigthumb_size", 96);
+    FXuint expected = 96;
+    switch (FXSELID(sel))
+    {
+    case ID_THUMB_SIZE_64:
+        expected = 64;
+        break;
+    case ID_THUMB_SIZE_96:
+        expected = 96;
+        break;
+    case ID_THUMB_SIZE_128:
+        expected = 128;
+        break;
+    case ID_THUMB_SIZE_160:
+        expected = 160;
+        break;
+    default:
+        break;
+    }
+    sender->handle(this, FXSEL(SEL_COMMAND, size == expected ? ID_CHECK : ID_UNCHECK), NULL);
     return 1;
 }
 
@@ -3209,6 +3328,41 @@ end:
 }
 
 
+// Resolve different branches to siblings; ancestors always precede descendants.
+FXbool FileList::compareParents(const IconItem*& pa, const IconItem*& pb, int& order)
+{
+    const FileItem* x = (const FileItem*)pa;
+    const FileItem* y = (const FileItem*)pb;
+    int depthdiff = x->treeDepth - y->treeDepth;
+
+    // Nested rows follow their expanded parent, siblings are compared normally
+    if (x->treeDepth || y->treeDepth)
+    {
+        while (x->treeDepth > y->treeDepth && x->parentitem)
+        {
+            x = x->parentitem;
+        }
+        while (y->treeDepth > x->treeDepth && y->parentitem)
+        {
+            y = y->parentitem;
+        }
+        if (x == y)
+        {
+            order = depthdiff;
+            return true;
+        }
+        while (x->parentitem != y->parentitem && x->parentitem && y->parentitem)
+        {
+            x = x->parentitem;
+            y = y->parentitem;
+        }
+    }
+    pa = x;
+    pb = y;
+    return false;
+}
+
+
 /**
  * Compares a field of pa with the same field of pb, if the fields are
  * equal compare by name
@@ -3225,30 +3379,10 @@ end:
 int FileList::compare(const IconItem* pa, const IconItem* pb,
                       FXbool igncase, FXbool asc, FXbool mixdir, FXuint jmp)
 {
-    const FileItem* x = (const FileItem*)pa;
-    const FileItem* y = (const FileItem*)pb;
-
-    // Nested rows follow their expanded parent, siblings are compared normally
-    if (x->treeDepth || y->treeDepth)
+    int order;
+    if (compareParents(pa, pb, order))
     {
-        while (x->treeDepth > y->treeDepth && x->parentitem)
-        {
-            x = x->parentitem;
-        }
-        while (y->treeDepth > x->treeDepth && y->parentitem)
-        {
-            y = y->parentitem;
-        }
-        if (x == y)
-        {
-            return (int)((FileItem*)pa)->treeDepth - (int)((FileItem*)pb)->treeDepth;
-        }
-        while (x->parentitem != y->parentitem && x->parentitem && y->parentitem)
-        {
-            x = x->parentitem;
-            y = y->parentitem;
-        }
-        return compareFlat(x, y, igncase, asc, mixdir, jmp);
+        return order;
     }
     return compareFlat(pa, pb, igncase, asc, mixdir, jmp);
 }
@@ -3419,6 +3553,11 @@ int FileList::ascendingExtMix(const IconItem* pa, const IconItem* pb)
 // Compare file size - Warning: only returns the sign of the comparison!!!
 int FileList::ascendingSize(const IconItem* pa, const IconItem* pb)
 {
+    int order;
+    if (compareParents(pa, pb, order))
+    {
+        return order;
+    }
     const FileItem* a = (FileItem*)pa;
     const FileItem* b = (FileItem*)pb;
 
@@ -3467,6 +3606,11 @@ int FileList::ascendingSize(const IconItem* pa, const IconItem* pb)
 // Mixing files and directories
 int FileList::ascendingSizeMix(const IconItem* pa, const IconItem* pb)
 {
+    int order;
+    if (compareParents(pa, pb, order))
+    {
+        return order;
+    }
     const FileItem* a = (FileItem*)pa;
     const FileItem* b = (FileItem*)pb;
 
@@ -3517,6 +3661,11 @@ int FileList::ascendingSizeMix(const IconItem* pa, const IconItem* pb)
 // Compare file time
 int FileList::ascendingDate(const IconItem* pa, const IconItem* pb)
 {
+    int order;
+    if (compareParents(pa, pb, order))
+    {
+        return order;
+    }
     const FileItem* a = (FileItem*)pa;
     const FileItem* b = (FileItem*)pb;
 
@@ -3551,6 +3700,11 @@ int FileList::ascendingDate(const IconItem* pa, const IconItem* pb)
 // Compare file time, mixing files and directories
 int FileList::ascendingDateMix(const IconItem* pa, const IconItem* pb)
 {
+    int order;
+    if (compareParents(pa, pb, order))
+    {
+        return order;
+    }
     const FileItem* a = (FileItem*)pa;
     const FileItem* b = (FileItem*)pb;
 
@@ -3649,6 +3803,11 @@ int FileList::ascendingLinkCaseMix(const IconItem* pa, const IconItem* pb)
 // Compare file deletion time
 int FileList::ascendingDeldate(const IconItem* pa, const IconItem* pb)
 {
+    int order;
+    if (compareParents(pa, pb, order))
+    {
+        return order;
+    }
     const FileItem* a = (FileItem*)pa;
     const FileItem* b = (FileItem*)pb;
 
@@ -3682,6 +3841,11 @@ int FileList::ascendingDeldate(const IconItem* pa, const IconItem* pb)
 // Compare file deletion time, mixing files and directories
 int FileList::ascendingDeldateMix(const IconItem* pa, const IconItem* pb)
 {
+    int order;
+    if (compareParents(pa, pb, order))
+    {
+        return order;
+    }
     const FileItem* a = (FileItem*)pa;
     const FileItem* b = (FileItem*)pb;
 
@@ -3822,6 +3986,11 @@ int FileList::descendingExtMix(const IconItem* pa, const IconItem* pb)
 // Reversed compare file size
 int FileList::descendingSize(const IconItem* pa, const IconItem* pb)
 {
+    int order;
+    if (compareParents(pa, pb, order))
+    {
+        return order;
+    }
     const FileItem* a = (FileItem*)pa;
     const FileItem* b = (FileItem*)pb;
 
@@ -3867,6 +4036,11 @@ int FileList::descendingSize(const IconItem* pa, const IconItem* pb)
 // Reversed compare file size, mixing files and directories
 int FileList::descendingSizeMix(const IconItem* pa, const IconItem* pb)
 {
+    int order;
+    if (compareParents(pa, pb, order))
+    {
+        return order;
+    }
     const FileItem* a = (FileItem*)pa;
     const FileItem* b = (FileItem*)pb;
 
@@ -3917,6 +4091,11 @@ int FileList::descendingSizeMix(const IconItem* pa, const IconItem* pb)
 // Reversed compare file time
 int FileList::descendingDate(const IconItem* pa, const IconItem* pb)
 {
+    int order;
+    if (compareParents(pa, pb, order))
+    {
+        return order;
+    }
     const FileItem* a = (FileItem*)pa;
     const FileItem* b = (FileItem*)pb;
 
@@ -3950,6 +4129,11 @@ int FileList::descendingDate(const IconItem* pa, const IconItem* pb)
 // Reversed compare file time, mixing files and directories
 int FileList::descendingDateMix(const IconItem* pa, const IconItem* pb)
 {
+    int order;
+    if (compareParents(pa, pb, order))
+    {
+        return order;
+    }
     const FileItem* a = (FileItem*)pa;
     const FileItem* b = (FileItem*)pb;
 
@@ -4047,6 +4231,11 @@ int FileList::descendingLinkCaseMix(const IconItem* pa, const IconItem* pb)
 // Reversed compare file deletion time
 int FileList::descendingDeldate(const IconItem* pa, const IconItem* pb)
 {
+    int order;
+    if (compareParents(pa, pb, order))
+    {
+        return order;
+    }
     const FileItem* a = (FileItem*)pa;
     const FileItem* b = (FileItem*)pb;
 
@@ -4080,6 +4269,11 @@ int FileList::descendingDeldate(const IconItem* pa, const IconItem* pb)
 // Reversed compare file deletion time, mixing files and directories
 int FileList::descendingDeldateMix(const IconItem* pa, const IconItem* pb)
 {
+    int order;
+    if (compareParents(pa, pb, order))
+    {
+        return order;
+    }
     const FileItem* a = (FileItem*)pa;
     const FileItem* b = (FileItem*)pb;
 

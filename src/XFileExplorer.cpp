@@ -629,12 +629,12 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
                                            SPLITTER_TRACKING | FRAME_NONE);
 
     // File list background, foreground, highlight, progress bar and attention colors
-    listbackcolor = getApp()->reg().readColorEntry("SETTINGS", "listbackcolor", FXRGB(255, 255, 255));
+    listbackcolor = getApp()->reg().readColorEntry("SETTINGS", "listbackcolor", FXRGB(197, 194, 197));
     listforecolor = getApp()->reg().readColorEntry("SETTINGS", "listforecolor", FXRGB(0, 0, 0));
     highlightcolor = getApp()->reg().readColorEntry("SETTINGS", "highlightcolor", FXRGB(238, 238, 238));
-    pbarcolor = getApp()->reg().readColorEntry("SETTINGS", "pbarcolor", FXRGB(10, 36, 106));
+    pbarcolor = getApp()->reg().readColorEntry("SETTINGS", "pbarcolor", FXRGB(82, 129, 148));
     attentioncolor = getApp()->reg().readColorEntry("SETTINGS", "attentioncolor", FXRGB(255, 0, 0));
-    scrollbarcolor = getApp()->reg().readColorEntry("SETTINGS", "scrollbarcolor", FXRGB(237, 236, 235));
+    scrollbarcolor = getApp()->reg().readColorEntry("SETTINGS", "scrollbarcolor", FXRGB(156, 186, 205));
 
     // Smooth scrolling
     smoothscroll = getApp()->reg().readUnsignedEntry("SETTINGS", "smooth_scroll", true);
@@ -1627,7 +1627,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     lpanelmenu = new FXMenuPane(this);
     new FXMenuCommand(lpanelmenu, _("&Filter..."), minifiltericon, lpanel, FilePanel::ID_FILTER);
     new FXMenuCheck(lpanelmenu, _("&Hidden Files"), lpanel->getList(), FileList::ID_TOGGLE_HIDDEN);
-    new FXMenuCheck(lpanelmenu, _("&Thumbnails"), lpanel->getList(), FileList::ID_TOGGLE_THUMBNAILS);
+    new FXMenuCheck(lpanelmenu, _("&Thumbnail View"), lpanel->getList(), FileList::ID_TOGGLE_THUMBNAIL_VIEW);
     new FXMenuSeparator(lpanelmenu);
     new FXMenuRadio(lpanelmenu, _("&Big Icons"), lpanel->getList(), IconList::ID_SHOW_BIG_ICONS);
     new FXMenuRadio(lpanelmenu, _("&Small Icons"), lpanel->getList(), IconList::ID_SHOW_MINI_ICONS);
@@ -1658,7 +1658,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     rpanelmenu = new FXMenuPane(this);
     new FXMenuCommand(rpanelmenu, _("&Filter"), minifiltericon, rpanel, FilePanel::ID_FILTER);
     new FXMenuCheck(rpanelmenu, _("&Hidden Files"), rpanel->getList(), FileList::ID_TOGGLE_HIDDEN);
-    new FXMenuCheck(rpanelmenu, _("&Thumbnails"), rpanel->getList(), FileList::ID_TOGGLE_THUMBNAILS);
+    new FXMenuCheck(rpanelmenu, _("&Thumbnail View"), rpanel->getList(), FileList::ID_TOGGLE_THUMBNAIL_VIEW);
     new FXMenuSeparator(rpanelmenu);
     new FXMenuRadio(rpanelmenu, _("&Big Icons"), rpanel->getList(), IconList::ID_SHOW_BIG_ICONS);
     new FXMenuRadio(rpanelmenu, _("&Small Icons"), rpanel->getList(), IconList::ID_SHOW_MINI_ICONS);

@@ -27,6 +27,8 @@
 #include "MessageBox.h"
 #include "../st/x.h"
 
+#include <X11/Xlib.h>
+
 
 // Get available space on the file system where the file is located
 FXlong xf_getavailablespace(const FXString& filepath)
@@ -1455,6 +1457,138 @@ FXString xf_filefromuri(FXString uri)
 FXString xf_filetouri(const FXString& file)
 {
     return "file://" + file;
+}
+
+
+// Drag type offered by XDND Direct Save sources
+FXDragType xf_xdsdragtype(FXApp* app)
+{
+    static FXDragType xdsType = 0;
+
+    if (!xdsType)
+    {
+        xdsType = app->registerDragType("XdndDirectSave0");
+    }
+    return xdsType;
+}
+
+
+// Percent-encode a local path for a file:// URI
+static FXString xf_encodeuripath(const FXString& path)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    FXString uri;
+
+    for (int i = 0; i < path.length(); i++)
+    {
+        FXuchar c = (FXuchar)path[i];
+        if (Ascii::isAlphaNumeric(c) || (c == '/') || (c == '-') || (c == '_') || (c == '.') || (c == '~'))
+        {
+            uri.append((FXchar)c);
+        }
+        else
+        {
+            uri.append('%');
+            uri.append(hex[c >> 4]);
+            uri.append(hex[c & 15]);
+        }
+    }
+    return uri;
+}
+
+
+// Complete an XDND Direct Save drop: ask the drag source to save its data in directory
+// The source (usually an archive manager) extracts the files itself and answers when it is done
+int xf_xdsdrop(FXWindow* window, const FXString& directory, FXuint time)
+{
+    Display* display = (Display*)window->getApp()->getDisplay();
+    Atom xdsAtom = XInternAtom(display, "XdndDirectSave0", False);
+    Atom selectionAtom = XInternAtom(display, "XdndSelection", False);
+    Atom replyAtom = XInternAtom(display, "SWORDFISH_XDS_REPLY", False);
+    Window source = XGetSelectionOwner(display, selectionAtom);
+
+    if (source == None)
+    {
+        appLog(APP_LOG_ERRORS, "Direct save drop failed", "No drag source owns XdndSelection");
+        return XDS_DROP_ERROR;
+    }
+
+    // Name suggested by the source
+    Atom type = None;
+    int format = 0;
+    unsigned long nitems = 0, after = 0;
+    unsigned char* prop = NULL;
+    if ((XGetWindowProperty(display, source, xdsAtom, 0, 1024, False, AnyPropertyType, &type, &format, &nitems,
+                            &after, &prop) != Success) || (prop == NULL) || (format != 8) || (nitems == 0))
+    {
+        if (prop)
+        {
+            XFree(prop);
+        }
+        appLog(APP_LOG_ERRORS, "Direct save drop failed", "Drag source did not provide a file name");
+        return XDS_DROP_ERROR;
+    }
+    FXString name = FXPath::name(FXString((const FXchar*)prop, (FXint)nitems));
+    XFree(prop);
+    if (name.empty() || (name == ".") || (name == ".."))
+    {
+        name = "xds.txt";
+    }
+
+    // Tell the source where to save, then request the transfer
+    FXString uri = "file://" + xf_encodeuripath(FXPath::absolute(directory, name));
+    XChangeProperty(display, source, xdsAtom, type, 8, PropModeReplace, (const unsigned char*)uri.text(),
+                    uri.length());
+    XDeleteProperty(display, window->id(), replyAtom);
+    XConvertSelection(display, selectionAtom, xdsAtom, replyAtom, window->id(), time ? time : CurrentTime);
+    XFlush(display);
+
+    appLog(APP_LOG_FILE_OPERATIONS, "Direct save drop requested", uri);
+
+    // The source only answers after extracting, so allow time for large archives
+    XEvent ev;
+    FXuint loops = 0;
+    const FXuint maxloops = 6000; // 10 minutes with 100 ms sleeps
+    window->getApp()->beginWaitCursor();
+    while (!XCheckTypedWindowEvent(display, window->id(), SelectionNotify, &ev))
+    {
+        if (++loops > maxloops)
+        {
+            window->getApp()->endWaitCursor();
+            appLog(APP_LOG_ERRORS, "Direct save drop timed out", uri);
+            return XDS_DROP_TIMEOUT;
+        }
+        FXThread::sleep(100000000);
+    }
+    window->getApp()->endWaitCursor();
+
+    if (ev.xselection.property == None)
+    {
+        appLog(APP_LOG_ERRORS, "Direct save drop failed", "Drag source refused the transfer");
+        return XDS_DROP_ERROR;
+    }
+
+    // "S" means success, "E" means error, "F" asks for a fallback transfer that we don't support
+    FXchar answer = 0;
+    prop = NULL;
+    if ((XGetWindowProperty(display, window->id(), ev.xselection.property, 0, 16, True, AnyPropertyType, &type,
+                            &format, &nitems, &after, &prop) == Success) && prop && (nitems > 0))
+    {
+        answer = (FXchar)prop[0];
+    }
+    if (prop)
+    {
+        XFree(prop);
+    }
+
+    if (answer == 'S')
+    {
+        appLog(APP_LOG_FILE_OPERATIONS, "Direct save drop completed", uri);
+        return XDS_DROP_SUCCESS;
+    }
+
+    appLog(APP_LOG_ERRORS, "Direct save drop failed", FXString("Drag source answered: ") + (answer ? FXString(answer, 1) : FXString("nothing")));
+    return (answer == 'E') ? XDS_DROP_SOURCE_ERROR : XDS_DROP_ERROR;
 }
 
 

@@ -541,8 +541,8 @@ long DirList::onDNDMotion(FXObject* sender, FXSelector sel, void* ptr)
         return 1;
     }
 
-    // Dropping list of filenames
-    if (offeredDNDType(FROM_DRAGNDROP, urilistType))
+    // Dropping list of filenames, or files saved by the source itself (archive managers)
+    if (offeredDNDType(FROM_DRAGNDROP, urilistType) || offeredDNDType(FROM_DRAGNDROP, xf_xdsdragtype(getApp())))
     {
         // Locate drop place
         item = (TreeItem*)getItemAt(event->win_x, event->win_y);
@@ -665,15 +665,20 @@ long DirList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
         }
     }
 
+    // Archive managers offer XdndDirectSave0 instead of a list of existing files
+    FXbool xdsdrop = !offeredDNDType(FROM_DRAGNDROP, urilistType) &&
+                     offeredDNDType(FROM_DRAGNDROP, xf_xdsdragtype(getApp()));
+
     // Get DND data
     // This is done before displaying the popup menu to fix a drag and drop problem with konqueror and dolphin file managers
-    FXbool dnd = getDNDData(FROM_DRAGNDROP, urilistType, data, len);
+    FXbool dnd = !xdsdrop && getDNDData(FROM_DRAGNDROP, urilistType, data, len);
 
     int xx, yy;
     DirItem* item = NULL;
 
     // Display the dnd dialog if the control or shift key were not pressed
-    if (confirm_dnd && !ctrlshiftkey)
+    // Direct save drops are always extracted (copied), so there is nothing to choose
+    if (confirm_dnd && !ctrlshiftkey && !xdsdrop)
     {
         // Get item
         FXuint state;
@@ -703,6 +708,24 @@ long DirList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
             closeItem(prevSelItem);
         }
         prevSelItem = NULL;
+    }
+
+    if (xdsdrop)
+    {
+        FXuint time = (ptr != NULL) ? ((FXEvent*)ptr)->time : 0;
+        ret = xf_xdsdrop(this, dropdirectory, time);
+        if (ret == XDS_DROP_TIMEOUT)
+        {
+            MessageBox::information(this, BOX_OK, _("Information"),
+                                    _("The source application is still saving the dropped items.\nThey will appear when it has finished."));
+        }
+        else if (ret == XDS_DROP_ERROR)
+        {
+            MessageBox::error(this, BOX_OK, _("Error"),
+                              _("The dropped items could not be saved in:\n%s"), dropdirectory.text());
+        }
+        handle(this, FXSEL(SEL_COMMAND, ID_REFRESH), NULL);
+        return 1;
     }
 
     // Get uri-list of files being dropped

@@ -415,7 +415,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     // Other default themes
     Theme theme;
     
-    theme = Theme("Swordfish", _("The default theme"), FXRGB(237, 236, 235), FXRGB(125, 125, 125), FXRGB(255, 255, 255),
+    theme = Theme("Swordfish", _("The original theme"), FXRGB(237, 236, 235), FXRGB(125, 125, 125), FXRGB(255, 255, 255),
                       FXRGB(0, 0, 0),
                       FXRGB(10, 36, 106), FXRGB(255, 255, 255), FXRGB(255, 255, 255), FXRGB(0, 0, 0),
                       FXRGB(238, 238, 238), FXRGB(10, 36, 106), FXRGB(255, 0, 0), FXRGB(237, 236, 235));
@@ -439,7 +439,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
                       FXRGB(238, 238, 238), FXRGB(49, 101, 156), FXRGB(255, 0, 0), FXRGB(68, 106, 146));
     Themes.push_back(theme);
 
-    theme = Theme("Slate Blue", _("A light blue theme with grey background"), FXRGB(156, 186, 205),
+    theme = Theme("Slate Blue", _("The default theme: light blue with grey background"), FXRGB(156, 186, 205),
                       FXRGB(125, 125, 125), FXRGB(197, 194, 197), FXRGB(0, 0, 0),
                       FXRGB(82, 129, 148), FXRGB(255, 255, 255), FXRGB(197, 194, 197), FXRGB(0, 0, 0),
                       FXRGB(238, 238, 238), FXRGB(82, 129, 148), FXRGB(255, 0, 0), FXRGB(156, 186, 205));
@@ -1096,24 +1096,6 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
                                            ID_RESTORE_PROGRAM_DEFAULTS,
                                            FRAME_GROOVE | LAYOUT_LEFT);
 
-    group = new FXGroupBox(programs, _("Per-extension associations"),
-                           GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
-    FXVerticalFrame* assocframe = new FXVerticalFrame(group, FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
-    associationlist = new FXList(assocframe, this, ID_ASSOCIATION_LIST,
-                                 LIST_BROWSESELECT | FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X | LAYOUT_FILL_Y);
-    associationlist->setNumVisible(7);
-    FXHorizontalFrame* associationedit = new FXHorizontalFrame(assocframe, FRAME_NONE | LAYOUT_FILL_X);
-    new FXLabel(associationedit, _("Open command:"), NULL, JUSTIFY_LEFT | LAYOUT_CENTER_Y);
-    associationcommand = new FXTextField(associationedit, 40, NULL, 0,
-                                          TEXTFIELD_NORMAL | LAYOUT_FILL_X);
-    FXHorizontalFrame* associationbuttons = new FXHorizontalFrame(assocframe, FRAME_NONE | LAYOUT_FILL_X);
-    associationapply = new FXButton(associationbuttons, _("Set Local Override"), NULL, this,
-                                    ID_ASSOCIATION_APPLY, FRAME_GROOVE | LAYOUT_LEFT);
-    associationreset = new FXButton(associationbuttons, _("Use System Default"), NULL, this,
-                                    ID_ASSOCIATION_RESET, FRAME_GROOVE | LAYOUT_LEFT);
-    associationstatus = new FXLabel(assocframe, FXString::null, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
-    loadAssociations();
-
     group = new FXGroupBox(programs, _("Swordfish default programs"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     matrix = new FXMatrix(group, 3, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
@@ -1198,6 +1180,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     oldxterm = getApp()->reg().readStringEntry("PROGS", "xterm", "");
     xterm->setText(oldxterm);
     xterm->setTipText(_("Leave empty to use your desktop's default terminal. Changes apply only to Swordfish."));
+    systemdefaults = xf_defaultApplications(systemdefaultserror);
     populateProgramChoices();
 
     group = new FXGroupBox(programs, _("Volume Management"),
@@ -1219,8 +1202,6 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     oldumountcmd = getApp()->reg().readStringEntry("PROGS", "unmount", DEFAULT_UMOUNTCMD);
     umountcmd->setText(oldumountcmd);
-    loadAssociations();
-
     // Sixth tab - Appearance
     new FXTabItem(tabbook, _("&Appearance"), NULL);
     FXVerticalFrame* visual = createPreferencesPage(tabbook);
@@ -2166,7 +2147,7 @@ void PreferencesBox::populateProgramChoices()
         tool.choice->setTipText(
             _("Choose a listed application or enter a command. Choices affect Swordfish only. "
               "MIME support identifies compatible applications, not proof that an app can edit. "
-              "Use the per-extension list above for exact file-type defaults."));
+              "Remember exact file-type choices through Open With."));
     }
 }
 
@@ -2181,59 +2162,14 @@ FXbool PreferencesBox::querySystemDefaultApplication(const FXString& mimetype, F
         error = _("Unable to determine file type");
         return false;
     }
-#if defined(linux)
-    // Diagnostics stay on stderr so they are never mistaken for an application name
-    FXString cmd = xf_hostcommand("xdg-mime query default " + xf_quote(mimetype));
-    FILE* stream = popen(cmd.text(), "r");
-    if (!stream)
+    std::map<FXString, FXString>::const_iterator entry = systemdefaults.find(mimetype);
+    if (entry != systemdefaults.end())
     {
-        error = _("Unable to query system defaults");
-        appLog(APP_LOG_ERRORS, "XDG default query failed to start", cmd);
-        return false;
-    }
-
-    FXString output;
-    char buffer[1024];
-    while (fgets(buffer, sizeof(buffer), stream) != NULL)
-    {
-        output += buffer;
-    }
-    int status = pclose(stream);
-    if (status == -1 || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
-    {
-        int code = (status != -1 && WIFEXITED(status)) ? WEXITSTATUS(status) : -1;
-        if (code == 127)
-        {
-            error = _("Unable to query system defaults (xdg-mime not found)");
-        }
-        else
-        {
-            error = _("Unable to query system defaults");
-        }
-        appLog(APP_LOG_ERRORS, "XDG default query failed",
-               mimetype + ": exit status " + FXStringVal(code) + ", command: " + cmd);
-        return false;
-    }
-
-    output.trim();
-    if (output.empty())
-    {
+        application = entry->second;
         return true;
     }
-
-    FXString suffix = output.right(8);
-    if (output.find('\n') >= 0 || output.length() <= 8 || suffix.lower() != ".desktop")
-    {
-        error = _("Unable to query system defaults");
-        appLog(APP_LOG_ERRORS, "XDG default query returned unexpected output", mimetype + ": " + output);
-        return false;
-    }
-    application = output;
-    return true;
-#else
-    error = _("Unable to query system defaults");
-    return false;
-#endif
+    error = systemdefaultserror;
+    return error.empty();
 }
 
 
@@ -2270,6 +2206,10 @@ void PreferencesBox::discardAssociationChanges(std::vector<AssociationOverride>&
 
 void PreferencesBox::loadAssociations()
 {
+    if (!associationlist)
+    {
+        return;
+    }
     FXint selected = associationlist->getCurrentItem();
     associationentries.clear();
     associationlist->clearItems();
@@ -3789,8 +3729,6 @@ FXuint PreferencesBox::execute(FXuint placement)
     // Save current preferences to restore them if cancel is pressed
     associationoverrides.clear();
     restoreprogramsettings = false;
-    loadAssociations();
-
     // First tab - Options
     trashcan_prev = trashcan->getCheck();
     trashbypass_prev = trashbypass->getCheck();

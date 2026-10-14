@@ -1,3 +1,21 @@
+Unreleased fixes
+================
+- Keep expanded folders and their descendants together when sorting by modified
+  date, size or deletion date, in either direction. RC2 could scatter children
+  among unrelated folders; this fix is not yet in the published RC2 download.
+- Preserve each pane's editable address-bar mode when switching, adding or
+  closing tabs, and show the selected tab's actual folder in the text field.
+- Accept items dragged out of archive managers that use XDND Direct Save
+  (Engrampa, GTK3 File Roller): the archiver extracts directly into the target
+  folder of the file list or folder tree, without the Copy/Move/Link menu.
+- Make Places, Mount Points, Bookmarks and Network independently collapsible
+  in the scrollable sidebar, with each section's state remembered.
+- Show a selected image in a temporary sidebar overlay; the list behind it
+  remains scrollable, with enough clearance to move entries above the preview.
+- Add on-demand, asynchronous SMB server discovery in the Network sidebar
+  section. Discovery does not mount shares or request credentials; connecting
+  opens the existing server dialog with the selected host prefilled.
+
 Swordfish Portable 0.0.1 RC2
 ==========================
 

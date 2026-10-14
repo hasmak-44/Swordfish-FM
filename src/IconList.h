@@ -375,6 +375,7 @@ public:
 
     // Return content height
     virtual int getContentHeight();
+    int getBackgroundGutter() const;
 
     // Icon list can receive focus
     virtual bool canFocus() const;

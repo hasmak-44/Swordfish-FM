@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include <sys/time.h>
 
@@ -47,6 +48,24 @@ extern FXuint clipboard_type;
 extern FXMainWindow* mainWindow;
 
 extern FXString xdgdatahome;
+
+static FXbool safeDiscoveredHost(const FXString& host)
+{
+    if (host.empty() || host.length() > 253 || host[0] == '-' || host == "." || host == "..")
+    {
+        return false;
+    }
+    for (FXint i = 0; i < host.length(); ++i)
+    {
+        const FXchar c = host[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+              c == '.' || c == '-' || c == '_' || c == ':'))
+        {
+            return false;
+        }
+    }
+    return true;
+}
 
 #if defined(linux)
 extern FXStringDict* fsdevices;
@@ -386,6 +405,14 @@ FXDEFMAP(DirPanel) DirPanelMap[] =
     FXMAPFUNC(SEL_TIMEOUT, DirPanel::ID_STOP_LIST_REFRESH_TIMER, DirPanel::onCmdStopListRefreshTimer),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_EXPANDTREE, DirPanel::onExpandTree),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_COLLAPSETREE, DirPanel::onCollapseTree),
+    FXMAPFUNCS(SEL_COMMAND, DirPanel::ID_TOGGLE_PLACES, DirPanel::ID_TOGGLE_NETWORK,
+               DirPanel::onCmdToggleSection),
+    FXMAPFUNC(SEL_COMMAND, DirPanel::ID_REFRESH_NETWORK, DirPanel::onCmdRefreshNetwork),
+    FXMAPFUNC(SEL_IO_READ, DirPanel::ID_NETWORK_READ, DirPanel::onReadNetwork),
+    FXMAPFUNC(SEL_TIMEOUT, DirPanel::ID_NETWORK_TIMEOUT, DirPanel::onNetworkTimeout),
+    FXMAPFUNC(SEL_DOUBLECLICKED, DirPanel::ID_NETWORK_LIST, DirPanel::onCmdNetworkSelected),
+    FXMAPFUNC(SEL_COMMAND, DirPanel::ID_CLOSE_PREVIEW, DirPanel::onCmdClosePreview),
+    FXMAPFUNC(SEL_CONFIGURE, DirPanel::ID_PREVIEW_LAYOUT, DirPanel::onCmdPreviewLayout),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_PROPERTIES, DirPanel::onCmdProperties),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_ARCHIVE, DirPanel::onCmdAddToArch),
     FXMAPFUNC(SEL_RIGHTBUTTONRELEASE, DirPanel::ID_FILELIST, DirPanel::onCmdPopupMenuDirList),
@@ -511,27 +538,55 @@ DirPanel::DirPanel(FXWindow* owner, FXComposite* p, FXColor listbackcolor, FXCol
 
         // First tab - Places, mounts and bookmarks lists
 
-        // Places list (fixed size)
+        // Scrollable Places stack
         new FXTabItem(tabbook, _("Places") + FXString("  "), miniplacesicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 0, 0, 3, 5);
         FXVerticalFrame* frame = new FXVerticalFrame(tabbook, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_NONE, 0, 0, 0, 0, 0,
                                                      0, 0, 0);
+        placesViewFrame = frame;
         frame->setBackColor(getApp()->getBackColor());
-        FXVerticalFrame* plframe = new FXVerticalFrame(frame, LAYOUT_FILL_X | FRAME_NONE, 0, 0, 0, 0, 0, 0, 2, 0);
-        placeslist = new PlacesList(owner, plframe, this, ID_PLACES, listbackcolor, listforecolor, placesoptions);
-
-        // Splitter with mounts and bookmarks lists
-        splitter = new FXSplitter(frame,
-                                  LAYOUT_SIDE_LEFT | LAYOUT_FILL_X | LAYOUT_FILL_Y | SPLITTER_TRACKING |
-                                  SPLITTER_VERTICAL | FRAME_NONE);
-        FXVerticalFrame* mtframe = new FXVerticalFrame(splitter, LAYOUT_FILL_Y | FRAME_NONE, 0, 0, 0, 0, 0, 0, 0, 0);
-        new FXLabel(mtframe, _("Mount Points"), NULL, JUSTIFY_LEFT | LAYOUT_LEFT | LAYOUT_FILL_X | FRAME_GROOVE, 0, 0,
-                    0, 0, 0, 0, 0, 0);
-        mountslist = new MountsList(owner, mtframe, this, ID_MOUNTS, listbackcolor, listforecolor, placesoptions);
-        FXVerticalFrame* bkframe = new FXVerticalFrame(splitter, LAYOUT_FILL_Y | FRAME_NONE, 0, 0, 0, 0, 0, 0, 0, 0);
-        new FXLabel(bkframe, _("Bookmarks"), NULL, JUSTIFY_LEFT | LAYOUT_LEFT | LAYOUT_FILL_X | FRAME_GROOVE, 0, 0, 0,
-                    0, 0, 0, 0, 0);
-        bookmarkslist = new BookmarksList(owner, bkframe, this, ID_BOOKMARKS, listbackcolor, listforecolor,
+        FXScrollWindow* listscroll = new FXScrollWindow(frame, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_NONE);
+        placesStack = new FXVerticalFrame(listscroll, LAYOUT_FILL_X | FRAME_NONE, 0, 0, 0, 0, 0, 0, 2, 0);
+        FXVerticalFrame* stack = placesStack;
+        placesHeader = new FXButton(stack, FXString("- ") + _("Places"), NULL, this, ID_TOGGLE_PLACES,
+                                    BUTTON_TOOLBAR | JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_GROOVE);
+        placesSection = new FXVerticalFrame(stack, LAYOUT_FILL_X | FRAME_NONE);
+        placeslist = new PlacesList(owner, placesSection, this, ID_PLACES, listbackcolor, listforecolor, placesoptions);
+        placeslist->setNumVisible(8);
+        mountsHeader = new FXButton(stack, FXString("- ") + _("Mount Points"), NULL, this, ID_TOGGLE_MOUNTS,
+                                    BUTTON_TOOLBAR | JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_GROOVE);
+        mountsSection = new FXVerticalFrame(stack, LAYOUT_FILL_X | FRAME_NONE);
+        mountslist = new MountsList(owner, mountsSection, this, ID_MOUNTS, listbackcolor, listforecolor, placesoptions);
+        mountslist->setNumVisible(6);
+        bookmarksHeader = new FXButton(stack, FXString("- ") + _("Bookmarks"), NULL, this, ID_TOGGLE_BOOKMARKS,
+                                       BUTTON_TOOLBAR | JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_GROOVE);
+        bookmarksSection = new FXVerticalFrame(stack, LAYOUT_FILL_X | FRAME_NONE);
+        bookmarkslist = new BookmarksList(owner, bookmarksSection, this, ID_BOOKMARKS, listbackcolor, listforecolor,
                                           placesoptions);
+        bookmarkslist->setNumVisible(10);
+        networkHeader = new FXButton(stack, FXString("- ") + _("Network"), NULL, this, ID_TOGGLE_NETWORK,
+                                     BUTTON_TOOLBAR | JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_GROOVE);
+        networkSection = new FXVerticalFrame(stack, LAYOUT_FILL_X | FRAME_NONE, 0, 0, 0, 0, 4, 2, 2, 2);
+        FXHorizontalFrame* networkControls = new FXHorizontalFrame(networkSection, LAYOUT_FILL_X | FRAME_NONE);
+        networkStatus = new FXLabel(networkSection, _("Refresh to discover SMB servers"), NULL,
+                                    JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_NONE);
+        networkRefresh = new FXButton(networkControls, _("Refresh"), NULL, this, ID_REFRESH_NETWORK,
+                                      BUTTON_TOOLBAR | LAYOUT_RIGHT | FRAME_GROOVE);
+        networkList = new FXList(networkSection, this, ID_NETWORK_LIST,
+                                 LIST_BROWSESELECT | LAYOUT_FILL_X | FRAME_SUNKEN);
+        networkList->setNumVisible(4);
+        previewSpacer = new FXFrame(stack, LAYOUT_FILL_X | LAYOUT_FIX_HEIGHT | FRAME_NONE, 0, 0, 0, 0);
+        previewOverlay = new FXVerticalFrame(frame, FRAME_RAISED | LAYOUT_FIX_X | LAYOUT_FIX_Y |
+                                             LAYOUT_FIX_WIDTH | LAYOUT_FIX_HEIGHT, 0, 0, 220, 180, 3, 3, 3, 3);
+        FXHorizontalFrame* previewHeader = new FXHorizontalFrame(previewOverlay, LAYOUT_FILL_X | FRAME_NONE);
+        previewNameLabel = new FXLabel(previewHeader, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_NONE);
+        new FXButton(previewHeader, "x", NULL, this, ID_CLOSE_PREVIEW,
+                     BUTTON_TOOLBAR | LAYOUT_RIGHT | FRAME_NONE);
+        previewImageLabel = new FXLabel(previewOverlay, "", NULL,
+                                        JUSTIFY_CENTER_X | JUSTIFY_CENTER_Y | LAYOUT_FILL_X | LAYOUT_FILL_Y |
+                                        FRAME_SUNKEN);
+        previewOverlay->hide();
+        placesViewFrame->setTarget(this);
+        placesViewFrame->setSelector(FXSEL(SEL_CONFIGURE, ID_PREVIEW_LAYOUT));
 
         // Second tab - Directory list
         new FXTabItem(tabbook, _("Tree") + FXString("  "), minitreeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 0, 0, 3, 5);
@@ -566,26 +621,54 @@ DirPanel::DirPanel(FXWindow* owner, FXComposite* p, FXColor listbackcolor, FXCol
     // Places or tree mode
     else
     {
-        // Places list (fixed size)
+        // Scrollable Places stack
         FXVerticalFrame* placesframe = new FXVerticalFrame(cont, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_NONE, 0, 0, 0, 0,
                                                            0, 0, 0, 0);
+        placesViewFrame = placesframe;
         placesframe->setBackColor(getApp()->getBackColor());
-        FXVerticalFrame* plframe = new FXVerticalFrame(placesframe, LAYOUT_FILL_X | FRAME_NONE, 0, 0, 0, 0, 0, 0, 2, 0);
-        placeslist = new PlacesList(owner, plframe, this, ID_PLACES, listbackcolor, listforecolor, placesoptions);
-
-        // Splitter with mounts and bookmarks lists
-        splitter = new FXSplitter(placesframe,
-                                  LAYOUT_SIDE_LEFT | LAYOUT_FILL_X | LAYOUT_FILL_Y | SPLITTER_TRACKING |
-                                  SPLITTER_VERTICAL | FRAME_NONE);
-        FXVerticalFrame* mtframe = new FXVerticalFrame(splitter, LAYOUT_FILL_Y | FRAME_NONE, 0, 0, 0, 0, 0, 0, 0, 0);
-        new FXLabel(mtframe, _("Mount Points"), NULL, JUSTIFY_LEFT | LAYOUT_LEFT | LAYOUT_FILL_X | FRAME_GROOVE, 0, 0,
-                    0, 0, 0, 0, 0, 0);
-        mountslist = new MountsList(owner, mtframe, this, ID_MOUNTS, listbackcolor, listforecolor, placesoptions);
-        FXVerticalFrame* bkframe = new FXVerticalFrame(splitter, LAYOUT_FILL_Y | FRAME_NONE, 0, 0, 0, 0, 0, 0, 0, 0);
-        new FXLabel(bkframe, _("Bookmarks"), NULL, JUSTIFY_LEFT | LAYOUT_LEFT | LAYOUT_FILL_X | FRAME_GROOVE, 0, 0, 0,
-                    0, 0, 0, 0, 0);
-        bookmarkslist = new BookmarksList(owner, bkframe, this, ID_BOOKMARKS, listbackcolor, listforecolor,
+        FXScrollWindow* listscroll = new FXScrollWindow(placesframe, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_NONE);
+        placesStack = new FXVerticalFrame(listscroll, LAYOUT_FILL_X | FRAME_NONE, 0, 0, 0, 0, 0, 0, 2, 0);
+        FXVerticalFrame* stack = placesStack;
+        placesHeader = new FXButton(stack, FXString("- ") + _("Places"), NULL, this, ID_TOGGLE_PLACES,
+                                    BUTTON_TOOLBAR | JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_GROOVE);
+        placesSection = new FXVerticalFrame(stack, LAYOUT_FILL_X | FRAME_NONE);
+        placeslist = new PlacesList(owner, placesSection, this, ID_PLACES, listbackcolor, listforecolor, placesoptions);
+        placeslist->setNumVisible(8);
+        mountsHeader = new FXButton(stack, FXString("- ") + _("Mount Points"), NULL, this, ID_TOGGLE_MOUNTS,
+                                    BUTTON_TOOLBAR | JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_GROOVE);
+        mountsSection = new FXVerticalFrame(stack, LAYOUT_FILL_X | FRAME_NONE);
+        mountslist = new MountsList(owner, mountsSection, this, ID_MOUNTS, listbackcolor, listforecolor, placesoptions);
+        mountslist->setNumVisible(6);
+        bookmarksHeader = new FXButton(stack, FXString("- ") + _("Bookmarks"), NULL, this, ID_TOGGLE_BOOKMARKS,
+                                       BUTTON_TOOLBAR | JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_GROOVE);
+        bookmarksSection = new FXVerticalFrame(stack, LAYOUT_FILL_X | FRAME_NONE);
+        bookmarkslist = new BookmarksList(owner, bookmarksSection, this, ID_BOOKMARKS, listbackcolor, listforecolor,
                                           placesoptions);
+        bookmarkslist->setNumVisible(10);
+        networkHeader = new FXButton(stack, FXString("- ") + _("Network"), NULL, this, ID_TOGGLE_NETWORK,
+                                     BUTTON_TOOLBAR | JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_GROOVE);
+        networkSection = new FXVerticalFrame(stack, LAYOUT_FILL_X | FRAME_NONE, 0, 0, 0, 0, 4, 2, 2, 2);
+        FXHorizontalFrame* networkControls = new FXHorizontalFrame(networkSection, LAYOUT_FILL_X | FRAME_NONE);
+        networkStatus = new FXLabel(networkSection, _("Refresh to discover SMB servers"), NULL,
+                                    JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_NONE);
+        networkRefresh = new FXButton(networkControls, _("Refresh"), NULL, this, ID_REFRESH_NETWORK,
+                                      BUTTON_TOOLBAR | LAYOUT_RIGHT | FRAME_GROOVE);
+        networkList = new FXList(networkSection, this, ID_NETWORK_LIST,
+                                 LIST_BROWSESELECT | LAYOUT_FILL_X | FRAME_SUNKEN);
+        networkList->setNumVisible(4);
+        previewSpacer = new FXFrame(stack, LAYOUT_FILL_X | LAYOUT_FIX_HEIGHT | FRAME_NONE, 0, 0, 0, 0);
+        previewOverlay = new FXVerticalFrame(placesframe, FRAME_RAISED | LAYOUT_FIX_X | LAYOUT_FIX_Y |
+                                             LAYOUT_FIX_WIDTH | LAYOUT_FIX_HEIGHT, 0, 0, 220, 180, 3, 3, 3, 3);
+        FXHorizontalFrame* previewHeader = new FXHorizontalFrame(previewOverlay, LAYOUT_FILL_X | FRAME_NONE);
+        previewNameLabel = new FXLabel(previewHeader, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_NONE);
+        new FXButton(previewHeader, "x", NULL, this, ID_CLOSE_PREVIEW,
+                     BUTTON_TOOLBAR | LAYOUT_RIGHT | FRAME_NONE);
+        previewImageLabel = new FXLabel(previewOverlay, "", NULL,
+                                        JUSTIFY_CENTER_X | JUSTIFY_CENTER_Y | LAYOUT_FILL_X | LAYOUT_FILL_Y |
+                                        FRAME_SUNKEN);
+        previewOverlay->hide();
+        placesViewFrame->setTarget(this);
+        placesViewFrame->setSelector(FXSEL(SEL_CONFIGURE, ID_PREVIEW_LAYOUT));
 
         FXVerticalFrame* treeframe = new FXVerticalFrame(cont, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_NONE, 0, 0, 0, 0,
                                                          0, 0, 2, 0);
@@ -638,6 +721,27 @@ DirPanel::DirPanel(FXWindow* owner, FXComposite* p, FXColor listbackcolor, FXCol
         bookmarkslist->setDefaultCursor(getApp()->getDefaultCursor(DEF_HAND_CURSOR));
     }
 
+    if (getApp()->reg().readUnsignedEntry("SIDEBAR", "places_collapsed", 0))
+    {
+        placesSection->hide();
+        placesHeader->setText(FXString("+ ") + _("Places"));
+    }
+    if (getApp()->reg().readUnsignedEntry("SIDEBAR", "mounts_collapsed", 0))
+    {
+        mountsSection->hide();
+        mountsHeader->setText(FXString("+ ") + _("Mount Points"));
+    }
+    if (getApp()->reg().readUnsignedEntry("SIDEBAR", "bookmarks_collapsed", 0))
+    {
+        bookmarksSection->hide();
+        bookmarksHeader->setText(FXString("+ ") + _("Bookmarks"));
+    }
+    if (getApp()->reg().readUnsignedEntry("SIDEBAR", "network_collapsed", 0))
+    {
+        networkSection->hide();
+        networkHeader->setText(FXString("+ ") + _("Network"));
+    }
+
     // Initializations
     focuswindow = owner;
     curr_dirpath = "";
@@ -648,6 +752,17 @@ DirPanel::DirPanel(FXWindow* owner, FXComposite* p, FXColor listbackcolor, FXCol
 DirPanel::~DirPanel()
 {
     getApp()->removeTimeout(this, ID_DIRSIZE_REFRESH);
+    getApp()->removeTimeout(this, ID_NETWORK_TIMEOUT);
+    if (networkReadFd >= 0)
+    {
+        getApp()->removeInput(networkReadFd, INPUT_READ);
+        ::close(networkReadFd);
+    }
+    if (networkPid > 0)
+    {
+        kill(networkPid, SIGKILL);
+        waitpid(networkPid, NULL, 0);
+    }
     delete dirlist;
     delete statusbar;
     delete status;
@@ -662,6 +777,11 @@ DirPanel::~DirPanel()
     delete mountslist;
     delete bookmarkslist;
     delete splitter;
+    if (previewImageLabel)
+    {
+        previewImageLabel->setIcon(NULL);
+    }
+    delete previewImage;
     delete tabbook;
 }
 
@@ -680,10 +800,6 @@ void DirPanel::create()
 
     // Register standard UTF-8 text type used for file dialogs
     utf8Type = getApp()->registerDragType("UTF8_STRING");
-
-    // Set mounts list height
-    FXuint mounts_height = getApp()->reg().readUnsignedEntry("DIR PANEL", "mounts_height", 200);
-    splitter->setSplit(0, mounts_height);
 
     getApp()->addTimeout(this, ID_DIRSIZE_REFRESH, DIRSIZE_REFRESH_INTERVAL);
 
@@ -1395,6 +1511,394 @@ long DirPanel::onCmdToggleHidden(FXObject*, FXSelector, void*)
     dirlist->showHiddenFiles(!dirlist->shownHiddenFiles());
     appLog(APP_LOG_UI, "tree-hidden-files-toggled",
            FXString("enabled=") + (dirlist->shownHiddenFiles() ? "yes" : "no"));
+    return 1;
+}
+
+// Toggle a sidebar section
+long DirPanel::onCmdToggleSection(FXObject*, FXSelector sel, void*)
+{
+    FXWindow* section = NULL;
+    FXButton* header = NULL;
+    const char* key = NULL;
+    FXString title;
+
+    switch (FXSELID(sel))
+    {
+    case ID_TOGGLE_PLACES:
+        section = placesSection;
+        header = placesHeader;
+        key = "places_collapsed";
+        title = _("Places");
+        break;
+    case ID_TOGGLE_MOUNTS:
+        section = mountsSection;
+        header = mountsHeader;
+        key = "mounts_collapsed";
+        title = _("Mount Points");
+        break;
+    case ID_TOGGLE_BOOKMARKS:
+        section = bookmarksSection;
+        header = bookmarksHeader;
+        key = "bookmarks_collapsed";
+        title = _("Bookmarks");
+        break;
+    case ID_TOGGLE_NETWORK:
+        section = networkSection;
+        header = networkHeader;
+        key = "network_collapsed";
+        title = _("Network");
+        break;
+    default:
+        return 0;
+    }
+
+    const FXbool collapsed = section->shown();
+    if (collapsed)
+    {
+        section->hide();
+    }
+    else
+    {
+        section->show();
+    }
+    header->setText(FXString(collapsed ? "+ " : "- ") + title);
+    getApp()->reg().writeUnsignedEntry("SIDEBAR", key, collapsed ? 1 : 0);
+    section->getParent()->recalc();
+    section->getParent()->getParent()->recalc();
+    return 1;
+}
+
+// Start or stop SMB network discovery without blocking the interface
+long DirPanel::onCmdRefreshNetwork(FXObject*, FXSelector, void*)
+{
+    if (networkPid > 0)
+    {
+        kill(networkPid, SIGKILL);
+        getApp()->removeTimeout(this, ID_NETWORK_TIMEOUT);
+        if (networkReadFd >= 0)
+        {
+            getApp()->removeInput(networkReadFd, INPUT_READ);
+            ::close(networkReadFd);
+            networkReadFd = -1;
+        }
+        waitpid(networkPid, NULL, 0);
+        networkPid = -1;
+        networkRefresh->setText(_("Refresh"));
+        networkStatus->setText(_("Discovery stopped"));
+        return 1;
+    }
+
+    int out[2];
+    if (pipe(out) != 0)
+    {
+        networkStatus->setText(FXString(_("Unable to start network discovery: ")) + strerror(errno));
+        return 1;
+    }
+
+    networkList->clearItems();
+    networkLineBuffer.clear();
+    networkError.clear();
+    networkInvalidEntries = false;
+    networkDiscardingLine = false;
+    networkStatus->setText(_("Discovering SMB servers..."));
+    networkRefresh->setText(_("Stop"));
+
+    networkPid = fork();
+    if (networkPid < 0)
+    {
+        const FXString error = strerror(errno);
+        ::close(out[0]);
+        ::close(out[1]);
+        networkPid = -1;
+        networkRefresh->setText(_("Refresh"));
+        networkStatus->setText(FXString(_("Unable to start network discovery: ")) + error);
+        return 1;
+    }
+    if (networkPid == 0)
+    {
+        ::close(out[0]);
+        if (dup2(out[1], STDOUT_FILENO) < 0 || dup2(out[1], STDERR_FILENO) < 0)
+        {
+            _exit(EXIT_FAILURE);
+        }
+        ::close(out[1]);
+        execlp("gio", "gio", "list", "smb://", static_cast<char*>(NULL));
+        _exit(127);
+    }
+
+    ::close(out[1]);
+    networkReadFd = out[0];
+    getApp()->addInput(networkReadFd, INPUT_READ, this, ID_NETWORK_READ);
+    getApp()->addTimeout(this, ID_NETWORK_TIMEOUT, 15000);
+    appLog(APP_LOG_UI, "network-discovery-started", "protocol=smb");
+    return 1;
+}
+
+long DirPanel::onReadNetwork(FXObject*, FXSelector, void*)
+{
+    char buffer[4096];
+    const ssize_t bytes = read(networkReadFd, buffer, sizeof(buffer));
+    if (bytes > 0)
+    {
+        networkLineBuffer.append(buffer, bytes);
+        if (networkDiscardingLine)
+        {
+            const FXint end = networkLineBuffer.find('\n');
+            if (end < 0)
+            {
+                networkLineBuffer.clear();
+                return 1;
+            }
+            networkLineBuffer = networkLineBuffer.mid(end + 1, networkLineBuffer.length() - end - 1);
+            networkDiscardingLine = false;
+        }
+        if (networkLineBuffer.length() > 4096 && networkLineBuffer.find('\n') < 0)
+        {
+            networkLineBuffer.clear();
+            networkDiscardingLine = true;
+            networkInvalidEntries = true;
+            return 1;
+        }
+        FXint newline;
+        while ((newline = networkLineBuffer.find('\n')) >= 0)
+        {
+            FXString line = networkLineBuffer.left(newline);
+            networkLineBuffer = networkLineBuffer.mid(newline + 1,
+                                                     networkLineBuffer.length() - newline - 1);
+            line.trim();
+            if (!line.empty())
+            {
+                if (line.left(4) == "gio:")
+                {
+                    networkError = line.left(512);
+                }
+                else
+                {
+                    if (line.left(6) == "smb://")
+                    {
+                        line = line.mid(6, line.length() - 6);
+                    }
+                    while (line.length() > 0 && line[line.length() - 1] == '/')
+                    {
+                        line = line.left(line.length() - 1);
+                    }
+                    if (safeDiscoveredHost(line))
+                    {
+                        FXbool alreadyAdded = false;
+                        for (FXint i = 0; i < networkList->getNumItems(); ++i)
+                        {
+                            if (networkList->getItemText(i) == line)
+                            {
+                                alreadyAdded = true;
+                                break;
+                            }
+                        }
+                        if (!alreadyAdded)
+                        {
+                            networkList->appendItem(line);
+                        }
+                    }
+                    else if (!line.empty())
+                    {
+                        networkInvalidEntries = true;
+                    }
+                }
+            }
+        }
+        return 1;
+    }
+
+    if (bytes < 0 && errno == EINTR)
+    {
+        return 1;
+    }
+    if (bytes < 0)
+    {
+        networkError = FXString(_("Unable to read network discovery results: ")) + strerror(errno);
+    }
+
+    if (!networkLineBuffer.empty())
+    {
+        networkLineBuffer.trim();
+        if (!networkLineBuffer.empty() && networkLineBuffer.left(4) == "gio:")
+        {
+            networkError = networkLineBuffer.left(512);
+        }
+        else if (safeDiscoveredHost(networkLineBuffer))
+        {
+            networkList->appendItem(networkLineBuffer);
+        }
+        else if (!networkLineBuffer.empty())
+        {
+            networkInvalidEntries = true;
+        }
+        networkLineBuffer.clear();
+    }
+    getApp()->removeTimeout(this, ID_NETWORK_TIMEOUT);
+    getApp()->removeInput(networkReadFd, INPUT_READ);
+    ::close(networkReadFd);
+    networkReadFd = -1;
+    int childStatus = 0;
+    if (networkPid > 0)
+    {
+        pid_t waited;
+        do
+        {
+            waited = waitpid(networkPid, &childStatus, 0);
+        }
+        while (waited < 0 && errno == EINTR);
+        if (waited < 0)
+        {
+            networkError = FXString(_("Unable to collect network discovery result: ")) + strerror(errno);
+        }
+        networkPid = -1;
+    }
+    networkRefresh->setText(_("Refresh"));
+    if (networkList->getNumItems() > 0)
+    {
+        networkStatus->setText(FXStringVal(networkList->getNumItems()) +
+                               (networkInvalidEntries ?
+                                _(" SMB servers found; invalid entries were ignored. Double-click to connect.") :
+                                _(" SMB server(s) found. Double-click to connect.")));
+    }
+    else if (!networkError.empty())
+    {
+        networkStatus->setText(networkError);
+    }
+    else if (WIFEXITED(childStatus) && WEXITSTATUS(childStatus) == 127)
+    {
+        networkStatus->setText(_("The gio command is not available."));
+    }
+    else if (WIFEXITED(childStatus) && WEXITSTATUS(childStatus) != 0)
+    {
+        networkStatus->setText(FXString(_("SMB discovery failed (exit code ")) +
+                               FXStringVal(WEXITSTATUS(childStatus)) + ").");
+    }
+    else if (networkInvalidEntries)
+    {
+        networkStatus->setText(_("No valid SMB server names were returned."));
+    }
+    else
+    {
+        networkStatus->setText(_("No SMB servers found."));
+    }
+    return 1;
+}
+
+long DirPanel::onNetworkTimeout(FXObject*, FXSelector, void*)
+{
+    if (networkPid > 0)
+    {
+        kill(networkPid, SIGKILL);
+        waitpid(networkPid, NULL, 0);
+        networkPid = -1;
+    }
+    if (networkReadFd >= 0)
+    {
+        getApp()->removeInput(networkReadFd, INPUT_READ);
+        ::close(networkReadFd);
+        networkReadFd = -1;
+    }
+    networkRefresh->setText(_("Refresh"));
+    networkStatus->setText(_("Discovery timed out. Refresh to try again."));
+    appLog(APP_LOG_UI, "network-discovery-timeout", "protocol=smb");
+    return 1;
+}
+
+long DirPanel::onCmdNetworkSelected(FXObject*, FXSelector, void* ptr)
+{
+    const FXint index = (FXint)(FXival)ptr;
+    if (index < 0 || index >= networkList->getNumItems())
+    {
+        return 0;
+    }
+    XFileExplorer* window = (XFileExplorer*)mainWindow;
+    ConnectDialog dialog(window, _("Connect to Server"), window->getCurrentPanel(), this);
+    dialog.setServerName(networkList->getItemText(index));
+    dialog.execute(PLACEMENT_OWNER);
+    return 1;
+}
+
+void DirPanel::showImagePreview(const FXString& pathname)
+{
+    if (pathname.empty())
+    {
+        onCmdClosePreview(NULL, 0, NULL);
+        return;
+    }
+
+    FXIconSource* source = new FXIconSource(getApp());
+    FXIcon* image = source->loadIconFile(pathname);
+    delete source;
+    if (!image)
+    {
+        onCmdClosePreview(NULL, 0, NULL);
+        return;
+    }
+
+    FXuint width = image->getWidth();
+    FXuint height = image->getHeight();
+    const FXuint maxWidth = FXMAX(64, FXMIN(236, placesViewFrame->getWidth() - 24));
+    const FXuint maxHeight = 125;
+    if (width == 0 || height == 0)
+    {
+        delete image;
+        onCmdClosePreview(NULL, 0, NULL);
+        return;
+    }
+    if (width > maxWidth || height > maxHeight)
+    {
+        if (width > height)
+        {
+            image->scale(maxWidth, FXMAX(1, (maxWidth * height) / width), 1);
+        }
+        else
+        {
+            image->scale(FXMAX(1, (maxHeight * width) / height), maxHeight, 1);
+        }
+    }
+    image->create();
+
+    previewImageLabel->setIcon(NULL);
+    delete previewImage;
+    previewImage = image;
+    previewImageLabel->setText("");
+    previewImageLabel->setIcon(previewImage);
+    const FXint separator = pathname.rfind(PATHSEPCHAR);
+    previewNameLabel->setText(pathname.mid(separator + 1, pathname.length() - separator - 1));
+    previewOverlay->show();
+    previewSpacer->setHeight(previewOverlay->getHeight() + 4);
+    placesStack->recalc();
+    placesViewFrame->recalc();
+    previewOverlay->raise();
+    onCmdPreviewLayout(NULL, 0, NULL);
+}
+
+long DirPanel::onCmdClosePreview(FXObject*, FXSelector, void*)
+{
+    if (previewImageLabel)
+    {
+        previewImageLabel->setIcon(NULL);
+        previewImageLabel->setText("");
+    }
+    delete previewImage;
+    previewImage = NULL;
+    previewOverlay->hide();
+    previewSpacer->setHeight(0);
+    placesStack->recalc();
+    placesViewFrame->recalc();
+    return 1;
+}
+
+long DirPanel::onCmdPreviewLayout(FXObject*, FXSelector, void*)
+{
+    if (previewOverlay && previewOverlay->shown())
+    {
+        const FXint width = FXMAX(120, FXMIN(260, placesViewFrame->getWidth() - 6));
+        const FXint height = previewOverlay->getHeight();
+        previewOverlay->position(3, FXMAX(0, placesViewFrame->getHeight() - height - 3), width, height);
+        previewOverlay->raise();
+    }
     return 1;
 }
 

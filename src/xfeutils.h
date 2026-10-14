@@ -672,6 +672,17 @@ FXString xf_localedir();
 
 FXString xf_filefromuri(FXString);
 FXString xf_filetouri(const FXString&);
+
+// XDND Direct Save (XDS) drops, used by archive managers such as Engrampa and File Roller
+enum
+{
+    XDS_DROP_SUCCESS,
+    XDS_DROP_ERROR,         // Protocol failure, not reported by the source
+    XDS_DROP_SOURCE_ERROR,  // Source failed and reports the error itself
+    XDS_DROP_TIMEOUT
+};
+FXDragType xf_xdsdragtype(FXApp*);
+int xf_xdsdrop(FXWindow*, const FXString&, FXuint);
 FXString xf_buildcopyname(const FXString&, const FXbool, FXString&, const FXuint);
 
 FXlong xf_deltime(FXString);

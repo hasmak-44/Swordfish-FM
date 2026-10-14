@@ -57,6 +57,10 @@ public:
 
     virtual ~ConnectDialog();
     FXuint execute(FXuint);
+    void setServerName(const FXString& name)
+    {
+        server->setText(name);
+    }
     long onCmdAccept(FXObject*, FXSelector, void*);
     long onCmdCancel(FXObject*, FXSelector, void*);
     long onCmdServerType(FXObject*, FXSelector, void*);

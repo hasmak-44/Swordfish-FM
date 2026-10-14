@@ -9,6 +9,7 @@
 #include "BrowseInputDialog.h"
 
 #include <sys/types.h>
+#include <sys/wait.h>
 
 
 class DirPanel : public FXVerticalFrame
@@ -21,6 +22,30 @@ protected:
     BookmarksList* bookmarkslist = NULL;
     FXPacker* statusbar = NULL;
     FXLabel* status = NULL;
+    FXVerticalFrame* placesSection = NULL;
+    FXVerticalFrame* mountsSection = NULL;
+    FXVerticalFrame* bookmarksSection = NULL;
+    FXButton* placesHeader = NULL;
+    FXButton* mountsHeader = NULL;
+    FXButton* bookmarksHeader = NULL;
+    FXVerticalFrame* placesViewFrame = NULL;
+    FXVerticalFrame* placesStack = NULL;
+    FXVerticalFrame* previewOverlay = NULL;
+    FXLabel* previewImageLabel = NULL;
+    FXLabel* previewNameLabel = NULL;
+    FXFrame* previewSpacer = NULL;
+    FXIcon* previewImage = NULL;
+    FXVerticalFrame* networkSection = NULL;
+    FXButton* networkHeader = NULL;
+    FXButton* networkRefresh = NULL;
+    FXList* networkList = NULL;
+    FXLabel* networkStatus = NULL;
+    int networkReadFd = -1;
+    pid_t networkPid = -1;
+    FXString networkLineBuffer;
+    FXString networkError;
+    FXbool networkInvalidEntries = false;
+    FXbool networkDiscardingLine = false;
     FXButton* activeicon = NULL;
     FXString trashlocation;
     FXString trashfileslocation;
@@ -123,6 +148,16 @@ public:
         ID_MOUNT,
         ID_UMOUNT,
 #endif
+        ID_TOGGLE_PLACES,
+        ID_TOGGLE_MOUNTS,
+        ID_TOGGLE_BOOKMARKS,
+        ID_TOGGLE_NETWORK,
+        ID_REFRESH_NETWORK,
+        ID_NETWORK_READ,
+        ID_NETWORK_TIMEOUT,
+        ID_NETWORK_LIST,
+        ID_CLOSE_PREVIEW,
+        ID_PREVIEW_LAYOUT,
         ID_LAST,
     };
     long exploreUp(DirItem* item, const DirItem* rootitem, const int task);
@@ -133,6 +168,13 @@ public:
     long onClipboardLost(FXObject*, FXSelector, void*);
     long onClipboardRequest(FXObject*, FXSelector, void*);
     long onCmdToggleHidden(FXObject*, FXSelector, void*);
+    long onCmdToggleSection(FXObject*, FXSelector, void*);
+    long onCmdRefreshNetwork(FXObject*, FXSelector, void*);
+    long onReadNetwork(FXObject*, FXSelector, void*);
+    long onNetworkTimeout(FXObject*, FXSelector, void*);
+    long onCmdNetworkSelected(FXObject*, FXSelector, void*);
+    long onCmdClosePreview(FXObject*, FXSelector, void*);
+    long onCmdPreviewLayout(FXObject*, FXSelector, void*);
     long onUpdToggleHidden(FXObject*, FXSelector, void*);
     long onCmdPopupMenuDirList(FXObject*, FXSelector, void*);
     long onExpandTree(FXObject*, FXSelector, void*);
@@ -205,6 +247,7 @@ public:
 
     void setActive();
     void setInactive();
+    void showImagePreview(const FXString& pathname);
 
     // Toggle dirsize refresh and force refresh if flag is true
     void setAllowDirsizeRefresh(FXbool flag);
@@ -330,7 +373,7 @@ public:
     // Return mounts list height
     FXuint getMountsHeight(void)
     {
-        return splitter->getSplit(0);
+        return mountslist ? mountslist->getHeight() : 200;
     }
 };
 #endif

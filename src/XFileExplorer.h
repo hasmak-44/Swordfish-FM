@@ -404,6 +404,11 @@ public:
         return dirpanel;
     }
 
+    void showImagePreview(const FXString& pathname)
+    {
+        dirpanel->showImagePreview(pathname);
+    }
+
     // Return a pointer on the left panel
     FilePanel* getLeftPanel(void)
     {

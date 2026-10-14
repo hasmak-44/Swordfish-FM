@@ -199,6 +199,7 @@ public:
     long onKeyPress(FXObject*, FXSelector, void*);
     long onCmdItemDoubleClicked(FXObject*, FXSelector, void*);
     long onCmdItemClicked(FXObject*, FXSelector, void*);
+    long onCmdPreviewSelection(FXObject*, FXSelector, void*);
     long onCmdFocus(FXObject*, FXSelector, void*);
     long onCmdItemFilter(FXObject*, FXSelector, void*);
     long onCmdCopyCut(FXObject*, FXSelector, void*);
@@ -281,7 +282,7 @@ public:
     long onUpdFileTrash(FXObject*, FXSelector, void*);
     long onUpdFileRestore(FXObject*, FXSelector, void*);
     long onUpdGoTrash(FXObject*, FXSelector, void*);
-    void updatePath();
+    void updatePath(FXbool resetEditor = false);
     long onCmdStopListRefreshTimer(FXObject*, FXSelector, void*);
     long onUpdRunScript(FXObject*, FXSelector, void*);
     long onCmdGoScriptDir(FXObject*, FXSelector, void*);
