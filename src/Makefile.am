@@ -1,10 +1,20 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
-bin_PROGRAMS = swordfish swfa swfi swfp swfw
+bin_PROGRAMS = swordfish swfa swfi swfp swfw swordfish-preview swordfish-network
+
+swordfish_network_SOURCES = NetworkDiscovery.cpp
+swordfish_network_LDADD = $(PREVIEW_LIBS)
+swordfish_network_LDFLAGS = -Wl,--as-needed
+
+swordfish_preview_SOURCES = PreviewWorker.cpp
+swordfish_preview_CPPFLAGS = $(AM_CPPFLAGS) $(PREVIEW_WORKER_CFLAGS)
+swordfish_preview_LDADD = $(PREVIEW_WORKER_LIBS)
 
 swordfish_SOURCES = ../st/x.c \
               ../st/st.c \
               AppLogger.cpp \
+              Preview.cpp \
+              RemoteDirectory.cpp \
               icons.cpp \
 			  startupnotification.cpp \
 			  xfeutils.cpp \
@@ -66,6 +76,8 @@ swordfish_LDADD = @LIBINTL@ -lutil
 swfa_SOURCES = ../st/x.c \
               ../st/st.c \
               AppLogger.cpp \
+              Preview.cpp \
+              RemoteDirectory.cpp \
               icons.cpp \
 			  startupnotification.cpp \
 			  xfeutils.cpp \
@@ -105,6 +117,8 @@ swfa_LDADD = @LIBINTL@ -lutil
 swfi_SOURCES = ../st/x.c \
               ../st/st.c \
               AppLogger.cpp \
+              Preview.cpp \
+              RemoteDirectory.cpp \
               icons.cpp \
 			  startupnotification.cpp \
 			  xfeutils.cpp \
@@ -144,6 +158,8 @@ swfi_LDADD = @LIBINTL@ -lutil
 swfp_SOURCES = ../st/x.c \
               ../st/st.c \
               AppLogger.cpp \
+              Preview.cpp \
+              RemoteDirectory.cpp \
               icons.cpp \
 			  startupnotification.cpp \
 			  xfeutils.cpp \
@@ -183,6 +199,8 @@ swfp_LDADD = @LIBINTL@ -lutil
 swfw_SOURCES = ../st/x.c \
               ../st/st.c \
               AppLogger.cpp \
+              Preview.cpp \
+              RemoteDirectory.cpp \
               icons.cpp \
 			  startupnotification.cpp \
 			  xfeutils.cpp \
@@ -248,6 +266,8 @@ EXTRA_DIST =  ../libsn/sn-common.h	\
 			  ../st/x.h \
 			  xfedefs.h \
               AppLogger.h \
+              Preview.h \
+              RemoteDirectory.h \
               SystemIcons.h \
               help.h \
               icons.h \

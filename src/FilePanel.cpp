@@ -1,4 +1,5 @@
 #include "config.h"
+#include "RemoteDirectory.h"
 #include <set>
 #include "i18n.h"
 
@@ -149,6 +150,9 @@ FXDEFMAP(FilePanel) FilePanelMap[] =
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_SHOW_BIG_ICONS, FilePanel::onCmdShow),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_SHOW_MINI_ICONS, FilePanel::onCmdShow),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_SHOW_DETAILS, FilePanel::onCmdShow),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_SHOW_THUMBNAILS, FilePanel::onCmdShow),
+    FXMAPFUNCS(SEL_COMMAND, FilePanel::ID_ZOOM_OUT, FilePanel::ID_ZOOM_RESET, FilePanel::onCmdZoom),
+    FXMAPFUNCS(SEL_UPDATE, FilePanel::ID_ZOOM_OUT, FilePanel::ID_ZOOM_RESET, FilePanel::onUpdZoom),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_TOGGLE_HIDDEN, FilePanel::onCmdToggleHidden),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_TOGGLE_THUMBNAILS, FilePanel::onCmdToggleThumbnails),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_SELECT_ALL, FilePanel::onCmdSelect),
@@ -194,6 +198,7 @@ FXDEFMAP(FilePanel) FilePanelMap[] =
     FXMAPFUNC(SEL_UPDATE, FilePanel::ID_SHOW_BIG_ICONS, FilePanel::onUpdShow),
     FXMAPFUNC(SEL_UPDATE, FilePanel::ID_SHOW_MINI_ICONS, FilePanel::onUpdShow),
     FXMAPFUNC(SEL_UPDATE, FilePanel::ID_SHOW_DETAILS, FilePanel::onUpdShow),
+    FXMAPFUNC(SEL_UPDATE, FilePanel::ID_SHOW_THUMBNAILS, FilePanel::onUpdShow),
     FXMAPFUNC(SEL_UPDATE, FilePanel::ID_TOGGLE_HIDDEN, FilePanel::onUpdToggleHidden),
     FXMAPFUNC(SEL_UPDATE, FilePanel::ID_TOGGLE_THUMBNAILS, FilePanel::onUpdToggleThumbnails),
     FXMAPFUNC(SEL_UPDATE, FilePanel::ID_DIR_USAGE, FilePanel::onUpdDirUsage),
@@ -1058,6 +1063,7 @@ void FilePanel::setActive()
     list->setFocus();
 
     isactive = true;
+    onCmdPreviewSelection(NULL, 0, NULL);
 }
 
 
@@ -1961,7 +1967,7 @@ long FilePanel::onCmdItemDoubleClicked(FXObject* sender, FXSelector sel, void* p
             if (list->isItemDirectory(item))
             {
                 // Does not have access
-                if (!xf_isreadexecutable(pathname))
+                if (!RemoteDirectory::handles(pathname) && !xf_isreadexecutable(pathname))
                 {
                     appLog(APP_LOG_ERRORS, "directory-open-denied", FXString("path=\"") + pathname + "\"");
                     MessageBox::error(getApp(), BOX_OK_SU, _("Error"), _(" Permission to: %s denied."),
@@ -2312,12 +2318,16 @@ long FilePanel::onCmdItemClicked(FXObject* sender, FXSelector sel, void* ptr)
 
 long FilePanel::onCmdPreviewSelection(FXObject*, FXSelector, void*)
 {
+    if (current != this || !mainWindow)
+    {
+        return 1;
+    }
     XFileExplorer* window = (XFileExplorer*)mainWindow;
     int index = -1;
     if (current->list->getNumSelectedItems(&index) == 1 && index >= 0 &&
         !current->list->isItemDirectory(index))
     {
-        window->showImagePreview(current->list->getItemFullPathname(index));
+        window->showImagePreview(current->list->getItemPathname(index));
     }
     else
     {
@@ -2358,13 +2368,16 @@ long FilePanel::onCmdTabs(FXObject* sender, FXSelector sel, void* ptr)
 
 FXbool FilePanel::navigatePane(const FXString& pathname)
 {
-    if (!xf_isdirectory(pathname))
+    xf_setwaitcursor(getApp(), BEGIN_CURSOR);
+    if (!RemoteDirectory::handles(pathname) && !xf_isdirectory(pathname))
     {
+        xf_setwaitcursor(getApp(), END_CURSOR);
         MessageBox::error(this, BOX_OK, _("Error"), _("Folder %s doesn't exist"), pathname.text());
         return false;
     }
-    if (!xf_isreadexecutable(pathname))
+    if (!RemoteDirectory::handles(pathname) && !xf_isreadexecutable(pathname))
     {
+        xf_setwaitcursor(getApp(), END_CURSOR);
         MessageBox::error(this, BOX_OK_SU, _("Error"), _(" Permission to: %s denied."), pathname.text());
         return false;
     }
@@ -2375,6 +2388,7 @@ FXbool FilePanel::navigatePane(const FXString& pathname)
     dirpanel->setDirectory(list->getDirectory(), true);
     finishPathEditing();
     list->setFocus();
+    xf_setwaitcursor(getApp(), END_CURSOR);
     return true;
 }
 
@@ -5800,21 +5814,14 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuCommand(menu, _("&Paste"), minipasteicon, current, FilePanel::ID_PASTE_CLIPBOARD);
         new FXMenuSeparator(menu);
         new FXMenuCheck(menu, _("&Hidden Files"), current->list, FileList::ID_TOGGLE_HIDDEN);
-        new FXMenuCheck(menu, _("Thum&bnail View"), current->list, FileList::ID_TOGGLE_THUMBNAIL_VIEW);
-        FXMenuPane* thumbsize = new FXMenuPane(this);
-        new FXMenuRadio(thumbsize, _("64"), current->list, FileList::ID_THUMB_SIZE_64);
-        new FXMenuRadio(thumbsize, _("96"), current->list, FileList::ID_THUMB_SIZE_96);
-        new FXMenuRadio(thumbsize, _("128"), current->list, FileList::ID_THUMB_SIZE_128);
-        new FXMenuRadio(thumbsize, _("160"), current->list, FileList::ID_THUMB_SIZE_160);
-        new FXMenuCascade(menu, _("Thumbnail Si&ze"), NULL, thumbsize);
         new FXMenuSeparator(menu);
-        new FXMenuRadio(menu, _("B&ig Icons"), current->list, IconList::ID_SHOW_BIG_ICONS);
-        new FXMenuRadio(menu, _("&Small Icons"), current->list, IconList::ID_SHOW_MINI_ICONS);
-        new FXMenuRadio(menu, _("&Detailed File List"), current->list, IconList::ID_SHOW_DETAILS);
+        new FXMenuRadio(menu, _("&Details"), current->list, IconList::ID_SHOW_DETAILS);
+        new FXMenuRadio(menu, _("&Icons"), current->list, IconList::ID_SHOW_BIG_ICONS);
+        new FXMenuRadio(menu, _("&Thumbnails"), current->list, FileList::ID_TOGGLE_THUMBNAIL_VIEW);
         new FXMenuSeparator(menu);
-        new FXMenuCheck(menu, _("Autos&ize"), current->list, FileList::ID_AUTOSIZE);
-        new FXMenuRadio(menu, _("&Rows"), current->list, FileList::ID_ARRANGE_BY_ROWS);
-        new FXMenuRadio(menu, _("&Columns"), current->list, FileList::ID_ARRANGE_BY_COLUMNS);
+        new FXMenuCommand(menu, _("Zoom &Out"), minizoomouticon, current->list, FileList::ID_ZOOM_OUT);
+        new FXMenuCommand(menu, _("Zoom &In"), minizoominicon, current->list, FileList::ID_ZOOM_IN);
+        new FXMenuCommand(menu, _("&Reset Zoom"), minizoom100icon, current->list, FileList::ID_ZOOM_RESET);
         new FXMenuSeparator(menu);
         new FXMenuRadio(menu, _("&Name"), current->list, FileList::ID_COL_NAME);
         new FXMenuRadio(menu, _("Si&ze"), current->list, FileList::ID_COL_SIZE);
@@ -5851,21 +5858,14 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuCommand(submenu, _("&Paste"), minipasteicon, current, FilePanel::ID_PASTE_CLIPBOARD);
         new FXMenuSeparator(submenu);
         new FXMenuCheck(submenu, _("&Hidden Files"), current->list, FileList::ID_TOGGLE_HIDDEN);
-        new FXMenuCheck(submenu, _("Thum&bnail View"), current->list, FileList::ID_TOGGLE_THUMBNAIL_VIEW);
-        FXMenuPane* thumbsize = new FXMenuPane(this);
-        new FXMenuRadio(thumbsize, _("64"), current->list, FileList::ID_THUMB_SIZE_64);
-        new FXMenuRadio(thumbsize, _("96"), current->list, FileList::ID_THUMB_SIZE_96);
-        new FXMenuRadio(thumbsize, _("128"), current->list, FileList::ID_THUMB_SIZE_128);
-        new FXMenuRadio(thumbsize, _("160"), current->list, FileList::ID_THUMB_SIZE_160);
-        new FXMenuCascade(submenu, _("Thumbnail Si&ze"), NULL, thumbsize);
         new FXMenuSeparator(submenu);
-        new FXMenuRadio(submenu, _("B&ig Icons"), current->list, IconList::ID_SHOW_BIG_ICONS);
-        new FXMenuRadio(submenu, _("&Small Icons"), current->list, IconList::ID_SHOW_MINI_ICONS);
-        new FXMenuRadio(submenu, _("&Detailed File List"), current->list, IconList::ID_SHOW_DETAILS);
+        new FXMenuRadio(submenu, _("&Details"), current->list, IconList::ID_SHOW_DETAILS);
+        new FXMenuRadio(submenu, _("&Icons"), current->list, IconList::ID_SHOW_BIG_ICONS);
+        new FXMenuRadio(submenu, _("&Thumbnails"), current->list, FileList::ID_TOGGLE_THUMBNAIL_VIEW);
         new FXMenuSeparator(submenu);
-        new FXMenuCheck(submenu, _("Autos&ize"), current->list, FileList::ID_AUTOSIZE);
-        new FXMenuRadio(submenu, _("&Rows"), current->list, FileList::ID_ARRANGE_BY_ROWS);
-        new FXMenuRadio(submenu, _("&Columns"), current->list, FileList::ID_ARRANGE_BY_COLUMNS);
+        new FXMenuCommand(submenu, _("Zoom &Out"), minizoomouticon, current->list, FileList::ID_ZOOM_OUT);
+        new FXMenuCommand(submenu, _("Zoom &In"), minizoominicon, current->list, FileList::ID_ZOOM_IN);
+        new FXMenuCommand(submenu, _("&Reset Zoom"), minizoom100icon, current->list, FileList::ID_ZOOM_RESET);
         new FXMenuSeparator(submenu);
         new FXMenuRadio(submenu, _("&Name"), current->list, FileList::ID_COL_NAME);
         new FXMenuRadio(submenu, _("Si&ze"), current->list, FileList::ID_COL_SIZE);
@@ -6894,6 +6894,9 @@ long FilePanel::onCmdShow(FXObject* sender, FXSelector sel, void* ptr)
     case ID_SHOW_DETAILS:
         current->list->handle(sender, FXSEL(SEL_COMMAND, FileList::ID_SHOW_DETAILS), ptr);
         break;
+    case ID_SHOW_THUMBNAILS:
+        current->list->setViewMode(FileList::VIEW_THUMBNAILS);
+        break;
     }
 
     // Set focus on current panel list
@@ -6912,14 +6915,14 @@ long FilePanel::onUpdShow(FXObject* sender, FXSelector sel, void* ptr)
     switch (FXSELID(sel))
     {
     case ID_SHOW_BIG_ICONS:
-        if (style & ICONLIST_BIG_ICONS)
+        if (current->list->getViewMode() == FileList::VIEW_ICONS)
         {
             msg = FXWindow::ID_CHECK;
         }
         break;
 
     case ID_SHOW_MINI_ICONS:
-        if (style & ICONLIST_MINI_ICONS)
+        if (current->list->getViewMode() == FileList::VIEW_ICONS)
         {
             msg = FXWindow::ID_CHECK;
         }
@@ -6931,12 +6934,30 @@ long FilePanel::onUpdShow(FXObject* sender, FXSelector sel, void* ptr)
             msg = FXWindow::ID_CHECK;
         }
         break;
+    case ID_SHOW_THUMBNAILS:
+        if (current->list->getViewMode() == FileList::VIEW_THUMBNAILS)
+        {
+            msg = FXWindow::ID_CHECK;
+        }
+        break;
     }
     sender->handle(this, FXSEL(SEL_COMMAND, msg), ptr);
 
     return 1;
 }
 
+
+long FilePanel::onCmdZoom(FXObject* sender, FXSelector sel, void* ptr)
+{
+    FXuint command = FileList::ID_ZOOM_OUT + FXSELID(sel) - ID_ZOOM_OUT;
+    return current->list->handle(sender, FXSEL(SEL_COMMAND, command), ptr);
+}
+
+long FilePanel::onUpdZoom(FXObject* sender, FXSelector sel, void* ptr)
+{
+    FXuint command = FileList::ID_ZOOM_OUT + FXSELID(sel) - ID_ZOOM_OUT;
+    return current->list->handle(sender, FXSEL(SEL_UPDATE, command), ptr);
+}
 
 // Handle toggle hidden command
 long FilePanel::onCmdToggleHidden(FXObject* sender, FXSelector sel, void* ptr)
@@ -7714,6 +7735,10 @@ long FilePanel::onCmdDirUsage(FXObject* sender, FXSelector, void*)
 // Update the status bar and the path linker
 long FilePanel::onUpdStatus(FXObject* sender, FXSelector, void*)
 {
+    if (current == this)
+    {
+        onCmdPreviewSelection(NULL, 0, NULL);
+    }
     // Update the status bar
     int item = -1;
     FXString status, linkto;

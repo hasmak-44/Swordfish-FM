@@ -1,4 +1,6 @@
 #include "config.h"
+#include "Preview.h"
+#include "RemoteDirectory.h"
 #include "i18n.h"
 
 #include <fx.h>
@@ -530,6 +532,8 @@ long XFilePackage::onSigHarvest(FXObject*, FXSelector, void*)
     pid_t child;
     while ((child = waitpid(-1, &status, WNOHANG)) > 0)
     {
+        if (Preview::harvest(child, status)) continue;
+        if (RemoteDirectory::harvest(child, status)) continue;
         handleCommandExit(this, child, status);
     }
     return 1;

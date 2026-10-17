@@ -5,6 +5,63 @@
 #include "icons.h"
 #include "FileDict.h"
 
+class SidebarItem : public FXTreeItem
+{
+public:
+    enum Kind { GROUP, PLACE, BOOKMARK, DEVICE, DIRECTORY, SERVER, REFRESH, NOTICE };
+    Kind kind;
+    FXString path;
+    FXString key;
+    FXbool loaded = false;
+    FXTime modified = 0;
+    SidebarItem(const FXString& text, FXIcon* icon, Kind type, const FXString& location = "",
+                const FXString& name = "") :
+        FXTreeItem(text, icon, icon), kind(type), path(location), key(name) {}
+};
+
+class SidebarTree : public FXTreeList
+{
+    FXDECLARE(SidebarTree)
+protected:
+    SidebarTree() {}
+    FXint clearance = 0;
+    FXDragType tabType = 0;
+    FXDragType uriType = 0;
+    FXbool remoteBusy = false;
+    FXString remoteError;
+public:
+    SidebarTree(FXComposite* parent, FXObject* target, FXSelector selector, FXuint opts);
+    virtual FXint getContentHeight();
+    void setClearance(FXint value);
+    long onExpandItem(FXObject*, FXSelector, void*);
+    long onCollapseItem(FXObject*, FXSelector, void*);
+    long onRemoteChanged(FXObject*, FXSelector, void*);
+    enum { ID_REMOTE_CHANGED = FXTreeList::ID_LAST };
+    ~SidebarTree();
+    long onDNDEnter(FXObject*, FXSelector, void*);
+    long onDNDMotion(FXObject*, FXSelector, void*);
+    long onDNDDrop(FXObject*, FXSelector, void*);
+    class BookmarksList* bookmarks = NULL;
+};
+
+// A free-positioned overlay must not participate in the tree's layout.
+class SidebarFrame : public FXPacker
+{
+    FXDECLARE(SidebarFrame)
+protected:
+    SidebarFrame() {}
+public:
+    SidebarTree* tree = NULL;
+    class DirList* directoryTree = NULL;
+    FXWindow* content = NULL;
+    FXTabBook* tabs = NULL;
+    FXVerticalFrame* overlay = NULL;
+    SidebarFrame(FXComposite* parent);
+    virtual FXint getDefaultWidth();
+    virtual FXint getDefaultHeight();
+    virtual void layout();
+};
+
 
 // Places list
 class PlacesList : public FXList

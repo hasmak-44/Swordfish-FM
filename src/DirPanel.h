@@ -22,30 +22,41 @@ protected:
     BookmarksList* bookmarkslist = NULL;
     FXPacker* statusbar = NULL;
     FXLabel* status = NULL;
-    FXVerticalFrame* placesSection = NULL;
-    FXVerticalFrame* mountsSection = NULL;
-    FXVerticalFrame* bookmarksSection = NULL;
-    FXButton* placesHeader = NULL;
-    FXButton* mountsHeader = NULL;
-    FXButton* bookmarksHeader = NULL;
-    FXVerticalFrame* placesViewFrame = NULL;
-    FXVerticalFrame* placesStack = NULL;
+    SidebarFrame* placesViewFrame = NULL;
+    SidebarFrame* previewFrame = NULL;
+    SidebarTree* sidebar = NULL;
+    SidebarItem* sidebarRoots[4] = {};
+    FXString sidebarSignatures[4];
+    SidebarItem* sidebarContext = NULL;
+    FXbool sidebarPopupOpen = false;
+    void createPlaces(FXWindow*, FXComposite*, FXColor, FXColor, FXuint);
+    void syncSidebar();
     FXVerticalFrame* previewOverlay = NULL;
     FXLabel* previewImageLabel = NULL;
     FXLabel* previewNameLabel = NULL;
-    FXFrame* previewSpacer = NULL;
+    FXText* previewText = NULL;
+    FXString previewPath;
+    FXString previewSelection;
+    FXString dismissedPreview;
+    FXTime previewStamp = 0;
+    FXlong previewSize = -1;
+    FXint previewLimit = 0;
+    FXulong previewRevision = 0;
     FXIcon* previewImage = NULL;
-    FXVerticalFrame* networkSection = NULL;
-    FXButton* networkHeader = NULL;
     FXButton* networkRefresh = NULL;
     FXList* networkList = NULL;
     FXLabel* networkStatus = NULL;
     int networkReadFd = -1;
     pid_t networkPid = -1;
+    int networkExitStatus = 0;
+    FXbool networkExited = false;
     FXString networkLineBuffer;
     FXString networkError;
     FXbool networkInvalidEntries = false;
     FXbool networkDiscardingLine = false;
+    void appendNetworkResult(FXString line);
+    void finishNetworkDiscovery();
+    void stopNetworkDiscovery();
     FXButton* activeicon = NULL;
     FXString trashlocation;
     FXString trashfileslocation;
@@ -158,6 +169,10 @@ public:
         ID_NETWORK_LIST,
         ID_CLOSE_PREVIEW,
         ID_PREVIEW_LAYOUT,
+        ID_SIDEBAR,
+        ID_SIDEBAR_REFRESH,
+        ID_SIDEBAR_OPEN_TAB,
+        ID_SIDEBAR_PROPERTIES,
         ID_LAST,
     };
     long exploreUp(DirItem* item, const DirItem* rootitem, const int task);
@@ -175,6 +190,11 @@ public:
     long onCmdNetworkSelected(FXObject*, FXSelector, void*);
     long onCmdClosePreview(FXObject*, FXSelector, void*);
     long onCmdPreviewLayout(FXObject*, FXSelector, void*);
+    long onSidebarActivate(FXObject*, FXSelector, void*);
+    long onSidebarExpand(FXObject*, FXSelector, void*);
+    long onSidebarPopup(FXObject*, FXSelector, void*);
+    long onSidebarRefresh(FXObject*, FXSelector, void*);
+    long onSidebarAction(FXObject*, FXSelector, void*);
     long onUpdToggleHidden(FXObject*, FXSelector, void*);
     long onCmdPopupMenuDirList(FXObject*, FXSelector, void*);
     long onExpandTree(FXObject*, FXSelector, void*);
@@ -248,6 +268,7 @@ public:
     void setActive();
     void setInactive();
     void showImagePreview(const FXString& pathname);
+    FXbool handleNetworkExit(pid_t child, int status);
 
     // Toggle dirsize refresh and force refresh if flag is true
     void setAllowDirsizeRefresh(FXbool flag);
@@ -275,6 +296,16 @@ public:
     void setDirectory(const FXString& pathname, FXbool notify = false)
     {
         dirlist->setDirectory(pathname, notify);
+        sidebar->killSelection();
+        for (FXTreeItem* node = sidebar->getFirstItem(); node; node = node->getBelow())
+        {
+            if (static_cast<SidebarItem*>(node)->path == pathname)
+            {
+                sidebar->setCurrentItem(node);
+                sidebar->selectItem(node);
+                break;
+            }
+        }
     }
 
     // Get current directory

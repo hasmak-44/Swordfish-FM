@@ -53,7 +53,7 @@ mkdir -p "$output_dir"
 DESTDIR="$output_dir" make install
 
 deploy_args=(--appdir "$output_dir")
-for program in swordfish swfa swfi swfp swfw; do
+for program in swordfish swfa swfi swfp swfw swordfish-preview swordfish-network; do
     executable="$output_dir/usr/bin/$program"
     if [ ! -x "$executable" ]; then
         printf 'Expected installed program is missing: %s\n' "$executable" >&2
@@ -70,6 +70,21 @@ if [ -z "$rsvg_convert" ]; then
 fi
 deploy_args+=(--executable "$rsvg_convert")
 deploy_args+=(--executable "$(command -v unzip)")
+deploy_args+=(--executable "$(command -v ffmpegthumbnailer)")
+
+pixbuf_moduledir=$(pkg-config --variable=gdk_pixbuf_moduledir gdk-pixbuf-2.0)
+pixbuf_query=$(find /usr/lib -type f -name gdk-pixbuf-query-loaders -print -quit)
+if [ -z "$pixbuf_query" ]; then
+    printf 'gdk-pixbuf-query-loaders is required to bundle image loaders\n' >&2
+    exit 1
+fi
+deploy_args+=(--executable "$pixbuf_query")
+mkdir -p "$output_dir/usr/lib/swordfish/pixbuf-loaders"
+mkdir -p "$output_dir/usr/lib/swordfish/gio-modules"
+for loader in "$pixbuf_moduledir"/*.so; do
+    install -m 755 "$loader" "$output_dir/usr/lib/swordfish/pixbuf-loaders/"
+    deploy_args+=(--library "$loader")
+done
 
 desktop_file="$output_dir/usr/share/applications/swordfish.desktop"
 if [ ! -f "$desktop_file" ]; then
@@ -78,6 +93,11 @@ if [ ! -f "$desktop_file" ]; then
 fi
 deploy_args+=(--desktop-file "$desktop_file")
 "$linuxdeploy" "${deploy_args[@]}"
+# Discovery and remote listings must load host GIO/GVFS, not bundled GIO via
+# linuxdeploy's RUNPATH. Restore the unmodified, baseline-built helper.
+install -m 755 src/swordfish-network "$output_dir/usr/bin/swordfish-network"
+mkdir -p "$output_dir/usr/share/mime"
+cp -a /usr/share/mime/. "$output_dir/usr/share/mime/"
 
 # Keep the original Xfe executable names working for saved settings and
 # file associations, while using the Swordfish names as the packaged programs.
@@ -104,6 +124,14 @@ mkdir -p "$output_dir/usr/share/doc/swordfish"
 install -m 644 COPYING "$output_dir/usr/share/doc/swordfish/COPYING"
 mkdir -p "$output_dir/usr/share/doc/unzip"
 install -m 644 /usr/share/doc/unzip/copyright "$output_dir/usr/share/doc/unzip/copyright"
+# Include notices for dynamically loaded modules and transitive decoder libraries too.
+dpkg-query -W -f='${binary:Package}\t${Version}\n' > "$output_dir/usr/share/doc/swordfish/build-packages.txt"
+for notice in /usr/share/doc/*/copyright; do
+    package=$(basename "$(dirname "$notice")")
+    mkdir -p "$output_dir/usr/share/doc/$package"
+    cp -L "$notice" "$output_dir/usr/share/doc/$package/copyright"
+done
+cp -a /usr/share/common-licenses "$output_dir/usr/share/"
 for program in swfa swfi swfp swfw; do
     ln -s AppRun "$output_dir/run-$program"
 done

@@ -2449,8 +2449,27 @@ int File::mount(const FXString dir, const FXString msg, const FXString cmd, FXSt
     uplabel->setText(msg);
     downlabel->setText(dir.text());
 
-    // Disable signal catch (required otherwise pclose() will fail)
-    getApp()->removeSignal(SIGCHLD);
+    // Keep the application reaper from consuming popen's child before pclose.
+    struct ChildSignalGuard
+    {
+        FXApp* app;
+        FXMainWindow* window;
+        ChildSignalGuard(FXApp* application, FXMainWindow* owner) : app(application), window(owner)
+        {
+            app->removeSignal(SIGCHLD);
+        }
+        void restore()
+        {
+            if (app)
+            {
+                app->addSignal(SIGCHLD, window, XFileExplorer::ID_HARVEST);
+                app = NULL;
+                // Children may have exited while SIGCHLD was unregistered.
+                window->handle(window, FXSEL(SEL_SIGNAL, XFileExplorer::ID_HARVEST), NULL);
+            }
+        }
+        ~ChildSignalGuard() { restore(); }
+    } childSignal(getApp(), mainWindow);
 
     // Perform mount/unmount command
     FILE* pcmd = popen(cmd.text(), "r");
@@ -2504,8 +2523,7 @@ int File::mount(const FXString dir, const FXString msg, const FXString cmd, FXSt
     // Close process and get exit status
     int exit_status = pclose(pcmd);
 
-    // Enable signal catch
-    getApp()->addSignal(SIGINT, mainWindow, XFileExplorer::ID_QUIT);
+    childSignal.restore();
 
     // Hide progress dialog
     forceTimeout();

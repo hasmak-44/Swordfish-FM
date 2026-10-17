@@ -127,6 +127,10 @@ class FXAPI DirList : public FXTreeList
 {
     FXDECLARE(DirList)
 protected:
+    FXString remoteTarget;
+    FXbool remoteBusy = false;
+    FXString remoteError;
+    FXint previewClearance = 0;
     TreeItem* prevSelItem = NULL;
     DirItem* list = NULL;                                       // Root item list
     FileDict* associations = NULL;                              // Association table
@@ -157,6 +161,7 @@ private:
 
 public:
     long onCmdRefresh(FXObject*, FXSelector, void*);
+    long onRemoteChanged(FXObject*, FXSelector, void*);
     long onCmdRefreshTimer(FXObject*, FXSelector, void*);
 #if defined(linux)
     long onMtdevicesRefresh(FXObject*, FXSelector, void*);
@@ -229,6 +234,7 @@ public:
         ID_DRAG_LINK,
         ID_DRAG_REJECT,
         ID_REFRESH,
+        ID_REMOTE_CHANGED,
         ID_LAST
     };
 public:
@@ -239,6 +245,18 @@ public:
 
     // Create server-side resources
     virtual void create();
+    virtual FXint getContentHeight()
+    {
+        return FXTreeList::getContentHeight() + previewClearance;
+    }
+    void setPreviewClearance(FXint value)
+    {
+        if (previewClearance != value)
+        {
+            previewClearance = value;
+            recalc();
+        }
+    }
 
     // Scan the directories and update the items if needed, or if force is true
     void scan(FXbool force = true);

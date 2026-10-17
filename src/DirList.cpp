@@ -19,6 +19,8 @@
 #include "InputDialog.h"
 #include "MessageBox.h"
 #include "DirList.h"
+#include "AppLogger.h"
+#include "RemoteDirectory.h"
 
 
 #define SELECT_MASK    (TREELIST_SINGLESELECT | TREELIST_BROWSESELECT)
@@ -55,6 +57,7 @@ FXIMPLEMENT(DirItem, FXTreeItem, NULL, 0)
 // Map
 FXDEFMAP(DirList) DirListMap[] =
 {
+    FXMAPFUNC(SEL_COMMAND, DirList::ID_REMOTE_CHANGED, DirList::onRemoteChanged),
     FXMAPFUNC(SEL_DRAGGED, 0, DirList::onDragged),
     FXMAPFUNC(SEL_TIMEOUT, DirList::ID_REFRESH_TIMER, DirList::onCmdRefreshTimer),
 #if defined(linux)
@@ -1411,12 +1414,20 @@ long DirList::onExpanded(FXObject* sender, FXSelector sel, void* ptr)
         return 0;
     }
 
+    if (grabbed())
+    {
+        // Expansion can block on remote filesystems.
+        ungrab();
+        getApp()->flush();
+    }
+
+    xf_setwaitcursor(getApp(), BEGIN_CURSOR);
     // Expand tree item
     expandDirTree((TreeItem*)item, true);
     listChildItems(item);
 
     // Now we know for sure whether we really have subitems or not
-    if (!item->first)
+    if (!item->first && !RemoteDirectory::loading(getItemPathname((TreeItem*)item)))
     {
         item->state &= ~DirItem::HASITEMS;
     }
@@ -1426,6 +1437,7 @@ long DirList::onExpanded(FXObject* sender, FXSelector sel, void* ptr)
     }
 
     sortChildItems(item);
+    xf_setwaitcursor(getApp(), END_CURSOR);
     return 1;
 }
 
@@ -1442,6 +1454,13 @@ long DirList::onCollapsed(FXObject* sender, FXSelector sel, void* ptr)
 
     // Collapse tree item
     collapseDirTree((TreeItem*)item, true);
+    RemoteDirectory::release(this, getItemPathname((TreeItem*)item));
+    remoteTarget.clear();
+    if (remoteBusy && !RemoteDirectory::loading(this))
+    {
+        xf_setwaitcursor(getApp(), END_CURSOR);
+        remoteBusy = false;
+    }
 
     return 1;
 }
@@ -1633,8 +1652,52 @@ long DirList::onCmdRefreshTimer(FXObject*, FXSelector, void*)
 // Force refresh
 long DirList::onCmdRefresh(FXObject*, FXSelector, void*)
 {
+    for (FXTreeItem* node = getFirstItem(); node; node = node->getBelow())
+        if (node->isExpanded()) RemoteDirectory::refresh(getItemPathname((TreeItem*)node));
     scan(true);
     return 0;
+}
+
+long DirList::onRemoteChanged(FXObject*, FXSelector, void*)
+{
+    FXbool busy = false;
+    FXString failure;
+    for (FXTreeItem* node = getFirstItem(); node; node = node->getBelow())
+    {
+        FXString path = getItemPathname((TreeItem*)node);
+        if (RemoteDirectory::handles(path) &&
+            (node->isExpanded() || (!remoteTarget.empty() &&
+             (remoteTarget == path || remoteTarget.left(path.length() + 1) == path + "/"))))
+        {
+            listChildItems((DirItem*)node);
+            sortChildItems(node);
+            busy |= RemoteDirectory::loading(path);
+            if (!RemoteDirectory::error(path).empty()) failure = RemoteDirectory::error(path);
+        }
+    }
+    if (!remoteTarget.empty())
+    {
+        TreeItem* item = getPathnameItem(remoteTarget);
+        if (item && getItemPathname(item) == remoteTarget)
+        {
+            makeItemVisible(item);
+            setCurrentItem(item, false);
+            remoteTarget.clear();
+        }
+    }
+    busy = RemoteDirectory::loading(this);
+    if (remoteBusy != busy)
+    {
+        xf_setwaitcursor(getApp(), busy ? BEGIN_CURSOR : END_CURSOR);
+        remoteBusy = busy;
+    }
+    if (!busy && !failure.empty() && remoteError != failure)
+    {
+        remoteError = failure;
+        MessageBox::error(this, BOX_OK, _("Error"), _("Remote folder loading failed: %s"), failure.text());
+    }
+    if (failure.empty()) remoteError.clear();
+    return 1;
 }
 
 
@@ -1663,7 +1726,17 @@ void DirList::scan(FXbool force)
             pathname = getItemPathname((TreeItem*)item);
 
             // Stat this directory
-            if (xf_stat(pathname.text(), &info) == 0)
+            if (RemoteDirectory::handles(pathname))
+            {
+                listChildItems(item);
+                sortChildItems(item);
+                if (item->first)
+                {
+                    item = (DirItem*)item->first;
+                    continue;
+                }
+            }
+            else if (xf_stat(pathname.text(), &info) == 0)
             {
                 // Get the mod date of the item
                 FXTime newdate = (FXTime)FXMAX(info.st_mtime, info.st_ctime);
@@ -1799,16 +1872,22 @@ void DirList::listChildItems(DirItem* par)
     pn = &newlist;
 
     // Get directory stream pointer
-    dirp = opendir(directory.text());
+    const FXbool remote = RemoteDirectory::handles(directory);
+    const std::vector<RemoteDirectory::Entry>* rows = NULL;
+    if (remote) rows = &RemoteDirectory::entries(getApp(), directory, this, ID_REMOTE_CHANGED);
+    size_t row = 0;
+    const RemoteDirectory::Entry* entry = NULL;
+    dirp = remote ? NULL : opendir(directory.text());
 
     // Managed to open directory
-    if (dirp)
+    if (dirp || remote)
     {
         // Process directory entries
-        while ((dp = readdir(dirp)) != NULL)
+        while (remote ? row < rows->size() : ((dp = readdir(dirp)) != NULL))
         {
+            if (remote) entry = &(*rows)[row++];
             // Get name of entry
-            name = dp->d_name;
+            name = remote ? entry->name : dp->d_name;
 
             // A dot special file?
             if ((name[0] == '.') && ((name[1] == 0) || ((name[1] == '.') && (name[2] == 0))))
@@ -1831,14 +1910,15 @@ void DirList::listChildItems(DirItem* par)
             pathname += name;
 
             // Get file/link info
-            if (xf_lstat(pathname.text(), &info) != 0)
+            if (remote) info = entry->info;
+            if (!remote && xf_lstat(pathname.text(), &info) != 0)
             {
                 continue;
             }
 
             // If its a link, get the info on file itself
-            islink = S_ISLNK(info.st_mode);
-            if (islink && (xf_stat(pathname.text(), &info) != 0))
+            islink = remote ? entry->symlink : S_ISLNK(info.st_mode);
+            if (!remote && islink && (xf_stat(pathname.text(), &info) != 0))
             {
                 continue;
             }
@@ -1947,7 +2027,8 @@ fnd:
             // Determine icons and type
             if (item->state & DirItem::FOLDER)
             {
-                if (!xf_isreadexecutable(pathname))
+                if (remote ? entry->readable == 0 || entry->executable == 0 :
+                             access(pathname.text(), R_OK | X_OK) != 0)
                 {
                     openicon = minifolderlockedicon;
                     closedicon = minifolderlockedicon;
@@ -2113,7 +2194,7 @@ fnd:
         }
 
         // Close it
-        closedir(dirp);
+        if (dirp) closedir(dirp);
     }
 
     // Wipe items remaining in list:- they have disappeared!!
@@ -2124,7 +2205,7 @@ fnd:
     }
 
     // Now we know for sure whether we really have subitems or not
-    if (par->first)
+    if (par->first || (remote && RemoteDirectory::loading(directory)))
     {
         par->state |= DirItem::HASITEMS;
     }
@@ -2136,6 +2217,11 @@ fnd:
     // Remember new list
     par->list = newlist;
 
+    if (remote && RemoteDirectory::loading(directory) && !remoteBusy)
+    {
+        xf_setwaitcursor(getApp(), BEGIN_CURSOR);
+        remoteBusy = true;
+    }
     // Need to layout
     recalc();
 }
@@ -2297,11 +2383,13 @@ FXString DirList::getItemFilename(const TreeItem* item) const
 // Open all intermediate directories down toward given one
 void DirList::setDirectory(const FXString& pathname, FXbool notify)
 {
+    const FXTime started = FXThread::time();
     if (!pathname.empty())
     {
+        remoteTarget = RemoteDirectory::handles(pathname) ? pathname : FXString::null;
         FXString path = FXPath::absolute(getItemPathname((TreeItem*)currentitem), pathname);
 
-        while (!FXPath::isTopDirectory(path) && !xf_isdirectory(path))
+        while (!RemoteDirectory::handles(path) && !FXPath::isTopDirectory(path) && !xf_isdirectory(path))
         {
             path = FXPath::upLevel(path);
         }
@@ -2313,6 +2401,12 @@ void DirList::setDirectory(const FXString& pathname, FXbool notify)
         }
         makeItemVisible(item);
         setCurrentItem(item, notify);
+    }
+    const FXTime elapsed = FXThread::time() - started;
+    if (elapsed >= 1000000000LL)
+    {
+        appLog(APP_LOG_FILE_OPERATIONS, "slow-tree-synchronization",
+               FXString("path=\"") + pathname + "\" elapsed_ms=" + FXStringVal(elapsed / 1000000));
     }
 }
 
@@ -2459,6 +2553,8 @@ void DirList::setMatchMode(FXuint mode)
 // Cleanup
 DirList::~DirList()
 {
+    RemoteDirectory::release(this);
+    if (remoteBusy) xf_setwaitcursor(getApp(), END_CURSOR);
     clearItems();
     getApp()->removeTimeout(this, ID_REFRESH_TIMER);
     getApp()->removeTimeout(this, ID_EXPAND_TIMER);

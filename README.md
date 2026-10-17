@@ -6,11 +6,12 @@
 
 # Swordfish FM
 
-> **Swordfish-Portable v0.0.1 RC2 — release candidate available for testing**
+> **Swordfish-Portable v0.0.1 RC4 — release candidate available for testing**
 >
-> RC2 supersedes RC1. Please use RC2 for testing; RC1 has known application
-> launching and terminal problems. The planned no-internal-apps redesign is
-> future work, not part of RC2.
+> RC4 includes the tested sidebar/view redesign, asynchronous previews and fast
+> native loading of mounted GVFS shares. The unfinished Network discovery section
+> is temporarily hidden; mounted shares under Devices and Connect to Server remain
+> available. This is a release candidate, not the final 0.0.1 release.
 > 
 > About the name **SwordFish**, The original XFE file manager is known for its speed and versatility, ad I am a life long avid angler, I wanted to choose a name that reflects both the ethos of XFE, and combine with my hobby, Swordfish is one of the fastest and most agile top ocean predators, hence the name ;}
 > 
@@ -48,7 +49,7 @@ system. It currently supports 64-bit x86 Linux.
 The portable build runs on 64-bit x86 Linux. It does not install Swordfish
 system-wide or require extra software to download it.
 
-1. Open the [Swordfish Portable RC2 release](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-portable-0.0.1-rc2)
+1. Open the [Swordfish Portable RC4 release](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-portable-0.0.1-rc4)
    and download the Linux x86_64 ZIP under **Assets**.
    Your browser downloads the ZIP using its normal download settings.
 2. Extract the ZIP to the place where you want to keep Swordfish. The ZIP

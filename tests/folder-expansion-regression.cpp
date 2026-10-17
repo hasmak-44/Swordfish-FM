@@ -1,0 +1,537 @@
+#include <fx.h>
+#include "FileList.h"
+#include "DirList.h"
+#include "Places.h"
+#include "XFileExplorer.h"
+#include "RemoteDirectory.h"
+#include "File.h"
+#include "icons.h"
+#include <X11/Xlib.h>
+#include <cassert>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <dirent.h>
+#include <dlfcn.h>
+#include <fstream>
+#include <iterator>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+
+extern FXMainWindow* mainWindow;
+extern FXString execpath, homedir, xdgdatahome, xdgconfighome;
+
+static FXString fixture;
+static bool delayChildren;
+static int childOpens;
+static Display* otherClient;
+static bool checkPointer;
+static int pointerChecks;
+static FXString measuredDirectory;
+static int stats, lstats, accesses, nestedReads;
+static bool measuring;
+static bool busyFlushed;
+
+static FXApp* testApp;
+static Window observedWindow;
+static bool busyCursor;
+static bool expanding;
+static int remoteFilesystemCalls;
+
+static void checkRemote(const char* path)
+{
+    const char* prefix = "/run/user/1000/gvfs/smb-share:test";
+    if (std::strncmp(path, prefix, std::strlen(prefix)) == 0)
+        ++remoteFilesystemCalls;
+}
+
+extern "C" int XDefineCursor(Display* display, Window window, Cursor cursor)
+{
+    typedef int (*DefineCursor)(Display*, Window, Cursor);
+    static DefineCursor realDefine = reinterpret_cast<DefineCursor>(dlsym(RTLD_NEXT, "XDefineCursor"));
+    if (testApp && window == observedWindow)
+    {
+        busyCursor = cursor == testApp->getWaitCursor()->id();
+    }
+    return realDefine(display, window, cursor);
+}
+
+extern "C" int XFlush(Display* display)
+{
+    typedef int (*Flush)(Display*);
+    static Flush realFlush = reinterpret_cast<Flush>(dlsym(RTLD_NEXT, "XFlush"));
+    if ((measuring || expanding) && busyCursor) busyFlushed = true;
+    return realFlush(display);
+}
+
+static void checkBusy(const char* path)
+{
+    if (measuring && std::strncmp(path, measuredDirectory.text(), measuredDirectory.length()) == 0)
+    {
+        assert(busyCursor && busyFlushed);
+    }
+}
+
+static bool measuredChild(const char* path)
+{
+    return measuring && std::strncmp(path, measuredDirectory.text(), measuredDirectory.length()) == 0 &&
+           path[measuredDirectory.length()] == '/' &&
+           std::strchr(path + measuredDirectory.length() + 1, '/') == NULL;
+}
+
+extern "C" int stat(const char* path, struct stat* info) noexcept
+{
+    checkRemote(path);
+    typedef int (*Stat)(const char*, struct stat*);
+    static Stat realStat = reinterpret_cast<Stat>(dlsym(RTLD_NEXT, "stat"));
+    checkBusy(path);
+    if (measuredChild(path)) { ++stats; usleep(1000); }
+    return realStat(path, info);
+}
+
+extern "C" int lstat(const char* path, struct stat* info) noexcept
+{
+    checkRemote(path);
+    typedef int (*Stat)(const char*, struct stat*);
+    static Stat realStat = reinterpret_cast<Stat>(dlsym(RTLD_NEXT, "lstat"));
+    checkBusy(path);
+    if (measuredChild(path)) { ++lstats; usleep(1000); }
+    return realStat(path, info);
+}
+
+extern "C" int access(const char* path, int mode) noexcept
+{
+    checkRemote(path);
+    typedef int (*Access)(const char*, int);
+    static Access realAccess = reinterpret_cast<Access>(dlsym(RTLD_NEXT, "access"));
+    checkBusy(path);
+    if (measuredChild(path)) { ++accesses; usleep(1000); }
+    return realAccess(path, mode);
+}
+
+class TestItem : public FileItem
+{
+public:
+    using FileItem::FileItem;
+    int mark() const { return treeMark; }
+};
+
+class TestList : public FileList
+{
+public:
+    using FileList::FileList;
+    using FileList::listItems;
+    IconItem* createItem(const FXString& text, FXIcon* big, FXIcon* mini, void* ptr) override
+    {
+        return new TestItem(getApp(), text, big, mini, ptr);
+    }
+    int mark(int index) const { return static_cast<TestItem*>(getItem(index))->mark(); }
+};
+
+class TestDirectoryItem : public DirItem
+{
+public:
+    explicit TestDirectoryItem(const FXString& name) : DirItem(name)
+    {
+        state |= FOLDER;
+    }
+};
+
+extern "C" DIR* opendir(const char* path)
+{
+    checkRemote(path);
+    typedef DIR* (*OpenDirectory)(const char*);
+    static OpenDirectory realOpen = reinterpret_cast<OpenDirectory>(dlsym(RTLD_NEXT, "opendir"));
+    assert(realOpen);
+    if (expanding) assert(busyCursor && busyFlushed);
+    if (measuring && std::strncmp(path, measuredDirectory.text(), measuredDirectory.length()) == 0 &&
+        path[measuredDirectory.length()] == '/' && path[measuredDirectory.length() + 1])
+    {
+        ++nestedReads;
+    }
+    if (delayChildren && std::strncmp(path, fixture.text(), fixture.length()) == 0 &&
+        path[fixture.length()] == '/' && path[fixture.length() + 1] != '\0')
+    {
+        ++childOpens;
+        usleep(1500000);
+    }
+    if (checkPointer)
+    {
+        int result = XGrabPointer(otherClient, DefaultRootWindow(otherClient), False,
+                                  ButtonPressMask, GrabModeAsync, GrabModeAsync,
+                                  None, None, CurrentTime);
+        assert(result == GrabSuccess);
+        XUngrabPointer(otherClient, CurrentTime);
+        XSync(otherClient, False);
+        ++pointerChecks;
+    }
+    return realOpen(path);
+}
+
+static int find(FileList* list, const char* name)
+{
+    for (int i = 0; i < list->getNumItems(); ++i)
+    {
+        if (list->getItemFilename(i) == name) return i;
+    }
+    return -1;
+}
+
+static SidebarTree* findSidebar(FXWindow* parent)
+{
+    SidebarTree* tree = dynamic_cast<SidebarTree*>(parent);
+    if (tree) return tree;
+    for (FXWindow* child = parent->getFirst(); child; child = child->getNext())
+    {
+        if ((tree = findSidebar(child))) return tree;
+    }
+    return NULL;
+}
+
+static int pump(FXApp& app, int milliseconds)
+{
+    const FXTime until = FXThread::time() + milliseconds * 1000000LL;
+    int iterations = 0;
+    while (FXThread::time() < until)
+    {
+        int status;
+        pid_t child;
+        while ((child = waitpid(-1, &status, WNOHANG)) > 0)
+            assert(RemoteDirectory::harvest(child, status));
+        const FXTime start = FXThread::time();
+        app.runOneEvent(false);
+        if (FXThread::time() - start >= 150000000LL)
+            fprintf(stderr, "UI event stalled for %lld ms\n", (long long)((FXThread::time() - start) / 1000000));
+        assert(FXThread::time() - start < 150000000LL);
+        ++iterations;
+        usleep(1000);
+    }
+    return iterations;
+}
+
+class RemoteObserver : public FXObject
+{
+public:
+    int notifications = 0;
+    long handle(FXObject*, FXSelector, void*) override { ++notifications; return 1; }
+};
+
+int main(int argc, char** argv)
+{
+    assert(argc == 4);
+    fixture = argv[1];
+    FXString executable = FXPath::absolute(argv[2]);
+    FXString icons = argv[3];
+    FXApp app("SwordfishExpansionTest", "SwordfishExpansionTest");
+    testApp = &app;
+    app.init(argc, argv);
+    homedir = FXSystem::getHomeDirectory();
+    xdgconfighome = homedir + "/config";
+    xdgdatahome = homedir + "/data";
+    execpath = executable;
+    app.reg().writeStringEntry("SETTINGS", "iconpath", icons.text());
+    FXuint status;
+    assert(loadAppIcons(&app, &status));
+    FXMainWindow* shell = new FXMainWindow(&app, "Folder expansion regression", NULL, NULL,
+                                          DECOR_ALL, 0, 0, 900, 600);
+    mainWindow = shell;
+    FXHorizontalFrame* frame = new FXHorizontalFrame(shell, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    FXuint columns[] = {FileList::ID_COL_NAME, FileList::ID_COL_SIZE, FileList::ID_COL_TYPE};
+    TestList* list = new TestList(shell, frame, columns, 3, NULL, 0, false, 100, 100,
+                                  LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    SidebarTree* sidebar = new SidebarTree(frame, NULL, 0, LAYOUT_FILL_Y);
+    DirList* tree = new DirList(shell, frame, NULL, 0);
+    app.create();
+    shell->show();
+    observedWindow = list->id();
+    otherClient = XOpenDisplay(NULL);
+    assert(otherClient);
+    list->setViewMode(FileList::VIEW_DETAILS);
+    delayChildren = true;
+    auto start = std::chrono::steady_clock::now();
+    list->setDirectory(fixture);
+    list->scan(true);
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+    assert(childOpens == 0 && elapsed < 1000);
+    delayChildren = false;
+    puts("PASS: listing and refresh never open collapsed children, even with delayed directory reads");
+
+    int folder = find(list, "folder");
+    assert(folder >= 0 && list->mark(folder) == 1);
+    int link = find(list, "link-folder");
+    int broken = find(list, "broken-link");
+    assert(link >= 0 && list->isItemDirectory(link) &&
+           static_cast<FileItem*>(list->getItem(link))->isSymlink());
+    assert(broken >= 0 && !list->isItemDirectory(broken) &&
+           static_cast<FileItem*>(list->getItem(broken))->isSymlink());
+    expanding = true;
+    list->toggleExpand(folder, 1);
+    expanding = false;
+    assert(!busyCursor);
+    assert(find(list, "folder/nested.txt") >= 0);
+    list->toggleExpand(find(list, "folder"), 0);
+    assert(find(list, "folder/nested.txt") < 0);
+    int empty = find(list, "empty");
+    assert(empty >= 0 && list->mark(empty) == 1);
+    list->toggleExpand(empty, 1);
+    assert(list->mark(find(list, "empty")) == 0);
+    list->listItems(false);
+    assert(list->mark(find(list, "empty")) == 0);
+    list->scan(true);
+    assert(list->mark(find(list, "empty")) == 1);
+    puts("PASS: explicit expansion, collapse, lazy empty-folder detection, and refresh");
+
+    measuredDirectory = fixture + "/large";
+    stats = lstats = accesses = nestedReads = 0;
+    measuring = true;
+    start = std::chrono::steady_clock::now();
+    list->setDirectory(measuredDirectory);
+    elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+    measuring = false;
+    assert(list->getNumItems() == 794 && nestedReads == 0 && !busyCursor);
+    printf("793 folders, simulated 1ms metadata latency: %ldms, stat=%d lstat=%d access=%d child-reads=%d\n",
+           elapsed, stats, lstats, accesses, nestedReads);
+    assert(lstats == 794 && stats == 0 && accesses == 794);
+    puts("PASS: busy cursor active and flushed before first metadata read, balanced after listing");
+    list->setDirectory(fixture);
+
+    SidebarItem* item = new SidebarItem("fixture", minifoldericon, SidebarItem::DIRECTORY, fixture);
+    sidebar->appendItem(NULL, item);
+    sidebar->grab();
+    app.flush(true);
+    assert(sidebar->grabbed());
+    checkPointer = true;
+    busyFlushed = false;
+    expanding = true;
+    sidebar->onExpandItem(NULL, 0, item);
+    expanding = false;
+    checkPointer = false;
+    assert(!sidebar->grabbed() && pointerChecks > 0 && item->loaded && !busyCursor);
+    puts("PASS: Places expansion releases and flushes pointer grab before directory reads");
+
+    tree->setDirectory(fixture, true);
+    DirItem* current = static_cast<DirItem*>(tree->getCurrentItem());
+    assert(current && current->isDirectory());
+    tree->grab();
+    app.flush(true);
+    assert(tree->grabbed());
+    pointerChecks = 0;
+    checkPointer = true;
+    busyFlushed = false;
+    expanding = true;
+    tree->onExpanded(NULL, 0, current);
+    expanding = false;
+    checkPointer = false;
+    assert(!tree->grabbed() && pointerChecks > 0 && !busyCursor);
+    puts("PASS: Tree expansion releases pointer so another X11 client can receive input");
+
+    FXString remote = "/run/user/1000/gvfs/smb-share:test/large";
+    start = std::chrono::steady_clock::now();
+    list->setDirectory(remote);
+    elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+    assert(elapsed < 150 && busyCursor && RemoteDirectory::loading(remote));
+    assert(list->getNumItems() == 1);
+    assert(pump(app, 420) > 50);
+    assert(list->getNumItems() > 1 && list->getNumItems() < 794 && busyCursor);
+    list->selectItem(find(list, "folder-0"));
+    assert(pump(app, 1600) > 100);
+    assert(list->getNumItems() == 794 && !busyCursor && !RemoteDirectory::loading(remote));
+    assert(list->isItemSelected(find(list, "folder-0")));
+    assert(remoteFilesystemCalls == 0);
+    puts("PASS: 793 remote folders arrive progressively, UI stays responsive, selection survives, no per-entry FUSE calls");
+    list->setAllowRefresh(false);
+    list->onRemoteChanged(NULL, 0, NULL);
+    assert(busyCursor);
+    list->setAllowRefresh(true);
+    list->onCmdRefreshTimer(NULL, 0, NULL);
+    assert(!busyCursor && list->getNumItems() == 794);
+    puts("PASS: remote UI updates honor interaction-time refresh suspension");
+    list->selectItem(find(list, "folder-792"));
+    list->onCmdRefresh(NULL, 0, NULL);
+    pump(app, 420);
+    assert(busyCursor && list->getNumItems() == 794);
+    assert(list->isItemSelected(find(list, "folder-792")));
+    pump(app, 1400);
+    assert(!busyCursor && list->isItemSelected(find(list, "folder-792")));
+    puts("PASS: remote refresh preserves existing rows and selection while new batches arrive");
+    list->toggleExpand(find(list, "folder-0"), 1);
+    assert(busyCursor);
+    pump(app, 500);
+    assert(find(list, "folder-0/subfolder") >= 0 && !busyCursor);
+    assert(list->isItemDirectory(find(list, "folder-0/link-folder")));
+    assert(!list->isItemDirectory(find(list, "folder-0/broken-link")));
+    list->toggleExpand(find(list, "folder-1"), 1);
+    assert(busyCursor);
+    list->toggleExpand(find(list, "folder-1"), 0);
+    assert(!RemoteDirectory::loading(remote + "/folder-1") && !busyCursor);
+    list->onCmdRefresh(NULL, 0, NULL);
+    assert(busyCursor);
+    list->setDirectory(fixture);
+    pump(app, 250);
+    assert(!busyCursor && list->getDirectory() == fixture);
+    puts("PASS: asynchronous Details expansion, symlinks, collapse cancellation, refresh, and navigation cancellation");
+
+    SidebarItem* remoteItem = new SidebarItem("remote", minifoldericon, SidebarItem::DEVICE, remote);
+    remoteItem->setHasItems(true);
+    sidebar->appendItem(NULL, remoteItem);
+    sidebar->expandTree(remoteItem, false);
+    sidebar->onExpandItem(NULL, 0, remoteItem);
+    assert(RemoteDirectory::loading(remote));
+    pump(app, 1800);
+    assert(remoteItem->getNumChildren() == 793 && !busyCursor);
+    sidebar->collapseTree(remoteItem, false);
+    sidebar->onCollapseItem(NULL, 0, remoteItem);
+    assert(!RemoteDirectory::loading(sidebar));
+    puts("PASS: Places remote expansion uses native metadata batches and balances busy cursor");
+
+    DirList* remoteTree = new DirList(shell, frame, NULL, 0);
+    remoteTree->create();
+    app.removeTimeout(remoteTree, DirList::ID_REFRESH_TIMER);
+    FXTreeItem* parent = remoteTree->getFirstItem();
+    assert(parent);
+    for (const char* component : {"run", "user", "1000", "gvfs", "smb-share:test", "large"})
+    {
+        FXTreeItem* next = parent->getFirst();
+        while (next && next->getText() != component) next = next->getNext();
+        if (!next) next = remoteTree->appendItem(parent, new TestDirectoryItem(component));
+        parent->setExpanded(true);
+        parent = next;
+    }
+    parent->setExpanded(true);
+    remoteTree->onExpanded(NULL, 0, parent);
+    assert(RemoteDirectory::loading(remoteTree) && busyCursor);
+    pump(app, 1700);
+    assert(parent->getNumChildren() == 793 && !busyCursor);
+    remoteTree->setDirectory(remote + "/folder-792/subfolder", false);
+    pump(app, 600);
+    assert(remoteTree->getDirectory() == remote + "/folder-792/subfolder");
+    assert(!busyCursor && remoteFilesystemCalls == 0);
+    RemoteDirectory::release(remoteTree);
+    puts("PASS: legacy Tree batches and asynchronous deep-path synchronization without per-entry filesystem calls");
+
+    RemoteObserver observer;
+    FXString eofPath = remote + "/eof-before-exit";
+    RemoteDirectory::entries(&app, eofPath, &observer, 1);
+    pump(app, 300);
+    assert(RemoteDirectory::loading(eofPath));
+    pump(app, 500);
+    assert(!RemoteDirectory::loading(eofPath) && RemoteDirectory::error(eofPath).empty());
+    RemoteDirectory::release(&observer);
+    RemoteObserver second;
+    RemoteDirectory::entries(&app, remote, &observer, 1);
+    RemoteDirectory::entries(&app, remote, &second, 1);
+    int firstNotifications = observer.notifications;
+    RemoteDirectory::release(&observer);
+    pump(app, 1700);
+    assert(observer.notifications == firstNotifications);
+    assert(second.notifications > 0 && !RemoteDirectory::loading(remote));
+    RemoteDirectory::release(&second);
+    puts("PASS: EOF/exit ordering and shared requests survive one view closing");
+    for (const char* suffix : {"/failure", "/invalid"})
+    {
+        FXString path = remote + suffix;
+        RemoteDirectory::entries(&app, path, &observer, 1);
+        pump(app, 500);
+        assert(!RemoteDirectory::loading(path) && !RemoteDirectory::error(path).empty());
+        assert(observer.notifications > 0);
+        RemoteDirectory::release(&observer);
+    }
+    RemoteDirectory::entries(&app, remote, &observer, 1);
+    int notifications = observer.notifications;
+    RemoteDirectory::release(&observer);
+    pump(app, 250);
+    assert(observer.notifications == notifications);
+    puts("PASS: helper failure, malformed protocol, and released-observer callbacks");
+
+    vector_FXString paths;
+    paths.push_back(fixture);
+    mainWindow = NULL;
+    XFileExplorer* window = new XFileExplorer(&app, paths, 3);
+    mainWindow = window;
+    window->create();
+    window->show();
+    observedWindow = window->getCurrentPanel()->getList()->id();
+    SidebarTree* navigation = findSidebar(window->getDirPanel());
+    assert(navigation);
+    const char* sectionNames[] = {"Places", "Bookmarks", "Devices"};
+    FXTreeItem* section = navigation->getFirstItem();
+    for (const char* name : sectionNames)
+    {
+        assert(section && section->getText() == name);
+        section = section->getNext();
+    }
+    assert(!section);
+    window->getDirPanel()->onSidebarRefresh(NULL, 0, NULL);
+    window->getDirPanel()->onCmdToggleSection(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_TOGGLE_NETWORK), NULL);
+    assert(navigation->getNumItems() >= 3);
+    puts("PASS: only Places, Bookmarks and Devices shown; refresh and legacy hidden-Network toggle are safe");
+    SidebarItem destination("mounted share", minifoldericon, SidebarItem::DEVICE, fixture + "/large");
+    navigation->grab();
+    app.flush(true);
+    pointerChecks = 0;
+    checkPointer = true;
+    measuredDirectory = fixture + "/large";
+    stats = lstats = accesses = nestedReads = 0;
+    busyFlushed = false;
+    measuring = true;
+    start = std::chrono::steady_clock::now();
+    window->getDirPanel()->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_SIDEBAR), &destination);
+    elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+    measuring = false;
+    checkPointer = false;
+    assert(!navigation->grabbed() && pointerChecks > 0);
+    assert(window->getCurrentPanel()->getDirectory() == fixture + "/large");
+    assert(window->getCurrentPanel()->getList()->getNumItems() == 794 && nestedReads == 0);
+    assert(!busyCursor);
+    puts("PASS: clicking a Devices entry releases desktop pointer before file-pane navigation");
+    printf("793-folder Devices navigation, simulated 1ms metadata latency: %ldms, stat=%d lstat=%d access=%d child-reads=%d\n",
+           elapsed, stats, lstats, accesses, nestedReads);
+    std::ifstream log((homedir + "/.local/state/swordfish/logs/file-operations.log").text());
+    assert(log.good());
+    std::string recorded((std::istreambuf_iterator<char>(log)), std::istreambuf_iterator<char>());
+    assert(recorded.find("event=slow-directory-listing") != std::string::npos);
+    assert(recorded.find("entry_metadata_calls=794") != std::string::npos);
+    assert(recorded.find("folder_access_calls=794") != std::string::npos);
+    puts("PASS: all triangle paths show/reset busy cursor; slow-listing phase timings recorded");
+
+    app.addSignal(SIGCHLD, window, XFileExplorer::ID_HARVEST);
+    RemoteDirectory::entries(&app, remote, &observer, 1);
+    File* command = new File(window, "Archive-style command regression", MOUNT);
+    command->create();
+    FXString output;
+    int commandStatus = -1;
+    assert(command->mount(fixture, "Testing command completion", "sleep 1; printf mounted",
+                          &output, &commandStatus) == 1);
+    assert(commandStatus == 0 && output == "mounted");
+    delete command;
+    // Exercise the application's real signal handler, not pump()'s manual reaper.
+    FXTime until = FXThread::time() + 2200000000LL;
+    while (FXThread::time() < until)
+    {
+        app.runOneEvent(false);
+        usleep(1000);
+    }
+    assert(!RemoteDirectory::loading(remote));
+    assert(RemoteDirectory::error(remote).empty());
+    RemoteDirectory::refresh(remote);
+    until = FXThread::time() + 2200000000LL;
+    while (FXThread::time() < until)
+    {
+        app.runOneEvent(false);
+        usleep(1000);
+    }
+    assert(!RemoteDirectory::loading(remote));
+    assert(RemoteDirectory::error(remote).empty());
+    RemoteDirectory::release(&observer);
+    puts("PASS: archive-style command restores SIGCHLD, harvests intervening exits, and subsequent remote refresh completes");
+    XCloseDisplay(otherClient);
+    std::fflush(stdout);
+    // The application-global teardown is outside this focused widget test.
+    std::_Exit(0);
+}

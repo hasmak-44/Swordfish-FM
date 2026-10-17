@@ -2156,8 +2156,13 @@ FXString xf_hostcommand(const FXString& command)
     {
         environment += " -u LD_LIBRARY_PATH";
     }
+    const char* hostgio = getenv("SWORDFISH_HOST_GIO_MODULE_DIR");
+    if (hostgio && !*hostgio)
+    {
+        environment += " -u GIO_MODULE_DIR";
+    }
     const char* names[] = {"PATH", "LD_LIBRARY_PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
-                          "XDG_CONFIG_DIRS", "XDG_DATA_DIRS"};
+                          "XDG_CONFIG_DIRS", "XDG_DATA_DIRS", "GIO_MODULE_DIR"};
     for (FXuint i = 0; i < sizeof(names) / sizeof(names[0]); i++)
     {
         FXString host = FXString("SWORDFISH_HOST_") + names[i];

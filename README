@@ -50,6 +50,17 @@
  you need the FOX library 1.6.x installed on your system. Note that Xfe do not compile with the development version
  1.7.x of FOX!
 
+ Swordfish previews additionally require GIO, GdkPixbuf, librsvg, Poppler GLib,
+ Cairo and libwebp development libraries, plus ffmpegthumbnailer at runtime.
+ Debian/Ubuntu package names: libglib2.0-dev, libgdk-pixbuf-2.0-dev (or
+ libgdk-pixbuf2.0-dev on older releases), librsvg2-dev, libpoppler-glib-dev,
+ libcairo2-dev, libwebp-dev and ffmpegthumbnailer.
+ Install the swordfish-preview helper together with the main program.
+ A focused preview regression is available with:
+   bash tests/run-preview-regression.sh
+ It requires xvfb-run and exercises the real decoders, asynchronous cache,
+ invalidation, failure handling and time limits.
+
  Xfe is known to run on Linux based systems. It should compile and run on any Unix or Unix-like system. It doesn't run
  on Windows.
 

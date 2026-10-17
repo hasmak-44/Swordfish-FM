@@ -276,6 +276,7 @@ void TabButtons::addTab(FXString pathname, FXbool activate)
 
         // Tab path
         tabPaths[index] = pathname;
+        tabViews[index] = filepanel->getList()->getViewMode();
 
         // Tab label
         if (pathname == PATHSEPSTRING)
@@ -368,6 +369,7 @@ long TabButtons::onCmdPathButton(FXObject* sender, FXSelector sel, void* ptr)
            " path=\"" + filePath + "\"");
 
     filepanel->setDirectory(filePath);
+    filepanel->getList()->setViewMode((FileList::ViewMode)tabViews[index]);
     filepanel->updatePath(true);
     dirpanel->setDirectory(filePath, true);
 
@@ -410,6 +412,7 @@ long TabButtons::onCmdCloseButton(FXObject* sender, FXSelector sel, void* ptr)
     {
         tabButtons[i]->setText(tabButtons[i + 1]->getText());
         tabPaths[i] = tabPaths[i + 1];
+        tabViews[i] = tabViews[i + 1];
     }
 
     // Hide last button and reset its label and path
@@ -431,6 +434,7 @@ long TabButtons::onCmdCloseButton(FXObject* sender, FXSelector sel, void* ptr)
         if (nbActiveTabs)
         {
             filepanel->setDirectory(tabPaths[currentTab]);
+            filepanel->getList()->setViewMode((FileList::ViewMode)tabViews[currentTab]);
             filepanel->updatePath(true);
             dirpanel->setDirectory(filepanel->getDirectory(), true);
         }
@@ -544,6 +548,7 @@ long TabButtons::onUpdCurrentTab(FXObject* senderbj, FXSelector sel, void* ptr)
     
     // Set current name and path
     tabPaths[currentTab] = pathname;
+    tabViews[currentTab] = filepanel->getList()->getViewMode();
     if (pathname == PATHSEPSTRING)
     {
         tabButtons[currentTab]->setText(PATHSEPSTRING);
@@ -680,12 +685,15 @@ long TabButtons::onCmdMoveLeft(FXObject* sender, FXSelector sel, void* ptr)
     {
         FXString left_label = tabButtons[index - 1]->getText();
         FXString left_path = tabPaths[index - 1];
+        FXuint left_view = tabViews[index - 1];
         
         tabButtons[index - 1]->setText(tabButtons[index]->getText());
         tabPaths[index - 1] = tabPaths[index];
+        tabViews[index - 1] = tabViews[index];
 
         tabButtons[index]->setText(left_label);
         tabPaths[index] = left_path;        
+        tabViews[index] = left_view;
 
         // Update previous and current tab
         if (index == currentTab)
@@ -728,12 +736,15 @@ long TabButtons::onCmdMoveRight(FXObject* sender, FXSelector sel, void* ptr)
     {
         FXString right_label = tabButtons[index + 1]->getText();
         FXString right_path = tabPaths[index + 1];
+        FXuint right_view = tabViews[index + 1];
         
         tabButtons[index + 1]->setText(tabButtons[index]->getText());
         tabPaths[index + 1] = tabPaths[index];
+        tabViews[index + 1] = tabViews[index];
 
         tabButtons[index]->setText(right_label);
         tabPaths[index] = right_path;        
+        tabViews[index] = right_view;
 
         // Update previous and current tab
         if (index == currentTab)
@@ -807,6 +818,7 @@ void TabButtons::setCurrentTab(FXuint index)
     {
         return;
     }
+    onUpdCurrentTab(this, 0, NULL);
     // Update previous and current tab indices
     prevTab = currentTab;
     currentTab = index;
@@ -819,6 +831,7 @@ void TabButtons::setCurrentTab(FXuint index)
     // Set directory
     FXString pathname = tabPaths[index];
     filepanel->setDirectory(pathname);
+    filepanel->getList()->setViewMode((FileList::ViewMode)tabViews[index]);
     filepanel->updatePath(true);
     if (filepanel->isActive())
     {
@@ -845,6 +858,8 @@ void TabButtons::saveTabs(const char* section)
     {
         FXString key = "tab" + FXStringVal(i);
         getApp()->reg().writeStringEntry(section, key.text(), tabPaths[i].text());
+        key = "view" + FXStringVal(i);
+        getApp()->reg().writeUnsignedEntry(section, key.text(), tabViews[i]);
     }
     getApp()->reg().writeUnsignedEntry(section, "current_tab", currentTab);
 }
@@ -871,6 +886,11 @@ FXbool TabButtons::restoreTabs(const char* section, FXuint selected)
             restoredSelection = nbActiveTabs;
         }
         addTab(path, false);
+        key = "view" + FXStringVal(i);
+        FXuint mode = getApp()->reg().readUnsignedEntry(section, key.text(), filepanel->getList()->getViewMode());
+        if (mode > FileList::VIEW_THUMBNAILS) mode = FileList::VIEW_DETAILS;
+        tabViews[currentTab] = mode;
+        filepanel->getList()->setViewMode((FileList::ViewMode)mode);
     }
     if (!nbActiveTabs)
     {

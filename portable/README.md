@@ -26,6 +26,36 @@ The bundle also provides the original Xfe executable names (`xfa`, `xfi`,
 `xfp`, and `xfw`) as compatibility aliases for saved settings and file
 associations.
 
+## Preview engines
+
+The sidebar and Thumbnails view share an asynchronous preview cache. GdkPixbuf
+decodes raster images, libwebp handles WebP, librsvg renders SVG, Poppler renders
+the first PDF page, and ffmpegthumbnailer/FFmpeg produces video stills. This does
+not embed a document viewer or video player. Text sidebar excerpts remain bounded
+to 8 KiB. Unsupported or failed previews do not create thumbnail placeholders.
+
+Decoding runs in the separate `swordfish-preview` process, one job at a time,
+with a 12-second wall-clock deadline, 8 seconds of CPU time, 512 MiB address
+space and a 16 MiB output limit. Requests are bounded and sidebar selections take
+queue priority. These are reliability limits, not an OS security sandbox.
+Generated PNGs are cached under `portable-data/cache/swordfish/previews`;
+source identity, modification time, size and requested zoom size invalidate
+old previews. Cache cleanup targets 128 MiB.
+
+The bundle includes the worker, decoder libraries, GdkPixbuf loader modules,
+MIME data and ffmpegthumbnailer. The launcher regenerates a relocatable loader
+cache; loader settings are applied only inside the worker, not to host apps.
+Bundled GIO uses its own module directory rather than loading incompatible
+host GVFS modules; external commands restore the host GIO module setting.
+SMB discovery uses the separate `swordfish-network` helper with the host GIO/GVFS
+environment. If the SMB browsing root is not mounted, it activates that root
+anonymously and retries enumeration once. It does not mount shares or request
+passwords. The host still needs a running desktop session and a GVFS SMB backend
+(commonly `gvfs-backends`); missing/denied backends remain visible as errors.
+Third-party copyright notices, license texts and build package versions are in
+`usr/share/doc` and `usr/share/common-licenses`. Video codec availability depends
+on the bundled FFmpeg build. The portable download is larger with these engines.
+
 Documents open with the host desktop's default application unless the user
 has saved a Swordfish-only extension override. Under Programs, "Swordfish default
 programs" shows the configured desktop application by name and offers installed
@@ -204,6 +234,25 @@ group, reopen saved tab groups, and open a bookmarks manager. The manager can
 open, edit, reorder and remove bookmarks, and rename or remove tab groups.
 Dragging a tab from a pane tab bar, or a folder from a file list, onto the
 Bookmarks list in the Places pane adds a bookmark for that folder.
+
+## Mounted remote folders
+
+Folders already mounted below `/run/user/<uid>/gvfs/` use the host's native
+GIO/GVFS backend through `swordfish-network --list`, with asynchronous batches
+of 100 entries. Details, Places and Tree consume returned metadata instead of
+requesting it separately for each file through FUSE. The busy cursor remains
+active while the request is pending; navigating away or collapsing a branch
+cancels requests that no other view needs. Existing rows and selections remain
+visible during refresh. Cached active listings refresh every 30 seconds, and
+the normal Refresh command requests an immediate reload.
+
+The host must have the corresponding GVFS backend installed and the share
+already mounted. Failure to resolve the native remote URI is reported explicitly;
+Swordfish does not silently fall back to per-entry FUSE enumeration, mount a
+share, or request credentials. Local paths and non-GVFS mounts retain the
+existing loader. The unfinished Network discovery section is temporarily hidden
+from the sidebar. Mounted shares remain under Devices, and Connect to Server
+remains available. This change does not add network service discovery protocols.
 
 ## Open With
 

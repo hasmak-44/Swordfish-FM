@@ -23,10 +23,15 @@ RUN apt-get update \
         ca-certificates \
         curl \
         file \
+        ffmpegthumbnailer \
         gettext \
         libfontconfig1-dev \
         libfreetype6-dev \
         libfox-1.6-dev \
+        libgdk-pixbuf2.0-dev \
+        libpoppler-glib-dev \
+        librsvg2-dev \
+        libwebp-dev \
         libnotify-dev \
         libopengl0 \
         libpng-dev \

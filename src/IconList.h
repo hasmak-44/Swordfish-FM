@@ -237,6 +237,9 @@ protected:
     int itemWidth = 0;                              // Item width
     int itemHeight = 0;                             // Item height
     int itemSpace = 0;                              // Space for item label
+    int viewIconSize = 48;
+    int detailIconSize = 16;
+    FXbool thumbnailTiles = false;
     int anchorx = 0;                                // Rectangular selection
     int anchory = 0;
     int currentx = 0;
@@ -284,6 +287,10 @@ private:
     IconList& operator=(const IconList&);
 
 public:
+    void setViewMetrics(int iconSize, int detailSize, FXbool thumbnails);
+    int getViewIconSize() const { return viewIconSize; }
+    int getDetailIconSize() const { return detailIconSize; }
+    FXbool hasThumbnailTiles() const { return thumbnailTiles; }
     long onConfigure(FXObject*, FXSelector, void*);
     long onPaint(FXObject*, FXSelector, void*);
     long onEnter(FXObject*, FXSelector, void*);

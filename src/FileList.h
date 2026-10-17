@@ -37,6 +37,8 @@ protected:
     FXTime date = 0;                               // File date (mtime)
     FXTime cdate = 0;                              // Changed date (ctime)
     FXTime deldate = 0;                            // Deletion date
+    FXbool previewable = false;
+    FXulong remoteRevision = 0;
 protected:
     FileItem()
     {
@@ -153,6 +155,13 @@ protected:
     FXString boostdir;                                  // Directory watched for new items
     FXbool allowrefresh = false;                        // Allow or disallow periodic refresh
     FXbool displaythumbnails = false;                   // Display thumbnails
+    FXulong previewRevision = 0;
+    FXbool remoteBusy = false;
+    FXbool remoteChangedPending = false;
+    FXString remoteError;
+    void updateRemoteBusy();
+    void applyZoom();
+    void scaleItemIcons(FileItem*);
     FXString trashfileslocation;                        // Location of the trash files directory
     FXString trashinfolocation;                         // Location of the trash info directory
     FXbool dirsfirst = false;                           // Sort directories first
@@ -181,6 +190,16 @@ protected:
     static int dirname_index;                           // Index of directory path column (in search list)
 
 public:
+    enum ViewMode { VIEW_DETAILS, VIEW_ICONS, VIEW_THUMBNAILS };
+    ViewMode getViewMode() const;
+    void setViewMode(ViewMode mode);
+    void setListStyle(FXuint style);
+    void sortItems();
+    int getZoomStep() const;
+    long onCmdView(FXObject*, FXSelector, void*);
+    long onUpdView(FXObject*, FXSelector, void*);
+    long onCmdZoom(FXObject*, FXSelector, void*);
+    long onUpdZoom(FXObject*, FXSelector, void*);
     StringList* backhist = NULL;                        // Back history
     StringList* forwardhist = NULL;                     // Forward history
 
@@ -200,6 +219,7 @@ private:
 public:
     long onCmdRefresh(FXObject*, FXSelector, void*);
     long onCmdRefreshTimer(FXObject*, FXSelector, void*);
+    long onRemoteChanged(FXObject*, FXSelector, void*);
     long onLeftBtnPress(FXObject*, FXSelector, void*);
     long onKeyPress(FXObject*, FXSelector, void*);
     void toggleExpand(int index, int forcestate = -1);
@@ -395,6 +415,10 @@ public:
         ID_DRAG_LINK,
         ID_DRAG_REJECT,
         ID_CLOSE_FILTER,
+        ID_ZOOM_OUT,
+        ID_ZOOM_IN,
+        ID_ZOOM_RESET,
+        ID_REMOTE_CHANGED,
         ID_LAST
     };
 public:

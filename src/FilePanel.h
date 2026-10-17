@@ -189,9 +189,15 @@ public:
         ID_PKG_INSTALL,
         ID_PKG_UNINSTALL,
 #endif
+        ID_SHOW_THUMBNAILS,
+        ID_ZOOM_OUT,
+        ID_ZOOM_IN,
+        ID_ZOOM_RESET,
         ID_LAST,
     };
 public:
+    long onCmdZoom(FXObject*, FXSelector, void*);
+    long onUpdZoom(FXObject*, FXSelector, void*);
     long onClipboardGained(FXObject*, FXSelector, void*);
     long onClipboardLost(FXObject*, FXSelector, void*);
     long onClipboardRequest(FXObject*, FXSelector, void*);

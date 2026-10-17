@@ -3,7 +3,7 @@
 #
 
 # Initialize
-AC_INIT([swordfish],[0.0.1-rc2])
+AC_INIT([swordfish],[0.0.1-rc4])
 AC_CONFIG_SRCDIR([src/XFileExplorer.cpp])
 AM_INIT_AUTOMAKE([subdir-objects -Wall])
 AC_CONFIG_HEADERS([config.h])
@@ -30,6 +30,13 @@ AC_PROG_INSTALL
 AC_PROG_LN_S
 AC_PROG_MAKE_SET
 PKG_PROG_PKG_CONFIG
+PKG_CHECK_MODULES([PREVIEW], [gio-2.0])
+PKG_CHECK_MODULES([PREVIEW_WORKER], [gdk-pixbuf-2.0 librsvg-2.0 poppler-glib cairo gio-2.0 libwebp])
+CPPFLAGS="$CPPFLAGS $PREVIEW_CFLAGS"
+LIBS="$LIBS $PREVIEW_LIBS"
+AC_PATH_PROG([FFMPEGTHUMBNAILER], [ffmpegthumbnailer])
+AS_IF([test -z "$FFMPEGTHUMBNAILER"],
+      [AC_MSG_ERROR([ffmpegthumbnailer is required for video previews])])
 
 
 # Internationalization

@@ -32,6 +32,7 @@ export SWORDFISH_HOST_XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 export SWORDFISH_HOST_XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export SWORDFISH_HOST_XDG_CONFIG_DIRS="${XDG_CONFIG_DIRS:-/etc/xdg}"
 export SWORDFISH_HOST_XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export SWORDFISH_HOST_GIO_MODULE_DIR="${GIO_MODULE_DIR:-}"
 
 export SWORDFISH_PORTABLE=1
 export SWORDFISH_PORTABLE_DATA="$data_root"
@@ -46,6 +47,15 @@ if [ -n "${LD_LIBRARY_PATH:-}" ]; then
     library_path="$library_path:$LD_LIBRARY_PATH"
 fi
 export LD_LIBRARY_PATH="$library_path"
+
+if [ -d "$app_root/usr/lib/swordfish/pixbuf-loaders" ]; then
+    export GIO_MODULE_DIR="$app_root/usr/lib/swordfish/gio-modules"
+    export SWORDFISH_PREVIEW_PIXBUF_MODULEDIR="$app_root/usr/lib/swordfish/pixbuf-loaders"
+    export SWORDFISH_PREVIEW_PIXBUF_MODULE_FILE="$data_root/cache/pixbuf-loaders.cache"
+    GIO_USE_VFS=local GDK_PIXBUF_MODULEDIR="$SWORDFISH_PREVIEW_PIXBUF_MODULEDIR" \
+        "$app_root/usr/bin/gdk-pixbuf-query-loaders" > "$SWORDFISH_PREVIEW_PIXBUF_MODULE_FILE"
+    export SWORDFISH_PREVIEW_DATA_DIRS="$app_root/usr/share:$SWORDFISH_HOST_XDG_DATA_DIRS"
+fi
 
 program=swordfish
 case "$(basename -- "$0")" in

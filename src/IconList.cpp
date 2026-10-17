@@ -77,6 +77,20 @@ void IconItem::drawBigIcon(const IconList* list, FXDC& dc, int x, int y, int w, 
     FXFont* font = list->getFont();
     int iw = 0, ih = 0, tw = 0, th = 0, ss = 0;
 
+    if (list->hasThumbnailTiles())
+    {
+        FXColor back = list->getBackColor();
+        FXColor shade = makeShadowColor(back);
+        dc.setForeground(FXRGB((FXREDVAL(back) * 7 + FXREDVAL(shade)) / 8,
+                               (FXGREENVAL(back) * 7 + FXGREENVAL(shade)) / 8,
+                               (FXBLUEVAL(back) * 7 + FXBLUEVAL(shade)) / 8));
+        dc.fillRectangle(x + 3, y + 3, w - 6, h - 6);
+        dc.setForeground(FXRGB((FXREDVAL(back) * 3 + FXREDVAL(shade)) / 4,
+                               (FXGREENVAL(back) * 3 + FXGREENVAL(shade)) / 4,
+                               (FXBLUEVAL(back) * 3 + FXBLUEVAL(shade)) / 4));
+        dc.drawRectangle(x + 3, y + 3, w - 7, h - 7);
+    }
+
     space = w - SIDE_SPACING;
 
     if (!label.empty())
@@ -1188,10 +1202,21 @@ void IconList::recompute()
         itemSpace = ITEM_SPACE * scalefrac;
     }
 
+    if ((options & ICONLIST_FILELIST) && (options & ICONLIST_BIG_ICONS))
+    {
+        itemSpace = FXMAX((int)(96 * scalefrac), viewIconSize + (int)(24 * scalefrac));
+        itemWidth = itemSpace;
+        itemHeight = viewIconSize + font->getFontHeight() + (int)(24 * scalefrac);
+    }
+
     // Adjust for detail mode
     if (!(options & (ICONLIST_MINI_ICONS | ICONLIST_BIG_ICONS)))
     {
         itemWidth = header->getDefaultWidth();
+        if (options & ICONLIST_FILELIST)
+        {
+            itemHeight = FXMAX(itemHeight, detailIconSize + (int)(8 * scalefrac));
+        }
     }
 
     // Get number of rows or columns
@@ -1199,6 +1224,15 @@ void IconList::recompute()
 
     // Done
     flags &= ~FLAG_RECALC;
+}
+
+void IconList::setViewMetrics(int iconSize, int detailSize, FXbool thumbnails)
+{
+    viewIconSize = iconSize;
+    detailIconSize = detailSize;
+    thumbnailTiles = thumbnails;
+    recalc();
+    update();
 }
 
 
@@ -2645,8 +2679,9 @@ long IconList::onCmdSetIntValue(FXObject*, FXSelector, void* ptr)
 long IconList::onEnter(FXObject* sender, FXSelector sel, void* ptr)
 {
     FXScrollArea::onEnter(sender, sel, ptr);
-    getApp()->addTimeout(this, ID_TIPTIMER, getApp()->getMenuPause());
-    cursor = -1;
+    FXEvent* event = static_cast<FXEvent*>(ptr);
+    cursor = getItemAt(event->win_x, event->win_y, event->state);
+    getApp()->addTimeout(this, ID_TIPTIMER, getApp()->getTooltipPause());
     return 1;
 }
 
@@ -2656,6 +2691,7 @@ long IconList::onLeave(FXObject* sender, FXSelector sel, void* ptr)
 {
     FXScrollArea::onLeave(sender, sel, ptr);
     getApp()->removeTimeout(this, ID_TIPTIMER);
+    flags &= ~FLAG_TIP;
     cursor = -1;
     return 1;
 }
@@ -2681,7 +2717,7 @@ long IconList::onQueryTip(FXObject* sender, FXSelector sel, void* ptr)
     if (file_tooltips)
     {
         // In detailed mode, avoid displaying the tooltip when the mouse is not on the first column
-        if (allowTooltip && (flags & FLAG_TIP) && (0 <= cursor))
+        if (allowTooltip && (flags & FLAG_TIP) && (0 <= cursor) && cursor < items.no())
         {
             FXString tooltip;
 
@@ -2948,7 +2984,14 @@ void IconList::drawLasso(int x0, int y0, int x1, int y1)
 // Arrange by columns
 long IconList::onCmdArrangeByColumns(FXObject*, FXSelector, void*)
 {
-    options &= ~ICONLIST_COLUMNS;
+    if (options & ICONLIST_FILELIST)
+    {
+        options |= ICONLIST_COLUMNS;
+    }
+    else
+    {
+        options &= ~ICONLIST_COLUMNS;
+    }
     recalc();
     return 1;
 }
@@ -3667,17 +3710,13 @@ long IconList::onMotion(FXObject*, FXSelector, void* ptr)
     int olx, orx, oty, oby, nlx, nrx, nty, nby;
     FXEvent* event = (FXEvent*)ptr;
     int oldcursor = cursor;
-    FXuint flg = flags;
-
-    // Kill the tip
-    flags &= ~FLAG_TIP;
-
-    // Kill the tip timer
-    getApp()->removeTimeout(this, ID_TIPTIMER);
+    FXbool oldTooltip = allowTooltip;
 
     // Right mouse scrolling
     if (flags & FLAG_SCROLLING)
     {
+        flags &= ~FLAG_TIP;
+        getApp()->removeTimeout(this, ID_TIPTIMER);
         setPosition(event->win_x - grabx, event->win_y - graby);
         return 1;
     }
@@ -3685,6 +3724,8 @@ long IconList::onMotion(FXObject*, FXSelector, void* ptr)
     // Lasso selection mode
     if (flags & FLAG_LASSO)
     {
+        flags &= ~FLAG_TIP;
+        getApp()->removeTimeout(this, ID_TIPTIMER);
         if (startAutoScroll(event, false))
         {
             return 1;
@@ -3714,6 +3755,8 @@ long IconList::onMotion(FXObject*, FXSelector, void* ptr)
     // Drag and drop mode
     if (flags & FLAG_DODRAG)
     {
+        flags &= ~FLAG_TIP;
+        getApp()->removeTimeout(this, ID_TIPTIMER);
         if (startAutoScroll(event, true))
         {
             return 1;
@@ -3725,6 +3768,8 @@ long IconList::onMotion(FXObject*, FXSelector, void* ptr)
     // Tentative drag and drop
     if (flags & FLAG_TRYDRAG)
     {
+        flags &= ~FLAG_TIP;
+        getApp()->removeTimeout(this, ID_TIPTIMER);
         if (event->moved)
         {
             flags &= ~FLAG_TRYDRAG;
@@ -3736,14 +3781,21 @@ long IconList::onMotion(FXObject*, FXSelector, void* ptr)
         return 1;
     }
 
-    // Reset tip timer if nothing's going on
-    getApp()->addTimeout(this, ID_TIPTIMER, getApp()->getMenuPause());
-
     // Get item we're over
     cursor = getItemAt(event->win_x, event->win_y, event->state);
+    FXbool changed = cursor != oldcursor || allowTooltip != oldTooltip;
+    if (changed)
+    {
+        flags &= ~FLAG_TIP;
+        getApp()->removeTimeout(this, ID_TIPTIMER);
+    }
+    if (cursor >= 0 && allowTooltip && !(flags & FLAG_TIP) && !getApp()->hasTimeout(this, ID_TIPTIMER))
+    {
+        getApp()->addTimeout(this, ID_TIPTIMER, getApp()->getTooltipPause());
+    }
 
     // Force GUI update only when needed
-    return (cursor != oldcursor) || (flg & FLAG_TIP);
+    return changed;
 }
 
 

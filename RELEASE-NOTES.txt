@@ -1,17 +1,80 @@
-Unreleased fixes
-================
+Swordfish Portable 0.0.1 RC4
+==========================
+- Temporarily hide the unfinished Network discovery section from the sidebar.
+  Keep Devices, already-mounted remote shares, Connect to Server and the native
+  remote-directory loader unchanged. Retain discovery code for later repair.
+- Restore SIGCHLD handling after archive-folder and mount commands, including
+  early failures, and harvest children that finished during the command.
+  Previously the wrong signal was restored, leaving completed remote-listing
+  helpers uncollected and causing false idle-refresh timeout dialogs.
+- Load already-mounted GVFS remote directories through the host GIO backend
+  asynchronously in batches of 100, sharing returned metadata between Details,
+  Places and Tree views instead of issuing per-entry FUSE stat/access calls.
+  Keep the GUI responsive and busy cursor active until loading completes;
+  cancel abandoned requests on navigation, collapse and widget destruction.
+  Preserve selection during progressive updates, refresh cached listings every
+  30 seconds or explicitly, and report native-backend failures rather than
+  silently reverting to the slow FUSE path. Local filesystem loading is unchanged.
+- Show the busy cursor during folder-triangle expansion in Details, Places
+  and Tree views as well as navigation. Cache owner/group name lookups within
+  each listing. Log slow listings with entry-metadata/access timings and log
+  slow sidebar expansion/tree synchronization separately to diagnose real
+  network delays rather than infer them from local benchmarks.
+- Reduce large-folder listing round trips by reusing entry metadata instead
+  of repeating stat calls, while retaining real access checks for locked-folder
+  icons. Show and flush the busy cursor before directory validation/loading.
+- Stop opening every child folder when listing Details view merely to decide
+  whether to draw expansion arrows. Read children only on expansion; discover
+  empty folders then. Release and flush pointer grabs before sidebar navigation
+  and tree expansion so a slow remote folder does not retain the desktop's
+  mouse input. Non-GVFS filesystem loading remains synchronous.
+- Keep file-name tooltips visible when the pointer moves slightly within the
+  same file. Use the tooltip delay rather than the menu delay, and restart
+  the hover timer only when changing files or eligible columns.
+- Fix Network discovery failing with "The specified location is not mounted":
+  activate the anonymous GVFS SMB browsing root on that specific error and retry
+  enumeration once, asynchronously. Preserve mount/backend diagnostics and the
+  host GIO environment; do not mount shares or collect passwords.
+- Fix RC3 network discovery reporting "No child processes": the main child
+  handler now delivers discovery exit status to the sidebar, without a second
+  wait or blocking the GUI. Restore the host library and XDG environment before
+  running gio, and preserve backend error messages instead of hiding failures.
+- Replace the separate sidebar sections with one Places tree containing
+  Places, Bookmarks, Devices and Network folders. Expand local folders within
+  the same tree, with shared vertical and horizontal scrolling, remembered
+  top-level collapse states, bookmark drops and context actions.
+- Repair selection previews using the selected file's actual pathname. Show
+  supported images or a bounded text excerpt in a dismissible bottom overlay
+  on either sidebar tab; leave scrolling clearance behind it. Unsupported
+  files, directories and multiple/empty selections hide the overlay.
+- Provide three independent per-tab views: Details, Icons and Thumbnails,
+  with toolbar/menu choices. Icons use compact row-major cells; Thumbnails
+  use uniformly sized, subtly shaded tiles with thin borders and abbreviated
+  labels. Folders sort first; files without a decodable image are omitted
+  from Thumbnails rather than shown as placeholders.
+- Share bounded Zoom Out, Zoom In and Reset controls across both file panes
+  and all tabs, including restored/new tabs. Zoom changes file icons, grid
+  cells and detail rows, not UI fonts or the sidebar tree. Migrate the old
+  small-icon and thumbnail settings to the new view/zoom model.
+- Replace FOX's source-file decoding with a shared asynchronous preview worker:
+  GdkPixbuf for raster images, libwebp for WebP, librsvg for SVG, Poppler for the
+  first PDF page and ffmpegthumbnailer/FFmpeg for video stills. FOX displays only
+  the generated, size-bounded PNG. Cache results and invalidate on source/zoom
+  changes; bound decoding time, memory, output and queue depth. Bundle the
+  engines, loader modules and their notices in the portable build.
+
+Swordfish Portable 0.0.1 RC3
+==========================
 - Keep expanded folders and their descendants together when sorting by modified
   date, size or deletion date, in either direction. RC2 could scatter children
-  among unrelated folders; this fix is not yet in the published RC2 download.
+  among unrelated folders.
 - Preserve each pane's editable address-bar mode when switching, adding or
   closing tabs, and show the selected tab's actual folder in the text field.
 - Accept items dragged out of archive managers that use XDND Direct Save
   (Engrampa, GTK3 File Roller): the archiver extracts directly into the target
   folder of the file list or folder tree, without the Copy/Move/Link menu.
-- Make Places, Mount Points, Bookmarks and Network independently collapsible
-  in the scrollable sidebar, with each section's state remembered.
-- Show a selected image in a temporary sidebar overlay; the list behind it
-  remains scrollable, with enough clearance to move entries above the preview.
+- Introduce collapsible sidebar sections and an initial image preview. These
+  are superseded by the hierarchical sidebar and preview repairs above.
 - Add on-demand, asynchronous SMB server discovery in the Network sidebar
   section. Discovery does not mount shares or request credentials; connecting
   opens the existing server dialog with the selected host prefilled.

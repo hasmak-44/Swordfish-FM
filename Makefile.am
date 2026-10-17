@@ -14,6 +14,10 @@ pkdir = $(prefix)/share/polkit-1/actions
 
 EXTRA_DIST = autogen.sh buildrun installrun install-swordfish-system.sh uninstall-swordfish iconlinks.sh config.h i18n.h org.swordfish.root.policy.in.in swordfish.1 swordfish-archive.1 swordfish-image.1 swordfish-package.1 swordfish-write.1 \
              portable/AppRun portable/Dockerfile portable/build-portable-in-container portable/build-portable.sh portable/README.md \
+             tests/preview-regression.cpp tests/run-preview-regression.sh \
+             tests/network-discovery-regression.cpp tests/run-network-discovery-regression.sh \
+             tests/folder-expansion-regression.cpp tests/run-folder-expansion-regression.sh \
+             tests/fake-remote-directory.py tests/native-directory-helper-regression.py \
              ABOUT-NLS TODO BUGS swordfishrc.in *.desktop.in.in \
                  $(top_srcdir)/icons/* $(top_srcdir)/debian
 

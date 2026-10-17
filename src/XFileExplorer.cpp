@@ -16,6 +16,8 @@
 #include <FXPNGIcon.h>
 
 #include "AppLogger.h"
+#include "Preview.h"
+#include "RemoteDirectory.h"
 #include "xfedefs.h"
 #include "icons.h"
 #include "xfeutils.h"
@@ -1343,25 +1345,33 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
 
     // Switch display modes
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "big_icons", "F10");
-    btn = new FXButton(paneltoolbar, TAB + _("Big Icon List") + PARS(key), minibigiconsicon, lpanel,
+    btn = new FXButton(paneltoolbar, TAB + _("Icons") + PARS(key), minibigiconsicon, lpanel,
                        FilePanel::ID_SHOW_BIG_ICONS,
                        BUTTON_TOOLBAR | LAYOUT_CENTER_Y | LAYOUT_LEFT | ICON_BEFORE_TEXT | FRAME_NONE);
     hotkey = xf_parseaccel(key);
     btn->addHotKey(hotkey);
 
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "small_icons", "F11");
-    btn = new FXButton(paneltoolbar, TAB + _("Small Icon List") + PARS(key), minismalliconsicon, lpanel,
-                       FilePanel::ID_SHOW_MINI_ICONS,
+    btn = new FXButton(paneltoolbar, TAB + _("Thumbnails") + PARS(key), minishowthumbicon, lpanel,
+                       FilePanel::ID_SHOW_THUMBNAILS,
                        BUTTON_TOOLBAR | LAYOUT_CENTER_Y | LAYOUT_LEFT | ICON_BEFORE_TEXT | FRAME_NONE);
     hotkey = xf_parseaccel(key);
     btn->addHotKey(hotkey);
 
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "detailed_file_list", "F12");
-    btn = new FXButton(paneltoolbar, TAB + _("Detailed File List") + PARS(key), minidetailsicon, lpanel,
+    btn = new FXButton(paneltoolbar, TAB + _("Details") + PARS(key), minidetailsicon, lpanel,
                        FilePanel::ID_SHOW_DETAILS,
                        BUTTON_TOOLBAR | LAYOUT_CENTER_Y | LAYOUT_LEFT | ICON_BEFORE_TEXT | FRAME_NONE);
     hotkey = xf_parseaccel(key);
     btn->addHotKey(hotkey);
+
+    toolbarSeparator(paneltoolbar);
+    new FXButton(paneltoolbar, TAB + _("Zoom Out"), minizoomouticon, lpanel, FilePanel::ID_ZOOM_OUT,
+                 BUTTON_TOOLBAR | LAYOUT_CENTER_Y | LAYOUT_LEFT | FRAME_NONE);
+    new FXButton(paneltoolbar, TAB + _("Reset Zoom"), minizoom100icon, lpanel, FilePanel::ID_ZOOM_RESET,
+                 BUTTON_TOOLBAR | LAYOUT_CENTER_Y | LAYOUT_LEFT | FRAME_NONE);
+    new FXButton(paneltoolbar, TAB + _("Zoom In"), minizoominicon, lpanel, FilePanel::ID_ZOOM_IN,
+                 BUTTON_TOOLBAR | LAYOUT_CENTER_Y | LAYOUT_LEFT | FRAME_NONE);
 
     // Address combo box
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "clear_address", "Ctrl-L");
@@ -1595,6 +1605,15 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "horz_panels", "Ctrl-Shift-F2");
     mc->setAccelText(key);
 
+    new FXMenuSeparator(viewmenu);
+    new FXMenuRadio(viewmenu, _("&Details"), lpanel, FilePanel::ID_SHOW_DETAILS);
+    new FXMenuRadio(viewmenu, _("&Icons"), lpanel, FilePanel::ID_SHOW_BIG_ICONS);
+    new FXMenuRadio(viewmenu, _("&Thumbnails"), lpanel, FilePanel::ID_SHOW_THUMBNAILS);
+    new FXMenuSeparator(viewmenu);
+    new FXMenuCommand(viewmenu, _("Zoom &Out"), minizoomouticon, lpanel, FilePanel::ID_ZOOM_OUT);
+    new FXMenuCommand(viewmenu, _("Zoom &In"), minizoominicon, lpanel, FilePanel::ID_ZOOM_IN);
+    new FXMenuCommand(viewmenu, _("&Reset Zoom"), minizoom100icon, lpanel, FilePanel::ID_ZOOM_RESET);
+
     viewmenutitle = new FXMenuTitle(menubar, _("&View"), NULL, viewmenu);
 
     // Bookmarks menu
@@ -1627,15 +1646,14 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     lpanelmenu = new FXMenuPane(this);
     new FXMenuCommand(lpanelmenu, _("&Filter..."), minifiltericon, lpanel, FilePanel::ID_FILTER);
     new FXMenuCheck(lpanelmenu, _("&Hidden Files"), lpanel->getList(), FileList::ID_TOGGLE_HIDDEN);
-    new FXMenuCheck(lpanelmenu, _("&Thumbnail View"), lpanel->getList(), FileList::ID_TOGGLE_THUMBNAIL_VIEW);
     new FXMenuSeparator(lpanelmenu);
-    new FXMenuRadio(lpanelmenu, _("&Big Icons"), lpanel->getList(), IconList::ID_SHOW_BIG_ICONS);
-    new FXMenuRadio(lpanelmenu, _("&Small Icons"), lpanel->getList(), IconList::ID_SHOW_MINI_ICONS);
-    new FXMenuRadio(lpanelmenu, _("&Detailed File List"), lpanel->getList(), IconList::ID_SHOW_DETAILS);
+    new FXMenuRadio(lpanelmenu, _("&Details"), lpanel->getList(), IconList::ID_SHOW_DETAILS);
+    new FXMenuRadio(lpanelmenu, _("&Icons"), lpanel->getList(), IconList::ID_SHOW_BIG_ICONS);
+    new FXMenuRadio(lpanelmenu, _("&Thumbnails"), lpanel->getList(), FileList::ID_TOGGLE_THUMBNAIL_VIEW);
     new FXMenuSeparator(lpanelmenu);
-    new FXMenuCheck(lpanelmenu, _("Autos&ize"), lpanel->getList(), FileList::ID_AUTOSIZE);
-    new FXMenuRadio(lpanelmenu, _("&Rows"), lpanel->getList(), FileList::ID_ARRANGE_BY_ROWS);
-    new FXMenuRadio(lpanelmenu, _("&Columns"), lpanel->getList(), FileList::ID_ARRANGE_BY_COLUMNS);
+    new FXMenuCommand(lpanelmenu, _("Zoom &Out"), minizoomouticon, lpanel->getList(), FileList::ID_ZOOM_OUT);
+    new FXMenuCommand(lpanelmenu, _("Zoom &In"), minizoominicon, lpanel->getList(), FileList::ID_ZOOM_IN);
+    new FXMenuCommand(lpanelmenu, _("&Reset Zoom"), minizoom100icon, lpanel->getList(), FileList::ID_ZOOM_RESET);
     new FXMenuSeparator(lpanelmenu);
     new FXMenuRadio(lpanelmenu, _("&Name"), lpanel->getList(), FileList::ID_COL_NAME);
     new FXMenuRadio(lpanelmenu, _("Si&ze"), lpanel->getList(), FileList::ID_COL_SIZE);
@@ -1658,15 +1676,14 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     rpanelmenu = new FXMenuPane(this);
     new FXMenuCommand(rpanelmenu, _("&Filter"), minifiltericon, rpanel, FilePanel::ID_FILTER);
     new FXMenuCheck(rpanelmenu, _("&Hidden Files"), rpanel->getList(), FileList::ID_TOGGLE_HIDDEN);
-    new FXMenuCheck(rpanelmenu, _("&Thumbnail View"), rpanel->getList(), FileList::ID_TOGGLE_THUMBNAIL_VIEW);
     new FXMenuSeparator(rpanelmenu);
-    new FXMenuRadio(rpanelmenu, _("&Big Icons"), rpanel->getList(), IconList::ID_SHOW_BIG_ICONS);
-    new FXMenuRadio(rpanelmenu, _("&Small Icons"), rpanel->getList(), IconList::ID_SHOW_MINI_ICONS);
-    new FXMenuRadio(rpanelmenu, _("&Detailed File List"), rpanel->getList(), IconList::ID_SHOW_DETAILS);
+    new FXMenuRadio(rpanelmenu, _("&Details"), rpanel->getList(), IconList::ID_SHOW_DETAILS);
+    new FXMenuRadio(rpanelmenu, _("&Icons"), rpanel->getList(), IconList::ID_SHOW_BIG_ICONS);
+    new FXMenuRadio(rpanelmenu, _("&Thumbnails"), rpanel->getList(), FileList::ID_TOGGLE_THUMBNAIL_VIEW);
     new FXMenuSeparator(rpanelmenu);
-    new FXMenuCheck(rpanelmenu, _("Autos&ize"), rpanel->getList(), FileList::ID_AUTOSIZE);
-    new FXMenuRadio(rpanelmenu, _("&Rows"), rpanel->getList(), FileList::ID_ARRANGE_BY_ROWS);
-    new FXMenuRadio(rpanelmenu, _("&Columns"), rpanel->getList(), FileList::ID_ARRANGE_BY_COLUMNS);
+    new FXMenuCommand(rpanelmenu, _("Zoom &Out"), minizoomouticon, rpanel->getList(), FileList::ID_ZOOM_OUT);
+    new FXMenuCommand(rpanelmenu, _("Zoom &In"), minizoominicon, rpanel->getList(), FileList::ID_ZOOM_IN);
+    new FXMenuCommand(rpanelmenu, _("&Reset Zoom"), minizoom100icon, rpanel->getList(), FileList::ID_ZOOM_RESET);
     new FXMenuSeparator(rpanelmenu);
     new FXMenuRadio(rpanelmenu, _("&Name"), rpanel->getList(), FileList::ID_COL_NAME);
     new FXMenuRadio(rpanelmenu, _("Si&ze"), rpanel->getList(), FileList::ID_COL_SIZE);
@@ -4032,6 +4049,12 @@ long XFileExplorer::onSigHarvest(FXObject*, FXSelector, void*)
     pid_t child;
     while ((child = waitpid(-1, &status, WNOHANG)) > 0)
     {
+        if (Preview::harvest(child, status)) continue;
+        if (RemoteDirectory::harvest(child, status)) continue;
+        if (dirpanel && dirpanel->handleNetworkExit(child, status))
+        {
+            continue;
+        }
         handleCommandExit(this, child, status);
     }
     return 1;
@@ -4041,6 +4064,7 @@ long XFileExplorer::onSigHarvest(FXObject*, FXSelector, void*)
 // Handle quitting
 long XFileExplorer::onQuit(FXObject*, FXSelector, void*)
 {
+    Preview::shutdown();
     saveConfig();
 
     getApp()->exit(EXIT_SUCCESS);

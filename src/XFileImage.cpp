@@ -2,6 +2,8 @@
 // in the FOX library and written by Jeroen van der Zijp.
 
 #include "config.h"
+#include "Preview.h"
+#include "RemoteDirectory.h"
 #include "i18n.h"
 
 #include <stdio.h>
@@ -2152,6 +2154,8 @@ long XFileImage::onSigHarvest(FXObject*, FXSelector, void*)
     pid_t child;
     while ((child = waitpid(-1, &status, WNOHANG)) > 0)
     {
+        if (Preview::harvest(child, status)) continue;
+        if (RemoteDirectory::harvest(child, status)) continue;
         handleCommandExit(this, child, status);
     }
 

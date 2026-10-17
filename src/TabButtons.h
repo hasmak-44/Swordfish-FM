@@ -18,6 +18,7 @@ protected:
     vector_FXButton closeButtons;                       // Vector of close buttons
     
     FXString* tabPaths = NULL;                          // Vector of tab paths
+    FXuint tabViews[NMAX_TABS] = { 0 };
     
     FXuint nbActiveTabs = 0;                            // Number of active tabs
     FXuint currentTab = 0;                              // Index of current tab

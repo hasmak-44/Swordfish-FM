@@ -5,6 +5,13 @@ Maintainer: Roland Baudin <roland65@free.fr>
 Build-Depends:
     debhelper-compat (= 13),
     libfox-1.6-dev (>= 1.6.45),
+    libglib2.0-dev,
+    libgdk-pixbuf-2.0-dev | libgdk-pixbuf2.0-dev,
+    librsvg2-dev,
+    libpoppler-glib-dev,
+    libcairo2-dev,
+    libwebp-dev,
+    ffmpegthumbnailer,
     libfreetype-dev,
     libpng-dev,
     libxft-dev,
@@ -20,7 +27,7 @@ Homepage: http://roland65.free.fr/xfe/
 
 Package: xfe
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, ffmpegthumbnailer
 Recommends: xterm, xarchiver, pkexec | policykit-1, audacious
 Suggests: gimp, meld
 Description: A lightweight file manager for X11

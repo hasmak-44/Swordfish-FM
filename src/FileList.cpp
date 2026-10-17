@@ -7,6 +7,8 @@
 #include "i18n.h"
 
 #include "AppLogger.h"
+#include "Preview.h"
+#include "RemoteDirectory.h"
 
 #if defined(linux)
 #include <sys/statfs.h>
@@ -33,6 +35,41 @@
 #include "InputDialog.h"
 #include "StringList.h"
 #include "FileList.h"
+#include <algorithm>
+#include <vector>
+
+namespace
+{
+std::vector<FileList*> zoomLists;
+const int zoomSizes[] = { 32, 48, 64, 96, 128 };
+
+FXIcon* sizedIcon(FXIcon* source, int size)
+{
+    if (!source || (source->getWidth() == size && source->getHeight() == size))
+    {
+        return NULL;
+    }
+    if (!source->getData())
+    {
+        source->restore();
+    }
+    if (!source->getData())
+    {
+        return NULL;
+    }
+    int width = source->getWidth(), height = source->getHeight();
+    FXColor* pixels;
+    if (!FXMEMDUP(&pixels, source->getData(), FXColor, width * height))
+    {
+        return NULL;
+    }
+    FXIcon* icon = new FXIcon(source->getApp(), pixels, source->getTransparentColor(),
+                              IMAGE_OWNED | IMAGE_KEEP, width, height);
+    int longest = FXMAX(width, height);
+    icon->scale(FXMAX(1, width * size / longest), FXMAX(1, height * size / longest), 1);
+    return icon;
+}
+}
 
 
 // Time interval before refreshing the view
@@ -92,6 +129,11 @@ struct ExpandJob
 // Map
 FXDEFMAP(FileList) FileListMap[] =
 {
+    FXMAPFUNC(SEL_COMMAND, FileList::ID_REMOTE_CHANGED, FileList::onRemoteChanged),
+    FXMAPFUNCS(SEL_COMMAND, FileList::ID_SHOW_DETAILS, FileList::ID_SHOW_BIG_ICONS, FileList::onCmdView),
+    FXMAPFUNCS(SEL_UPDATE, FileList::ID_SHOW_DETAILS, FileList::ID_SHOW_BIG_ICONS, FileList::onUpdView),
+    FXMAPFUNCS(SEL_COMMAND, FileList::ID_ZOOM_OUT, FileList::ID_ZOOM_RESET, FileList::onCmdZoom),
+    FXMAPFUNCS(SEL_UPDATE, FileList::ID_ZOOM_OUT, FileList::ID_ZOOM_RESET, FileList::onUpdZoom),
     FXMAPFUNC(SEL_DRAGGED, 0, FileList::onDragged),
     FXMAPFUNC(SEL_LEFTBUTTONPRESS, 0, FileList::onLeftBtnPress),
     FXMAPFUNC(SEL_KEYPRESS, 0, FileList::onKeyPress),
@@ -244,6 +286,30 @@ FileList::FileList(FXWindow* focuswin, FXComposite* p, FXuint* ic, FXuint nc,
     prevIndex = -1;
     list = NULL;
     displaythumbnails = showthumbs;
+    if (showthumbs)
+    {
+        options = (options & ~ICONLIST_MINI_ICONS) | ICONLIST_BIG_ICONS;
+    }
+    else if (options & ICONLIST_MINI_ICONS)
+    {
+        options = (options & ~ICONLIST_MINI_ICONS) | ICONLIST_BIG_ICONS;
+    }
+    options |= ICONLIST_COLUMNS;
+    if (!getApp()->reg().existingEntry("SETTINGS", "file_zoom_step"))
+    {
+        int oldSize = getApp()->reg().readUnsignedEntry("SETTINGS", "bigthumb_size", 96);
+        int nearest = 0;
+        for (int step = 1; step < 5; ++step)
+        {
+            if (abs(zoomSizes[step] * 2 - oldSize) < abs(zoomSizes[nearest] * 2 - oldSize))
+            {
+                nearest = step;
+            }
+        }
+        getApp()->reg().writeIntEntry("SETTINGS", "file_zoom_step", nearest);
+    }
+    zoomLists.push_back(this);
+    applyZoom();
     backhist = NULL;
     forwardhist = NULL;
     focuswindow = focuswin;
@@ -470,6 +536,9 @@ void FileList::create()
 // Cleanup
 FileList::~FileList()
 {
+    RemoteDirectory::release(this);
+    if (remoteBusy) xf_setwaitcursor(getApp(), END_CURSOR);
+    zoomLists.erase(std::remove(zoomLists.begin(), zoomLists.end(), this), zoomLists.end());
     getApp()->removeTimeout(this, ID_REFRESH_TIMER);
     getApp()->removeTimeout(this, ID_OPEN_TIMER);
     delete associations;
@@ -1188,23 +1257,14 @@ long FileList::onCmdCloseFilter(FXObject*, FXSelector, void*)
 // Toggle thumbnails display
 long FileList::onCmdToggleThumbnails(FXObject*, FXSelector, void*)
 {
-    showThumbnails(!displaythumbnails);
+    setViewMode(displaythumbnails ? VIEW_ICONS : VIEW_THUMBNAILS);
     return 1;
 }
 
 
 long FileList::onCmdToggleThumbnailView(FXObject*, FXSelector, void*)
 {
-    FXbool show = !(shownThumbnails() && (getListStyle() & ICONLIST_BIG_ICONS));
-    showThumbnails(show);
-    if (show)
-    {
-        handle(this, FXSEL(SEL_COMMAND, IconList::ID_SHOW_BIG_ICONS), NULL);
-    }
-    else
-    {
-        handle(this, FXSEL(SEL_COMMAND, IconList::ID_SHOW_DETAILS), NULL);
-    }
+    setViewMode(VIEW_THUMBNAILS);
     return 1;
 }
 
@@ -1258,11 +1318,22 @@ long FileList::onCmdThumbnailSize(FXObject*, FXSelector sel, void*)
     default:
         break;
     }
-    getApp()->reg().writeUnsignedEntry("SETTINGS", "bigthumb_size", size);
-    getApp()->reg().writeUnsignedEntry("SETTINGS", "minithumb_size", FXMAX(16, size / 2));
-    if (shownThumbnails())
+    int step = 0;
+    for (int candidate = 1; candidate < 5; ++candidate)
     {
-        onCmdRefresh(NULL, 0, NULL);
+        if (abs(zoomSizes[candidate] * 2 - (int)size) < abs(zoomSizes[step] * 2 - (int)size))
+        {
+            step = candidate;
+        }
+    }
+    getApp()->reg().writeIntEntry("SETTINGS", "file_zoom_step", step);
+    for (size_t i = 0; i < zoomLists.size(); ++i)
+    {
+        if (zoomLists[i]->getApp() == getApp() && !(zoomLists[i]->getListType() & FILELIST_SEARCH))
+        {
+            zoomLists[i]->applyZoom();
+            zoomLists[i]->scan(true);
+        }
     }
     return 1;
 }
@@ -1270,7 +1341,7 @@ long FileList::onCmdThumbnailSize(FXObject*, FXSelector sel, void*)
 
 long FileList::onUpdThumbnailSize(FXObject* sender, FXSelector sel, void*)
 {
-    FXuint size = getApp()->reg().readUnsignedEntry("SETTINGS", "bigthumb_size", 96);
+    FXuint size = zoomSizes[getZoomStep()] * 2;
     FXuint expected = 96;
     switch (FXSELID(sel))
     {
@@ -4330,6 +4401,12 @@ int FileList::descendingOrigpathCaseMix(const IconItem* pa, const IconItem* pb)
 // Force an immediate update of the list
 long FileList::onCmdRefresh(FXObject*, FXSelector, void*)
 {
+    if (RemoteDirectory::handles(directory))
+    {
+        RemoteDirectory::refresh(directory);
+        for (const std::string& path : expandedset)
+            RemoteDirectory::refresh(FXPath::absolute(directory, path.c_str()));
+    }
     // Force a refresh of the file association table
     if (associations)
     {
@@ -4370,15 +4447,64 @@ void FileList::boostRefresh(FXuint seconds)
 }
 
 
+void FileList::updateRemoteBusy()
+{
+    FXbool busy = RemoteDirectory::loading(this) || remoteChangedPending;
+    if (busy != remoteBusy)
+    {
+        xf_setwaitcursor(getApp(), busy ? BEGIN_CURSOR : END_CURSOR);
+        remoteBusy = busy;
+    }
+}
+
+long FileList::onRemoteChanged(FXObject*, FXSelector, void*)
+{
+    if (!allowrefresh || !(flags & FLAG_UPDATE))
+    {
+        remoteChangedPending = true;
+        updateRemoteBusy();
+        return 1;
+    }
+    remoteChangedPending = false;
+    listItems(false);
+    sortItems();
+    updateRemoteBusy();
+    FXString failure = RemoteDirectory::error(directory);
+    for (const std::string& path : expandedset)
+    {
+        FXString nested = RemoteDirectory::error(FXPath::absolute(directory, path.c_str()));
+        if (!nested.empty()) failure = nested;
+    }
+    if (!failure.empty() && !remoteBusy && failure != remoteError)
+    {
+        remoteError = failure;
+        MessageBox::error(this, BOX_OK, _("Error"), _("Remote folder loading failed: %s"), failure.text());
+    }
+    if (failure.empty()) remoteError.clear();
+    return 1;
+}
+
 // Refresh; don't update if user is interacting with the list
 long FileList::onCmdRefreshTimer(FXObject*, FXSelector, void*)
 {
+    if (remoteChangedPending && allowrefresh && (flags & FLAG_UPDATE))
+        onRemoteChanged(NULL, 0, NULL);
+    if (RemoteDirectory::handles(directory))
+    {
+        if (allowrefresh && (flags & FLAG_UPDATE) &&
+            displaythumbnails && previewRevision != Preview::revision())
+        {
+            previewRevision = Preview::revision();
+            scan(true);
+        }
+        getApp()->addTimeout(this, ID_REFRESH_TIMER, REFRESH_INTERVAL);
+        return 0;
+    }
     // Don't refresh if window is minimized
     if (((FXTopWindow*)focuswindow)->isMinimized())
     {
         return 0;
     }
-
     // Don't refresh if not allowed
     if (flags & FLAG_UPDATE && allowrefresh)
     {
@@ -4427,7 +4553,9 @@ long FileList::onCmdRefreshTimer(FXObject*, FXSelector, void*)
         else
         {
             boostcount = 0;
-            scan(false);
+            FXbool previewsChanged = displaythumbnails && previewRevision != Preview::revision();
+            previewRevision = Preview::revision();
+            scan(previewsChanged);
             counter = (counter + 1) % REFRESH_FREQUENCY;
         }
     }
@@ -4464,6 +4592,8 @@ FXString FileList::getCurrentFile() const
 // Set directory being displayed and update the history if necessary
 void FileList::setDirectory(const FXString& pathname, const FXbool histupdate, FXString prevpath)
 {
+    xf_setwaitcursor(getApp(), BEGIN_CURSOR);
+
     // Only update the history if it was requested
     if (histupdate)
     {
@@ -4491,12 +4621,15 @@ void FileList::setDirectory(const FXString& pathname, const FXbool histupdate, F
     {
         path = FXPath::absolute(directory, pathname);
 
-        while (!FXPath::isTopDirectory(path) && !xf_isdirectory(path))
+        while (!RemoteDirectory::handles(path) && !FXPath::isTopDirectory(path) && !xf_isdirectory(path))
         {
             path = FXPath::upLevel(path);
         }
         if (directory != path)
         {
+            RemoteDirectory::release(this);
+            remoteChangedPending = false;
+            updateRemoteBusy();
             // Remember the expanded folders of each directory, so a refresh (which bounces
             // through the root directory) or coming back to a folder restores them
             if (!directory.empty())
@@ -4555,6 +4688,7 @@ void FileList::setDirectory(const FXString& pathname, const FXbool histupdate, F
 
     // Autosize name column in detailed mode
     IconList::autosizeNameHeader();
+    xf_setwaitcursor(getApp(), END_CURSOR);
 }
 
 
@@ -4618,15 +4752,144 @@ FXbool FileList::shownThumbnails() const
 // Change show thumbnails mode
 void FileList::showThumbnails(FXbool display)
 {
-    if (displaythumbnails != display)
-    {
-        appLog(APP_LOG_UI, "thumbnails-changed", FXString("enabled=") + (display ? "yes" : "no"));
-    }
-    displaythumbnails = display;
+    setViewMode(display ? VIEW_THUMBNAILS : VIEW_ICONS);
+}
 
-    // Refresh to display or hide thumbnails
+FileList::ViewMode FileList::getViewMode() const
+{
+    if (!(options & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS)))
+    {
+        return VIEW_DETAILS;
+    }
+    return displaythumbnails ? VIEW_THUMBNAILS : VIEW_ICONS;
+}
+
+void FileList::setViewMode(ViewMode mode)
+{
+    displaythumbnails = mode == VIEW_THUMBNAILS;
+    FXuint style = getListStyle() & ~(ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS);
+    if (mode != VIEW_DETAILS)
+    {
+        style |= ICONLIST_BIG_ICONS;
+    }
+    IconList::setListStyle(style | ICONLIST_COLUMNS);
+    applyZoom();
     scan(true);
-    setFocus();
+    recalc();
+    update();
+}
+
+void FileList::setListStyle(FXuint style)
+{
+    // Old small-icon settings now select the compact, row-major Icons grid.
+    if (style & ICONLIST_MINI_ICONS)
+    {
+        style = (style & ~ICONLIST_MINI_ICONS) | ICONLIST_BIG_ICONS;
+    }
+    if (displaythumbnails)
+    {
+        style |= ICONLIST_BIG_ICONS;
+    }
+    IconList::setListStyle(style | ICONLIST_COLUMNS);
+    applyZoom();
+}
+
+long FileList::onCmdView(FXObject*, FXSelector sel, void*)
+{
+    setViewMode(FXSELID(sel) == ID_SHOW_DETAILS ? VIEW_DETAILS : VIEW_ICONS);
+    return 1;
+}
+
+long FileList::onUpdView(FXObject* sender, FXSelector sel, void*)
+{
+    FXbool checked = FXSELID(sel) == ID_SHOW_DETAILS ? getViewMode() == VIEW_DETAILS :
+                                                       getViewMode() == VIEW_ICONS;
+    sender->handle(this, FXSEL(SEL_COMMAND, checked ? ID_CHECK : ID_UNCHECK), NULL);
+    return 1;
+}
+
+int FileList::getZoomStep() const
+{
+    return FXCLAMP(0, getApp()->reg().readIntEntry("SETTINGS", "file_zoom_step", 1), 4);
+}
+
+void FileList::applyZoom()
+{
+    int step = getZoomStep();
+    int bigSize = (int)(zoomSizes[step] * scalefrac * (displaythumbnails ? 2 : 1));
+    const int rowSizes[] = { 16, 20, 24, 32, 40 };
+    getApp()->reg().writeUnsignedEntry("SETTINGS", "bigthumb_size", zoomSizes[step] * 2);
+    getApp()->reg().writeUnsignedEntry("SETTINGS", "minithumb_size", rowSizes[step]);
+    setViewMetrics(bigSize, (int)(rowSizes[step] * scalefrac), displaythumbnails);
+}
+
+void FileList::scaleItemIcons(FileItem* item)
+{
+    FXIcon* big = sizedIcon(item->getBigIcon(), getViewIconSize());
+    FXIcon* mini = sizedIcon(item->getMiniIcon(), getDetailIconSize());
+    if (big)
+    {
+        item->setBigIcon(big, true, item->bigIconBadge);
+    }
+    if (mini)
+    {
+        item->setMiniIcon(mini, true, item->miniIconBadge);
+    }
+}
+
+long FileList::onCmdZoom(FXObject*, FXSelector sel, void*)
+{
+    int step = FXSELID(sel) == ID_ZOOM_RESET ? 1 :
+               FXCLAMP(0, getZoomStep() + (FXSELID(sel) == ID_ZOOM_IN ? 1 : -1), 4);
+    getApp()->reg().writeIntEntry("SETTINGS", "file_zoom_step", step);
+    for (size_t i = 0; i < zoomLists.size(); ++i)
+    {
+        if (zoomLists[i]->getApp() == getApp() && !(zoomLists[i]->getListType() & FILELIST_SEARCH))
+        {
+            zoomLists[i]->applyZoom();
+            zoomLists[i]->scan(true);
+        }
+    }
+    return 1;
+}
+
+long FileList::onUpdZoom(FXObject* sender, FXSelector sel, void*)
+{
+    FXbool enabled = FXSELID(sel) == ID_ZOOM_RESET ||
+                     (FXSELID(sel) == ID_ZOOM_IN ? getZoomStep() < 4 : getZoomStep() > 0);
+    sender->handle(this, FXSEL(SEL_COMMAND, enabled ? ID_ENABLE : ID_DISABLE), NULL);
+    return 1;
+}
+
+void FileList::sortItems()
+{
+    IconList::sortItems();
+    if (!displaythumbnails || (options & FILELIST_SEARCH))
+    {
+        return;
+    }
+    IconItem* currentItem = current >= 0 ? items[current] : NULL;
+    IconItem* anchorItem = anchor >= 0 ? items[anchor] : NULL;
+    IconItem* extentItem = extent >= 0 ? items[extent] : NULL;
+    std::vector<IconItem*> ordered;
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        for (int i = 0; i < items.no(); ++i)
+        {
+            if (((FileItem*)items[i])->isDirectory() == (pass == 0))
+            {
+                ordered.push_back(items[i]);
+            }
+        }
+    }
+    for (int i = 0; i < items.no(); ++i)
+    {
+        items[i] = ordered[i];
+        if (items[i] == currentItem) current = i;
+        if (items[i] == anchorItem) anchor = i;
+        if (items[i] == extentItem) extent = i;
+    }
+    update();
 }
 
 
@@ -4870,6 +5133,7 @@ void FileList::toggleExpand(int index, int forcestate)
     {
         return;
     }
+    xf_setwaitcursor(getApp(), BEGIN_CURSOR);
     if (want)
     {
         expandedset.insert(rel);
@@ -4882,6 +5146,7 @@ void FileList::toggleExpand(int index, int forcestate)
         {
             if ((*it == rel) || (it->compare(0, sub.length(), sub) == 0))
             {
+                RemoteDirectory::release(this, FXPath::absolute(directory, it->c_str()));
                 it = expandedset.erase(it);
             }
             else
@@ -4892,6 +5157,8 @@ void FileList::toggleExpand(int index, int forcestate)
     }
     listItems(false);
     sortItems();
+    updateRemoteBusy();
+    xf_setwaitcursor(getApp(), END_CURSOR);
 }
 
 
@@ -4973,6 +5240,13 @@ long FileList::onUpdRefreshTimer(FXObject*, FXSelector, void*)
 // Scan items to see if listing is necessary
 void FileList::scan(FXbool force)
 {
+    if (!(options & FILELIST_SEARCH) && RemoteDirectory::handles(directory))
+    {
+        listItems(force);
+        sortItems();
+        updateRemoteBusy();
+        return;
+    }
     // Start wait cursor if refresh forced (use custom function)
     if (force)
     {
@@ -5011,28 +5285,21 @@ void FileList::scan(FXbool force)
 #endif
             // Changes inside expanded sub folders don't change the date of the current folder
             FXbool subchanged = false;
-            if (!expandedset.empty())
+            if (!expandedset.empty() && !(options & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS)))
             {
-                if (options & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS))
+                FXTime sum = 0;
+                for (std::set<std::string>::iterator it = expandedset.begin(); it != expandedset.end(); ++it)
                 {
-                    subchanged = true;
+                    struct stat sinfo;
+                    if (xf_info(FXPath::absolute(directory, it->c_str()), sinfo))
+                    {
+                        sum += (FXTime)FXMAX(sinfo.st_mtime, sinfo.st_ctime);
+                    }
                 }
-                else
+                if (sum != expandedstamp)
                 {
-                    FXTime sum = 0;
-                    for (std::set<std::string>::iterator it = expandedset.begin(); it != expandedset.end(); ++it)
-                    {
-                        struct stat sinfo;
-                        if (xf_info(FXPath::absolute(directory, it->c_str()), sinfo))
-                        {
-                            sum += (FXTime)FXMAX(sinfo.st_mtime, sinfo.st_ctime);
-                        }
-                    }
-                    if (sum != expandedstamp)
-                    {
-                        expandedstamp = sum;
-                        subchanged = true;
-                    }
+                    expandedstamp = sum;
+                    subchanged = true;
                 }
             }
             if (force || subchanged || (timestamp != newdate) || (counter == 0) || fusedir)
@@ -5569,10 +5836,11 @@ FXbool FileList::updateItems(FXbool force)
             }
 
             // Attempt to load thumbnails for image files
-            if (displaythumbnails)
+            item->previewable = false;
+            if (displaythumbnails && item->isFile())
             {
                 // Scaled max sizes
-                FXuint bigthumb_size = getApp()->reg().readUnsignedEntry("SETTINGS", "bigthumb_size", 32);
+                FXuint bigthumb_size = getViewIconSize() / scalefrac;
                 FXuint minithumb_size = getApp()->reg().readUnsignedEntry("SETTINGS", "minithumb_size", 16);
                 FXuint max_bigthumb_size = scalefrac * bigthumb_size;
                 FXuint max_minithumb_size = scalefrac * minithumb_size;
@@ -5585,12 +5853,14 @@ FXbool FileList::updateItems(FXbool force)
                     source = associations->getIconDict()->getIconSource();
                     if (!(item->state & FileItem::FIFO)) // Avoid pipes
                     {
-                        bigthumb = source->loadIconFile(pathname);
+                        FXString cached = Preview::request(getApp(), pathname, getViewIconSize());
+                        if (!cached.empty()) bigthumb = source->loadIconFile(cached);
                     }
                 }
 
                 if (bigthumb)
                 {
+                    item->previewable = !isBrokenLink;
                     FXuint w = bigthumb->getWidth();
                     FXuint h = bigthumb->getHeight();
 
@@ -5748,6 +6018,11 @@ FXbool FileList::updateItems(FXbool force)
 // List directory (used in a standard file list)
 void FileList::listItems(FXbool force)
 {
+    const FXTime started = FXThread::time();
+    FXTime metadataTime = 0, permissionTime = 0;
+    FXint metadataCalls = 0, permissionCalls = 0;
+    std::map<uid_t, FXString> users;
+    std::map<gid_t, FXString> groups;
     FileItem* oldlist, * newlist;
     FileItem** po, ** pn, ** pp;
     FXString grpid, usrid, perms, linkpath, mod, ext, del, origpath;
@@ -5787,8 +6062,10 @@ void FileList::listItems(FXbool force)
     items.clear();
 
     // Get info about directory
-    if (xf_stat(directory.text(), &info) == 0)
+    const FXbool remoteRoot = RemoteDirectory::handles(directory);
+    if (remoteRoot || xf_stat(directory.text(), &info) == 0)
     {
+        if (remoteRoot) memset(&info, 0, sizeof(info));
         // Need latest change no matter what actually changed!
         timestamp = FXMAX(info.st_mtime, info.st_ctime);
 
@@ -5867,10 +6144,6 @@ void FileList::listItems(FXbool force)
         // Folders to read: the current one, then the expanded sub folders
         FXbool detailed = !inTrash && !(options & FILELIST_SEARCH) &&
                           !(options & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS));
-        if (!detailed)
-        {
-            expandedset.clear();
-        }
         std::vector<ExpandJob> jobs;
         ExpandJob rootjob;
         rootjob.dir = dirname;
@@ -5884,16 +6157,34 @@ void FileList::listItems(FXbool force)
         int jobdepth = jobs[jobidx].depth;
 
         // Get directory stream pointer
-        dirp = opendir(dirname.text());
+        const FXbool remote = RemoteDirectory::handles(dirname);
+        const std::vector<RemoteDirectory::Entry>* remoteRows = NULL;
+        if (remote)
+            remoteRows = &RemoteDirectory::entries(getApp(), dirname, this, ID_REMOTE_CHANGED);
+        size_t remoteIndex = 0;
+        RemoteDirectory::Entry parentEntry;
+        memset(&parentEntry.info, 0, sizeof(parentEntry.info));
+        parentEntry.name = "..";
+        parentEntry.info.st_mode = S_IFDIR | 0755;
+        const RemoteDirectory::Entry* remoteEntry = NULL;
+        dirp = remote ? NULL : opendir(dirname.text());
 
         // Managed to open directory
-        if (dirp)
+        if (dirp || remote)
         {
+            const int firstChild = items.no();
             // Loop over directory entries
-            while ((dp = readdir(dirp)) != NULL)
+            while (remote ? (remoteIndex < remoteRows->size() + (jobdepth == 0 ? 1 : 0)) :
+                            ((dp = readdir(dirp)) != NULL))
             {
+                if (remote)
+                {
+                    remoteEntry = jobdepth == 0 && remoteIndex == 0 ? &parentEntry :
+                                  &(*remoteRows)[remoteIndex - (jobdepth == 0 ? 1 : 0)];
+                    ++remoteIndex;
+                }
                 // Directory entry name
-                name = dp->d_name;
+                name = remote ? remoteEntry->name : dp->d_name;
 
                 // Nested folders never show . and ..
                 if (jobdepth > 0 && name[0] == '.' && (name[1] == 0 || (name[1] == '.' && name[2] == 0)))
@@ -5916,7 +6207,17 @@ void FileList::listItems(FXbool force)
                 FXString relname = prefix + name;
 
                 // Get file/link info and indicate if it is a link
-                if (xf_lstat(pathname.text(), &linfo) != 0)
+                FXTime operationStarted = FXThread::time();
+                int metadataResult = 0;
+                if (remote)
+                {
+                    linfo = remoteEntry->info;
+                    if (remoteEntry->symlink) linfo.st_mode = (linfo.st_mode & ~S_IFMT) | S_IFLNK;
+                }
+                else metadataResult = xf_lstat(pathname.text(), &linfo);
+                metadataTime += FXThread::time() - operationStarted;
+                if (!remote) ++metadataCalls;
+                if (metadataResult != 0)
                 {
                     continue;
                 }
@@ -5927,7 +6228,8 @@ void FileList::listItems(FXbool force)
                 isLinkToDir = false;
                 if (isLink)
                 {
-                    if (xf_stat(pathname.text(), &info) != 0)
+                    if (remote) info = remoteEntry->info;
+                    if (remote ? S_ISLNK(info.st_mode) : xf_stat(pathname.text(), &info) != 0)
                     {
                         isBrokenLink = true;
                     }
@@ -5936,7 +6238,7 @@ void FileList::listItems(FXbool force)
                         isLinkToDir = true;
                     }
 
-                    linkpath = xf_cleanpath(xf_readlink(pathname));
+                    linkpath = remote ? remoteEntry->link : xf_cleanpath(xf_readlink(pathname));
                 }
                 else
                 {
@@ -5967,6 +6269,7 @@ void FileList::listItems(FXbool force)
                 filemtime = linfo.st_mtime;
                 filectime = linfo.st_ctime;
 
+                FXbool newItem = false;
                 // Find it, and take it out from the old list if found
                 for (pp = po; (item = *pp) != NULL; pp = &item->link)
                 {
@@ -5981,6 +6284,7 @@ void FileList::listItems(FXbool force)
 
                 // Make new item if we have to
                 item = (FileItem*)createItem(FXString::null, NULL, NULL, NULL);
+                newItem = true;
 
                 // Append item in list
 fnd:
@@ -5993,31 +6297,11 @@ fnd:
                 if (detailed)
                 {
                     FXbool realdir = (S_ISDIR(linfo.st_mode) || isLinkToDir) && (name != "..");
-                    if (realdir)
+                    // Discover empty folders on expansion, never by opening every child.
+                    if (realdir && !force && item->isDirectory() && item->treeMark == 0 &&
+                        item->date == filemtime && item->cdate == filectime)
                     {
-                        // Folders without visible content get no arrow
-                        FXbool hascontent = false;
-                        DIR* sd = opendir(pathname.text());
-                        if (sd)
-                        {
-                            struct dirent* sp;
-                            while ((sp = readdir(sd)) != NULL)
-                            {
-                                if (sp->d_name[0] == '.' && ((sp->d_name[1] == 0) ||
-                                    (sp->d_name[1] == '.' && sp->d_name[2] == 0)))
-                                {
-                                    continue;
-                                }
-                                if (sp->d_name[0] == '.' && !(options & FILELIST_SHOWHIDDEN))
-                                {
-                                    continue;
-                                }
-                                hascontent = true;
-                                break;
-                            }
-                            closedir(sd);
-                        }
-                        realdir = hascontent;
+                        realdir = false;
                     }
                     FXbool isexp = realdir && (expandedset.count(relname.text()) > 0);
                     item->treeMark = realdir ? (isexp ? 2 : 1) : 0;
@@ -6044,13 +6328,27 @@ fnd:
                 items.append(item);
 
                 // Update only if forced, or if the item has changed (mtime or ctime)
-                if (force || (item->date != filemtime) || (item->cdate != filectime))
+                if (force || newItem || (remote && item->remoteRevision != remoteEntry->revision) ||
+                    (item->date != filemtime) || (item->cdate != filectime))
                 {
+                    if (remote) item->remoteRevision = remoteEntry->revision;
                     // Obtain user name
-                    usrid = FXSystem::userName(linfo.st_uid);
+                    std::map<uid_t, FXString>::iterator user = users.find(linfo.st_uid);
+                    if (user == users.end())
+                    {
+                        user = users.insert(std::make_pair(linfo.st_uid,
+                            remote && linfo.st_uid == (uid_t)-1 ? FXString("?") : FXSystem::userName(linfo.st_uid))).first;
+                    }
+                    usrid = user->second;
 
                     // Obtain group name
-                    grpid = FXSystem::groupName(linfo.st_gid);
+                    std::map<gid_t, FXString>::iterator group = groups.find(linfo.st_gid);
+                    if (group == groups.end())
+                    {
+                        group = groups.insert(std::make_pair(linfo.st_gid,
+                            remote && linfo.st_gid == (gid_t)-1 ? FXString("?") : FXSystem::groupName(linfo.st_gid))).first;
+                    }
+                    grpid = group->second;
 
                     // Permissions (caution : we don't use the FXSystem::modeString() function because
                     // it seems to be incompatible with the info.st_mode format)
@@ -6181,18 +6479,10 @@ fnd:
                         }
                     }
 
-                    // Obtain the stat info on the file or the referred file if it is a link
-                    if (xf_stat(pathname.text(), &info) != 0)
+                    // Symlink targets were already stated above; other entries use lstat's metadata.
+                    if (!isLink || isBrokenLink)
                     {
-                        // Except in the case of a broken link
-                        if (isBrokenLink)
-                        {
-                            xf_lstat(pathname.text(), &info);
-                        }
-                        else
-                        {
-                            continue;
-                        }
+                        info = linfo;
                     }
 
                     // Set item flags from the obtained info or linfo
@@ -6265,7 +6555,13 @@ fnd:
                     // Determine icons and type
                     if (item->state & FileItem::FOLDER)
                     {
-                        if (!xf_isreadexecutable(pathname))
+                        operationStarted = FXThread::time();
+                        int permissionResult = remote ?
+                            (remoteEntry->readable == 0 || remoteEntry->executable == 0 ? -1 : 0) :
+                            access(pathname.text(), R_OK | X_OK);
+                        permissionTime += FXThread::time() - operationStarted;
+                        ++permissionCalls;
+                        if (permissionResult != 0)
                         {
                             big = bigfolderlockedicon;
                             mini = minifolderlockedicon;
@@ -6434,8 +6730,11 @@ fnd:
                     if (isLink && !isBrokenLink && (item->state & FileItem::FOLDER) &&
                         !(fileassoc && fileassoc->miniicon))
                     {
-                        big = xf_isreadexecutable(pathname) ? bigfoldericon : bigfolderlockedicon;
-                        mini = xf_isreadexecutable(pathname) ? minifoldericon : minifolderlockedicon;
+                        FXbool accessible = remote ?
+                            remoteEntry->readable != 0 && remoteEntry->executable != 0 :
+                            xf_isreadexecutable(pathname);
+                        big = accessible ? bigfoldericon : bigfolderlockedicon;
+                        mini = accessible ? minifoldericon : minifolderlockedicon;
                     }
 
                     // Don't display the file size for directories and links
@@ -6476,10 +6775,11 @@ fnd:
                     }
 
                     // Attempt to load thumbnails for image files
-                    if (displaythumbnails)
+                    item->previewable = false;
+                    if (displaythumbnails && item->isFile())
                     {
                         // Scaled max sizes
-                        FXuint bigthumb_size = getApp()->reg().readUnsignedEntry("SETTINGS", "bigthumb_size", 32);
+                        FXuint bigthumb_size = getViewIconSize() / scalefrac;
                         FXuint minithumb_size = getApp()->reg().readUnsignedEntry("SETTINGS", "minithumb_size", 16);
                         FXuint max_bigthumb_size = scalefrac * bigthumb_size;
                         FXuint max_minithumb_size = scalefrac * minithumb_size;
@@ -6492,12 +6792,14 @@ fnd:
                             source = associations->getIconDict()->getIconSource();
                             if (!(item->state & FileItem::FIFO)) // Avoid pipes
                             {
-                                bigthumb = source->loadIconFile(pathname);
+                                FXString cached = Preview::request(getApp(), pathname, getViewIconSize());
+                                if (!cached.empty()) bigthumb = source->loadIconFile(cached);
                             }
                         }
 
                         if (bigthumb)
                         {
+                            item->previewable = !isBrokenLink;
                             FXuint w = bigthumb->getWidth();
                             FXuint h = bigthumb->getHeight();
 
@@ -6647,6 +6949,7 @@ fnd:
                         item->setBigIcon(bigfolderupicon);
                         item->setMiniIcon(minifolderupicon);
                     }
+                    scaleItemIcons(item);
                 }
 
                 // Create item
@@ -6668,9 +6971,33 @@ fnd:
                     }
                 }
             }
-            closedir(dirp);
+            if (dirp) closedir(dirp);
+            if (jobparent && items.no() == firstChild && (!remote || !RemoteDirectory::loading(dirname)) &&
+                (!remote || RemoteDirectory::error(dirname).empty()))
+            {
+                jobparent->treeMark = 0;
+                expandedset.erase(jobs[jobidx].prefix.left(jobs[jobidx].prefix.length() - 1).text());
+            }
         }
         }
+    }
+
+    if (displaythumbnails)
+    {
+        for (int i = items.no() - 1; i >= 0; --i)
+        {
+            FileItem* visible = (FileItem*)items[i];
+            if (!visible->isDirectory() && !visible->previewable)
+            {
+                items.erase(i);
+            }
+        }
+        current = -1;
+        for (int i = 0; i < items.no(); ++i)
+        {
+            if (items[i] == curitem) current = i;
+        }
+        anchor = extent = -1;
     }
 
     // Wipe items remaining in list:- they have disappeared!!
@@ -6699,4 +7026,15 @@ fnd:
 
     // Gotta recalc size of content
     recalc();
+    const FXTime elapsed = FXThread::time() - started;
+    if (elapsed >= 1000000000LL)
+    {
+        appLog(APP_LOG_FILE_OPERATIONS, "slow-directory-listing",
+               FXString("path=\"") + directory + "\" elapsed_ms=" + FXStringVal(elapsed / 1000000) +
+               " items=" + FXStringVal(items.no()) +
+               " entry_metadata_ms=" + FXStringVal(metadataTime / 1000000) +
+               " entry_metadata_calls=" + FXStringVal(metadataCalls) +
+               " folder_access_ms=" + FXStringVal(permissionTime / 1000000) +
+               " folder_access_calls=" + FXStringVal(permissionCalls));
+    }
 }

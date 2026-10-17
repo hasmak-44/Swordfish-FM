@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#include <set>
+#include <string>
 
 #if defined(linux)
 #include <mntent.h>
@@ -19,6 +21,295 @@
 #include "xfeutils.h"
 #include "MessageBox.h"
 #include "Places.h"
+#include "DirList.h"
+#include "AppLogger.h"
+#include "RemoteDirectory.h"
+
+FXDEFMAP(SidebarTree) SidebarTreeMap[] =
+{
+    FXMAPFUNC(SEL_COMMAND, SidebarTree::ID_REMOTE_CHANGED, SidebarTree::onRemoteChanged),
+    FXMAPFUNC(SEL_COLLAPSED, 0, SidebarTree::onCollapseItem),
+    FXMAPFUNC(SEL_EXPANDED, 0, SidebarTree::onExpandItem),
+    FXMAPFUNC(SEL_DND_ENTER, 0, SidebarTree::onDNDEnter),
+    FXMAPFUNC(SEL_DND_MOTION, 0, SidebarTree::onDNDMotion),
+    FXMAPFUNC(SEL_DND_DROP, 0, SidebarTree::onDNDDrop)
+};
+FXIMPLEMENT(SidebarTree, FXTreeList, SidebarTreeMap, ARRAYNUMBER(SidebarTreeMap))
+FXIMPLEMENT(SidebarFrame, FXPacker, NULL, 0)
+
+SidebarTree::SidebarTree(FXComposite* parent, FXObject* target, FXSelector selector, FXuint opts) :
+    FXTreeList(parent, target, selector, opts | TREELIST_BROWSESELECT | TREELIST_SHOWS_BOXES |
+               TREELIST_ROOT_BOXES | TREELIST_SHOWS_LINES)
+{
+    dropEnable();
+}
+
+FXint SidebarTree::getContentHeight()
+{
+    return FXTreeList::getContentHeight() + clearance;
+}
+
+void SidebarTree::setClearance(FXint value)
+{
+    if (clearance != value)
+    {
+        clearance = value;
+        recalc();
+    }
+}
+
+long SidebarTree::onExpandItem(FXObject*, FXSelector, void* ptr)
+{
+    const FXTime started = FXThread::time();
+    SidebarItem* item = static_cast<SidebarItem*>(ptr);
+    if (grabbed())
+    {
+        // A slow filesystem must not keep the desktop's pointer grabbed.
+        ungrab();
+        getApp()->flush();
+    }
+    xf_setwaitcursor(getApp(), BEGIN_CURSOR);
+    if (item && RemoteDirectory::handles(item->path))
+    {
+        RemoteDirectory::entries(getApp(), item->path, this, ID_REMOTE_CHANGED);
+        item->loaded = true;
+        onRemoteChanged(NULL, 0, NULL);
+        xf_setwaitcursor(getApp(), END_CURSOR);
+        return 1;
+    }
+    FXStat info;
+    if (item && !item->path.empty() && item->kind != SidebarItem::SERVER &&
+        (!item->loaded || (FXStat::statFile(item->path, info) && info.modified() != item->modified)))
+    {
+        FXDir directory;
+        if (!directory.open(item->path))
+        {
+            xf_setwaitcursor(getApp(), END_CURSOR);
+            MessageBox::error(this, BOX_OK, _("Error"), _("Can't open folder %s: %s"),
+                              item->path.text(), strerror(errno));
+            return 1;
+        }
+        while (item->getFirst())
+        {
+            removeItem(item->getFirst());
+        }
+        while (directory.next())
+        {
+            FXString name = directory.name();
+            if (name.empty() || name[0] == '.')
+            {
+                continue;
+            }
+            FXString path = FXPath::absolute(item->path, name);
+            if (FXStat::isDirectory(path))
+            {
+                SidebarItem* child = new SidebarItem(name, minifoldericon, SidebarItem::DIRECTORY, path);
+                child->setHasItems(true);
+                appendItem(item, child);
+            }
+        }
+        directory.close();
+        item->loaded = true;
+        if (FXStat::statFile(item->path, info))
+        {
+            item->modified = info.modified();
+        }
+        sortChildItems(item);
+        recalc();
+    }
+    xf_setwaitcursor(getApp(), END_CURSOR);
+    const FXTime elapsed = FXThread::time() - started;
+    if (item && elapsed >= 1000000000LL)
+    {
+        appLog(APP_LOG_FILE_OPERATIONS, "slow-sidebar-expansion",
+               FXString("path=\"") + item->path + "\" elapsed_ms=" +
+               FXStringVal(elapsed / 1000000) + " children=" + FXStringVal(item->getNumChildren()));
+    }
+    return 1;
+}
+
+SidebarTree::~SidebarTree()
+{
+    RemoteDirectory::release(this);
+    if (remoteBusy) xf_setwaitcursor(getApp(), END_CURSOR);
+}
+
+long SidebarTree::onCollapseItem(FXObject*, FXSelector, void* ptr)
+{
+    SidebarItem* item = static_cast<SidebarItem*>(ptr);
+    if (item && !item->path.empty()) RemoteDirectory::release(this, item->path);
+    if (item)
+        for (FXTreeItem* child = item->getFirst(); child; child = child->getNext())
+        {
+            SidebarItem* directory = static_cast<SidebarItem*>(child);
+            if (!directory->path.empty()) RemoteDirectory::release(this, directory->path);
+        }
+    if (remoteBusy && !RemoteDirectory::loading(this))
+    {
+        xf_setwaitcursor(getApp(), END_CURSOR);
+        remoteBusy = false;
+    }
+    return 1;
+}
+
+long SidebarTree::onRemoteChanged(FXObject*, FXSelector, void*)
+{
+    FXbool busy = false;
+    FXString failure;
+    for (FXTreeItem* node = getFirstItem(); node; node = node->getBelow())
+    {
+        SidebarItem* item = static_cast<SidebarItem*>(node);
+        if (!item->loaded || !item->isExpanded() || !RemoteDirectory::handles(item->path)) continue;
+        const auto& rows = RemoteDirectory::entries(getApp(), item->path, this, ID_REMOTE_CHANGED);
+        std::set<std::string> names;
+        for (const auto& row : rows)
+        {
+            if (!S_ISDIR(row.info.st_mode) || row.name[0] == '.') continue;
+            names.insert(row.name.text());
+            FXTreeItem* child = item->getFirst();
+            while (child && child->getText() != row.name) child = child->getNext();
+            if (!child)
+            {
+                SidebarItem* added = new SidebarItem(row.name, minifoldericon, SidebarItem::DIRECTORY,
+                                                     FXPath::absolute(item->path, row.name));
+                added->setHasItems(true);
+                appendItem(item, added);
+            }
+        }
+        const FXbool pending = RemoteDirectory::loading(item->path);
+        busy |= pending;
+        FXString diagnostic = RemoteDirectory::error(item->path);
+        if (!diagnostic.empty()) failure = diagnostic;
+        if (!pending && diagnostic.empty())
+        {
+            for (FXTreeItem* child = item->getFirst(); child;)
+            {
+                FXTreeItem* next = child->getNext();
+                if (names.find(child->getText().text()) == names.end()) removeItem(child);
+                child = next;
+            }
+            item->setHasItems(item->getFirst() != NULL);
+        }
+        sortChildItems(item);
+    }
+    if (remoteBusy != busy)
+    {
+        xf_setwaitcursor(getApp(), busy ? BEGIN_CURSOR : END_CURSOR);
+        remoteBusy = busy;
+    }
+    recalc();
+    if (!busy && !failure.empty() && remoteError != failure)
+    {
+        remoteError = failure;
+        MessageBox::error(this, BOX_OK, _("Error"), _("Remote folder loading failed: %s"), failure.text());
+    }
+    if (failure.empty()) remoteError.clear();
+    return 1;
+}
+long SidebarTree::onDNDEnter(FXObject*, FXSelector, void*)
+{
+    tabType = getApp()->registerDragType(TABBUTTONS_DRAG_TYPE);
+    uriType = getApp()->registerDragType("text/uri-list");
+    return 1;
+}
+
+long SidebarTree::onDNDMotion(FXObject*, FXSelector, void* ptr)
+{
+    FXEvent* event = static_cast<FXEvent*>(ptr);
+    SidebarItem* item = static_cast<SidebarItem*>(getItemAt(event->win_x, event->win_y));
+    while (item && item->getParent())
+    {
+        item = static_cast<SidebarItem*>(item->getParent());
+    }
+    if (bookmarks && item && item->key == "bookmarks" &&
+        (offeredDNDType(FROM_DRAGNDROP, tabType) || offeredDNDType(FROM_DRAGNDROP, uriType)))
+    {
+        acceptDrop(DRAG_COPY);
+        return 1;
+    }
+    acceptDrop(DRAG_REJECT);
+    return 0;
+}
+
+long SidebarTree::onDNDDrop(FXObject*, FXSelector, void* ptr)
+{
+    if (!onDNDMotion(NULL, 0, ptr))
+    {
+        return 0;
+    }
+    FXuchar* data = NULL;
+    FXuint length = 0;
+    if (getDNDData(FROM_DRAGNDROP, tabType, data, length))
+    {
+        FXString path(reinterpret_cast<FXchar*>(data), length);
+        FXFREE(&data);
+        bookmarks->bookmarkFolder(path);
+    }
+    else if (getDNDData(FROM_DRAGNDROP, uriType, data, length))
+    {
+        FXString uris(reinterpret_cast<FXchar*>(data), length);
+        FXFREE(&data);
+        uris.substitute("\r", "");
+        for (int i = 0; i <= uris.contains('\n'); ++i)
+        {
+            FXString uri = uris.section('\n', i);
+            if (uri.left(7) == "file://")
+            {
+                bookmarks->bookmarkFolder(FXURL::decode(FXURL::fileFromURL(uri)));
+            }
+        }
+    }
+    else
+    {
+        return 0;
+    }
+    return 1;
+}
+
+SidebarFrame::SidebarFrame(FXComposite* parent) :
+    FXPacker(parent, FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y, 0, 0, 0, 0, 0, 0, 0, 0) {}
+
+FXint SidebarFrame::getDefaultWidth() { return 220; }
+FXint SidebarFrame::getDefaultHeight() { return 300; }
+
+void SidebarFrame::layout()
+{
+    if (content)
+    {
+        content->position(0, 0, width, height);
+    }
+    else if (tree)
+    {
+        tree->position(0, 0, width, height);
+    }
+    if (overlay && overlay->shown() && tree)
+    {
+        FXint overlayHeight = FXMIN(190, FXMAX(60, height / 2));
+        FXScrollArea* active = (tabs && tabs->getCurrent() == 1) || !tree->getParent()->shown() ?
+                               static_cast<FXScrollArea*>(directoryTree) : tree;
+        FXint scrollbar = active && active->horizontalScrollBar()->shown() ?
+                          active->horizontalScrollBar()->getHeight() : 0;
+        FXint vertical = active && active->verticalScrollBar()->shown() ?
+                        active->verticalScrollBar()->getWidth() : 0;
+        overlay->position(3, FXMAX(0, height - scrollbar - overlayHeight - 3),
+                          FXMAX(1, width - vertical - 6), overlayHeight);
+        tree->setClearance(overlayHeight + 6);
+        if (directoryTree)
+        {
+            directoryTree->setPreviewClearance(overlayHeight + 6);
+        }
+        overlay->raise();
+    }
+    else if (overlay && tree)
+    {
+        tree->setClearance(0);
+        if (directoryTree)
+        {
+            directoryTree->setPreviewClearance(0);
+        }
+    }
+    flags &= ~FLAG_DIRTY;
+}
 
 
 // mtab polling interval (ms)
