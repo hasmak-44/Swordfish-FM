@@ -6,6 +6,10 @@
 
 # Swordfish FM
 
+For the development history, confirmed decisions, known limitations and recovery
+instructions if the conversation is lost, read
+[Project history and recovery guide](PROJECT-HISTORY.md).
+
 > **Swordfish-Portable v0.0.1 RC4 — release candidate available for testing**
 >
 > RC4 includes the tested sidebar/view redesign, asynchronous previews and fast
