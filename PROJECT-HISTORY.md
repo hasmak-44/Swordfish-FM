@@ -408,6 +408,50 @@ was suspected.
 9. **Native Remote Test5:** fixed that lifecycle defect. The user confirmed
    fast browsing, archive open/close and over five minutes idle without warnings.
 
+### 3.13 Post-RC4 SMB discovery research and diagnostic: 18 October
+
+This work is after RC4 and does not change the frozen application. The rule
+agreed with the user was to reuse proven approaches, cover Linux and **all
+Windows versions**, solve discovery before mounting, and never mount
+automatically, enable SMB1 or weaken authentication.
+
+1. **Source study** of Caja, Thunar, Pnethood (Puppy) and Smb4K, both the
+   installed 3.1.7 and a 4.0.80 development snapshot:
+   - Caja and Thunar browse GVFS `network:///` and follow
+     `standard::target-uri`. Swordfish's old helper enumerated only `smb://`.
+   - Pnethood uses `nbtscan`, `smbclient -L` and `mount.cifs`.
+   - Smb4K uses DNS-SD, optional WS-Discovery with a WS-Transfer metadata Get,
+     and `mount.cifs` through a KAuth helper.
+   - Smb4K allows a **named user with an explicitly empty password**, and uses
+     guest only when the username is empty. The user's Windows 7 machines rely
+     on this, so a blank password must not be treated as guest. This is
+     relevant later, for mounting.
+2. **Standalone diagnostic** `portable/network-discovery-diagnostic.py`, with
+   offline tests in `tests/network-discovery-diagnostic-test.py`:
+   - It runs three methods concurrently: host GVFS (`network:///`,
+     `dns-sd://local/`, `smb:///`), IPv4 WS-Discovery and NetBIOS
+     (`nmblookup`).
+   - Follow-up checks: a WSD metadata Get on the replying address only, and a
+     TCP-connect-only check of port 445.
+   - Usage and safety limits are documented in
+     [portable/README.md](portable/README.md).
+3. **Live results** on the user's LAN (MX-RYZEN, 192.168.1.106, wlan0):
+
+   | Machine | GVFS (Caja/Thunar) | NetBIOS | WS-Discovery | TCP 445 |
+   |---|---|---|---|---|
+   | MX-HP (Linux, 192.168.1.102) | yes | yes | no | open |
+   | MX-RYZEN (this computer) | yes | yes | no | open |
+   | DELL-740 (Windows 7, 192.168.1.104) | **no** | **no** | **yes** | open |
+
+   - Windows 7 answered WS-Discovery in 2.06 s, on an old machine over a slow
+     network, without needing the retry.
+   - Its probe reply had no name. The metadata Get (0.24 s) returned
+     `DELL-740/Workgroup:MAKHLOUF`.
+   - This explains why Caja and Thunar miss Windows machines while Smb4K and
+     Pnethood find them.
+   - Windows 10/11 has **not** been tested yet.
+4. A fixed bug: the GVFS DNS-SD scheme is `dns-sd`, not `dnssd`.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -570,6 +614,7 @@ bash tests/run-folder-expansion-regression.sh /absolute/path/to/Swordfish-Portab
 python3 tests/native-directory-helper-regression.py ./src/swordfish-network
 bash tests/run-network-discovery-regression.sh
 bash tests/run-preview-regression.sh
+/usr/bin/python3 tests/network-discovery-diagnostic-test.py
 ```
 
 They require the development toolchain and appropriate Xvfb/decoder tools.
@@ -675,6 +720,20 @@ browser/player opening rather than an internal DLNA catalogue/player.
 No real LAN discovery test succeeded in the build environment; mocked helper
 tests do not establish actual SMB discovery. Keep this separate from the
 successfully tested mounted-GVFS native loader.
+
+Status after section 3.13:
+- The standalone diagnostic proved, on the user's LAN, that discovery needs
+  host GVFS/DNS-SD for Linux **and** WS-Discovery with a metadata Get for
+  Windows. NetBIOS did not find Windows 7.
+- This is diagnostic evidence only. Swordfish itself is unchanged, and the
+  Network root stays hidden.
+- Proposed next step, still awaiting user approval: a written integration design
+  for the sidebar before any code. It would merge GVFS and WSD results,
+  deduplicate them, mark "This computer", update progressively, and support
+  refresh and cancel.
+- Share listing and mounting come after that. Mounting must support named
+  users with blank passwords.
+- Windows 10/11 still need to be tested with the diagnostic.
 
 ### Application and executable UX
 

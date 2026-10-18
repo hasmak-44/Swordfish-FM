@@ -26,6 +26,52 @@ The bundle also provides the original Xfe executable names (`xfa`, `xfi`,
 `xfp`, and `xfw`) as compatibility aliases for saved settings and file
 associations.
 
+## Standalone network discovery diagnostic
+
+`network-discovery-diagnostic.py` is an experimental host-side diagnostic, not
+part of the frozen RC4 application or its launcher. Run it from a normal desktop
+terminal on the LAN, without `sudo`:
+
+```sh
+/usr/bin/python3 network-discovery-diagnostic.py --output discovery-report.json
+```
+
+When running from this source tree, use `portable/network-discovery-diagnostic.py`.
+Python 3 and `ip` (iproute2) are required. Host Python GObject bindings
+(`python3-gi`) and GVFS backends enable the GIO method; `nmblookup` (usually
+`samba-common-bin`) enables NetBIOS. Missing optional components are reported,
+not installed automatically.
+
+The diagnostic runs three bounded methods concurrently: existing host-GVFS
+virtual network roots, IPv4 WS-Discovery multicast probes, and local NetBIOS
+broadcast queries followed by name lookups. It never mounts virtual roots or
+shares, requests credentials, enumerates share contents, or enables SMB1.
+Consequently, a GVFS root not already available is reported as an error rather
+than activated. WSD/NetBIOS responders are candidates, not verified SMB servers.
+
+After discovery, two follow-up checks run unless `--no-checks` is given (5 second
+limit each). For WS-Discovery devices, the advertised metadata URL is queried with
+a WS-Transfer Get (as Smb4K does) to read the Windows computer name and
+workgroup/domain; only `http` URLs on the replying address are contacted. For
+WSD/NetBIOS IPv4 addresses (at most 256), TCP port 445 is connected and closed
+immediately to report `open`, `refused` or `no-answer`; no SMB data or login is
+sent. WSD entries also record the reply time and whether the retry was needed.
+
+Use `--interface eth0` (repeatable) to limit active WSD/NetBIOS probes; GVFS uses
+the desktop's own interface selection. By default all active global IPv4
+interfaces are probed, including VPN/container interfaces if present. Use this
+only on networks you are authorized to probe. There is no address-range scan.
+`--timeout 15` changes the per-method deadline (2-30 seconds; default 8).
+The JSON report includes per-method availability, errors, elapsed times, raw
+results and an exact-address summary. Hostname/IP aliases are not guessed or
+merged. Empty results do not prove absence, and IPv6-only hosts are not covered.
+Exit status 1 means no method completed successfully; 2 indicates an invocation,
+interface or report-writing error. Status 0 does not guarantee any server found.
+
+The output file must not already exist. Reports contain LAN names, addresses and
+advertised metadata URLs, but no requested credentials. Review before sharing.
+Offline tests: `/usr/bin/python3 tests/network-discovery-diagnostic-test.py`.
+
 ## Preview engines
 
 The sidebar and Thumbnails view share an asynchronous preview cache. GdkPixbuf
