@@ -183,6 +183,7 @@ FXDEFMAP(XFileExplorer) XFileExplorerMap[] =
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_QUIT, XFileExplorer::onQuit),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_HELP, XFileExplorer::onCmdHelp),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_ABOUT, XFileExplorer::onCmdAbout),
+    FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_PROJECT_WEBSITE, XFileExplorer::onCmdProjectWebsite),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_FILE_ASSOC, XFileExplorer::onCmdFileAssoc),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_REFRESH, XFileExplorer::onCmdRefresh),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_EMPTY_TRASH, XFileExplorer::onCmdEmptyTrash),
@@ -219,6 +220,7 @@ FXDEFMAP(XFileExplorer) XFileExplorerMap[] =
     FXMAPFUNC(SEL_KEYPRESS, 0, XFileExplorer::onKeyPress),
     FXMAPFUNC(SEL_KEYRELEASE, 0, XFileExplorer::onKeyRelease),
     FXMAPFUNC(SEL_SIGNAL, XFileExplorer::ID_HARVEST, XFileExplorer::onSigHarvest),
+    FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_NETWORK_UNMOUNTED, XFileExplorer::onNetworkUnmounted),
     FXMAPFUNC(SEL_SIGNAL, XFileExplorer::ID_QUIT, XFileExplorer::onQuit),
     FXMAPFUNC(SEL_CLOSE, 0, XFileExplorer::onQuit),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_FILE_SEARCH, XFileExplorer::onCmdFileSearch),
@@ -4042,6 +4044,20 @@ long XFileExplorer::onKeyRelease(FXObject* sender, FXSelector sel, void* ptr)
 }
 
 
+long XFileExplorer::onNetworkUnmounted(FXObject*, FXSelector, void* data)
+{
+    const FXString& mountpoint = *(const FXString*)data;
+    FXString destination = FXSystem::getHomeDirectory();
+    FilePanel* panels[] = { lpanel, rpanel };
+    for (FilePanel* panel : panels)
+        if (panel) panel->getTabButtons()->closeMount(mountpoint);
+    FXString directory = dirpanel->getDirectory();
+    if (directory == mountpoint || directory.left(mountpoint.length() + 1) == mountpoint + "/")
+        dirpanel->setDirectory(destination, true);
+    return 1;
+}
+
+
 // Harvest the zombies
 long XFileExplorer::onSigHarvest(FXObject*, FXSelector, void*)
 {
@@ -4638,6 +4654,7 @@ long XFileExplorer::onCmdGotoAddress(FXObject*, FXSelector, void*)
         }
         FXString netpath;
         int network = getCurrentPanel()->resolveNetworkPath(path, netpath);
+        if (network == 2) return 1;
         if (network < 0)
         {
             addressbox->setFocus();
@@ -4827,12 +4844,64 @@ long XFileExplorer::onCmdXTerm(FXObject*, FXSelector, void*)
 
 
 // Help menu
+namespace
+{
+const char* projectWebsite = "https://github.com/hasmak-44/Swordfish-FM";
+
+FXString projectCredit()
+{
+    return _("Swordfish FM development and modifications by\n"
+             "Hassanein Makhlouf (hasmak-44), with AI-assisted development.\n\n"
+             "Based on Xfe by Roland Baudin and other contributors,\n"
+             "itself based on X Win Commander by Maxim Baranov.\n"
+             "Existing copyright notices and GPL licence terms remain applicable.\n\n"
+             "Contact and bug reports: GitHub Issues\n"
+             "https://github.com/hasmak-44/Swordfish-FM/issues\n");
+}
+
+void addProjectLink(FXComposite* parent, XFileExplorer* owner)
+{
+    FXWindow* first = parent->getFirst();
+    FXButton* link = new FXButton(parent, projectWebsite, NULL, owner, XFileExplorer::ID_PROJECT_WEBSITE,
+                                  BUTTON_NORMAL | FRAME_NONE | LAYOUT_SIDE_TOP | LAYOUT_FILL_X);
+    link->setTextColor(FXRGB(0, 80, 180));
+    link->setTipText(_("Open the Swordfish FM GitHub repository in your browser"));
+    link->setDefaultCursor(parent->getApp()->getDefaultCursor(DEF_HAND_CURSOR));
+    if (first) link->reparent(parent, first);
+}
+}
+
+
+long XFileExplorer::onCmdProjectWebsite(FXObject*, FXSelector, void*)
+{
+    const char* hostPath = getenv("SWORDFISH_HOST_PATH");
+    FXString opener = FXPath::search(hostPath ? FXString(hostPath) : FXSystem::getExecPath(), "xdg-open");
+    if (opener.empty() || !FXStat::isExecutable(opener))
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Please install xdg-utils to open the project website."));
+        return 1;
+    }
+    FXString cmd = xf_hostcommand(xf_quote(opener) + " " + xf_quote(projectWebsite));
+#ifdef STARTUP_NOTIFICATION
+    int result = runcmd(cmd, "xdg-open", ROOTDIR, startlocation, false, "");
+#else
+    int result = runcmd(cmd, ROOTDIR, startlocation);
+#endif
+    if (result < 0)
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Unable to launch the browser for %s"), projectWebsite);
+    }
+    return 1;
+}
+
+
 long XFileExplorer::onCmdHelp(FXObject*, FXSelector, void*)
 {
     // Display help window
     if (helpwindow == NULL)
     {
         helpwindow = new TextWindow(getApp(), _("Help"), 40, 120);
+        addProjectLink(helpwindow, this);
     }
     helpwindow->setIcon(minihelpicon);
 
@@ -4847,7 +4916,7 @@ long XFileExplorer::onCmdHelp(FXObject*, FXSelector, void*)
     }
 
     // NB: The HELP_TEXT macro is defined in help.h
-    FXString str = (FXString)"                         " + COPYRIGHT + HELP_TEXT;
+    FXString str = projectCredit() + "\n" + COPYRIGHT + HELP_TEXT;
     helpwindow->setText(str.text());
     // Non modal window
     helpwindow->create();
@@ -4866,8 +4935,6 @@ long XFileExplorer::onCmdAbout(FXObject*, FXSelector, void*)
     FXString copyright = (FXString)"\n" + COPYRIGHT + "\n\n" +
                          _("X Win Commander by Maxim Baranov\n\n") +
                          _("FOX Toolkit by Jeroen van der Zijp\n");
-
-    FXString web = "\n\n<https://github.com/hasmak-44/Swordfish-FM>\n<https://github.com/hasmak-44/Swordfish-FM>\n";
 
     FXString translators =
         _("\nTranslators\n\
@@ -4902,10 +4969,11 @@ Swedish: Anders F. Bjorklund\n\
 Turkish: erkaN\n\
 ");
 
-    msg = msg + web + copyright + translators;
+    msg = msg + "\n\n" + projectCredit() + copyright + translators;
     MessageBox about(this, _("About SwordFish"), msg.text(), xfeicon, BOX_OK | DECOR_TITLE | DECOR_BORDER,
                      JUSTIFY_CENTER_X | ICON_BEFORE_TEXT | LAYOUT_CENTER_Y | LAYOUT_LEFT | LAYOUT_FILL_X |
                      LAYOUT_FILL_Y, 0, 0, true);
+    addProjectLink(&about, this);
     about.execute(PLACEMENT_OWNER);
     lpanel->getCurrent()->setFocusOnList();
     return 1;

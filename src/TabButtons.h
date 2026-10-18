@@ -128,6 +128,7 @@ public:
     // Set current tab from index
     void setCurrentTab(FXuint);
     void clearTabs(void);
+    void closeMount(const FXString& mountpoint);
     void saveTabs(const char* section);
     FXbool restoreTabs(const char* section, FXuint selected);
 

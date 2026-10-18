@@ -489,10 +489,23 @@ static FXString networkLastLine(FXString out)
 }
 
 
+// Run a GVFS command with a time limit: gio keeps asking for credentials on a closed stdin,
+// which would otherwise block the GUI forever
+#define NETWORK_INFO_TIMEOUT  10
+#define NETWORK_GUEST_TIMEOUT 10
+#define NETWORK_MOUNT_TIMEOUT 20
+static FXString networkRun(const FXString& input, const FXString& command, int seconds)
+{
+    FXString cmd = "{ " + input + xf_hostcommand("timeout -k 2 " + FXStringVal(seconds) + " " + command) +
+                   " ; } 2>&1; s=$?; [ $s -ne 124 ] && [ $s -ne 137 ] || echo " + xf_quote(_("The server did not respond in time."));
+    return xf_getcommandoutput(cmd);
+}
+
+
 // Local FUSE path of a mounted GVFS location, or an empty string when it isn't mounted
 static FXString networkLocalPath(const FXString& gio, const FXString& uri)
 {
-    FXString out = xf_getcommandoutput(archiveHostEnv() + xf_quote(gio) + " info -a standard::name " + xf_quote(uri));
+    FXString out = networkRun("", xf_quote(gio) + " info -a standard::name " + xf_quote(uri) + " </dev/null", NETWORK_INFO_TIMEOUT);
     int pos = out.find("local path: ");
     if (pos < 0)
     {
@@ -565,47 +578,11 @@ static FXbool networkAskCredentials(FXWindow* owner, const NetworkAddress& addr,
 }
 
 
-// Shares of an SMB server, through GVFS browsing and then smbclient
-static FXString networkListShares(const FXString& gio, const NetworkAddress& addr)
-{
-    FXString hostenv = archiveHostEnv();
-    FXString uri = "smb://" + addr.host + "/";
-    FXString shares;
-    xf_getcommandoutput(hostenv + xf_quote(gio) + " mount -a " + xf_quote(uri) + " </dev/null");
-    FXString out = xf_getcommandoutput(hostenv + xf_quote(gio) + " list " + xf_quote(uri));
-    if (out.find("gio:") < 0)
-    {
-        for (int i = 0; i < out.contains('\n') + 1; i++)
-        {
-            FXString name = out.section('\n', i);
-            name.trim();
-            if (!name.empty() && networkLastChar(name) != '$')
-            {
-                shares += name + "\n";
-            }
-        }
-    }
-    FXString smbclient = archiveFindProgram("smbclient");
-    if (shares.empty() && !smbclient.empty())
-    {
-        out = xf_getcommandoutput(hostenv + xf_quote(smbclient) + " -g -N -L " + xf_quote(addr.host));
-        for (int i = 0; i < out.contains('\n') + 1; i++)
-        {
-            FXString line = out.section('\n', i);
-            if (line.left(5) == "Disk|" && networkLastChar(line.section('|', 1)) != '$')
-            {
-                shares += line.section('|', 1) + "\n";
-            }
-        }
-    }
-    shares.trim();
-    return shares;
-}
 #endif
 
 
 // Mount a typed network address with GVFS and return its local folder.
-// Returns 0 if the text isn't a network address, 1 on success and -1 on failure or cancel.
+// Returns 0 for a local path, 1 for a mounted share, 2 for a server tab, -1 on failure/cancel.
 int FilePanel::resolveNetworkPath(const FXString& text, FXString& localpath)
 {
 #if defined(linux)
@@ -627,28 +604,14 @@ int FilePanel::resolveNetworkPath(const FXString& text, FXString& localpath)
 Please install gio and gvfs to be able to connect to a server..."));
         return -1;
     }
-    FXString hostenv = archiveHostEnv();
+    FXString hostenv = xf_hostcommand("");
 
-    getApp()->beginWaitCursor();
     if (addr.scheme == "smb" && addr.share.empty())
     {
-        FXString shares = networkListShares(gio, addr);
-        getApp()->endWaitCursor();
-        if (shares.empty())
-        {
-            MessageBox::error(this, BOX_OK, _("Error"), _("No shared folders were found on %s.\n\n\
-Please type the share name, for example smb://%s/share"), addr.host.text(), addr.host.text());
-            return -1;
-        }
-        FXint choice = FXChoiceBox::ask(this, 0, _("Shared Folders"),
-                                        FXString(_("Shared folders on ")) + addr.host + ":", NULL, shares);
-        if (choice < 0)
-        {
-            return -1;
-        }
-        addr.share = shares.section('\n', choice);
-        getApp()->beginWaitCursor();
+        openServerShares(addr.host);
+        return 2;
     }
+    getApp()->beginWaitCursor();
 
     // Already mounted (with or without the typed user name)?
     FXString mounted = networkLocalPath(gio, networkMountUri(addr, true));
@@ -656,13 +619,22 @@ Please type the share name, for example smb://%s/share"), addr.host.text(), addr
     {
         mounted = networkLocalPath(gio, networkMountUri(addr, false));
     }
+    if (!mounted.empty())
+    {
+        getApp()->endWaitCursor();
+        MessageBox::information(this, BOX_OK, _("Already mounted"),
+                                _("Share is already mounted at %s"), mounted.text());
+        localpath = mounted;
+        if (!addr.subpath.empty()) localpath += PATHSEPSTRING + addr.subpath;
+        return 1;
+    }
 
     FXString error;
     if (mounted.empty() && addr.user.empty() && addr.password.empty())
     {
         // Guest access first
-        FXString out = xf_getcommandoutput(hostenv + xf_quote(gio) + " mount -a " +
-                                           xf_quote(networkMountUri(addr, false)) + " </dev/null");
+        FXString out = networkRun("", xf_quote(gio) + " mount -a " + xf_quote(networkMountUri(addr, false)) + " </dev/null",
+                                  NETWORK_GUEST_TIMEOUT);
         mounted = networkLocalPath(gio, networkMountUri(addr, false));
         if (mounted.empty())
         {
@@ -680,9 +652,9 @@ Please type the share name, for example smb://%s/share"), addr.host.text(), addr
         FXString secret = archiveFindProgram("secret-tool");
         if (!secret.empty())
         {
-            FXString out = xf_getcommandoutput(hostenv + xf_quote(secret) + " search sharetype smb server " +
-                                               xf_quote(addr.host) + " share " + xf_quote(addr.share) +
-                                               " user " + xf_quote(user));
+            FXString out = networkRun("", xf_quote(secret) + " search sharetype smb server " + xf_quote(addr.host) +
+                                      " share " + xf_quote(addr.share) + " user " + xf_quote(user) + " </dev/null",
+                                      NETWORK_INFO_TIMEOUT);
             int pos = out.find("secret = ");
             if (pos >= 0)
             {
@@ -714,8 +686,9 @@ Please type the share name, for example smb://%s/share"), addr.host.text(), addr
         NetworkAddress login = addr;
         login.domain = domain;
         login.user = user;
-        FXString out = xf_getcommandoutput("printf '%s\\n' " + xf_quote(password) + " | " + hostenv +
-                                           xf_quote(gio) + " mount " + xf_quote(networkMountUri(login, true)));
+        FXString out = networkRun("printf '%s\\n' " + xf_quote(password) + " | ",
+                                  xf_quote(gio) + " mount " + xf_quote(networkMountUri(login, true)),
+                                  NETWORK_MOUNT_TIMEOUT);
         mounted = networkLocalPath(gio, networkMountUri(login, true));
         if (mounted.empty())
         {
@@ -1340,6 +1313,7 @@ long FilePanel::onClipboardRequest(FXObject* sender, FXSelector sel, void* ptr)
 // Copy or cut to clipboard (and add copy / add cut)
 long FilePanel::onCmdCopyCut(FXObject*, FXSelector sel, void*)
 {
+    if (requiresMountedShare()) return 1;
     FXString name, curdir;
 
     // Clear clipboard if normal copy or cut
@@ -1474,6 +1448,7 @@ long FilePanel::onCmdCopyName(FXObject*, FXSelector sel, void*)
 // Paste file(s) from clipboard
 long FilePanel::onCmdPaste(FXObject*, FXSelector sel, void*)
 {
+    if (requiresMountedShare()) return 1;
     FXuchar* data;
     FXuint len;
     int beg, end, pos;
@@ -1715,6 +1690,7 @@ void FilePanel::execFile(FXString filepath, FXbool explicitAction)
 // Execute command from menu/shortcut
 long FilePanel::onCmdExecute(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     int num, itm;
     num = current->list->getNumSelectedItems(&itm);
     if (num == 0)
@@ -1735,6 +1711,7 @@ long FilePanel::onCmdExecute(FXObject*, FXSelector, void*)
 
 long FilePanel::onCmdRunAsAdministrator(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     int item;
     FXint selected = current->list->getNumSelectedItems(&item);
     FXString path = selected == 1 ? current->list->getItemPathname(item) : FXString::null;
@@ -1753,6 +1730,7 @@ long FilePanel::onCmdRunAsAdministrator(FXObject*, FXSelector, void*)
 // Run in terminal command from menu/shortcut
 long FilePanel::onCmdRunInTerminal(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     int num, itm;
     num = current->list->getNumSelectedItems(&itm);
     if (num == 0)
@@ -1775,6 +1753,7 @@ long FilePanel::onCmdRunInTerminal(FXObject*, FXSelector, void*)
 // Open with default app command from menu/shortcut
 long FilePanel::onCmdOpenDefaultApp(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     int num, itm;
     num = current->list->getNumSelectedItems(&itm);
     if (num == 0)
@@ -1916,6 +1895,16 @@ long FilePanel::onKeyPress(FXObject* sender, FXSelector sel, void* ptr)
 // Double Click on File Item
 long FilePanel::onCmdItemDoubleClicked(FXObject* sender, FXSelector sel, void* ptr)
 {
+    if (RemoteDirectory::isServer(list->getDirectory()))
+    {
+        const FXival item = reinterpret_cast<FXival>(ptr);
+        if (item < 0 || item >= list->getNumItems()) return 1;
+        setActive();
+        FXString mounted;
+        if (resolveNetworkPath(list->getItemPathname(item), mounted) == 1)
+            navigatePane(mounted);
+        return 1;
+    }
     // In single click mode, return if not called from return key
     if ( (FXSELID(sel) != FilePanel::ID_KEY_RETURN) && (single_click == SINGLE_CLICK_DIR_FILE))
     {
@@ -2122,6 +2111,7 @@ long FilePanel::onCmdItemClicked(FXObject* sender, FXSelector sel, void* ptr)
 {
     // Make panel active
     setActive();
+    if (RemoteDirectory::isServer(list->getDirectory())) return 1;
     onCmdPreviewSelection(sender, sel, ptr);
 
     if (single_click != SINGLE_CLICK_NONE)
@@ -2340,6 +2330,7 @@ long FilePanel::onCmdPreviewSelection(FXObject*, FXSelector, void*)
 // Go to parent directory
 long FilePanel::onCmdDirectoryUp(FXObject* sender, FXSelector sel, void* ptr)
 {
+    if (RemoteDirectory::isServer(current->list->getDirectory())) return 1;
     current->list->handle(this, FXSEL(SEL_COMMAND, FileList::ID_DIRECTORY_UP), NULL);
     current->list->setFocus();
     dirpanel->setDirectory(current->list->getDirectory(), true);
@@ -2365,6 +2356,46 @@ long FilePanel::onCmdTabs(FXObject* sender, FXSelector sel, void* ptr)
     return tabs->onCmdRemoveAllTabs(sender, FXSEL(SEL_COMMAND, TabButtons::ID_REMOVE_ALL_TABS), ptr);
 }
 
+
+void FilePanel::openServerShares(const FXString& host)
+{
+    const FXString uri = "smb://" + host;
+    if (!RemoteDirectory::isServer(uri))
+    {
+        appLog(APP_LOG_ERRORS, "invalid-share-server", host);
+        MessageBox::error(this, BOX_OK, _("Error"), _("Invalid server address."));
+        return;
+    }
+    setActive();
+    tabbuttons->onUpdCurrentTab(this, 0, NULL);
+    for (FXuint index = 0; index < tabbuttons->getNumActiveTabs(); ++index)
+    {
+        if (tabbuttons->getPath(index) != uri) continue;
+        if (index != tabbuttons->getCurrentTab())
+            tabbuttons->onCmdPathButton(this, FXSEL(SEL_COMMAND, TabButtons::ID_START_TAB + index), NULL);
+        finishPathEditing();
+        RemoteDirectory::refresh(uri);
+        return;
+    }
+    if (tabbuttons->getNumActiveTabs() >= NMAX_TABS)
+    {
+        MessageBox::warning(this, BOX_OK, _("Shared folders"), _("Close a tab before opening another server."));
+        return;
+    }
+    tabbuttons->addTab(uri);
+    finishPathEditing();
+    updateLocation();
+    list->setFocus();
+}
+
+FXbool FilePanel::requiresMountedShare()
+{
+    if (!RemoteDirectory::isServer(current->list->getDirectory())) return false;
+    appLog(APP_LOG_UI, "share-browser-operation-unavailable", current->list->getDirectory());
+    MessageBox::warning(this, BOX_OK, _("Shared folders"),
+                        _("Open a shared folder before performing file operations."));
+    return true;
+}
 
 FXbool FilePanel::navigatePane(const FXString& pathname)
 {
@@ -2450,6 +2481,7 @@ long FilePanel::onCmdPaneNavigation(FXObject* sender, FXSelector sel, void* ptr)
     switch (id)
     {
     case ID_PANE_UP:
+        if (RemoteDirectory::isServer(list->getDirectory())) return 1;
         path = FXPath::upLevel(list->getDirectory());
         break;
     case ID_PANE_HOME:
@@ -2482,7 +2514,7 @@ long FilePanel::onUpdPaneNavigation(FXObject* sender, FXSelector sel, void* ptr)
         enabled = forwardhistGetNumItems() > 0;
         break;
     case ID_PANE_UP:
-        enabled = list->getDirectory() != ROOTDIR;
+        enabled = list->getDirectory() != ROOTDIR && !RemoteDirectory::isServer(list->getDirectory());
         break;
     }
     sender->handle(this, FXSEL(SEL_COMMAND, enabled ? ID_ENABLE : ID_DISABLE), ptr);
@@ -2494,7 +2526,8 @@ void FilePanel::finishPathEditing()
 {
     editingPath = false;
     pathedit->hide();
-    if (getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true))
+    if (!RemoteDirectory::isServer(list->getDirectory()) &&
+        getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true))
     {
         pathlink->show();
         pathtext->hide();
@@ -2540,6 +2573,11 @@ long FilePanel::onCmdEnterPath(FXObject*, FXSelector, void*)
     }
     FXString netpath;
     int network = resolveNetworkPath(path, netpath);
+    if (network == 2)
+    {
+        finishPathEditing();
+        return 1;
+    }
     if (network < 0)
     {
         pathedit->setFocus();
@@ -2612,6 +2650,7 @@ long FilePanel::onCmdStopListRefreshTimer(FXObject*, FXSelector, void*)
 // Copy/Move/Rename/Symlink file(s)
 long FilePanel::onCmdFileMan(FXObject* sender, FXSelector sel, void* ptr)
 {
+    if (requiresMountedShare()) return 1;
     int num;
     FXString src, targetdir, target, name, source;
     int firstitem = 0, lastitem = 0;
@@ -3533,6 +3572,7 @@ out:
 // Trash files from the file list or the tree list
 long FilePanel::onCmdFileTrash(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     int firstitem = 0;
     File* f = NULL;
 
@@ -3798,6 +3838,7 @@ end:
 // Restore files from trash can
 long FilePanel::onCmdFileRestore(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     int firstitem = 0;
     File* f = NULL;
 
@@ -4029,6 +4070,7 @@ end:
 // Definitively delete files from the file list or the tree list (no trash can)
 long FilePanel::onCmdFileDelete(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     int firstitem = 0;
     File* f = NULL;
 
@@ -4328,6 +4370,7 @@ end:
 // View/Edit files
 long FilePanel::onCmdEdit(FXObject*, FXSelector sel, void*)
 {
+    if (requiresMountedShare()) return 1;
     if (FXSELID(sel) == ID_EDIT)
     {
         vector_FXString paths;
@@ -4714,6 +4757,7 @@ long FilePanel::onCmdEdit(FXObject*, FXSelector sel, void*)
 // Compare two files
 long FilePanel::onCmdCompare(FXObject*, FXSelector sel, void*)
 {
+    if (requiresMountedShare()) return 1;
     current->list->setFocus();
     int num = current->list->getNumSelectedItems();
 
@@ -4823,6 +4867,7 @@ long FilePanel::onCmdCompare(FXObject*, FXSelector sel, void*)
 // File or directory properties
 long FilePanel::onCmdProperties(FXObject* sender, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     int ret;
     int num, itm;
 
@@ -4922,6 +4967,7 @@ long FilePanel::onCmdProperties(FXObject* sender, FXSelector, void*)
 // Create new directory
 long FilePanel::onCmdNewDir(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     FXString dirname = "";
 
     // Focus on current panel list
@@ -5019,6 +5065,7 @@ long FilePanel::onCmdNewDir(FXObject*, FXSelector, void*)
 // Create new file
 long FilePanel::onCmdNewFile(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     FXString filename = "";
 
     // Focus on current panel list
@@ -5131,6 +5178,7 @@ long FilePanel::onCmdNewFile(FXObject*, FXSelector, void*)
 // Create new symbolic link
 long FilePanel::onCmdNewSymlink(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     FXString linkname = "";
 
     // Focus on current panel list
@@ -5261,6 +5309,9 @@ long FilePanel::onCmdAddBookmark(FXObject*, FXSelector, void*)
 // Open single or multiple files
 long FilePanel::onCmdOpen(FXObject*, FXSelector, void*)
 {
+    if (RemoteDirectory::isServer(current->list->getDirectory()))
+        return current->onCmdItemDoubleClicked(this, FXSEL(SEL_COMMAND, ID_OPEN),
+            reinterpret_cast<void*>(static_cast<FXival>(current->list->getCurrentItem())));
     // Wait cursor
     getApp()->beginWaitCursor();
 
@@ -5464,6 +5515,7 @@ long FilePanel::onCmdOpen(FXObject*, FXSelector, void*)
 // Open with
 long FilePanel::onCmdOpenWith(FXObject*, FXSelector sel, void*)
 {
+    if (requiresMountedShare()) return 1;
     FXbool editing = FXSELID(sel) == ID_EDIT_WITH;
     current->list->setFocus();
 
@@ -5715,6 +5767,18 @@ long FilePanel::onCmdItemFilter(FXObject* sender, FXSelector sel, void*)
 // Panel context menu
 long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
 {
+    if (RemoteDirectory::isServer(list->getDirectory()))
+    {
+        setActive();
+        FXEvent* event = static_cast<FXEvent*>(ptr);
+        FXMenuPane menu(this);
+        new FXMenuCommand(&menu, _("Open"), minifoldericon, this, ID_OPEN);
+        new FXMenuCommand(&menu, _("Refresh"), minireloadicon, this, ID_REFRESH);
+        menu.create();
+        menu.popup(NULL, event->root_x, event->root_y);
+        getApp()->runModalWhileShown(&menu);
+        return 1;
+    }
     // Make panel active
     setActive();
 
@@ -6141,6 +6205,7 @@ int FilePanel::readScriptDir(FXWindow* owner, FXMenuPane* scriptsmenu, FXString 
 // Run Terminal in the selected directory
 long FilePanel::onCmdXTerm(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     FXString terminal = xf_terminalprogram(getApp());
     if (terminal.empty() || !xf_existcommand(terminal))
     {
@@ -6170,6 +6235,7 @@ long FilePanel::onCmdXTerm(FXObject*, FXSelector, void*)
 // Add files or directory to an archive
 long FilePanel::onCmdAddToArch(FXObject* sender, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     int ret;
     FXString name, ext1, ext2, cmd, archive = "";
     File* f;
@@ -6354,6 +6420,7 @@ long FilePanel::onCmdAddToArch(FXObject* sender, FXSelector, void*)
 // Extract archive to selected folder
 long FilePanel::onCmdExtract(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     FXString name, ext1, ext2, cmd, dir, cdir;
     File* f;
 
@@ -6486,6 +6553,7 @@ long FilePanel::onCmdExtract(FXObject*, FXSelector, void*)
 // Extract archive to a folder name based on the archive name
 long FilePanel::onCmdExtractToFolder(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     FXString name, pathname, ext1, ext2, cmd, dirname, dirpath, cdir;
     File* f;
 
@@ -6626,6 +6694,7 @@ long FilePanel::onCmdExtractToFolder(FXObject*, FXSelector, void*)
 // Extract archive in the current directory
 long FilePanel::onCmdExtractHere(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     FXString name, ext1, ext2, cmd, cdir;
     File* f;
 
@@ -6742,6 +6811,7 @@ long FilePanel::onCmdExtractHere(FXObject*, FXSelector, void*)
 // Install/Upgrade package
 long FilePanel::onCmdPkgInstall(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     FXString name, path, cmd, dir, cdir;
     File* f;
 
@@ -6790,6 +6860,7 @@ long FilePanel::onCmdPkgInstall(FXObject*, FXSelector, void*)
 // Uninstall package based on its name (package version is ignored)
 long FilePanel::onCmdPkgUninstall(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     FXString name, cmd, dir, cdir;
     File* f;
 
@@ -7008,6 +7079,7 @@ long FilePanel::onUpdToggleThumbnails(FXObject* sender, FXSelector sel, void* pt
 // Run script
 long FilePanel::onCmdRunScript(FXObject* sender, FXSelector sel, void*)
 {
+    if (requiresMountedShare()) return 1;
     // Wait cursor
     getApp()->beginWaitCursor();
 
@@ -7130,6 +7202,7 @@ long FilePanel::onCmdGoScriptDir(FXObject* sender, FXSelector sel, void*)
 // Mount/Unmount file systems
 long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
 {
+    if (requiresMountedShare()) return 1;
     int ret;
     FXString cmd, msg, msgwait;
     FXuint op;
@@ -7200,7 +7273,7 @@ long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
     f->create();
 
     // Mount/unmount file system
-    f->mount(dir, msgwait, cmd);
+    int mountResult = f->mount(dir, msgwait, cmd);
     current->list->boostRefresh();
 
     ret = chdir(startlocation.text());
@@ -7218,14 +7291,17 @@ long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
         }
 
         delete f;
+        getApp()->endWaitCursor();
         return 0;
     }
 
     delete f;
     getApp()->endWaitCursor();
 
+    if (mountResult < 0) return 0;
+
     // If unmount, return to start location
-    if (FXSELID(sel) == ID_UMOUNT)
+    if (FXSELID(sel) == ID_UMOUNT && xf_gvfsmount(dir).empty())
     {
         dirpanel->setDirectory(startlocation, true);
         ((XFileExplorer*)mainWindow)->getCurrentPanel()->setDirectory(startlocation);
@@ -7242,6 +7318,7 @@ long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
 // Open an archive as a folder (needs archivemount)
 long FilePanel::onCmdArchiveOpen(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     current->list->setFocus();
 
     FXString archive;
@@ -7348,6 +7425,7 @@ long FilePanel::onCmdArchiveOpen(FXObject*, FXSelector, void*)
 // Close an archive folder, saving any changes to the archive
 long FilePanel::onCmdArchiveClose(FXObject*, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     current->list->setFocus();
 
     FXString target;
@@ -7519,6 +7597,7 @@ long FilePanel::onUpdUnmount(FXObject* sender, FXSelector sel, void*)
 // Query packages data base
 long FilePanel::onCmdPkgQuery(FXObject* sender, FXSelector sel, void*)
 {
+    if (requiresMountedShare()) return 1;
     FXString cmd;
 
     // Name of the current selected file
@@ -7653,6 +7732,7 @@ long FilePanel::onUpdPkgQuery(FXObject* sender, FXSelector sel, void*)
 // Directory usage on file selection
 long FilePanel::onCmdDirUsage(FXObject* sender, FXSelector, void*)
 {
+    if (requiresMountedShare()) return 1;
     FXString name, command, itemslist = " ";
     FXString cmd1 = "/usr/bin/du --apparent-size -k -s ";
     FXString cmd2 =
@@ -7738,6 +7818,15 @@ long FilePanel::onUpdStatus(FXObject* sender, FXSelector, void*)
     if (current == this)
     {
         onCmdPreviewSelection(NULL, 0, NULL);
+    }
+    if (RemoteDirectory::isServer(list->getDirectory()))
+    {
+        FXString text = RemoteDirectory::loading(list->getDirectory()) ?
+            _("Loading shared folders...") : RemoteDirectory::error(list->getDirectory());
+        if (text.empty())
+            text = FXStringVal(list->getNumItems()) + _(" shared folder(s). Double-click a share to connect.");
+        statuslabel->setText(text);
+        return 1;
     }
     // Update the status bar
     int item = -1;
@@ -7945,7 +8034,19 @@ long FilePanel::onUpdStatus(FXObject* sender, FXSelector, void*)
 void FilePanel::updatePath(FXbool resetEditor)
 {
     tabbuttons->onUpdCurrentTab(this, 0, NULL);
-    pathlink->setPath(list->getDirectory());
+    if (!RemoteDirectory::isServer(list->getDirectory()))
+        pathlink->setPath(list->getDirectory());
+    if (!editingPath && (RemoteDirectory::isServer(list->getDirectory()) ||
+        !getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true)))
+    {
+        pathlink->hide();
+        pathtext->show();
+    }
+    else if (!editingPath)
+    {
+        pathlink->show();
+        pathtext->hide();
+    }
     pathtext->setText(list->getDirectory());
     if (!editingPath || resetEditor)
     {
@@ -7982,6 +8083,11 @@ long FilePanel::onUpdUp(FXObject* sender, FXSelector, void*)
 // Update the paste button
 long FilePanel::onUpdPaste(FXObject* sender, FXSelector, void*)
 {
+    if (RemoteDirectory::isServer(current->list->getDirectory()))
+    {
+        sender->handle(this, FXSEL(SEL_COMMAND, ID_DISABLE), NULL);
+        return 1;
+    }
     FXuchar* data;
     FXuint len;
     FXString buf;
@@ -8090,6 +8196,11 @@ long FilePanel::onUpdPaste(FXObject* sender, FXSelector, void*)
 // Update menu items and toolbar buttons that are related to file operations
 long FilePanel::onUpdMenu(FXObject* sender, FXSelector sel, void*)
 {
+    if (RemoteDirectory::isServer(current->list->getDirectory()))
+    {
+        sender->handle(this, FXSEL(SEL_COMMAND, ID_DISABLE), NULL);
+        return 1;
+    }
     // Menu item is disabled when nothing or only ".." is selected
     int num;
 
@@ -8134,6 +8245,11 @@ long FilePanel::onUpdMenu(FXObject* sender, FXSelector sel, void*)
 // Update file delete menu item and toolbar button
 long FilePanel::onUpdFileDelete(FXObject* sender, FXSelector sel, void*)
 {
+    if (RemoteDirectory::isServer(current->list->getDirectory()))
+    {
+        sender->handle(this, FXSEL(SEL_COMMAND, ID_DISABLE), NULL);
+        return 1;
+    }
     FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
     FXbool use_trash_bypass = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_bypass", false);
 
@@ -8165,6 +8281,11 @@ long FilePanel::onUpdFileDelete(FXObject* sender, FXSelector sel, void*)
 // Update move to trash menu item and toolbar button
 long FilePanel::onUpdFileTrash(FXObject* sender, FXSelector sel, void*)
 {
+    if (RemoteDirectory::isServer(current->list->getDirectory()))
+    {
+        sender->handle(this, FXSEL(SEL_COMMAND, ID_DISABLE), NULL);
+        return 1;
+    }
     // Disable move to trash menu if we are in trash can
     // or if the trash can directory is selected
 
@@ -8222,6 +8343,11 @@ long FilePanel::onUpdFileTrash(FXObject* sender, FXSelector sel, void*)
 // Update restore from trash menu item and toolbar button
 long FilePanel::onUpdFileRestore(FXObject* sender, FXSelector sel, void*)
 {
+    if (RemoteDirectory::isServer(current->list->getDirectory()))
+    {
+        sender->handle(this, FXSEL(SEL_COMMAND, ID_DISABLE), NULL);
+        return 1;
+    }
     // Enable restore from trash menu if we are in trash can
 
     FXbool restoreenable = false;
@@ -8277,8 +8403,14 @@ long FilePanel::onUpdGoTrash(FXObject* sender, FXSelector sel, void*)
 
 
 // Update file open menu
-long FilePanel::onUpdOpen(FXObject* sender, FXSelector, void*)
+long FilePanel::onUpdOpen(FXObject* sender, FXSelector sel, void*)
 {
+    if (RemoteDirectory::isServer(current->list->getDirectory()))
+    {
+        const bool enabled = FXSELID(sel) == ID_OPEN && current->list->getNumSelectedItems() == 1;
+        sender->handle(this, FXSEL(SEL_COMMAND, enabled ? ID_ENABLE : ID_DISABLE), NULL);
+        return 1;
+    }
     // Menu item is disabled when nothing or a directory (including "..") is selected
     int num, item;
 
@@ -8306,6 +8438,11 @@ long FilePanel::onUpdOpen(FXObject* sender, FXSelector, void*)
 // Update the status of the menu items that should be disabled when selecting multiple files
 long FilePanel::onUpdSelMult(FXObject* sender, FXSelector sel, void*)
 {
+    if (RemoteDirectory::isServer(current->list->getDirectory()))
+    {
+        sender->handle(this, FXSEL(SEL_COMMAND, ID_DISABLE), NULL);
+        return 1;
+    }
     // Menu item is disabled when nothing is selected or multiple selection or ".." is only selected
     int num;
 

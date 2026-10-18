@@ -242,6 +242,8 @@ public:
     void finishPathEditing();
     FXbool navigatePane(const FXString& path);
     int resolveNetworkPath(const FXString& text, FXString& localpath);
+    void openServerShares(const FXString& host);
+    FXbool requiresMountedShare();
     long onCmdEdit(FXObject*, FXSelector, void*);
     long onCmdCompare(FXObject*, FXSelector, void*);
     long onCmdProperties(FXObject*, FXSelector, void*);

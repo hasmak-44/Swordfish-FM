@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#include <algorithm>
 
 #include <fx.h>
 #include <fxkeys.h>
@@ -66,6 +67,25 @@ static FXbool safeDiscoveredHost(const FXString& host)
         }
     }
     return true;
+}
+
+static FXString networkServerTip(const FXString& key, const FXString& host, const FXString& group,
+                                 const FXString& sources)
+{
+    FXString tip = FXString(_("Address: ")) + host;
+    if (key != host && safeDiscoveredHost(key))
+    {
+        tip += " (" + key + ")";
+    }
+    if (!group.empty())
+    {
+        tip += "\n" + (group.contains(':') ? group.before(':') + ": " + group.after(':') : group);
+    }
+    FXString found = sources;
+    found.substitute("ws-discovery", "WS-Discovery");
+    found.substitute("gvfs", "GVFS");
+    found.substitute(",", ", ");
+    return tip + "\n" + _("Found by: ") + found;
 }
 
 #if defined(linux)
@@ -412,11 +432,11 @@ FXDEFMAP(DirPanel) DirPanelMap[] =
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_REFRESH_NETWORK, DirPanel::onCmdRefreshNetwork),
     FXMAPFUNC(SEL_IO_READ, DirPanel::ID_NETWORK_READ, DirPanel::onReadNetwork),
     FXMAPFUNC(SEL_TIMEOUT, DirPanel::ID_NETWORK_TIMEOUT, DirPanel::onNetworkTimeout),
-    FXMAPFUNC(SEL_DOUBLECLICKED, DirPanel::ID_NETWORK_LIST, DirPanel::onCmdNetworkSelected),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_CLOSE_PREVIEW, DirPanel::onCmdClosePreview),
     FXMAPFUNC(SEL_CONFIGURE, DirPanel::ID_PREVIEW_LAYOUT, DirPanel::onCmdPreviewLayout),
     FXMAPFUNC(SEL_CLICKED, DirPanel::ID_SIDEBAR, DirPanel::onSidebarActivate),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR, DirPanel::onSidebarActivate),
+    FXMAPFUNC(SEL_DOUBLECLICKED, DirPanel::ID_SIDEBAR, DirPanel::onSidebarActivate),
     FXMAPFUNC(SEL_EXPANDED, DirPanel::ID_SIDEBAR, DirPanel::onSidebarExpand),
     FXMAPFUNC(SEL_COLLAPSED, DirPanel::ID_SIDEBAR, DirPanel::onSidebarExpand),
     FXMAPFUNC(SEL_RIGHTBUTTONRELEASE, DirPanel::ID_SIDEBAR, DirPanel::onSidebarPopup),
@@ -518,14 +538,12 @@ void DirPanel::createPlaces(FXWindow* owner, FXComposite* parent, FXColor back, 
     mountslist = new MountsList(owner, models, this, ID_MOUNTS, back, fore);
     bookmarkslist = new BookmarksList(owner, models, this, ID_BOOKMARKS, back, fore);
     sidebar->bookmarks = bookmarkslist;
-    networkList = new FXList(models, this, ID_NETWORK_LIST);
-    networkStatus = new FXLabel(models, _("Refresh to discover SMB servers"));
+    networkStatus = new FXLabel(models, _("Click Refresh to search for computers sharing files."));
     networkRefresh = new FXButton(models, _("Refresh"), NULL, this, ID_REFRESH_NETWORK);
-    // Discovery is withheld from the sidebar until it is ready; mounted shares
-    // remain available under Devices and use the independent remote loader.
-    const char* titles[] = {_("Places"), _("Bookmarks"), _("Devices")};
-    const char* keys[] = {"places", "bookmarks", "mounts"};
-    for (FXint i = 0; i < 3; ++i)
+    // Restoring an expanded Network root does not notify, so no search starts at startup.
+    const char* titles[] = {_("Places"), _("Bookmarks"), _("Devices"), _("Network")};
+    const char* keys[] = {"places", "bookmarks", "mounts", "network"};
+    for (FXint i = 0; i < 4; ++i)
     {
         SidebarItem* root = new SidebarItem(titles[i], minifoldericon, SidebarItem::GROUP, "", keys[i]);
         root->loaded = true;
@@ -547,7 +565,7 @@ void DirPanel::syncSidebar()
     {
         return;
     }
-    FXList* sources[] = {placeslist, bookmarkslist, mountslist, networkList};
+    FXList* sources[] = {placeslist, bookmarkslist, mountslist};
     for (FXint group = 0; group < 4; ++group)
     {
         if (!sidebarRoots[group])
@@ -558,8 +576,13 @@ void DirPanel::syncSidebar()
         if (group == 3)
         {
             signature = networkStatus->getText() + "\n" + networkRefresh->getText();
+            for (const NetworkServer& server : networkServers)
+            {
+                signature += "\n" + server.key + "\t" + server.host + "\t" + server.name + "\t" +
+                             server.group + "\t" + server.sources + (server.local ? "\t1" : "\t0");
+            }
         }
-        for (FXint i = 0; i < sources[group]->getNumItems(); ++i)
+        for (FXint i = 0; group < 3 && i < sources[group]->getNumItems(); ++i)
         {
             FXString name = sources[group]->getItemText(i);
             FXString path = group == 0 ? placeslist->getItemPathname(name) :
@@ -577,6 +600,19 @@ void DirPanel::syncSidebar()
         }
         sidebarSignatures[group] = signature;
         SidebarItem* root = sidebarRoots[group];
+        std::vector<FXString> removedMounts;
+        if (group == 2)
+        {
+            for (FXTreeItem* child = root->getFirst(); child; child = child->getNext())
+            {
+                FXString oldPath = static_cast<SidebarItem*>(child)->path;
+                if (xf_gvfsmount(oldPath).empty()) continue;
+                FXbool present = false;
+                for (FXint i = 0; i < mountslist->getNumItems(); ++i)
+                    if (mountslist->getItemPathname(mountslist->getItemText(i)) == oldPath) present = true;
+                if (!present) removedMounts.push_back(oldPath);
+            }
+        }
         if (sidebarContext && sidebarContext != root)
         {
             for (FXTreeItem* ancestor = sidebarContext->getParent(); ancestor; ancestor = ancestor->getParent())
@@ -600,19 +636,27 @@ void DirPanel::syncSidebar()
                                                       SidebarItem::REFRESH));
             SidebarItem* notice = new SidebarItem(networkStatus->getText(), NULL, SidebarItem::NOTICE);
             sidebar->appendItem(root, notice);
+            for (const NetworkServer& server : networkServers)
+            {
+                FXString label = server.local ? server.name + _(" (this computer)") : server.name;
+                SidebarItem* item = new SidebarItem(label, miniservericon, SidebarItem::SERVER,
+                                                    server.host, server.key);
+                item->tip = networkServerTip(server.key, server.host, server.group, server.sources);
+                item->setHasItems(false);
+                sidebar->appendItem(root, item);
+            }
+            continue;
         }
         for (FXint i = 0; i < sources[group]->getNumItems(); ++i)
         {
             FXString name = sources[group]->getItemText(i);
             FXString path = group == 0 ? placeslist->getItemPathname(name) :
                             group == 1 ? bookmarkslist->getItemPathname(name) :
-                            group == 2 ? mountslist->getItemPathname(name) : name;
+                                         mountslist->getItemPathname(name);
             SidebarItem::Kind kind = group == 0 ? SidebarItem::PLACE :
-                                     group == 1 ? SidebarItem::BOOKMARK :
-                                     group == 2 ? SidebarItem::DEVICE : SidebarItem::SERVER;
+                                     group == 1 ? SidebarItem::BOOKMARK : SidebarItem::DEVICE;
             FXIcon* icon = group == 0 ? placeslist->getItemIcon(i) :
-                           group == 1 ? minibookmarkicon :
-                           group == 2 ? mountslist->getItemIcon(i) : miniservericon;
+                           group == 1 ? minibookmarkicon : mountslist->getItemIcon(i);
             SidebarItem* item = new SidebarItem(name, icon, kind, path, name);
             if (group == 1)
             {
@@ -634,9 +678,11 @@ void DirPanel::syncSidebar()
                     }
                 }
             }
-            item->setHasItems(group != 3);
+            item->setHasItems(true);
             sidebar->appendItem(root, item);
         }
+        for (FXString& mountpoint : removedMounts)
+            mainWindow->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_NETWORK_UNMOUNTED), &mountpoint);
     }
 }
 
@@ -663,6 +709,11 @@ long DirPanel::onSidebarExpand(FXObject*, FXSelector sel, void* ptr)
         FXString setting = item->key + "_collapsed";
         getApp()->reg().writeUnsignedEntry("SIDEBAR", setting.text(), FXSELTYPE(sel) == SEL_COLLAPSED);
     }
+    if (item && item == sidebarRoots[3] && FXSELTYPE(sel) == SEL_EXPANDED)
+    {
+        startNetworkDiscovery();
+        syncSidebar();
+    }
     return 1;
 }
 
@@ -673,7 +724,23 @@ long DirPanel::onSidebarActivate(FXObject*, FXSelector sel, void* ptr)
     {
         return 1;
     }
-    if (item->kind == SidebarItem::REFRESH)
+    if (FXSELTYPE(sel) == SEL_DOUBLECLICKED)
+    {
+        return 1;
+    }
+    if (item == sidebarRoots[3])
+    {
+        if (!item->isExpanded())
+        {
+            sidebar->expandTree(item, true);
+        }
+        else
+        {
+            startNetworkDiscovery();
+            syncSidebar();
+        }
+    }
+    else if (item->kind == SidebarItem::REFRESH)
     {
         onCmdRefreshNetwork(NULL, 0, NULL);
         syncSidebar();
@@ -681,9 +748,10 @@ long DirPanel::onSidebarActivate(FXObject*, FXSelector sel, void* ptr)
     else if (item->kind == SidebarItem::SERVER)
     {
         XFileExplorer* window = static_cast<XFileExplorer*>(mainWindow);
-        ConnectDialog dialog(window, _("Connect to Server"), window->getCurrentPanel(), this);
-        dialog.setServerName(item->path);
-        dialog.execute(PLACEMENT_OWNER);
+        FXString host = item->path;
+        if (sidebar->grabbed()) sidebar->ungrab();
+        getApp()->flush();
+        window->getCurrentPanel()->openServerShares(host);
     }
     else if (!item->path.empty())
     {
@@ -1751,25 +1819,37 @@ long DirPanel::onCmdRefreshNetwork(FXObject*, FXSelector, void*)
     {
         stopNetworkDiscovery();
         networkRefresh->setText(_("Refresh"));
-        networkStatus->setText(_("Discovery stopped"));
+        networkStatus->setText(_("Search stopped. Click Refresh to search again."));
         return 1;
+    }
+    startNetworkDiscovery();
+    return 1;
+}
+
+void DirPanel::startNetworkDiscovery()
+{
+    if (networkPid > 0 || networkReadFd >= 0)
+    {
+        return;
     }
 
     int out[2];
     if (pipe(out) != 0)
     {
         networkStatus->setText(FXString(_("Unable to start network discovery: ")) + strerror(errno));
-        return 1;
+        return;
     }
 
-    networkList->clearItems();
+    networkServers.clear();
     networkLineBuffer.clear();
     networkError.clear();
+    networkWarning.clear();
+    networkDone = false;
     networkInvalidEntries = false;
     networkDiscardingLine = false;
     networkExited = false;
     networkExitStatus = 0;
-    networkStatus->setText(_("Discovering SMB servers..."));
+    networkStatus->setText(_("Searching for computers sharing files..."));
     networkRefresh->setText(_("Stop"));
 
     char executable[4096];
@@ -1780,7 +1860,7 @@ long DirPanel::onCmdRefreshNetwork(FXObject*, FXSelector, void*)
         executable[length] = '\0';
         helper = FXPath::directory(executable) + "/swordfish-network";
     }
-    const FXString command = FXString("exec ") + xf_hostcommand(xf_quote(helper));
+    const FXString command = FXString("exec ") + xf_hostcommand(xf_quote(helper) + " --discover");
     networkPid = fork();
     if (networkPid < 0)
     {
@@ -1790,7 +1870,7 @@ long DirPanel::onCmdRefreshNetwork(FXObject*, FXSelector, void*)
         networkPid = -1;
         networkRefresh->setText(_("Refresh"));
         networkStatus->setText(FXString(_("Unable to start network discovery: ")) + error);
-        return 1;
+        return;
     }
     if (networkPid == 0)
     {
@@ -1809,42 +1889,76 @@ long DirPanel::onCmdRefreshNetwork(FXObject*, FXSelector, void*)
     getApp()->addInput(networkReadFd, INPUT_READ, this, ID_NETWORK_READ);
     getApp()->addTimeout(this, ID_NETWORK_TIMEOUT, 15000);
     appLog(APP_LOG_UI, "network-discovery-started", "protocol=smb");
-    return 1;
 }
 
+// Parse one helper record: SERVER key host name group sources local | STATUS source message | DONE
 void DirPanel::appendNetworkResult(FXString line)
 {
-    line.trim();
+    while (line.length() > 0 && (line[line.length() - 1] == '\r' || line[line.length() - 1] == '\n'))
+    {
+        line.trunc(line.length() - 1);
+    }
     if (line.empty())
     {
         return;
     }
-    if (line.left(4) == "gio:")
+    const FXString record = line.section('\t', 0);
+    if (record == "DONE" && line.contains('\t') == 0)
     {
-        networkError = line.left(512);
+        networkDone = true;
         return;
     }
-    if (line.left(6) == "smb://")
+    if (record == "STATUS" && line.contains('\t') >= 2)
     {
-        line = line.mid(6, line.length() - 6);
+        const FXString message = line.section('\t', 1) + ": " + line.after('\t', 2);
+        appLog(APP_LOG_ERRORS, "network-discovery-status", message);
+        if (networkWarning.empty())
+        {
+            networkWarning = message.left(300);
+        }
+        return;
     }
-    while (line.length() > 0 && line[line.length() - 1] == '/')
+    NetworkServer server;
+    server.key = line.section('\t', 1);
+    server.host = line.section('\t', 2);
+    server.name = line.section('\t', 3);
+    server.group = line.section('\t', 4);
+    server.sources = line.section('\t', 5);
+    const FXString local = line.section('\t', 6);
+    if (record != "SERVER" || line.contains('\t') != 6 || server.key.empty() ||
+        !safeDiscoveredHost(server.host) || (local != "0" && local != "1"))
     {
-        line = line.left(line.length() - 1);
-    }
-    if (!safeDiscoveredHost(line))
-    {
+        appLog(APP_LOG_ERRORS, "network-discovery-invalid-record", line.left(300));
         networkInvalidEntries = true;
         return;
     }
-    for (FXint i = 0; i < networkList->getNumItems(); ++i)
+    server.local = local == "1";
+    if (server.name.empty())
     {
-        if (comparecase(networkList->getItemText(i), line) == 0)
-        {
-            return;
-        }
+        server.name = server.host;
     }
-    networkList->appendItem(line);
+    std::vector<NetworkServer>::iterator existing = networkServers.begin();
+    while (existing != networkServers.end() && existing->key != server.key)
+    {
+        ++existing;
+    }
+    if (existing != networkServers.end())
+    {
+        *existing = server;
+    }
+    else if (networkServers.size() < 256)
+    {
+        networkServers.push_back(server);
+    }
+    std::stable_sort(networkServers.begin(), networkServers.end(),
+                     [](const NetworkServer& a, const NetworkServer& b) -> bool
+    {
+        if (a.local != b.local)
+        {
+            return b.local;
+        }
+        return comparecase(a.name, b.name) < 0;
+    });
 }
 
 long DirPanel::onReadNetwork(FXObject*, FXSelector, void*)
@@ -1947,20 +2061,22 @@ void DirPanel::finishNetworkDiscovery()
     {
         networkStatus->setText(_("SMB discovery ended unexpectedly."));
     }
-    else if (networkList->getNumItems() > 0)
+    else if (!networkServers.empty())
     {
-        networkStatus->setText(FXStringVal(networkList->getNumItems()) +
-                               (networkInvalidEntries ?
-                                _(" SMB servers found; invalid entries were ignored. Double-click to connect.") :
-                                _(" SMB server(s) found. Double-click to connect.")));
+        networkStatus->setText(FXStringVal((FXint)networkServers.size()) +
+                               _(" computer(s) sharing files found. Click a computer to view its shares."));
     }
-    else if (networkInvalidEntries)
+    else if (!networkWarning.empty())
     {
-        networkStatus->setText(_("No valid SMB server names were returned."));
+        networkStatus->setText(FXString(_("No computers sharing files found. ")) + networkWarning);
+    }
+    else if (networkInvalidEntries || !networkDone)
+    {
+        networkStatus->setText(_("Network search returned no usable results."));
     }
     else
     {
-        networkStatus->setText(_("No SMB servers found."));
+        networkStatus->setText(_("No computers sharing files found."));
     }
     appLog(networkError.empty() && WIFEXITED(networkExitStatus) && WEXITSTATUS(networkExitStatus) == 0 ?
            APP_LOG_UI : APP_LOG_ERRORS, "network-discovery-finished", networkStatus->getText());
@@ -1987,22 +2103,10 @@ long DirPanel::onNetworkTimeout(FXObject*, FXSelector, void*)
 {
     stopNetworkDiscovery();
     networkRefresh->setText(_("Refresh"));
-    networkStatus->setText(_("Discovery timed out. Refresh to try again."));
+    networkStatus->setText(networkServers.empty() ? _("Search timed out. Click Refresh to try again.") :
+                           FXStringVal((FXint)networkServers.size()) +
+                           _(" computer(s) sharing files found; the search timed out."));
     appLog(APP_LOG_UI, "network-discovery-timeout", "protocol=smb");
-    return 1;
-}
-
-long DirPanel::onCmdNetworkSelected(FXObject*, FXSelector, void* ptr)
-{
-    const FXint index = (FXint)(FXival)ptr;
-    if (index < 0 || index >= networkList->getNumItems())
-    {
-        return 0;
-    }
-    XFileExplorer* window = (XFileExplorer*)mainWindow;
-    ConnectDialog dialog(window, _("Connect to Server"), window->getCurrentPanel(), this);
-    dialog.setServerName(networkList->getItemText(index));
-    dialog.execute(PLACEMENT_OWNER);
     return 1;
 }
 
@@ -4560,6 +4664,7 @@ long DirPanel::onCmdXTerm(FXObject*, FXSelector, void*)
 long DirPanel::onCmdMount(FXObject*, FXSelector sel, void*)
 {
     int ret;
+    int mountResult;
     FXString cmd, msg, msgwait;
     FXuint op;
     File* f;
@@ -4771,7 +4876,7 @@ long DirPanel::onCmdMount(FXObject*, FXSelector sel, void*)
         f->create();
 
         // Mount/unmount file system
-        f->mount(dir, msgwait, cmd);
+        mountResult = f->mount(dir, msgwait, cmd);
         ret = chdir(startlocation.text());
 
         if (ret < 0)
@@ -4788,6 +4893,7 @@ long DirPanel::onCmdMount(FXObject*, FXSelector sel, void*)
             }
 
             delete f;
+            getApp()->endWaitCursor();
             return 0;
         }
 
@@ -4845,7 +4951,7 @@ long DirPanel::onCmdMount(FXObject*, FXSelector sel, void*)
         f->create();
 
         // Mount/unmount file system
-        f->mount(dir, msgwait, cmd);
+        mountResult = f->mount(dir, msgwait, cmd);
         ret = chdir(startlocation.text());
 
         if (ret < 0)
@@ -4862,6 +4968,7 @@ long DirPanel::onCmdMount(FXObject*, FXSelector sel, void*)
             }
 
             delete f;
+            getApp()->endWaitCursor();
             return 0;
         }
 
@@ -4869,8 +4976,10 @@ long DirPanel::onCmdMount(FXObject*, FXSelector sel, void*)
         delete f;
     }
 
+    if (mountResult < 0) return 0;
+
     // If unmount, return to start location
-    if (FXSELID(sel) == ID_UMOUNT)
+    if (FXSELID(sel) == ID_UMOUNT && xf_gvfsmount(dir).empty())
     {
         dirlist->setDirectory(startlocation, true);
         ((XFileExplorer*)mainWindow)->getCurrentPanel()->setDirectory(startlocation);

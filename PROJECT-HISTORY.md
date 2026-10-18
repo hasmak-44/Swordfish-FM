@@ -630,11 +630,13 @@ Coverage includes:
 - Expansion/collapse/navigation cancellation, shared subscribers and stale callbacks.
 - Native metadata, unusual newline/quote names and symlink/broken-link behavior.
 - Helper failures, malformed records and EOF/exit ordering.
-- Places/Bookmarks/Devices-only sidebar visibility and hidden-root toggle safety.
+- Sidebar Network root behavior: no startup search, start on expand/title click,
+  progressive server updates, stop/refresh and sorted "this computer" placement.
 - Legacy tree deep-path synchronization.
 - Real archive-style command followed by real signal-driven remote completion.
 - Preview codecs, cache/invalidation, failed decoding, deadlines and child cleanup.
-- Mocked discovery-root recovery behavior, not real LAN discovery success.
+- Mocked discovery-record parsing/merging behavior; real LAN discovery was
+  validated separately with the standalone diagnostic.
 
 Additional view/zoom/sidebar/tooltip/association/terminal harnesses were run
 from session artifacts during development. They are evidence of those tests,
@@ -710,30 +712,135 @@ prereleases and must not be assumed to select RC4.
 
 ### Discovery and network management
 
-Discovery is **not fixed** and is hidden in RC4. Desired future coverage includes
-SMB, Bonjour/mDNS, FTP/SFTP/WebDAV, NFS, optional AFP and UPnP/DLNA.
-The desired flow is background/progressive discovery, stop/refresh/disable,
-grouping services by server and showing capabilities, with no surprise mounts
-or credential collection. The latest direction for media services was external
-browser/player opening rather than an internal DLNA catalogue/player.
+RC4 kept discovery hidden, but the next-cycle implementation now exposes a
+Network root in the sidebar and runs `swordfish-network --discover` on demand:
+expand the root, click the Network title, or click Refresh. It does not run at
+startup. Records are progressive (`SERVER/STATUS/DONE`), merged, sorted and
+validated before UI display. Discovery itself never mounts or prompts.
 
-No real LAN discovery test succeeded in the build environment; mocked helper
-tests do not establish actual SMB discovery. Keep this separate from the
-successfully tested mounted-GVFS native loader.
+Current validated scope:
+- Linux/Samba hosts from host GVFS (`network:///` and `dns-sd://local/`).
+- Windows hosts from WS-Discovery + metadata Get + TCP 445 open check.
+- Only file-sharing machines (port 445 open) are shown.
+- Local machine is labelled "(this computer)" and listed last.
+- Sidebar tooltips include address, workgroup (when available) and discovery
+  source(s).
 
-Status after section 3.13:
-- The standalone diagnostic proved, on the user's LAN, that discovery needs
-  host GVFS/DNS-SD for Linux **and** WS-Discovery with a metadata Get for
-  Windows. NetBIOS did not find Windows 7.
-- This is diagnostic evidence only. Swordfish itself is unchanged, and the
-  Network root stays hidden.
-- Proposed next step, still awaiting user approval: a written integration design
-  for the sidebar before any code. It would merge GVFS and WSD results,
-  deduplicate them, mark "This computer", update progressively, and support
-  refresh and cancel.
-- Share listing and mounting come after that. Mounting must support named
-  users with blank passwords.
-- Windows 10/11 still need to be tested with the diagnostic.
+Still pending by design:
+- Printers and media servers under separate headings.
+- Real LAN validation of the new share-tab and selected-share mounting flow.
+- Windows 10/11 confirmation on real LAN runs.
+
+Network Test 1 found all three computers on the user's LAN, but connecting
+through the legacy Connect dialog failed with
+`gio: undefined symbol: g_unix_mount_get_root_path`. Its host `gio` process
+inherited the portable bundle's older GLib libraries. The dialog's SMB/SSH
+mount and keyring commands now use `xf_hostcommand` around the entire shell
+pipeline, restoring host library, GIO and desktop settings. This corrects the
+reported loader failure; successful LAN mounting still needs user validation.
+
+The user then approved a different browsing workflow: single-click a computer
+to list its shares in a normal tab, double-click one share to mount/open only
+that share. Share listing uses asynchronous host GIO, with anonymous access
+first and an authentication dialog only when requested by the server. Named
+users can submit blank passwords. A server tab is a virtual, read-only list,
+not a local filesystem directory; destructive actions and drag/drop are blocked
+until a share is opened. Server tabs participate in tab switching and history.
+Typed `smb://server/` addresses also use this flow rather than a share chooser.
+Focused tests cover anonymous listing without any share mount, credential
+requests/cancellation, blank passwords and exactly one selected-share mount.
+
+Network Test 2 LAN report: remote Linux shares listed and opened (already
+mounted or stored credentials); Windows asked for a login. Opening a share on
+"this computer" left a permanent busy cursor and froze the window. Mounting
+ran synchronous `gio` commands on the GUI thread, and `gio mount` can keep
+re-asking for credentials on a closed stdin. Every share-mount command in
+`FilePanel::resolveNetworkPath` (`gio info`, guest/authenticated `gio mount`,
+`secret-tool search`) now runs through `networkRun`, bounded by host
+`timeout` (10 s info/guest, 20 s authenticated mount). A timeout reports
+"The server did not respond in time." in the credentials dialog instead of
+hanging. A regression (fake `gio` hanging for `hang.test`) checks this. This
+is a bounded freeze, not a fully asynchronous mount.
+
+Network Test 3 built successfully and passed the GUI regression, including
+the hanging-mount timeout test, and a packaged launch smoke check. The user
+confirmed that opening Data on this computer displays the login dialog after
+roughly 20 seconds, then mounts and opens successfully with domain MAKHLOUF
+and the user's Samba credentials. Opening an already-mounted share also works.
+The remaining connection UX work is to reduce the pre-login delay and keep
+the window responsive while connecting.
+
+Windows login testing is explicitly deferred at the user's request until
+Windows shares are reviewed/configured, possibly on Windows 10 or 11.
+It is not a prerequisite for continuing the Linux connection UX work.
+
+The next LAN report exposed a separate unmount problem: Swordfish reported
+"successfully unmounted" while the share remained mounted in both Swordfish
+and Thunar. The file pane used the configured ordinary `umount` command for
+GVFS paths, and `File::mount` ignored nonzero command exit codes when displaying
+success. The shared runner now recognizes GVFS roots (including descendants),
+uses host `gio mount -u` with a 30-second timeout, checks command status and
+requires the GVFS entry to disappear. Ordinary mounts retain the configured
+commands. Failed operations no longer navigate away or display success.
+Successful network unmounts redirect affected active/inactive tabs in both
+panes, and the directory tree, to the home folder before the success message.
+The shared command runner remains linkable by the companion applications.
+Regression coverage includes command failure with informational messages
+disabled, a zero-exit command leaving the mount present, host environment
+restoration, URI reconstruction and active/inactive tab cleanup.
+The full native build and GUI regression passed. Network Test 4 was built
+against Debian 10 on temporary storage and passed packaged help/GUI launch
+checks; real LAN unmount validation is still pending. No source changes have
+been committed.
+
+Separately, unmounting through Thunar produced an error in Swordfish even with
+warning messages disabled. External-unmount handling has not yet been changed;
+the exact error still needs inspection. The pre-login delay is also unchanged.
+
+Network Test 4 LAN validation confirmed that unmounting in Swordfish succeeds
+and removes the share from Thunar. Swordfish, however, retained multiple stale
+5TB Devices entries while only 4TB remained mounted; refresh did not remove
+them, but restarting did. Mount-list rebuilds now clear all old rows rather
+than removing rows by dictionary label, preventing accumulated stale entries.
+Permission/read errors do not masquerade as an empty mount list.
+
+The user approved closing tabs for unmounted shares rather than redirecting
+each tab Home. Both panes now close affected active/inactive tabs and subfolder
+tabs, retain unrelated tabs, and keep one Home tab only if no tabs survive.
+Devices snapshot removals trigger the same cleanup for external unmounts.
+A remote-list error caused by a vanished mount invokes cleanup instead of
+showing the expected disappearance as a folder-loading failure. Opening an
+already-mounted share reports "Share is already mounted at ..." with its
+local path, reusing the existing mount without a new mount command.
+The native build and GUI regression passed, including external removal,
+repeated mount/unmount cycles, tab closure/Home fallback, existing-mount
+notification and the earlier failure/status tests. Pre-login delay and
+Windows testing remain unchanged/deferred.
+Network Test 5 was packaged against Debian 10 using temporary storage, passed
+packaged help/GUI launch and runtime-path checks, and is available as
+`build/Swordfish-Portable-Network-Test5.tar.gz`. The user reported successful
+LAN testing of Network Test 5 on 2026-10-18.
+All changes remain uncommitted.
+
+About and Help now provide a clickable project repository URL, opening
+`https://github.com/hasmak-44/Swordfish-FM` through host `xdg-open` rather
+than inheriting portable libraries. The duplicated plain URL in About was
+removed; existing copyright and licence notices are unchanged. The native
+build and GUI regression passed, including activating both links with a
+fake host opener. This addition is not in the already-built Network Test 5
+archive and will need packaging before publication.
+
+The user approved attribution as Hassanein Makhlouf (hasmak-44), with
+AI-assisted development, without asserting joint copyright in upstream work.
+About, Help and the README now carry this credit while retaining existing
+copyright/licence notices and acknowledging Xfe's contributors. Project
+communications use GitHub Issues; no personal email is added.
+
+Publication approved on 2026-10-18: commit the post-RC4 networking,
+unmount/tab lifecycle, attribution and project-link changes on portable-layout,
+then publish a separate Network Preview 1 prerelease. The frozen RC4 tag and
+assets must remain unchanged. Preview limitations include the pre-login delay
+and Windows validation deferred until the user's Windows shares are ready.
 
 ### Application and executable UX
 

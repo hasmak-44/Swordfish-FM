@@ -2444,6 +2444,57 @@ int xf_runst(FXString cmd)
 
 // Get the output of a Unix command
 // Return the command output or the error message if any
+FXString xf_gvfsmount(const FXString& path)
+{
+#if defined(linux)
+    FXString base = "/run/user/" + FXStringVal(getuid()) + "/gvfs/";
+    if (path.left(base.length()) == base)
+    {
+        FXString name = path.mid(base.length(), path.length()).before('/');
+        if (!name.empty()) return base + name;
+    }
+#endif
+    return FXString::null;
+}
+
+
+FXString xf_gvfsmounturi(const FXString& path)
+{
+    FXString root = xf_gvfsmount(path);
+    if (root.empty()) return FXString::null;
+    FXString name = FXPath::name(root);
+    FXString type = name.before(':');
+    FXString server, share, user, domain, port;
+    FXString attributes = name.after(':');
+    while (!attributes.empty())
+    {
+        FXString field = attributes.before(',');
+        FXString key = field.before('=');
+        FXString value = field.after('=');
+        if (key == "server" || key == "host") server = value;
+        else if (key == "share") share = value;
+        else if (key == "user") user = value;
+        else if (key == "domain") domain = value;
+        else if (key == "port") port = value;
+        if (attributes.find(',') < 0) break;
+        attributes = attributes.after(',');
+    }
+    if (type == "smb-share" && !server.empty() && !share.empty())
+    {
+        FXString login;
+        if (!user.empty()) login = (domain.empty() ? FXString::null : domain + ";") + user + "@";
+        return "smb://" + login + server + "/" + share + "/";
+    }
+    if (type == "sftp" && !server.empty())
+    {
+        return "sftp://" + (user.empty() ? FXString::null : user + "@") + server +
+               (port.empty() ? FXString::null : ":" + port) + "/";
+    }
+    if (type == "mtp" && !attributes.empty()) return "mtp://" + attributes.after('=') + "/";
+    return FXString::null;
+}
+
+
 FXString xf_getcommandoutput(FXString cmd)
 {
     FXString data;

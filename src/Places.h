@@ -12,6 +12,7 @@ public:
     Kind kind;
     FXString path;
     FXString key;
+    FXString tip;
     FXbool loaded = false;
     FXTime modified = 0;
     SidebarItem(const FXString& text, FXIcon* icon, Kind type, const FXString& location = "",
@@ -36,6 +37,7 @@ public:
     long onExpandItem(FXObject*, FXSelector, void*);
     long onCollapseItem(FXObject*, FXSelector, void*);
     long onRemoteChanged(FXObject*, FXSelector, void*);
+    long onQueryTip(FXObject*, FXSelector, void*);
     enum { ID_REMOTE_CHANGED = FXTreeList::ID_LAST };
     ~SidebarTree();
     long onDNDEnter(FXObject*, FXSelector, void*);

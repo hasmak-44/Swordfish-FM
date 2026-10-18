@@ -18,6 +18,7 @@ struct Entry
 };
 
 FXbool handles(const FXString& path);
+FXbool isServer(const FXString& path);
 const std::vector<Entry>& entries(FXApp*, const FXString&, FXObject*, FXSelector);
 FXbool loading(const FXString&);
 FXbool loading(FXObject*);

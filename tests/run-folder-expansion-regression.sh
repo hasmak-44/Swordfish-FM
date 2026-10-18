@@ -8,9 +8,11 @@ if [[ ! -d "$icons" ]]; then
 fi
 prefix=$(cd -- "$icons/../../../.." && pwd)
 scratch=$(mktemp -d /tmp/swordfish-expansion-test.XXXXXX)
-trap 'rm -f "$scratch/main.o" "$scratch/test" "$scratch/swordfish-network"; rm -rf "$scratch/fixture" "$scratch/home"; rmdir "$scratch"' EXIT
+trap 'rm -f "$scratch/main.o" "$scratch/test" "$scratch/swordfish-network" "$scratch/gio" "$scratch/xdg-open" "$scratch/mount.log"; rm -rf "$scratch/fixture" "$scratch/home"; rmdir "$scratch"' EXIT
 cp "$root/tests/fake-remote-directory.py" "$scratch/swordfish-network"
 chmod +x "$scratch/swordfish-network"
+ln -s swordfish-network "$scratch/gio"
+ln -s swordfish-network "$scratch/xdg-open"
 mkdir -p "$scratch/fixture/folder" "$scratch/fixture/empty" "$scratch/home"
 touch "$scratch/fixture/folder/nested.txt"
 ln -s folder "$scratch/fixture/link-folder"
@@ -36,4 +38,8 @@ runner=()
 if [[ ${SWORDFISH_TEST_DEBUG:-0} == 1 ]]; then
     runner=(gdb --batch -ex run -ex bt --args)
 fi
-HOME="$scratch/home" timeout 50s xvfb-run -a "${runner[@]}" "$scratch/test" "$scratch/fixture" "$prefix/bin/swordfish" "$icons"
+HOME="$scratch/home" SWORDFISH_HOST_PATH="$scratch:/usr/bin:/bin" \
+SWORDFISH_HOST_LD_LIBRARY_PATH="" SWORDFISH_HOST_GIO_MODULE_DIR="" \
+LD_LIBRARY_PATH="/nonexistent/swordfish-test-bundle" GIO_MODULE_DIR="/nonexistent/swordfish-test-modules" \
+SWORDFISH_TEST_MOUNT_LOG="$scratch/mount.log" SWORDFISH_TEST_MOUNT_PATH="$scratch/fixture/large" \
+timeout 80s xvfb-run -a "${runner[@]}" "$scratch/test" "$scratch/fixture" "$prefix/bin/swordfish" "$icons"

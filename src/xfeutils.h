@@ -707,6 +707,8 @@ int xf_runst(FXString);
 FXString xf_terminalcommand(const FXString&, const FXString&, const FXString& = FXString::null);
 FXString xf_terminalprogram(FXApp*);
 FXString xf_hostcommand(const FXString&);
+FXString xf_gvfsmount(const FXString&);
+FXString xf_gvfsmounturi(const FXString&);
 FXuint xf_missingassociation(FXWindow*, const FXString&);
 FXbool xf_filemimetype(FXWindow*, const FXString&, FXString&);
 FXString xf_commandprogram(const FXString&);

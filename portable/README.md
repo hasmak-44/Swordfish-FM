@@ -94,10 +94,31 @@ cache; loader settings are applied only inside the worker, not to host apps.
 Bundled GIO uses its own module directory rather than loading incompatible
 host GVFS modules; external commands restore the host GIO module setting.
 SMB discovery uses the separate `swordfish-network` helper with the host GIO/GVFS
-environment. If the SMB browsing root is not mounted, it activates that root
-anonymously and retries enumeration once. It does not mount shares or request
-passwords. The host still needs a running desktop session and a GVFS SMB backend
+environment. In post-RC4 development builds, expand or click Network to discover
+computers through GVFS/DNS-SD and WS-Discovery. Discovery never mounts anything
+or requests credentials, and does not run at startup.
+
+Single-click a discovered computer to open its shared folders in a normal tab.
+The host helper's `--shares smb://HOST/` mode opens only the server's GVFS
+browsing connection, not its file shares. It tries anonymous access first and
+requests credentials only if the server requires them. Passwords travel over
+the helper's private input channel, not command-line arguments or logs.
+Double-click a shared folder to mount and open only that share. File operations
+and drag/drop are unavailable in the server's share list; they work normally
+after opening a share. Both browsing and mounting use the host libraries rather
+than the portable bundle's GLib. These changes do not alter the frozen RC4
+release. The host still needs a running desktop session and a GVFS SMB backend
 (commonly `gvfs-backends`); missing/denied backends remain visible as errors.
+Unmounting a GVFS share uses host `gio mount -u`, including from the file pane
+and from inside a share's subfolder. The configured `mount`/`umount` commands
+remain in use for ordinary filesystem mounts. A failed command cannot report
+success, and a GVFS unmount must also remove its mount entry before success is
+shown. The Devices list tracks mount additions/removals without retaining old
+rows. When a share is unmounted, either in Swordfish or another file manager,
+tabs under that share (including inactive tabs and subfolders in either pane)
+close. If a pane loses its last tab, it opens one Home tab. Attempting to open
+an already-mounted share reports its local mount path and reuses the mount
+instead of issuing another mount command.
 Third-party copyright notices, license texts and build package versions are in
 `usr/share/doc` and `usr/share/common-licenses`. Video codec availability depends
 on the bundled FFmpeg build. The portable download is larger with these engines.

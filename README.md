@@ -23,6 +23,9 @@ instructions if the conversation is lost, read
 
 ## 🙏 Credits & Acknowledgments
 
+Swordfish FM development and modifications by **Hassanein Makhlouf (hasmak-44)**,
+with AI-assisted development.
+
 Swordfish FM is based on **Xfe (X File Explorer)** — a lightweight file manager for X11.
 
 - **Original Author & Maintainer of Xfe:** [Roland Baudin (roland65)](https://github.com/roland65/xfe)
@@ -30,6 +33,10 @@ Swordfish FM is based on **Xfe (X File Explorer)** — a lightweight file manage
 - **Homepage:** http://roland65.free.fr/xfe/
 
 All credit for the original Xfe codebase goes to Roland. Swordfish FM is a modern continuation / fork inspired by his work.
+
+Existing copyright notices and GPL licence terms remain applicable.
+For project communications and bug reports, please use
+[GitHub Issues](https://github.com/hasmak-44/Swordfish-FM/issues).
 
 ## 📜 License
 

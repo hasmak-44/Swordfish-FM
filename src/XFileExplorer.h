@@ -178,6 +178,7 @@ public:
     enum
     {
         ID_ABOUT=FXMainWindow::ID_LAST,
+        ID_PROJECT_WEBSITE,
         ID_HELP,
         ID_REFRESH,
         ID_EMPTY_TRASH,
@@ -228,6 +229,7 @@ public:
         ID_MANAGE_BOOKMARKS,
         ID_REBUILD_BOOKMARKS_MENU,
         ID_HARVEST,
+        ID_NETWORK_UNMOUNTED,
         ID_QUIT,
         ID_FILE_ADDCOPY,
         ID_FILE_ADDCUT,
@@ -254,11 +256,13 @@ public:
 
     void openFiles(vector_FXString);
     long onSigHarvest(FXObject*, FXSelector, void*);
+    long onNetworkUnmounted(FXObject*, FXSelector, void*);
     long onQuit(FXObject*, FXSelector, void*);
     long onKeyPress(FXObject*, FXSelector, void*);
     long onKeyRelease(FXObject*, FXSelector, void*);
     long onCmdHelp(FXObject*, FXSelector, void*);
     long onCmdAbout(FXObject*, FXSelector, void*);
+    long onCmdProjectWebsite(FXObject*, FXSelector, void*);
     long onCmdFileAssoc(FXObject*, FXSelector, void*);
     long onCmdRefresh(FXObject*, FXSelector, void*);
     long onCmdToggleStatus(FXObject*, FXSelector, void*);

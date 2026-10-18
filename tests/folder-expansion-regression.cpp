@@ -4,7 +4,10 @@
 #include "Places.h"
 #include "XFileExplorer.h"
 #include "RemoteDirectory.h"
+#include "DialogBox.h"
+#include "TabButtons.h"
 #include "File.h"
+#include "MessageBox.h"
 #include "icons.h"
 #include <X11/Xlib.h>
 #include <cassert>
@@ -14,6 +17,7 @@
 #include <cstring>
 #include <dirent.h>
 #include <dlfcn.h>
+#include <ctime>
 #include <fstream>
 #include <iterator>
 #include <unistd.h>
@@ -37,8 +41,12 @@ static bool busyFlushed;
 static FXApp* testApp;
 static Window observedWindow;
 static bool busyCursor;
+static DirPanel* networkPanel;
 static bool expanding;
 static int remoteFilesystemCalls;
+static FXString simulatedMount;
+static bool simulateStillMounted;
+static FXString simulatedGvfsDirectory;
 
 static void checkRemote(const char* path)
 {
@@ -93,6 +101,12 @@ extern "C" int stat(const char* path, struct stat* info) noexcept
 
 extern "C" int lstat(const char* path, struct stat* info) noexcept
 {
+    if (simulateStillMounted && simulatedMount == path)
+    {
+        std::memset(info, 0, sizeof(*info));
+        info->st_mode = S_IFDIR | 0700;
+        return 0;
+    }
     checkRemote(path);
     typedef int (*Stat)(const char*, struct stat*);
     static Stat realStat = reinterpret_cast<Stat>(dlsym(RTLD_NEXT, "lstat"));
@@ -145,6 +159,9 @@ extern "C" DIR* opendir(const char* path)
     typedef DIR* (*OpenDirectory)(const char*);
     static OpenDirectory realOpen = reinterpret_cast<OpenDirectory>(dlsym(RTLD_NEXT, "opendir"));
     assert(realOpen);
+    FXString gvfsRoot = "/run/user/" + FXStringVal(getuid()) + "/gvfs";
+    if (!simulatedGvfsDirectory.empty() && gvfsRoot == path)
+        return realOpen(simulatedGvfsDirectory.text());
     if (expanding) assert(busyCursor && busyFlushed);
     if (measuring && std::strncmp(path, measuredDirectory.text(), measuredDirectory.length()) == 0 &&
         path[measuredDirectory.length()] == '/' && path[measuredDirectory.length() + 1])
@@ -199,7 +216,12 @@ static int pump(FXApp& app, int milliseconds)
         int status;
         pid_t child;
         while ((child = waitpid(-1, &status, WNOHANG)) > 0)
-            assert(RemoteDirectory::harvest(child, status));
+            // A stopped network helper is reaped after the panel forgot its pid.
+            if (!RemoteDirectory::harvest(child, status))
+            {
+                assert(networkPanel);
+                networkPanel->handleNetworkExit(child, status);
+            }
         const FXTime start = FXThread::time();
         app.runOneEvent(false);
         if (FXThread::time() - start >= 150000000LL)
@@ -218,8 +240,119 @@ public:
     long handle(FXObject*, FXSelector, void*) override { ++notifications; return 1; }
 };
 
+class AuthenticationResponder : public FXObject
+{
+    static void fields(FXWindow* parent, std::vector<FXTextField*>& result)
+    {
+        if (FXTextField* field = dynamic_cast<FXTextField*>(parent)) result.push_back(field);
+        for (FXWindow* child = parent->getFirst(); child; child = child->getNext()) fields(child, result);
+    }
+public:
+    bool cancel = false;
+    int prompts = 0;
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        DialogBox* dialog = dynamic_cast<DialogBox*>(testApp->getModalWindow());
+        if (!dialog || dialog->getTitle() != "Server authentication")
+        {
+            testApp->addTimeout(this, 1, 20);
+            return 1;
+        }
+        ++prompts;
+        std::vector<FXTextField*> inputs;
+        fields(dialog, inputs);
+        assert(inputs.size() == 3);
+        inputs[1]->setText("test-user");
+        inputs[2]->setText("");
+        dialog->handle(this, FXSEL(SEL_COMMAND, cancel ? DialogBox::ID_CANCEL : DialogBox::ID_ACCEPT), NULL);
+        return 1;
+    }
+};
+
+class ConnectCanceller : public FXObject
+{
+public:
+    int prompts = 0;
+    FXString message;
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        DialogBox* dialog = dynamic_cast<DialogBox*>(testApp->getModalWindow());
+        if (!dialog || dialog->getTitle() != "Connect to Server")
+        {
+            testApp->addTimeout(this, 1, 50);
+            return 1;
+        }
+        ++prompts;
+        FXWindow* contents = dialog->getFirst();
+        for (FXWindow* child = contents ? contents->getFirst() : NULL; child; child = child->getNext())
+        {
+            if (FXLabel* label = dynamic_cast<FXLabel*>(child)) message += label->getText() + "\n";
+        }
+        dialog->handle(this, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
+        return 1;
+    }
+};
+
+class MountMessageResponder : public FXObject
+{
+public:
+    int errors = 0;
+    int successes = 0;
+    int alreadyMounted = 0;
+    FXString message;
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        MessageBox* dialog = dynamic_cast<MessageBox*>(testApp->getModalWindow());
+        if (!dialog)
+        {
+            testApp->addTimeout(this, 1, 20);
+            return 1;
+        }
+        if (dialog->getTitle() == "Error") ++errors;
+        if (dialog->getTitle() == "Success") ++successes;
+        if (dialog->getTitle() == "Already mounted") ++alreadyMounted;
+        message = dialog->getText();
+        dialog->handle(this, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_OK), NULL);
+        return 1;
+    }
+};
+
+static FXButton* projectLink(FXWindow* parent)
+{
+    FXButton* button = dynamic_cast<FXButton*>(parent);
+    if (button && button->getText() == "https://github.com/hasmak-44/Swordfish-FM") return button;
+    for (FXWindow* child = parent->getFirst(); child; child = child->getNext())
+        if ((button = projectLink(child))) return button;
+    return NULL;
+}
+
+class AboutLinkResponder : public FXObject
+{
+public:
+    bool clicked = false;
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        MessageBox* dialog = dynamic_cast<MessageBox*>(testApp->getModalWindow());
+        if (!dialog || dialog->getTitle() != "About SwordFish")
+        {
+            testApp->addTimeout(this, 1, 20);
+            return 1;
+        }
+        FXButton* link = projectLink(dialog);
+        assert(link && link->getSelector() == XFileExplorer::ID_PROJECT_WEBSITE);
+        assert(dialog->getText().contains("Hassanein Makhlouf (hasmak-44)"));
+        assert(dialog->getText().contains("with AI-assisted development"));
+        assert(dialog->getText().contains("https://github.com/hasmak-44/Swordfish-FM/issues"));
+        link->getTarget()->handle(link, FXSEL(SEL_COMMAND, link->getSelector()), NULL);
+        clicked = true;
+        dialog->handle(this, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_OK), NULL);
+        return 1;
+    }
+};
+
 int main(int argc, char** argv)
 {
+    std::setvbuf(stdout, NULL, _IOLBF, 0);
     assert(argc == 4);
     fixture = argv[1];
     FXString executable = FXPath::absolute(argv[2]);
@@ -336,7 +469,12 @@ int main(int argc, char** argv)
         std::chrono::steady_clock::now() - start).count();
     assert(elapsed < 150 && busyCursor && RemoteDirectory::loading(remote));
     assert(list->getNumItems() == 1);
-    assert(pump(app, 420) > 50);
+    // Bound first-batch readiness without assuming a fixed child-process startup time.
+    const FXTime firstBatchDeadline = FXThread::time() + 2000000000LL;
+    while (list->getNumItems() == 1 && FXThread::time() < firstBatchDeadline) pump(app, 20);
+    if (!(list->getNumItems() > 1 && list->getNumItems() < 794 && busyCursor))
+        fprintf(stderr, "Remote batch: items=%d busy=%d error=%s\n", list->getNumItems(),
+                busyCursor, RemoteDirectory::error(remote).text());
     assert(list->getNumItems() > 1 && list->getNumItems() < 794 && busyCursor);
     list->selectItem(find(list, "folder-0"));
     assert(pump(app, 1600) > 100);
@@ -448,6 +586,26 @@ int main(int argc, char** argv)
     assert(observer.notifications == notifications);
     puts("PASS: helper failure, malformed protocol, and released-observer callbacks");
 
+    AuthenticationResponder authentication;
+    for (const char* uri : {"smb://auth.test", "smb://cancel.test"})
+    {
+        authentication.cancel = strcmp(uri, "smb://cancel.test") == 0;
+        app.addTimeout(&authentication, 1, 20);
+        RemoteDirectory::entries(&app, uri, &observer, 1);
+        for (int waited = 0; waited < 20 && RemoteDirectory::loading(uri); ++waited) pump(app, 100);
+        assert(!RemoteDirectory::loading(uri));
+        if (authentication.cancel)
+            assert(RemoteDirectory::error(uri) == "Share listing cancelled.");
+        else
+        {
+            assert(RemoteDirectory::error(uri).empty());
+            assert(RemoteDirectory::entries(&app, uri, &observer, 1).size() == 2);
+        }
+        RemoteDirectory::release(&observer);
+    }
+    assert(authentication.prompts == 2);
+    puts("PASS: share authentication occurs only on request, accepts named users with blank passwords, cancels cleanly");
+
     vector_FXString paths;
     paths.push_back(fixture);
     mainWindow = NULL;
@@ -458,7 +616,7 @@ int main(int argc, char** argv)
     observedWindow = window->getCurrentPanel()->getList()->id();
     SidebarTree* navigation = findSidebar(window->getDirPanel());
     assert(navigation);
-    const char* sectionNames[] = {"Places", "Bookmarks", "Devices"};
+    const char* sectionNames[] = {"Places", "Bookmarks", "Devices", "Network"};
     FXTreeItem* section = navigation->getFirstItem();
     for (const char* name : sectionNames)
     {
@@ -466,10 +624,100 @@ int main(int argc, char** argv)
         section = section->getNext();
     }
     assert(!section);
-    window->getDirPanel()->onSidebarRefresh(NULL, 0, NULL);
-    window->getDirPanel()->onCmdToggleSection(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_TOGGLE_NETWORK), NULL);
-    assert(navigation->getNumItems() >= 3);
-    puts("PASS: only Places, Bookmarks and Devices shown; refresh and legacy hidden-Network toggle are safe");
+    DirPanel* panel = window->getDirPanel();
+    networkPanel = panel;
+    panel->onSidebarRefresh(NULL, 0, NULL);
+    SidebarItem* network = static_cast<SidebarItem*>(navigation->getLastItem());
+    // A restored expanded Network root must not search on its own.
+    assert(network->isExpanded() && network->getNumChildren() == 2);
+    assert(network->getFirst()->getNext()->getText().find("Click Refresh") == 0);
+    pump(app, 300);
+    assert(network->getNumChildren() == 2);
+    panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_SIDEBAR), network);
+    assert(network->getFirst()->getText() == "Stop");
+    for (int waited = 0; waited < 40 && network->getFirst()->getText() != "Refresh"; ++waited)
+    {
+        pump(app, 100);
+        panel->onSidebarRefresh(NULL, 0, NULL);
+    }
+    const char* serverNames[] = {"DELL-740", "MX-HP", "MX-RYZEN (this computer)"};
+    FXTreeItem* server = network->getFirst()->getNext();
+    assert(server->getText() == "3 computer(s) sharing files found. Click a computer to view its shares.");
+    server = server->getNext();
+    for (const char* name : serverNames)
+    {
+        assert(server && server->getText() == name);
+        assert(static_cast<SidebarItem*>(server)->kind == SidebarItem::SERVER && !server->hasItems());
+        server = server->getNext();
+    }
+    assert(!server);
+    SidebarItem* dell = static_cast<SidebarItem*>(network->getFirst()->getNext()->getNext());
+    assert(dell->path == "192.168.1.104" &&
+           dell->tip == "Address: 192.168.1.104\nWorkgroup: MAKHLOUF\nFound by: WS-Discovery");
+    SidebarItem* hp = static_cast<SidebarItem*>(dell->getNext());
+    assert(hp->path == "mx-hp.local" &&
+           hp->tip == "Address: mx-hp.local (192.168.1.102)\nFound by: GVFS, WS-Discovery");
+    // A single click opens a normal share-browser tab without mounting anything.
+    TabButtons* tabs = window->getCurrentPanel()->getTabButtons();
+    const FXuint previousTab = tabs->getCurrentTab();
+    const FXuint previousCount = tabs->getNumActiveTabs();
+    panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_SIDEBAR), dell);
+    FilePanel* sharePanel = window->getCurrentPanel();
+    assert(sharePanel->getDirectory() == "smb://192.168.1.104");
+    assert(tabs->getNumActiveTabs() == previousCount + 1);
+    const FXuint serverTab = tabs->getCurrentTab();
+    pump(app, 650);
+    assert(sharePanel->getList()->getNumItems() == 2);
+    assert(sharePanel->getList()->getItemFilename(0) == "5TB");
+    assert(sharePanel->getList()->getItemFilename(1) == "Team files");
+    assert(sharePanel->getList()->getItemPathname(1) == "smb://192.168.1.104/Team%20files");
+    assert(access(getenv("SWORDFISH_TEST_MOUNT_LOG"), F_OK) != 0);
+    tabs->onCmdPathButton(NULL, FXSEL(SEL_COMMAND, TabButtons::ID_START_TAB + previousTab), NULL);
+    assert(sharePanel->getDirectory() != "smb://192.168.1.104");
+    panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_SIDEBAR), dell);
+    assert(tabs->getNumActiveTabs() == previousCount + 1 && tabs->getCurrentTab() == serverTab);
+    pump(app, 450);
+    assert(sharePanel->getDirectory() == "smb://192.168.1.104" && sharePanel->getList()->getNumItems() == 2);
+    FXButton edit(shell, "Edit");
+    sharePanel->onUpdOpen(&edit, FXSEL(SEL_UPDATE, FilePanel::ID_EDIT), NULL);
+    assert(!edit.isEnabled());
+    sharePanel->getList()->selectItem(1);
+    sharePanel->onUpdOpen(&edit, FXSEL(SEL_UPDATE, FilePanel::ID_OPEN), NULL);
+    assert(edit.isEnabled());
+    sharePanel->onCmdItemClicked(NULL, FXSEL(SEL_CLICKED, FilePanel::ID_FILELIST), (void*)1);
+    assert(access(getenv("SWORDFISH_TEST_MOUNT_LOG"), F_OK) != 0);
+    sharePanel->onCmdItemDoubleClicked(NULL, FXSEL(SEL_DOUBLECLICKED, FilePanel::ID_FILELIST), (void*)1);
+    assert(sharePanel->getDirectory() == fixture + "/large");
+    std::ifstream mountedLog(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+    std::string mountedUri;
+    assert(std::getline(mountedLog, mountedUri) && mountedUri == "smb://192.168.1.104/Team%20files/");
+    assert(!std::getline(mountedLog, mountedUri));
+    sharePanel->onCmdPaneNavigation(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_PANE_BACK), NULL);
+    assert(sharePanel->getDirectory() == "smb://192.168.1.104");
+    pump(app, 450);
+    sharePanel->onCmdPaneNavigation(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_PANE_FORWARD), NULL);
+    assert(sharePanel->getDirectory() == fixture + "/large");
+    puts("PASS: server single-click lists shares in a tab without mounting; share double-click mounts only the chosen share");
+    // A share whose gio mount never returns must not freeze the window forever.
+    ConnectCanceller canceller;
+    testApp->addTimeout(&canceller, 1, 50);
+    FXString hungPath;
+    const time_t hungStart = time(NULL);
+    assert(sharePanel->resolveNetworkPath("smb://hang.test/share", hungPath) == -1);
+    assert(time(NULL) - hungStart < 20);
+    assert(canceller.prompts == 1 && canceller.message.find("did not respond in time") >= 0);
+    puts("PASS: a hanging gio mount times out and returns to the credentials dialog");
+    panel->onCmdToggleSection(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_TOGGLE_NETWORK), NULL);
+    assert(!network->isExpanded());
+    panel->onCmdToggleSection(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_TOGGLE_NETWORK), NULL);
+    assert(network->isExpanded() && network->getFirst()->getText() == "Stop");
+    panel->onCmdRefreshNetwork(NULL, 0, NULL);
+    panel->onSidebarRefresh(NULL, 0, NULL);
+    assert(network->getFirst()->getText() == "Refresh");
+    assert(network->getFirst()->getNext()->getText().find("Search stopped") == 0);
+    pump(app, 200);
+    puts("PASS: Network section searches only on demand, merges updates, sorts this computer last, ignores bad records, stops");
+    assert(sharePanel->navigatePane(fixture + "/empty"));
     SidebarItem destination("mounted share", minifoldericon, SidebarItem::DEVICE, fixture + "/large");
     navigation->grab();
     app.flush(true);
@@ -510,6 +758,140 @@ int main(int argc, char** argv)
                           &output, &commandStatus) == 1);
     assert(commandStatus == 0 && output == "mounted");
     delete command;
+
+    FXString gvfsBase = "/run/user/" + FXStringVal(getuid()) + "/gvfs/";
+    simulatedMount = gvfsBase + "smb-share:server=unmount.test,share=Team%20files";
+    assert(xf_gvfsmount(simulatedMount + "/nested") == simulatedMount);
+    assert(xf_gvfsmount(fixture).empty());
+    assert(xf_gvfsmounturi(simulatedMount) == "smb://unmount.test/Team%20files/");
+    assert(xf_gvfsmounturi(gvfsBase + "smb-share:domain=MAKHLOUF,user=Hassanein,server=localhost,share=data") ==
+           "smb://MAKHLOUF;Hassanein@localhost/data/");
+    assert(xf_gvfsmounturi(gvfsBase + "sftp:host=example.test,user=test,port=2222") ==
+           "sftp://test@example.test:2222/");
+    assert(xf_gvfsmounturi(gvfsBase + "mtp:host=%5Busb%3A001%2C002%5D") ==
+           "mtp://%5Busb%3A001%2C002%5D/");
+    assert(xf_gvfsmounturi(gvfsBase + "smb-share:share=data").empty());
+    const FXbool mountMessages = app.reg().readUnsignedEntry("OPTIONS", "mount_messages", true);
+    app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", false);
+    MountMessageResponder mountMessagesResponder;
+    File* unmount = new File(window, "Unmount regression", UNMOUNT);
+    unmount->create();
+    app.addTimeout(&mountMessagesResponder, 1, 20);
+    assert(unmount->mount(fixture, "Unmount regression", "printf 'ordinary unmount failed'; exit 7") == -1);
+    assert(mountMessagesResponder.errors == 1 && mountMessagesResponder.successes == 0);
+    assert(mountMessagesResponder.message == "ordinary unmount failed");
+    setenv("SWORDFISH_TEST_UNMOUNT_FAIL", "1", 1);
+    app.addTimeout(&mountMessagesResponder, 1, 20);
+    assert(unmount->mount(simulatedMount, "Unmount regression", "exit 99") == -1);
+    assert(mountMessagesResponder.errors == 2 && mountMessagesResponder.message.contains("share is busy"));
+    unsetenv("SWORDFISH_TEST_UNMOUNT_FAIL");
+    simulateStillMounted = true;
+    app.addTimeout(&mountMessagesResponder, 1, 20);
+    assert(unmount->mount(simulatedMount, "Unmount regression", "exit 99") == -1);
+    assert(mountMessagesResponder.errors == 3 && mountMessagesResponder.message.contains("still mounted"));
+    simulateStillMounted = false;
+    sharePanel->getTabButtons()->addTab(simulatedMount + "/nested");
+    FXuint inactiveMountTab = sharePanel->getTabButtons()->getCurrentTab();
+    sharePanel->getTabButtons()->addTab(simulatedMount);
+    FXuint activeMountTab = sharePanel->getTabButtons()->getCurrentTab();
+    setenv("SWORDFISH_TEST_UNMOUNT_FAIL", "1", 1);
+    app.addTimeout(&mountMessagesResponder, 1, 20);
+    assert(sharePanel->onCmdMount(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_UMOUNT), NULL) == 0);
+    assert(mountMessagesResponder.errors == 4 && mountMessagesResponder.successes == 0);
+    assert(sharePanel->getDirectory() == simulatedMount);
+    assert(!busyCursor);
+    unsetenv("SWORDFISH_TEST_UNMOUNT_FAIL");
+    app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", true);
+    app.addTimeout(&mountMessagesResponder, 1, 20);
+    assert(sharePanel->onCmdMount(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_UMOUNT), NULL) == 1);
+    assert(mountMessagesResponder.errors == 4 && mountMessagesResponder.successes == 1);
+    assert(!busyCursor);
+    assert(sharePanel->getDirectory() == fixture + "/large");
+    assert(sharePanel->getTabButtons()->getNumActiveTabs() == inactiveMountTab);
+    assert(sharePanel->getTabButtons()->getPath(activeMountTab).empty());
+    assert(sharePanel->getTabButtons()->getPath(serverTab) == fixture + "/large");
+    delete unmount;
+    app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", mountMessages);
+    std::ifstream unmountLog(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+    int unmountCommands = 0;
+    while (std::getline(unmountLog, mountedUri))
+        if (mountedUri == "unmount smb://unmount.test/Team%20files/") ++unmountCommands;
+    assert(unmountCommands == 4);
+    puts("PASS: GVFS unmount uses host gio, rejects failures and still-mounted results, closes active/inactive tabs");
+
+    app.addTimeout(&mountMessagesResponder, 1, 20);
+    FXString alreadyMountedPath;
+    assert(sharePanel->resolveNetworkPath("smb://192.168.1.104/Team%20files", alreadyMountedPath) == 1);
+    assert(mountMessagesResponder.alreadyMounted == 1);
+    assert(mountMessagesResponder.message.contains("already mounted at"));
+    assert(mountMessagesResponder.message.contains((fixture + "/large").text()));
+    puts("PASS: reconnecting an already-mounted share reports its local path");
+
+    sharePanel->setDirectory(fixture + "/folder");
+    sharePanel->updatePath();
+    simulatedGvfsDirectory = fixture + "/gvfs";
+    assert(mkdir(simulatedGvfsDirectory.text(), 0700) == 0);
+    FXString disk4 = simulatedGvfsDirectory + "/smb-share:server=mx-hp.local,share=4tb";
+    FXString disk5 = simulatedGvfsDirectory + "/smb-share:server=mx-hp.local,share=5tb";
+    assert(mkdir(disk4.text(), 0700) == 0);
+    assert(mkdir(disk5.text(), 0700) == 0);
+    pump(app, 1500);
+    SidebarItem* devices = static_cast<SidebarItem*>(navigation->getFirstItem()->getNext()->getNext());
+    auto deviceCount = [&devices](const FXString& name) {
+        int count = 0;
+        for (FXTreeItem* item = devices->getFirst(); item; item = item->getNext())
+            if (item->getText() == name) ++count;
+        return count;
+    };
+    assert(deviceCount("4tb@mx-hp.local") == 1 && deviceCount("5tb@mx-hp.local") == 1);
+    FXString mount5 = gvfsBase + FXPath::name(disk5);
+    FXuint beforeExternal = sharePanel->getTabButtons()->getNumActiveTabs();
+    sharePanel->getTabButtons()->addTab(mount5 + "/nested");
+    sharePanel->getTabButtons()->addTab(mount5);
+    assert(rmdir(disk5.text()) == 0);
+    pump(app, 1500);
+    assert(deviceCount("5tb@mx-hp.local") == 0 && deviceCount("4tb@mx-hp.local") == 1);
+    assert(sharePanel->getTabButtons()->getNumActiveTabs() == beforeExternal);
+    assert(sharePanel->getDirectory() == fixture + "/folder");
+    for (int cycle = 0; cycle < 2; ++cycle)
+    {
+        assert(mkdir(disk5.text(), 0700) == 0);
+        pump(app, 1500);
+        assert(deviceCount("5tb@mx-hp.local") == 1);
+        assert(rmdir(disk5.text()) == 0);
+        pump(app, 1500);
+        assert(deviceCount("5tb@mx-hp.local") == 0);
+    }
+    FilePanel* otherPanel = window->getRightPanel();
+    assert(otherPanel != sharePanel);
+    otherPanel->getTabButtons()->clearTabs();
+    otherPanel->getTabButtons()->addTab(mount5);
+    otherPanel->getTabButtons()->addTab(mount5 + "/nested");
+    otherPanel->getTabButtons()->closeMount(mount5);
+    assert(otherPanel->getTabButtons()->getNumActiveTabs() == 1);
+    assert(otherPanel->getDirectory() == FXSystem::getHomeDirectory());
+    assert(otherPanel->getTabButtons()->getPath(0) == FXSystem::getHomeDirectory());
+    assert(rmdir(disk4.text()) == 0);
+    assert(rmdir(simulatedGvfsDirectory.text()) == 0);
+    simulatedGvfsDirectory.clear();
+    puts("PASS: external unmount removes Devices entry and share tabs, repeated cycles leave no duplicates, last tab becomes Home");
+
+    window->onCmdHelp(NULL, 0, NULL);
+    FXButton* helpLink = projectLink(app.getRootWindow());
+    assert(helpLink && helpLink->getSelector() == XFileExplorer::ID_PROJECT_WEBSITE);
+    helpLink->getTarget()->handle(helpLink, FXSEL(SEL_COMMAND, helpLink->getSelector()), NULL);
+    AboutLinkResponder aboutLink;
+    app.addTimeout(&aboutLink, 1, 20);
+    window->onCmdAbout(NULL, 0, NULL);
+    assert(aboutLink.clicked);
+    pump(app, 250);
+    std::ifstream websiteLog(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+    int websites = 0;
+    while (std::getline(websiteLog, mountedUri))
+        if (mountedUri == "website https://github.com/hasmak-44/Swordfish-FM") ++websites;
+    assert(websites == 2);
+    puts("PASS: About and Help project links launch the host browser with the repository URL");
+
     // Exercise the application's real signal handler, not pump()'s manual reaper.
     FXTime until = FXThread::time() + 2200000000LL;
     while (FXThread::time() < until)

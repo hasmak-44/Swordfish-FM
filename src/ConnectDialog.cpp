@@ -234,7 +234,7 @@ long ConnectDialog::smbMount(void)
                        " share " + xf_quote(share->getText()) +
                        " user " + xf_quote(user->getText());
         
-        FXString ret = xf_getcommandoutput(cmd);
+        FXString ret = xf_getcommandoutput(xf_hostcommand("/bin/sh -c " + xf_quote(cmd)));
 
         if (ret != "")
         {   
@@ -289,7 +289,7 @@ long ConnectDialog::smbMount(void)
                    server->getText() + "/" +
                    xf_quote(share->getText()) + "/";
    
-    FXString ret = xf_getcommandoutput(cmd);
+    FXString ret = xf_getcommandoutput(xf_hostcommand("/bin/sh -c " + xf_quote(cmd)));
 
     // gio not found
     if (ret.contains("gio: not found"))
@@ -333,7 +333,7 @@ Please install gio and gvfs to be able to connect to a server..."));
                        " domain " + domain->getText() +
                        " user " + xf_quote(user->getText());
                        
-        FXString ret = xf_getcommandoutput(cmd);
+        FXString ret = xf_getcommandoutput(xf_hostcommand("/bin/sh -c " + xf_quote(cmd)));
 
         // secret-tool utility not found
         if (ret.contains("secret-tool: not found"))
@@ -364,7 +364,7 @@ long ConnectDialog::sftpMount(void)
                        " user " + user->getText() +
                        " port " + FXStringVal(port->getValue());
         
-        FXString ret = xf_getcommandoutput(cmd);
+        FXString ret = xf_getcommandoutput(xf_hostcommand("/bin/sh -c " + xf_quote(cmd)));
 
         if (ret != "")
         {   
@@ -425,7 +425,7 @@ long ConnectDialog::sftpMount(void)
                    server->getText();
     }
     
-    FXString ret = xf_getcommandoutput(cmd);
+    FXString ret = xf_getcommandoutput(xf_hostcommand("/bin/sh -c " + xf_quote(cmd)));
 
     // gio not found
     if (ret.contains("gio: not found"))
@@ -477,7 +477,7 @@ Please install gio and gvfs to be able to connect to a server..."));
                        " user " + xf_quote(user->getText()) +
                        " port " + FXStringVal(port->getValue());
                        
-        FXString ret = xf_getcommandoutput(cmd);
+        FXString ret = xf_getcommandoutput(xf_hostcommand("/bin/sh -c " + xf_quote(cmd)));
 
         // secret-tool utility not found
         if (ret.contains("secret-tool: not found"))

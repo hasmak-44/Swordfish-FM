@@ -30,6 +30,7 @@ FXDEFMAP(SidebarTree) SidebarTreeMap[] =
     FXMAPFUNC(SEL_COMMAND, SidebarTree::ID_REMOTE_CHANGED, SidebarTree::onRemoteChanged),
     FXMAPFUNC(SEL_COLLAPSED, 0, SidebarTree::onCollapseItem),
     FXMAPFUNC(SEL_EXPANDED, 0, SidebarTree::onExpandItem),
+    FXMAPFUNC(SEL_QUERY_TIP, 0, SidebarTree::onQueryTip),
     FXMAPFUNC(SEL_DND_ENTER, 0, SidebarTree::onDNDEnter),
     FXMAPFUNC(SEL_DND_MOTION, 0, SidebarTree::onDNDMotion),
     FXMAPFUNC(SEL_DND_DROP, 0, SidebarTree::onDNDDrop)
@@ -56,6 +57,29 @@ void SidebarTree::setClearance(FXint value)
         clearance = value;
         recalc();
     }
+}
+
+// Items with their own tooltip text (discovered servers) show it instead of their label
+long SidebarTree::onQueryTip(FXObject* sender, FXSelector sel, void* ptr)
+{
+    if (FXWindow::onQueryTip(sender, sel, ptr))
+    {
+        return 1;
+    }
+    if ((flags & FLAG_TIP) && !(flags & FLAG_PRESSED))
+    {
+        FXint x, y;
+        FXuint buttons;
+        getCursorPosition(x, y, buttons);
+        SidebarItem* item = static_cast<SidebarItem*>(getItemAt(x, y));
+        if (item && !item->tip.empty())
+        {
+            FXString tip = item->tip;
+            sender->handle(this, FXSEL(SEL_COMMAND, ID_SETSTRINGVALUE), (void*)&tip);
+            return 1;
+        }
+    }
+    return FXTreeList::onQueryTip(sender, sel, ptr);
 }
 
 long SidebarTree::onExpandItem(FXObject*, FXSelector, void* ptr)
@@ -764,6 +788,12 @@ long MountsList::onMountsRefresh(FXObject* sender, FXSelector, void* ptr)
         }
         closedir(dirp);
     }
+    else if (errno != ENOENT)
+    {
+        appLog(APP_LOG_ERRORS, "mount-list-read-failed", gvfspath + ": " + strerror(errno));
+        getApp()->addTimeout(this, ID_MOUNTS_REFRESH, MTAB_POLL_INTERVAL);
+        return 1;
+    }
 
     // Mount points or GVFS mounts have changed
     if (hash != hash_prev || gvfsmounts != gvfsmounts_prev)
@@ -771,12 +801,8 @@ long MountsList::onMountsRefresh(FXObject* sender, FXSelector, void* ptr)
         // Update hash
         hash_prev = hash;
 
-        // Remove all mount points from list
-        for (int i = mounts->first(); i < mounts->size(); i = mounts->next(i))
-        {
-            // Remove item from list
-            FXList::removeItem(FXList::findItem(mounts->key(i)));
-        }
+        // Labels are not unique keys: remove every old row, including duplicates.
+        clearItems();
 
         // Clear mount points dictionary
         mounts->clear();

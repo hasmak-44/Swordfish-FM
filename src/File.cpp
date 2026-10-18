@@ -2444,6 +2444,19 @@ FXString File::sourcesize(const FXString src, FXulong* totalsize, const FXbool u
 int File::mount(const FXString dir, const FXString msg, const FXString cmd, FXString* output, int* status)
 {
     FXbool mount_messages = getApp()->reg().readUnsignedEntry("OPTIONS", "mount_messages", true);
+    FXString command = cmd;
+    FXString gvfs = xf_gvfsmount(dir);
+    if (!gvfs.empty())
+    {
+        FXString uri = xf_gvfsmounturi(dir);
+        if (uri.empty())
+        {
+            MessageBox::error(this, BOX_OK, _("Error"), _("Can't determine the network mount URI for %s"), dir.text());
+            return -1;
+        }
+        command = xf_hostcommand("timeout -k 2 30 gio mount " + FXString(op == UNMOUNT ? "-u " : "") +
+                                 xf_quote(uri) + " </dev/null") + " 2>&1";
+    }
 
     // Set labels for progress dialog
     uplabel->setText(msg);
@@ -2472,10 +2485,10 @@ int File::mount(const FXString dir, const FXString msg, const FXString cmd, FXSt
     } childSignal(getApp(), mainWindow);
 
     // Perform mount/unmount command
-    FILE* pcmd = popen(cmd.text(), "r");
+    FILE* pcmd = popen(command.text(), "r");
     if (!pcmd)
     {
-        MessageBox::error(this, BOX_OK, _("Error"), _("Failed command: %s"), cmd.text());
+        MessageBox::error(this, BOX_OK, _("Error"), _("Failed command: %s"), command.text());
         return -1;
     }
 
@@ -2528,12 +2541,7 @@ int File::mount(const FXString dir, const FXString msg, const FXString cmd, FXSt
     // Hide progress dialog
     forceTimeout();
 
-    // An error has occurred
-    if (exit_status == -1 || buf.contains("gio: not found"))
-    {
-        MessageBox::error(this, BOX_OK, _("Error"), "%s", buf.text());
-        return -1;
-    }
+    int code = exit_status != -1 && WIFEXITED(exit_status) ? WEXITSTATUS(exit_status) : -1;
 
     // Caller wants the command result and handles messages itself
     if (output)
@@ -2541,9 +2549,38 @@ int File::mount(const FXString dir, const FXString msg, const FXString cmd, FXSt
         *output = buf;
         if (status)
         {
-            *status = WIFEXITED(exit_status) ? WEXITSTATUS(exit_status) : -1;
+            *status = code;
         }
         return 1;
+    }
+
+    if (code == 0 && op == UNMOUNT && !gvfs.empty())
+    {
+        struct stat info;
+        if (lstat(gvfs.text(), &info) == 0)
+        {
+            code = -1;
+            buf = _("The network share is still mounted.");
+        }
+        else if (errno != ENOENT)
+        {
+            code = -1;
+            buf = strerror(errno);
+        }
+    }
+    if (code != 0)
+    {
+        if (buf.empty())
+        {
+            buf.format(_("Command failed (exit status %d)."), code);
+        }
+        MessageBox::error(this, BOX_OK, _("Error"), "%s", buf.text());
+        return -1;
+    }
+
+    if (op == UNMOUNT && !gvfs.empty())
+    {
+        mainWindow->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_NETWORK_UNMOUNTED), &gvfs);
     }
 
     // Success message

@@ -4,6 +4,7 @@
 #include "AppLogger.h"
 #include "TabButtons.h"
 #include "MessageBox.h"
+#include "RemoteDirectory.h"
 
 
 extern FXString homedir;
@@ -536,6 +537,66 @@ void TabButtons::clearTabs(void)
 }
 
 
+void TabButtons::closeMount(const FXString& mountpoint)
+{
+    onUpdCurrentTab(this, 0, NULL);
+    FXString prefix = mountpoint + "/";
+    const FXuint oldCount = nbActiveTabs;
+    const FXuint oldCurrent = currentTab;
+    FXuint kept = 0;
+    FXuint selected = 0;
+    FXbool activeRemoved = false;
+    for (FXuint i = 0; i < oldCount; ++i)
+    {
+        if (tabPaths[i] == mountpoint || tabPaths[i].left(prefix.length()) == prefix)
+        {
+            if (i == oldCurrent) activeRemoved = true;
+            continue;
+        }
+        if (i == oldCurrent) selected = kept;
+        tabPaths[kept] = tabPaths[i];
+        tabViews[kept] = tabViews[i];
+        tabButtons[kept]->setText(tabButtons[i]->getText());
+        ++kept;
+    }
+    if (kept == oldCount) return;
+    nbActiveTabs = kept;
+    if (!nbActiveTabs)
+    {
+        nbActiveTabs = 1;
+        tabPaths[0] = FXSystem::getHomeDirectory();
+        tabViews[0] = filepanel->getList()->getViewMode();
+        tabButtons[0]->setText(FXPath::name(tabPaths[0]));
+    }
+    currentTab = activeRemoved ? FXMIN(oldCurrent, nbActiveTabs - 1) : selected;
+    prevTab = currentTab;
+    for (FXuint i = 0; i < oldCount; ++i)
+    {
+        const FXbool active = i == currentTab;
+        tabButtons[i]->setFont(active ? highlightFont : normalFont);
+        tabButtons[i]->setState(active ? STATE_DOWN : STATE_UP);
+        closeButtons[i]->setState(STATE_UP);
+        setTabColor(i, active ? shadecolor : basecolor);
+        if (i >= nbActiveTabs)
+        {
+            tabButtons[i]->hide();
+            tabButtons[i]->getParent()->hide();
+            closeButtons[i]->hide();
+            tabPaths[i].clear();
+            tabButtons[i]->setText("");
+        }
+    }
+    if (activeRemoved)
+    {
+        filepanel->setDirectory(tabPaths[currentTab]);
+        filepanel->getList()->setViewMode((FileList::ViewMode)tabViews[currentTab]);
+        filepanel->updatePath(true);
+        if (filepanel->isActive()) dirpanel->setDirectory(filepanel->getDirectory(), true);
+    }
+    recalc();
+}
+
+
 // Update current tab path
 long TabButtons::onUpdCurrentTab(FXObject* senderbj, FXSelector sel, void* ptr)
 {
@@ -876,7 +937,7 @@ FXbool TabButtons::restoreTabs(const char* section, FXuint selected)
         {
             break;
         }
-        if (!xf_isdirectory(path) || !xf_isreadexecutable(path))
+        if (!RemoteDirectory::isServer(path) && (!xf_isdirectory(path) || !xf_isreadexecutable(path)))
         {
             appLog(APP_LOG_ERRORS, "tab-restore-unavailable", FXString("pane=") + section + " path=\"" + path + "\"");
             continue;

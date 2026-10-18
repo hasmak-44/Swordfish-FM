@@ -10,6 +10,7 @@
 
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <vector>
 
 
 class DirPanel : public FXVerticalFrame
@@ -43,8 +44,17 @@ protected:
     FXint previewLimit = 0;
     FXulong previewRevision = 0;
     FXIcon* previewImage = NULL;
+    struct NetworkServer
+    {
+        FXString key;
+        FXString host;
+        FXString name;
+        FXString group;
+        FXString sources;
+        FXbool local;
+    };
     FXButton* networkRefresh = NULL;
-    FXList* networkList = NULL;
+    std::vector<NetworkServer> networkServers;
     FXLabel* networkStatus = NULL;
     int networkReadFd = -1;
     pid_t networkPid = -1;
@@ -52,9 +62,12 @@ protected:
     FXbool networkExited = false;
     FXString networkLineBuffer;
     FXString networkError;
+    FXString networkWarning;
+    FXbool networkDone = false;
     FXbool networkInvalidEntries = false;
     FXbool networkDiscardingLine = false;
     void appendNetworkResult(FXString line);
+    void startNetworkDiscovery();
     void finishNetworkDiscovery();
     void stopNetworkDiscovery();
     FXButton* activeicon = NULL;
@@ -166,7 +179,6 @@ public:
         ID_REFRESH_NETWORK,
         ID_NETWORK_READ,
         ID_NETWORK_TIMEOUT,
-        ID_NETWORK_LIST,
         ID_CLOSE_PREVIEW,
         ID_PREVIEW_LAYOUT,
         ID_SIDEBAR,
@@ -187,7 +199,6 @@ public:
     long onCmdRefreshNetwork(FXObject*, FXSelector, void*);
     long onReadNetwork(FXObject*, FXSelector, void*);
     long onNetworkTimeout(FXObject*, FXSelector, void*);
-    long onCmdNetworkSelected(FXObject*, FXSelector, void*);
     long onCmdClosePreview(FXObject*, FXSelector, void*);
     long onCmdPreviewLayout(FXObject*, FXSelector, void*);
     long onSidebarActivate(FXObject*, FXSelector, void*);
@@ -295,6 +306,7 @@ public:
     // Set current directory
     void setDirectory(const FXString& pathname, FXbool notify = false)
     {
+        if (pathname.left(6) == "smb://") return;
         dirlist->setDirectory(pathname, notify);
         sidebar->killSelection();
         for (FXTreeItem* node = sidebar->getFirstItem(); node; node = node->getBelow())

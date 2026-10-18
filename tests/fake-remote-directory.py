@@ -5,6 +5,41 @@ import stat
 import sys
 import time
 
+if os.path.basename(sys.argv[0]) == "xdg-open":
+    assert not os.environ.get("LD_LIBRARY_PATH")
+    assert not os.environ.get("GIO_MODULE_DIR")
+    assert sys.argv[1:] == ["https://github.com/hasmak-44/Swordfish-FM"]
+    with open(os.environ["SWORDFISH_TEST_MOUNT_LOG"], "a") as log:
+        log.write("website " + sys.argv[1] + "\n")
+    sys.exit(0)
+
+if os.path.basename(sys.argv[0]) == "gio":
+    assert not os.environ.get("LD_LIBRARY_PATH")
+    assert not os.environ.get("GIO_MODULE_DIR")
+    state = os.environ["SWORDFISH_TEST_MOUNT_LOG"]
+    if sys.argv[1:3] == ["mount", "-u"]:
+        with open(state, "a") as log:
+            log.write("unmount " + sys.argv[-1] + "\n")
+        if os.environ.get("SWORDFISH_TEST_UNMOUNT_FAIL"):
+            print("gio: share is busy")
+            sys.exit(1)
+        sys.exit(0)
+    if "//hang.test/" in sys.argv[-1]:
+        # Mimic gio asking for credentials again and again on a closed stdin
+        if sys.argv[1] == "mount":
+            time.sleep(600)
+        print("gio: location is not mounted")
+        sys.exit(1)
+    if sys.argv[1] == "mount":
+        with open(state, "a") as log:
+            log.write(sys.argv[-1] + "\n")
+    elif sys.argv[1] == "info":
+        if os.path.exists(state):
+            print("local path: " + os.environ["SWORDFISH_TEST_MOUNT_PATH"])
+        else:
+            print("gio: location is not mounted")
+    sys.exit(0)
+
 
 def entry(name, mode=stat.S_IFDIR | 0o755, target="", symlink=False):
     encoded = base64.b64encode(name.encode()).decode()
@@ -14,6 +49,35 @@ def entry(name, mode=stat.S_IFDIR | 0o755, target="", symlink=False):
         f"int64 1, int64 1, int64 0, '{link}', {'true' if symlink else 'false'}, 1, 1)"
     )
 
+
+if sys.argv[1:] == ["--discover"]:
+    records = [
+        "SERVER\t192.168.1.106\tmx-ryzen.local\tMX-RYZEN\t\tgvfs\t1",
+        "SERVER\t192.168.1.104\t192.168.1.104\t192.168.1.104\t\tws-discovery\t0",
+        "SERVER\t192.168.1.102\tmx-hp.local\tMX-HP\t\tgvfs,ws-discovery\t0",
+        "SERVER\t192.168.1.66\tbad;host\tBAD\t\tgvfs\t0",
+        "SERVER\ttoo-few-fields",
+        "STATUS\tgvfs\tdns-sd://local/: simulated failure",
+        "SERVER\t192.168.1.104\t192.168.1.104\tDELL-740\tWorkgroup:MAKHLOUF\tws-discovery\t0",
+    ]
+    for record in records:
+        print(record, flush=True)
+        time.sleep(0.1)
+    print("DONE", flush=True)
+    sys.exit(0)
+if sys.argv[1] == "--shares":
+    assert sys.argv[2].startswith("smb://")
+    if sys.argv[2] in ("smb://auth.test", "smb://cancel.test"):
+        print("AUTH", flush=True)
+        credentials = sys.stdin.readline()
+        if not credentials:
+            sys.exit(1)
+        assert credentials == "dGVzdC11c2Vy\tV09SS0dST1VQ\t\n"
+    time.sleep(0.15)
+    entry("Team files", mode=stat.S_IFDIR | 0o555)
+    entry("5TB", mode=stat.S_IFDIR | 0o555)
+    print("DONE", flush=True)
+    sys.exit(0)
 
 path = sys.argv[2].rstrip("/")
 if path.endswith("/failure"):

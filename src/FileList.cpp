@@ -4,6 +4,7 @@
 
 
 #include "config.h"
+#include <glib.h>
 #include "i18n.h"
 
 #include "AppLogger.h"
@@ -35,8 +36,11 @@
 #include "InputDialog.h"
 #include "StringList.h"
 #include "FileList.h"
+#include "XFileExplorer.h"
 #include <algorithm>
 #include <vector>
+
+extern FXMainWindow* mainWindow;
 
 namespace
 {
@@ -572,6 +576,7 @@ long FileList::onOpenTimer(FXObject*, FXSelector, void*)
 // Handle drag-and-drop enter
 long FileList::onDNDEnter(FXObject* sender, FXSelector sel, void* ptr)
 {
+    if (RemoteDirectory::isServer(directory)) return 0;
     IconList::onDNDEnter(sender, sel, ptr);
 
     // Keep original directory
@@ -608,6 +613,7 @@ long FileList::onDNDLeave(FXObject* sender, FXSelector sel, void* ptr)
 // Handle drag-and-drop motion
 long FileList::onDNDMotion(FXObject* sender, FXSelector sel, void* ptr)
 {
+    if (RemoteDirectory::isServer(directory)) return 0;
     FXEvent* event = (FXEvent*)ptr;
     int index = -1;
 
@@ -720,6 +726,7 @@ long FileList::onCmdDragReject(FXObject* sender, FXSelector sel, void* ptr)
 // Handle drag-and-drop drop
 long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
 {
+    if (RemoteDirectory::isServer(directory)) return 0;
     FXuchar* data;
     FXuint len;
     FXbool showdialog = true;
@@ -1137,6 +1144,7 @@ long FileList::onDNDRequest(FXObject* sender, FXSelector sel, void* ptr)
 // Start a drag operation
 long FileList::onBeginDrag(FXObject* sender, FXSelector sel, void* ptr)
 {
+    if (RemoteDirectory::isServer(directory)) return 0;
     int i;
 
     if (IconList::onBeginDrag(sender, sel, ptr))
@@ -1429,6 +1437,7 @@ long FileList::onUpdHideHidden(FXObject* sender, FXSelector, void*)
 // Move up one level
 long FileList::onCmdDirectoryUp(FXObject*, FXSelector, void*)
 {
+    if (RemoteDirectory::isServer(directory)) return 1;
     setFocus();
     setDirectory(FXPath::upLevel(directory), true, directory);
     return 1;
@@ -4477,6 +4486,13 @@ long FileList::onRemoteChanged(FXObject*, FXSelector, void*)
     }
     if (!failure.empty() && !remoteBusy && failure != remoteError)
     {
+        FXString mountpoint = xf_gvfsmount(directory);
+        struct stat info;
+        if (!mountpoint.empty() && lstat(mountpoint.text(), &info) < 0 && errno == ENOENT)
+        {
+            if (mainWindow->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_NETWORK_UNMOUNTED), &mountpoint))
+                return 1;
+        }
         remoteError = failure;
         MessageBox::error(this, BOX_OK, _("Error"), _("Remote folder loading failed: %s"), failure.text());
     }
@@ -4619,7 +4635,7 @@ void FileList::setDirectory(const FXString& pathname, const FXbool histupdate, F
     // FIXME notify argument?
     if (!pathname.empty())
     {
-        path = FXPath::absolute(directory, pathname);
+        path = RemoteDirectory::isServer(pathname) ? pathname : FXPath::absolute(directory, pathname);
 
         while (!RemoteDirectory::handles(path) && !FXPath::isTopDirectory(path) && !xf_isdirectory(path))
         {
@@ -5009,6 +5025,13 @@ FXString FileList::getItemPathname(int index) const
         exit(EXIT_FAILURE);
     }
     FXString label = items[index]->getText();
+    if (RemoteDirectory::isServer(directory))
+    {
+        gchar* name = g_uri_escape_string(label.section('\t', 0).text(), NULL, false);
+        FXString path = directory + "/" + name;
+        g_free(name);
+        return path;
+    }
     return FXPath::absolute(directory, label.section('\t', 0));
 }
 
@@ -6142,7 +6165,7 @@ void FileList::listItems(FXbool force)
         }
 
         // Folders to read: the current one, then the expanded sub folders
-        FXbool detailed = !inTrash && !(options & FILELIST_SEARCH) &&
+        FXbool detailed = !RemoteDirectory::isServer(directory) && !inTrash && !(options & FILELIST_SEARCH) &&
                           !(options & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS));
         std::vector<ExpandJob> jobs;
         ExpandJob rootjob;
@@ -6174,13 +6197,14 @@ void FileList::listItems(FXbool force)
         {
             const int firstChild = items.no();
             // Loop over directory entries
-            while (remote ? (remoteIndex < remoteRows->size() + (jobdepth == 0 ? 1 : 0)) :
+            const bool parentRow = jobdepth == 0 && !RemoteDirectory::isServer(directory);
+            while (remote ? (remoteIndex < remoteRows->size() + (parentRow ? 1 : 0)) :
                             ((dp = readdir(dirp)) != NULL))
             {
                 if (remote)
                 {
-                    remoteEntry = jobdepth == 0 && remoteIndex == 0 ? &parentEntry :
-                                  &(*remoteRows)[remoteIndex - (jobdepth == 0 ? 1 : 0)];
+                    remoteEntry = parentRow && remoteIndex == 0 ? &parentEntry :
+                                  &(*remoteRows)[remoteIndex - (parentRow ? 1 : 0)];
                     ++remoteIndex;
                 }
                 // Directory entry name
