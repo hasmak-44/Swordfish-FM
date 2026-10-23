@@ -3032,8 +3032,16 @@ void XFileExplorer::saveConfig(FXbool restarting)
     getApp()->reg().writeStringEntry("LEFT PANEL", "lastdir", lpanel->getDirectory().text());
     getApp()->reg().writeStringEntry("RIGHT PANEL", "lastdir", rpanel->getDirectory().text());
 
+    // Read registry file to get settings that could have been changed from another Xfe instance
+    FXRegistry* reg = new FXRegistry(getApp()->getAppName(), getApp()->getVendorName());
+    reg->read();
+
+    // Preferences are written to disk on Accept, so the file holds the newest choice
+    FXbool restore_tabs = reg->readUnsignedEntry("OPTIONS", "restore_tabs",
+                                                 getApp()->reg().readUnsignedEntry("OPTIONS", "restore_tabs", false));
+    getApp()->reg().writeUnsignedEntry("OPTIONS", "restore_tabs", restore_tabs);
+
     // Save tabs if required
-    FXbool restore_tabs = getApp()->reg().readUnsignedEntry("OPTIONS", "restore_tabs", false);
     if (restore_tabs || restarting)
     {
         lpanel->getTabButtons()->saveTabs("LEFT TABS");
@@ -3051,10 +3059,6 @@ void XFileExplorer::saveConfig(FXbool restarting)
         getApp()->reg().writeUnsignedEntry("SETTINGS", "restart_right_panel", getCurrentPanel() == rpanel);
     }
     getApp()->reg().deleteSection("TABS");
-
-    // Read registry file to get bookmarks that could have been changed from another Xfe instance
-    FXRegistry* reg = new FXRegistry(XFEAPPNAME, XFEVDRNAME);
-    reg->read();
 
     if (reg->readStringEntry("BOOKMARKS", "bookmark0", NULL))
     {
@@ -3077,6 +3081,7 @@ void XFileExplorer::saveConfig(FXbool restarting)
             }
         }
     }
+    delete reg;
 
     // Reset restarted flag
     getApp()->reg().writeUnsignedEntry("SETTINGS", "restarted", false);

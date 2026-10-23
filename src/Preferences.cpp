@@ -3416,8 +3416,7 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     // Save custom themes
     if (Themes.size() > NUM_DEFAULT_THEMES)
     {
-        // Delete themes section
-        getApp()->reg().read();
+        // Delete themes section (do not re-read the registry: it would discard the settings accepted above)
         getApp()->reg().deleteSection("THEMES");
         
         // Add custom themes to registry
