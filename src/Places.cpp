@@ -239,8 +239,11 @@ long SidebarTree::onDNDEnter(FXObject*, FXSelector, void*)
 
 long SidebarTree::onDNDMotion(FXObject*, FXSelector, void* ptr)
 {
+    // Drop events carry window coordinates of the drag source, so locate the item from root coordinates
     FXEvent* event = static_cast<FXEvent*>(ptr);
-    SidebarItem* item = static_cast<SidebarItem*>(getItemAt(event->win_x, event->win_y));
+    FXint x, y;
+    getRoot()->translateCoordinatesTo(x, y, this, event->root_x, event->root_y);
+    SidebarItem* item = static_cast<SidebarItem*>(getItemAt(x, y));
     while (item && item->getParent())
     {
         item = static_cast<SidebarItem*>(item->getParent());

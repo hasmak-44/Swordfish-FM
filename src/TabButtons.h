@@ -32,8 +32,10 @@ protected:
     
     FXColor shadecolor = FXRGB(0, 0, 0);                // Base color
     FXColor basecolor = FXRGB(0, 0, 0);                 // Shade color
+    FXColor activecolor = FXRGB(0, 0, 0);               // Current tab color
 
     void setTabColor(int, FXColor);
+    void showTabStates(void);
     
     TabButtons()
     {
@@ -64,6 +66,11 @@ public:
         // Note: Place any additional id's AFTER ID_END_MOVE_RIGHT
         ID_END_MOVE_RIGHT = ID_START_MOVE_RIGHT + NMAX_TABS - 1,
 
+        ID_START_BOOKMARK,
+        // Note: Place any additional id's AFTER ID_END_BOOKMARK
+        ID_END_BOOKMARK = ID_START_BOOKMARK + NMAX_TABS - 1,
+
+        ID_BOOKMARK_GROUP,
         ID_LAST
     };
 
@@ -75,6 +82,8 @@ public:
     long onCmdCloseButton(FXObject*, FXSelector, void*);
     long onCmdMoveLeft(FXObject*, FXSelector, void*);
     long onCmdMoveRight(FXObject*, FXSelector, void*);
+    long onCmdBookmarkTab(FXObject*, FXSelector, void*);
+    long onCmdBookmarkGroup(FXObject*, FXSelector, void*);
 
     void addTab(FXString, FXbool activate = true);
     long onQueryTip(FXObject*, FXSelector, void*);
@@ -127,6 +136,9 @@ public:
     
     // Set current tab from index
     void setCurrentTab(FXuint);
+    void moveTab(FXuint, FXuint);
+    FXbool canDropFiles(FXuint);
+    long dropFiles(FXuint, void*);
     void clearTabs(void);
     void closeMount(const FXString& mountpoint);
     void saveTabs(const char* section);

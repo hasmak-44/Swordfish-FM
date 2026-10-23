@@ -32,6 +32,7 @@ protected:
     FXbool sidebarPopupOpen = false;
     void createPlaces(FXWindow*, FXComposite*, FXColor, FXColor, FXuint);
     void syncSidebar();
+    std::vector<FXString> tabGroupNames();
     FXVerticalFrame* previewOverlay = NULL;
     FXLabel* previewImageLabel = NULL;
     FXLabel* previewNameLabel = NULL;
@@ -185,6 +186,9 @@ public:
         ID_SIDEBAR_REFRESH,
         ID_SIDEBAR_OPEN_TAB,
         ID_SIDEBAR_PROPERTIES,
+        ID_SIDEBAR_OPEN_GROUP,
+        ID_SIDEBAR_RENAME_GROUP,
+        ID_SIDEBAR_REMOVE_GROUP,
         ID_LAST,
     };
     long exploreUp(DirItem* item, const DirItem* rootitem, const int task);
@@ -206,6 +210,7 @@ public:
     long onSidebarPopup(FXObject*, FXSelector, void*);
     long onSidebarRefresh(FXObject*, FXSelector, void*);
     long onSidebarAction(FXObject*, FXSelector, void*);
+    long onSidebarTabGroup(FXObject*, FXSelector, void*);
     long onUpdToggleHidden(FXObject*, FXSelector, void*);
     long onCmdPopupMenuDirList(FXObject*, FXSelector, void*);
     long onExpandTree(FXObject*, FXSelector, void*);

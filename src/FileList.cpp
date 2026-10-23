@@ -723,6 +723,16 @@ long FileList::onCmdDragReject(FXObject* sender, FXSelector sel, void* ptr)
 }
 
 
+// Drop the dragged items into a folder, for drops received by another widget (e.g. a tab)
+long FileList::dropIntoDirectory(const FXString& pathname, void* ptr)
+{
+    orgdirectory = getDirectory();
+    dropdirectory = pathname;
+    dropaction = inquireDNDAction();
+    return onDNDDrop(this, FXSEL(SEL_DND_DROP, 0), ptr);
+}
+
+
 // Handle drag-and-drop drop
 long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
 {

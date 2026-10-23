@@ -238,6 +238,7 @@ public:
     long onDNDLeave(FXObject*, FXSelector, void*);
     long onDNDMotion(FXObject*, FXSelector, void*);
     long onDNDDrop(FXObject*, FXSelector, void*);
+    long dropIntoDirectory(const FXString&, void*);
     long onDNDRequest(FXObject*, FXSelector, void*);
     long onBeginDrag(FXObject*, FXSelector, void*);
     long onEndDrag(FXObject*, FXSelector, void*);

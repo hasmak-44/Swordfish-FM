@@ -444,6 +444,9 @@ FXDEFMAP(DirPanel) DirPanelMap[] =
     FXMAPFUNC(SEL_TIMEOUT, DirPanel::ID_SIDEBAR_REFRESH, DirPanel::onSidebarRefresh),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR_OPEN_TAB, DirPanel::onSidebarAction),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR_PROPERTIES, DirPanel::onSidebarAction),
+    FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR_OPEN_GROUP, DirPanel::onSidebarTabGroup),
+    FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR_RENAME_GROUP, DirPanel::onSidebarTabGroup),
+    FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR_REMOVE_GROUP, DirPanel::onSidebarTabGroup),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_PROPERTIES, DirPanel::onCmdProperties),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_ARCHIVE, DirPanel::onCmdAddToArch),
     FXMAPFUNC(SEL_RIGHTBUTTONRELEASE, DirPanel::ID_FILELIST, DirPanel::onCmdPopupMenuDirList),
@@ -559,6 +562,22 @@ void DirPanel::createPlaces(FXWindow* owner, FXComposite* parent, FXColor back, 
     syncSidebar();
 }
 
+// Names of the tab groups saved from the Bookmarks menu ("groupN = name;id" in [TAB GROUPS])
+std::vector<FXString> DirPanel::tabGroupNames()
+{
+    std::vector<FXString> names;
+    for (int n = 0; ; n++)
+    {
+        const char* data = getApp()->reg().readStringEntry("TAB GROUPS", ("group" + FXStringVal(n)).text(), NULL);
+        if (!data)
+        {
+            break;
+        }
+        names.push_back(FXString(data).rbefore(';'));
+    }
+    return names;
+}
+
 void DirPanel::syncSidebar()
 {
     if (sidebarPopupOpen)
@@ -592,6 +611,13 @@ void DirPanel::syncSidebar()
             if (group == 1)
             {
                 signature += "\t" + bookmarkslist->getItemIconPathname(name);
+            }
+        }
+        if (group == 1)
+        {
+            for (const FXString& name : tabGroupNames())
+            {
+                signature += "\ngroup\t" + name;
             }
         }
         if (signature == sidebarSignatures[group])
@@ -681,6 +707,18 @@ void DirPanel::syncSidebar()
             item->setHasItems(true);
             sidebar->appendItem(root, item);
         }
+        if (group == 1)
+        {
+            std::vector<FXString> groups = tabGroupNames();
+            for (FXuint i = 0; i < groups.size(); ++i)
+            {
+                SidebarItem* item = new SidebarItem(groups[i] + " " + _("(group)"), mininewtabicon,
+                                                    SidebarItem::TABGROUP, "", FXStringVal(i));
+                item->tip = _("Open all tabs of this group");
+                item->setHasItems(false);
+                sidebar->appendItem(root, item);
+            }
+        }
         for (FXString& mountpoint : removedMounts)
             mainWindow->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_NETWORK_UNMOUNTED), &mountpoint);
     }
@@ -745,6 +783,12 @@ long DirPanel::onSidebarActivate(FXObject*, FXSelector sel, void* ptr)
         onCmdRefreshNetwork(NULL, 0, NULL);
         syncSidebar();
     }
+    else if (item->kind == SidebarItem::TABGROUP)
+    {
+        if (sidebar->grabbed()) sidebar->ungrab();
+        getApp()->flush();
+        static_cast<XFileExplorer*>(mainWindow)->openTabGroup(FXIntVal(item->key));
+    }
     else if (item->kind == SidebarItem::SERVER)
     {
         XFileExplorer* window = static_cast<XFileExplorer*>(mainWindow);
@@ -807,7 +851,14 @@ long DirPanel::onSidebarPopup(FXObject*, FXSelector, void* ptr)
         new FXMenuCommand(&menu, _("Move Up"), NULL, this, ID_MOVEUP_BOOKMARK);
         new FXMenuCommand(&menu, _("Move Down"), NULL, this, ID_MOVEDOWN_BOOKMARK);
     }
-    if (sidebarContext == sidebarRoots[1] || sidebarContext->kind == SidebarItem::BOOKMARK)
+    if (sidebarContext->kind == SidebarItem::TABGROUP)
+    {
+        new FXMenuCommand(&menu, _("&Open Tab Group"), mininewtabicon, this, ID_SIDEBAR_OPEN_GROUP);
+        new FXMenuCommand(&menu, _("Re&name..."), NULL, this, ID_SIDEBAR_RENAME_GROUP);
+        new FXMenuCommand(&menu, _("&Remove"), miniremovebookicon, this, ID_SIDEBAR_REMOVE_GROUP);
+    }
+    if (sidebarContext == sidebarRoots[1] || sidebarContext->kind == SidebarItem::BOOKMARK ||
+        sidebarContext->kind == SidebarItem::TABGROUP)
     {
         new FXMenuCommand(&menu, _("&Add Bookmark..."), miniaddbookicon, this, ID_ADD_BOOKMARK);
     }
@@ -849,6 +900,36 @@ long DirPanel::onSidebarAction(FXObject*, FXSelector sel, void*)
         PropertiesBox* dialog = new PropertiesBox(this, FXPath::name(path), FXPath::directory(path), true);
         dialog->create();
         dialog->show(PLACEMENT_OWNER);
+    }
+    return 1;
+}
+
+// Open, rename or remove the tab group under the sidebar context menu
+long DirPanel::onSidebarTabGroup(FXObject*, FXSelector sel, void*)
+{
+    if (!sidebarContext || sidebarContext->kind != SidebarItem::TABGROUP)
+    {
+        return 1;
+    }
+    XFileExplorer* window = static_cast<XFileExplorer*>(mainWindow);
+    int index = FXIntVal(sidebarContext->key);
+    if (index < 0 || index >= window->getNumTabGroups())
+    {
+        return 1;
+    }
+    if (FXSELID(sel) == ID_SIDEBAR_OPEN_GROUP)
+    {
+        window->openTabGroup(index);
+    }
+    else if (FXSELID(sel) == ID_SIDEBAR_RENAME_GROUP)
+    {
+        window->renameTabGroup(index);
+    }
+    else if (BOX_CLICKED_OK == MessageBox::question(this, BOX_OK_CANCEL, _("Remove Tab Group"),
+                                                    _("Remove tab group '%s' ?"),
+                                                    window->getTabGroupName(index).text()))
+    {
+        window->removeTabGroup(index);
     }
     return 1;
 }
