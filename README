@@ -51,10 +51,11 @@
  1.7.x of FOX!
 
  Swordfish previews additionally require GIO, GdkPixbuf, librsvg, Poppler GLib,
- Cairo and libwebp development libraries, plus ffmpegthumbnailer at runtime.
+ Cairo, libwebp and LibRaw (0.20 or newer for CR3) development libraries, plus
+ ffmpegthumbnailer at runtime.
  Debian/Ubuntu package names: libglib2.0-dev, libgdk-pixbuf-2.0-dev (or
  libgdk-pixbuf2.0-dev on older releases), librsvg2-dev, libpoppler-glib-dev,
- libcairo2-dev, libwebp-dev and ffmpegthumbnailer.
+ libcairo2-dev, libwebp-dev, libraw-dev and ffmpegthumbnailer.
  Install the swordfish-preview helper together with the main program.
  A focused preview regression is available with:
    bash tests/run-preview-regression.sh

@@ -74,11 +74,16 @@ Offline tests: `/usr/bin/python3 tests/network-discovery-diagnostic-test.py`.
 
 ## Preview engines
 
-The sidebar and Thumbnails view share an asynchronous preview cache. GdkPixbuf
-decodes raster images, libwebp handles WebP, librsvg renders SVG, Poppler renders
+The sidebar, Thumbnails view and Icons view share an asynchronous preview cache.
+GdkPixbuf decodes raster images, libwebp handles WebP, LibRaw extracts the
+embedded preview from camera RAW files (CR3, CR2, NEF, ARW, RAF, ORF, RW2, PEF,
+DNG, SRW and others), librsvg renders SVG, Poppler renders
 the first PDF page, and ffmpegthumbnailer/FFmpeg produces video stills. This does
 not embed a document viewer or video player. Text sidebar excerpts remain bounded
 to 8 KiB. Unsupported or failed previews do not create thumbnail placeholders.
+Icons view keeps every file and shows previews in place of type icons (Preferences
+> File List > Previews). Thumbnails view lists only files with a preview and the
+status bar reports how many files it hides.
 
 Decoding runs in the separate `swordfish-preview` process, one job at a time,
 with a 12-second wall-clock deadline, 8 seconds of CPU time, 512 MiB address

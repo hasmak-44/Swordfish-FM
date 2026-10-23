@@ -1094,6 +1094,11 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     foldersizelist->appendItem(_("Size on disk and item count"));
     foldersizelist->setNumVisible(4);
 
+    group = new FXGroupBox(columns, _("Previews"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    iconthumbnails = new FXCheckButton(group, _("Show image previews in Icons view\tImages, RAW photos, "
+                                                "videos and PDFs show a preview instead of the file type icon"),
+                                       NULL, 0, JUSTIFY_LEFT | LAYOUT_LEFT | ICON_BEFORE_TEXT);
+
     // Fifth tab - Programs
     new FXTabItem(tabbook, _("&Programs"), NULL);
     FXVerticalFrame* programs = createPreferencesPage(tabbook);
@@ -3200,6 +3205,11 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
         FileList::setFolderSizeMode(getApp(), foldersizelist->getCurrentItem());
     }
 
+    if (iconthumbnails->getCheck() != (FXbool)getApp()->reg().readUnsignedEntry("OPTIONS", "icon_thumbnails", true))
+    {
+        FileList::setIconThumbnails(getApp(), iconthumbnails->getCheck());
+    }
+
     // Language has changed
     int langindex = languagelist->getCurrentItem();
     if (langindex >= 0 && langindex < (int)languagecodes.size() && languagecodes[langindex] != oldlanguage)
@@ -3757,6 +3767,7 @@ FXuint PreferencesBox::execute(FXuint placement)
     restoretabs_prev = restoretabs->getCheck();
     show_pathlink_prev = showpathlink->getCheck();
     foldersizelist->setCurrentItem(FileList::getFolderSizeMode(getApp()));
+    iconthumbnails->setCheck(getApp()->reg().readUnsignedEntry("OPTIONS", "icon_thumbnails", true));
 #ifdef STARTUP_NOTIFICATION
     usesn_prev = usesn->getCheck();
 #endif

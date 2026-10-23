@@ -29,6 +29,8 @@ RUN apt-get update \
         libfreetype6-dev \
         libfox-1.6-dev \
         libgdk-pixbuf2.0-dev \
+        libjpeg-dev \
+        liblcms2-dev \
         libpoppler-glib-dev \
         librsvg2-dev \
         libwebp-dev \

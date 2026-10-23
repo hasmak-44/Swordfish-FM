@@ -4,6 +4,7 @@
 #include <poppler.h>
 #include <cairo.h>
 #include <webp/decode.h>
+#include <libraw/libraw.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <cmath>
@@ -30,6 +31,107 @@ static cairo_surface_t* canvas(double width, double height, int size, cairo_t** 
     *context = cairo_create(surface);
     cairo_scale(*context, scale, scale);
     return surface;
+}
+
+static bool isRawImage(const char* path, const char* mime)
+{
+    static const char* const extensions[] =
+    {
+        "3fr", "ari", "arw", "bay", "cap", "cr2", "cr3", "crw", "dcr", "dcs", "dng", "drf", "eip", "erf",
+        "fff", "iiq", "k25", "kdc", "mdc", "mef", "mos", "mrw", "nef", "nrw", "orf", "ori", "pef", "ptx",
+        "pxn", "raf", "raw", "rw2", "rwl", "sr2", "srf", "srw", "x3f", NULL
+    };
+    const char* dot = strrchr(path, '.');
+    if (dot && !strchr(dot, '/'))
+    {
+        for (int i = 0; extensions[i]; ++i)
+        {
+            if (g_ascii_strcasecmp(dot + 1, extensions[i]) == 0) return true;
+        }
+    }
+    return g_content_type_is_a(mime, "image/x-dcraw") || strcmp(mime, "image/x-adobe-dng") == 0;
+}
+
+// Decode the preview the camera embedded in a RAW file, the RAW data itself is never developed
+static GdkPixbuf* rawPreview(const char* path, int size)
+{
+    libraw_data_t* raw = libraw_init(0);
+    if (!raw) return NULL;
+    GdkPixbuf* image = NULL;
+    int status = libraw_open_file(raw, path);
+    if (status == LIBRAW_SUCCESS)
+    {
+        // Prefer the smallest JPEG preview that still fills the requested size, other formats decode slowly
+        int chosen = -1, chosenSize = 0, largest = -1, largestSize = 0;
+        for (int pass = 0; pass < 2 && chosen < 0 && largest < 0; ++pass)
+        {
+            for (int i = 0; i < raw->thumbs_list.thumbcount; ++i)
+            {
+                const libraw_thumbnail_item_t& item = raw->thumbs_list.thumblist[i];
+                if (pass == 0 && item.tformat != LIBRAW_INTERNAL_THUMBNAIL_JPEG) continue;
+                int longest = std::max(item.twidth, item.theight);
+                if (longest > largestSize) { largest = i; largestSize = longest; }
+                if (longest >= size && (chosen < 0 || longest < chosenSize)) { chosen = i; chosenSize = longest; }
+            }
+        }
+        if (chosen < 0) chosen = largest;
+        status = chosen >= 0 ? libraw_unpack_thumb_ex(raw, chosen) : libraw_unpack_thumb(raw);
+    }
+    if (status == LIBRAW_SUCCESS && raw->thumbnail.thumb && raw->thumbnail.tlength > 0)
+    {
+        const libraw_thumbnail_t& thumb = raw->thumbnail;
+        GError* error = NULL;
+        if (thumb.tformat == LIBRAW_THUMBNAIL_JPEG)
+        {
+            GdkPixbufLoader* loader = gdk_pixbuf_loader_new_with_type("jpeg", &error);
+            if (loader)
+            {
+                int width = std::max<int>(1, thumb.twidth), height = std::max<int>(1, thumb.theight);
+                double factor = std::min(1.0, double(size) / std::max(width, height));
+                gdk_pixbuf_loader_set_size(loader, std::max(1, int(width * factor)), std::max(1, int(height * factor)));
+                if (gdk_pixbuf_loader_write(loader, reinterpret_cast<const guchar*>(thumb.thumb), thumb.tlength, &error) &&
+                    gdk_pixbuf_loader_close(loader, &error))
+                {
+                    image = gdk_pixbuf_loader_get_pixbuf(loader);
+                    if (image) g_object_ref(image);
+                }
+                else gdk_pixbuf_loader_close(loader, NULL);
+                g_object_unref(loader);
+            }
+        }
+        else if (thumb.tformat == LIBRAW_THUMBNAIL_BITMAP && thumb.tcolors == 3 &&
+                 thumb.tlength >= unsigned(thumb.twidth) * thumb.theight * 3)
+        {
+            GdkPixbuf* full = gdk_pixbuf_new_from_data(reinterpret_cast<const guchar*>(thumb.thumb), GDK_COLORSPACE_RGB,
+                                                       false, 8, thumb.twidth, thumb.theight, thumb.twidth * 3, NULL, NULL);
+            double factor = std::min(1.0, double(size) / std::max(thumb.twidth, thumb.theight));
+            image = gdk_pixbuf_scale_simple(full, std::max(1, int(thumb.twidth * factor)),
+                                            std::max(1, int(thumb.theight * factor)), GDK_INTERP_BILINEAR);
+            g_object_unref(full);
+        }
+        if (error) { fprintf(stderr, "%s\n", error->message); g_error_free(error); }
+
+        // Embedded previews are stored unrotated, apply the camera orientation
+        const char* exif = image ? gdk_pixbuf_get_option(image, "orientation") : NULL;
+        if (image && (!exif || strcmp(exif, "1") == 0))
+        {
+            GdkPixbufRotation rotation = GDK_PIXBUF_ROTATE_NONE;
+            switch (raw->sizes.flip)
+            {
+                case 3: rotation = GDK_PIXBUF_ROTATE_UPSIDEDOWN; break;
+                case 5: rotation = GDK_PIXBUF_ROTATE_COUNTERCLOCKWISE; break;
+                case 6: rotation = GDK_PIXBUF_ROTATE_CLOCKWISE; break;
+            }
+            if (rotation != GDK_PIXBUF_ROTATE_NONE)
+            {
+                GdkPixbuf* rotated = gdk_pixbuf_rotate_simple(image, rotation);
+                if (rotated) { g_object_unref(image); image = rotated; }
+            }
+        }
+    }
+    else fprintf(stderr, "RAW preview: %s\n", libraw_strerror(status));
+    libraw_close(raw);
+    return image;
 }
 
 int main(int argc, char** argv)
@@ -132,7 +234,8 @@ int main(int argc, char** argv)
     else if (g_str_has_prefix(mime, "image/"))
     {
         GdkPixbuf* image = NULL;
-        if (strcmp(mime, "image/webp") == 0)
+        if (isRawImage(argv[1], mime)) image = rawPreview(argv[1], size);
+        if (!image && strcmp(mime, "image/webp") == 0)
         {
             gchar* data = NULL;
             gsize length;
@@ -161,7 +264,7 @@ int main(int argc, char** argv)
                 g_free(data);
             }
         }
-        else image = gdk_pixbuf_new_from_file_at_scale(argv[1], size, size, true, &error);
+        else if (!image) image = gdk_pixbuf_new_from_file_at_scale(argv[1], size, size, true, &error);
         if (image)
         {
             GdkPixbuf* oriented = gdk_pixbuf_apply_embedded_orientation(image);

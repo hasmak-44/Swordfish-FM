@@ -293,6 +293,7 @@ FXString Preview::request(FXApp* app, const FXString& path, FXint size, FXbool p
 }
 
 FXulong Preview::revision() { return queue.version; }
+FXbool Preview::pending() { return !queue.pending.empty(); }
 FXbool Preview::harvest(pid_t pid, int status)
 {
     if (pid != queue.child) return false;

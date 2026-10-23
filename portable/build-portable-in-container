@@ -36,6 +36,23 @@ mkdir -p "$linuxdeploy_dir"
 (cd "$linuxdeploy_dir" && "$linuxdeploy_appimage" --appimage-extract >/dev/null)
 linuxdeploy="$linuxdeploy_dir/squashfs-root/AppRun"
 
+# Distribution LibRaw packages on older bases predate CR3 and recent cameras.
+libraw_version=0.21.5
+libraw_tarball=/tmp/LibRaw-$libraw_version.tar.gz
+curl --fail --location --retry 3 \
+    --output "$libraw_tarball" \
+    "https://www.libraw.org/data/LibRaw-$libraw_version.tar.gz"
+printf '%s  %s\n' \
+    a74a2e68303d3b9219f82318f935b28c5c4abd7f2c9f7dbf8faa4997c9038305 \
+    "$libraw_tarball" | sha256sum --check
+tar -C /tmp -xzf "$libraw_tarball"
+(cd "/tmp/LibRaw-$libraw_version" \
+    && ./configure --prefix=/usr/local --disable-examples --disable-openmp \
+        --disable-jasper --disable-static \
+    && make -j"${JOBS:-1}" \
+    && make install)
+ldconfig
+
 cd "$source_copy"
 # Never reuse objects compiled on the host: they may need a newer glibc.
 find . \( -name '*.o' -o -name '*.a' -o -name '.dirstamp' \) -type f -delete
@@ -53,7 +70,7 @@ mkdir -p "$output_dir"
 DESTDIR="$output_dir" make install
 
 deploy_args=(--appdir "$output_dir")
-for program in swordfish swfa swfi swfp swfw swordfish-preview swordfish-network; do
+for program in swordfish swfa swfi swfp swfw swordfish-preview swordfish-network xfe-automount; do
     executable="$output_dir/usr/bin/$program"
     if [ ! -x "$executable" ]; then
         printf 'Expected installed program is missing: %s\n' "$executable" >&2
@@ -120,6 +137,8 @@ done
 
 install -m 755 portable/AppRun "$output_dir/AppRun"
 install -m 644 portable/README.md "$output_dir/README.md"
+install -m 755 portable/run-listing-diagnostic "$output_dir/run-listing-diagnostic"
+install -m 644 portable/LISTING-DIAGNOSTIC.md "$output_dir/LISTING-DIAGNOSTIC.md"
 mkdir -p "$output_dir/usr/share/doc/swordfish"
 install -m 644 COPYING "$output_dir/usr/share/doc/swordfish/COPYING"
 mkdir -p "$output_dir/usr/share/doc/unzip"
@@ -132,6 +151,10 @@ for notice in /usr/share/doc/*/copyright; do
     cp -L "$notice" "$output_dir/usr/share/doc/$package/copyright"
 done
 cp -a /usr/share/common-licenses "$output_dir/usr/share/"
+mkdir -p "$output_dir/usr/share/doc/libraw"
+for notice in COPYRIGHT LICENSE.LGPL LICENSE.CDDL; do
+    install -m 644 "/tmp/LibRaw-$libraw_version/$notice" "$output_dir/usr/share/doc/libraw/$notice"
+done
 for program in swfa swfi swfp swfw; do
     ln -s AppRun "$output_dir/run-$program"
 done

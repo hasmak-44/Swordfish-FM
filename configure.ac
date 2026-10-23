@@ -31,7 +31,7 @@ AC_PROG_LN_S
 AC_PROG_MAKE_SET
 PKG_PROG_PKG_CONFIG
 PKG_CHECK_MODULES([PREVIEW], [gio-2.0])
-PKG_CHECK_MODULES([PREVIEW_WORKER], [gdk-pixbuf-2.0 librsvg-2.0 poppler-glib cairo gio-2.0 libwebp])
+PKG_CHECK_MODULES([PREVIEW_WORKER], [gdk-pixbuf-2.0 librsvg-2.0 poppler-glib cairo gio-2.0 libwebp libraw_r])
 CPPFLAGS="$CPPFLAGS $PREVIEW_CFLAGS"
 LIBS="$LIBS $PREVIEW_LIBS"
 AC_PATH_PROG([FFMPEGTHUMBNAILER], [ffmpegthumbnailer])

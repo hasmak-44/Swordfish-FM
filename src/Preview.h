@@ -11,6 +11,7 @@ FXString request(FXApp* app, const FXString& path, FXint size, FXbool priority =
 FXString mimeType(const FXString& path);
 FXbool textType(const FXString& mime);
 FXulong revision();
+FXbool pending();
 FXbool harvest(pid_t pid, int status);
 void shutdown();
 }

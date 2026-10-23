@@ -156,6 +156,7 @@ protected:
     FXString boostdir;                                  // Directory watched for new items
     FXbool allowrefresh = false;                        // Allow or disallow periodic refresh
     FXbool displaythumbnails = false;                   // Display thumbnails
+    int thumbnailHidden = 0;                            // Files not shown by the Thumbnails view
     FXulong previewRevision = 0;
     FXbool remoteBusy = false;
     FXbool remoteChangedPending = false;
@@ -336,6 +337,7 @@ public:
     // Folder size display mode: 0 blank, 1 item count, 2 size on disk, 3 size and count
     static FXuint getFolderSizeMode(FXApp* app);
     static void setFolderSizeMode(FXApp* app, FXuint mode);
+    static void setIconThumbnails(FXApp* app, FXbool show);
 
 public:
     static FXbool compareParents(const IconItem*&, const IconItem*&, int&);
@@ -610,6 +612,15 @@ public:
 
     // Return true if displaying thumbnails
     FXbool shownThumbnails() const;
+
+    // True when file icons are replaced by previews (Thumbnails view, or Icons view if enabled)
+    FXbool loadsPreviews() const;
+
+    // Number of files the Thumbnails view leaves out because they have no preview
+    int getThumbnailHiddenCount() const
+    {
+        return thumbnailHidden;
+    }
 
     // Display or not thumbnails
     void showThumbnails(FXbool display);

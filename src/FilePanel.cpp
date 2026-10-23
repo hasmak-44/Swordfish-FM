@@ -8112,6 +8112,19 @@ long FilePanel::onUpdStatus(FXObject* sender, FXSelector, void*)
                                   FXStringVal(nbfiles).text(), hsize.text());
                 }
             }
+            if (list->getThumbnailHiddenCount() > 0)
+            {
+                FXString hidden;
+                if (list->getThumbnailHiddenCount() == 1)
+                {
+                    hidden = _(" - 1 file without preview is hidden");
+                }
+                else
+                {
+                    hidden.format(_(" - %d files without preview are hidden"), list->getThumbnailHiddenCount());
+                }
+                status += hidden;
+            }
         }
 
         // One item selected

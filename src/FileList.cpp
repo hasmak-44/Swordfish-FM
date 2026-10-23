@@ -1040,6 +1040,19 @@ long FileList::onCmdFolderSizeMode(FXObject*, FXSelector sel, void*)
 }
 
 
+void FileList::setIconThumbnails(FXApp* app, FXbool show)
+{
+    app->reg().writeUnsignedEntry("OPTIONS", "icon_thumbnails", show);
+    for (size_t i = 0; i < zoomLists.size(); ++i)
+    {
+        if (zoomLists[i]->getApp() == app && zoomLists[i]->getViewMode() == VIEW_ICONS)
+        {
+            zoomLists[i]->scan(true);
+        }
+    }
+}
+
+
 long FileList::onUpdFolderSizeMode(FXObject* sender, FXSelector sel, void*)
 {
     FXuint mode = FXSELID(sel) - ID_FOLDERSIZE_NONE;
@@ -5045,7 +5058,7 @@ long FileList::onCmdRefreshTimer(FXObject*, FXSelector, void*)
     if (RemoteDirectory::handles(directory))
     {
         if (allowrefresh && (flags & FLAG_UPDATE) &&
-            displaythumbnails && previewRevision != Preview::revision())
+            loadsPreviews() && previewRevision != Preview::revision())
         {
             previewRevision = Preview::revision();
             scan(true);
@@ -5106,10 +5119,23 @@ long FileList::onCmdRefreshTimer(FXObject*, FXSelector, void*)
         else
         {
             boostcount = 0;
-            FXbool previewsChanged = displaythumbnails && previewRevision != Preview::revision();
+            FXbool previewsChanged = loadsPreviews() && previewRevision != Preview::revision();
             previewRevision = Preview::revision();
             scan(previewsChanged);
             counter = (counter + 1) % REFRESH_FREQUENCY;
+        }
+    }
+
+    // Move previews for the items on screen to the front of the queue (reverse order keeps the first on top)
+    if (loadsPreviews() && Preview::pending())
+    {
+        for (int i = getNumItems() - 1; i >= 0; i--)
+        {
+            FileItem* item = (FileItem*)getItem(i);
+            if (item->isFile() && !item->previewable && isItemVisible(i))
+            {
+                Preview::request(getApp(), getItemPathname(i), getViewIconSize(), true);
+            }
         }
     }
 
@@ -5302,6 +5328,16 @@ void FileList::showHiddenFiles(FXbool shown)
 FXbool FileList::shownThumbnails() const
 {
     return displaythumbnails;
+}
+
+
+FXbool FileList::loadsPreviews() const
+{
+    if (displaythumbnails)
+    {
+        return true;
+    }
+    return getViewMode() == VIEW_ICONS && getApp()->reg().readUnsignedEntry("OPTIONS", "icon_thumbnails", true);
 }
 
 
@@ -6492,7 +6528,7 @@ FXbool FileList::updateItems(FXbool force)
 
             // Attempt to load thumbnails for image files
             item->previewable = false;
-            if (displaythumbnails && item->isFile())
+            if (item->isFile() && loadsPreviews())
             {
                 // Scaled max sizes
                 FXuint bigthumb_size = getViewIconSize() / scalefrac;
@@ -7436,7 +7472,7 @@ fnd:
 
                     // Attempt to load thumbnails for image files
                     item->previewable = false;
-                    if (displaythumbnails && item->isFile())
+                    if (item->isFile() && loadsPreviews())
                     {
                         // Scaled max sizes
                         FXuint bigthumb_size = getViewIconSize() / scalefrac;
@@ -7651,6 +7687,7 @@ fnd:
         }
     }
 
+    thumbnailHidden = 0;
     if (displaythumbnails)
     {
         for (int i = items.no() - 1; i >= 0; --i)
@@ -7659,6 +7696,7 @@ fnd:
             if (!visible->isDirectory() && !visible->previewable)
             {
                 items.erase(i);
+                thumbnailHidden++;
             }
         }
         current = -1;
