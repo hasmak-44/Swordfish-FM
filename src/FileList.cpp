@@ -42,6 +42,211 @@
 
 extern FXMainWindow* mainWindow;
 
+
+// Background folder size computation, shared between a file list and its worker thread
+struct FolderSizeWorker
+{
+    GAsyncQueue* jobs = NULL;
+    GAsyncQueue* results = NULL;
+    gint serial = 0;                                    // Jobs and results of other serials are stale
+    gint refs = 2;                                      // Owner + thread
+};
+
+namespace
+{
+FXuint folderSizeMode = 3;                              // 0 none, 1 item count, 2 size, 3 size + count
+FXbool folderSizeModeRead = false;
+
+struct FolderSizeJob
+{
+    char* path;
+    gint serial;
+};
+
+struct FolderSizeResult
+{
+    char* path;
+    gint serial;
+    guint64 size;
+    guint dirs;
+    guint files;
+    gboolean sized;
+    gboolean ok;
+};
+
+void releaseFolderSizeWorker(FolderSizeWorker* w)
+{
+    if (!g_atomic_int_dec_and_test(&w->refs))
+    {
+        return;
+    }
+    gpointer p;
+    while ((p = g_async_queue_try_pop(w->jobs)))
+    {
+        g_free(((FolderSizeJob*)p)->path);
+        g_free(p);
+    }
+    while ((p = g_async_queue_try_pop(w->results)))
+    {
+        g_free(((FolderSizeResult*)p)->path);
+        g_free(p);
+    }
+    g_async_queue_unref(w->jobs);
+    g_async_queue_unref(w->results);
+    delete w;
+}
+
+// Network file systems only get an item count, a full walk would be too slow
+FXbool folderSizeIsNetwork(const char* path)
+{
+    if (strstr(path, "/gvfs/") || strstr(path, "/.gvfs/"))
+    {
+        return true;
+    }
+    struct statfs fs;
+    if (statfs(path, &fs) != 0)
+    {
+        return true;
+    }
+    switch ((unsigned long)fs.f_type)
+    {
+    case 0x6969UL:      // NFS
+    case 0x517BUL:      // SMB
+    case 0xFF534D42UL:  // CIFS
+    case 0xFE534D42UL:  // SMB2
+    case 0x564C:        // NCP
+    case 0x47504653UL:  // GPFS
+    case 0x5346414FUL:  // AFS
+        return true;
+    }
+    return false;
+}
+
+// Count the direct children, then add up file sizes recursively without leaving the file system
+// Returns false if cancelled
+bool scanFolderSize(FolderSizeWorker* w, gint serial, const char* path, FolderSizeResult* r)
+{
+    struct stat st;
+    if (lstat(path, &st) != 0 || !S_ISDIR(st.st_mode))
+    {
+        return true;
+    }
+    const FXbool wantsize = !folderSizeIsNetwork(path);
+    std::vector<std::string> stack;
+    stack.push_back(path);
+    FXbool top = true;
+    FXuint ticks = 0;
+    while (!stack.empty())
+    {
+        std::string dir = stack.back();
+        stack.pop_back();
+        DIR* dp = opendir(dir.c_str());
+        if (!dp)
+        {
+            if (top)
+            {
+                return true;
+            }
+            continue;
+        }
+        struct dirent* de;
+        while ((de = readdir(dp)))
+        {
+            if ((++ticks & 255) == 0 && g_atomic_int_get(&w->serial) != serial)
+            {
+                closedir(dp);
+                return false;
+            }
+            const char* n = de->d_name;
+            if (n[0] == '.' && (n[1] == 0 || (n[1] == '.' && n[2] == 0)))
+            {
+                continue;
+            }
+            FXbool isdir = (de->d_type == DT_DIR);
+            struct stat cs;
+            FXbool havestat = false;
+            if (wantsize || de->d_type == DT_UNKNOWN)
+            {
+                havestat = fstatat(dirfd(dp), n, &cs, AT_SYMLINK_NOFOLLOW) == 0;
+                if (havestat)
+                {
+                    isdir = S_ISDIR(cs.st_mode);
+                }
+            }
+            if (top)
+            {
+                if (isdir)
+                {
+                    r->dirs++;
+                }
+                else
+                {
+                    r->files++;
+                }
+            }
+            if (!wantsize || !havestat)
+            {
+                continue;
+            }
+            if (isdir)
+            {
+                if (cs.st_dev == st.st_dev)
+                {
+                    stack.push_back(dir + "/" + n);
+                }
+            }
+            else
+            {
+                r->size += (guint64)cs.st_size;
+            }
+        }
+        closedir(dp);
+        r->ok = true;
+        if (!wantsize)
+        {
+            break;
+        }
+        top = false;
+    }
+    r->sized = wantsize;
+    return true;
+}
+
+gpointer folderSizeThread(gpointer data)
+{
+    FolderSizeWorker* w = (FolderSizeWorker*)data;
+    for (;;)
+    {
+        FolderSizeJob* job = (FolderSizeJob*)g_async_queue_pop(w->jobs);
+        if (!job->path)
+        {
+            g_free(job);
+            break;
+        }
+        if (job->serial == g_atomic_int_get(&w->serial))
+        {
+            FolderSizeResult* r = g_new0(FolderSizeResult, 1);
+            r->serial = job->serial;
+            if (scanFolderSize(w, job->serial, job->path, r))
+            {
+                r->path = job->path;
+                job->path = NULL;
+                g_async_queue_push(w->results, r);
+            }
+            else
+            {
+                g_free(r);
+            }
+        }
+        g_free(job->path);
+        g_free(job);
+    }
+    releaseFolderSizeWorker(w);
+    return NULL;
+}
+}
+
+
 namespace
 {
 std::vector<FileList*> zoomLists;
@@ -134,6 +339,9 @@ struct ExpandJob
 FXDEFMAP(FileList) FileListMap[] =
 {
     FXMAPFUNC(SEL_COMMAND, FileList::ID_REMOTE_CHANGED, FileList::onRemoteChanged),
+    FXMAPFUNC(SEL_TIMEOUT, FileList::ID_FOLDERSIZE_TIMER, FileList::onFolderSizeTimer),
+    FXMAPFUNCS(SEL_COMMAND, FileList::ID_FOLDERSIZE_NONE, FileList::ID_FOLDERSIZE_BOTH, FileList::onCmdFolderSizeMode),
+    FXMAPFUNCS(SEL_UPDATE, FileList::ID_FOLDERSIZE_NONE, FileList::ID_FOLDERSIZE_BOTH, FileList::onUpdFolderSizeMode),
     FXMAPFUNCS(SEL_COMMAND, FileList::ID_SHOW_DETAILS, FileList::ID_SHOW_BIG_ICONS, FileList::onCmdView),
     FXMAPFUNCS(SEL_UPDATE, FileList::ID_SHOW_DETAILS, FileList::ID_SHOW_BIG_ICONS, FileList::onUpdView),
     FXMAPFUNCS(SEL_COMMAND, FileList::ID_ZOOM_OUT, FileList::ID_ZOOM_RESET, FileList::onCmdZoom),
@@ -314,6 +522,11 @@ FileList::FileList(FXWindow* focuswin, FXComposite* p, FXuint* ic, FXuint nc,
     }
     zoomLists.push_back(this);
     applyZoom();
+    if (!folderSizeModeRead)
+    {
+        folderSizeModeRead = true;
+        folderSizeMode = FXMIN(getApp()->reg().readUnsignedEntry("OPTIONS", "folder_size_mode", 3), 3);
+    }
     backhist = NULL;
     forwardhist = NULL;
     focuswindow = focuswin;
@@ -545,12 +758,249 @@ FileList::~FileList()
     zoomLists.erase(std::remove(zoomLists.begin(), zoomLists.end(), this), zoomLists.end());
     getApp()->removeTimeout(this, ID_REFRESH_TIMER);
     getApp()->removeTimeout(this, ID_OPEN_TIMER);
+    getApp()->removeTimeout(this, ID_FOLDERSIZE_TIMER);
+    if (foldersizeworker)
+    {
+        // The thread may be busy on a slow disk: cancel it and let it free the shared state when it ends
+        g_atomic_int_inc(&foldersizeworker->serial);
+        g_async_queue_push(foldersizeworker->jobs, g_new0(FolderSizeJob, 1));
+        releaseFolderSizeWorker(foldersizeworker);
+        foldersizeworker = NULL;
+    }
     delete associations;
     delete forwardhist;
     delete backhist;
 
     associations = (FileDict*)-1;
     list = (FileItem*)-1L;
+}
+
+
+// Folder size label of a folder row, queueing the computation if needed
+FXString FileList::folderSizeLabel(const FXString& path, time_t mtime)
+{
+    if (folderSizeMode == 0)
+    {
+        return "";
+    }
+    std::map<std::string, FolderSizeInfo>::iterator it = foldersizes.find(path.text());
+    if ((it != foldersizes.end()) && (it->second.mtime == mtime))
+    {
+        return it->second.done ? formatFolderSize(it->second) : FXString("...");
+    }
+
+    // Keep showing the previous value until the folder has been counted again
+    FXString label = "...";
+    FolderSizeInfo info;
+    if (it != foldersizes.end() && it->second.done)
+    {
+        info = it->second;
+        label = formatFolderSize(info);
+    }
+    else if (foldersizes.size() > 20000)
+    {
+        foldersizes.clear();
+    }
+    info.mtime = mtime;
+    foldersizes[path.text()] = info;
+
+    if (!foldersizeworker)
+    {
+        foldersizeworker = new FolderSizeWorker;
+        foldersizeworker->jobs = g_async_queue_new();
+        foldersizeworker->results = g_async_queue_new();
+        g_thread_unref(g_thread_new("folder-size", folderSizeThread, foldersizeworker));
+    }
+    FolderSizeJob* job = g_new0(FolderSizeJob, 1);
+    job->path = g_strdup(path.text());
+    job->serial = g_atomic_int_get(&foldersizeworker->serial);
+    g_async_queue_push(foldersizeworker->jobs, job);
+    if (foldersizepending++ == 0)
+    {
+        getApp()->addTimeout(this, ID_FOLDERSIZE_TIMER, 150);
+    }
+    return label;
+}
+
+
+FXString FileList::formatFolderSize(const FolderSizeInfo& info) const
+{
+    if (!info.ok)
+    {
+        return "";
+    }
+    FXuint n = info.dirs + info.files;
+    FXString count = (n == 1) ? FXString(_("1 item")) : FXStringVal(n) + _(" items");
+    if (!info.sized || folderSizeMode == 1)
+    {
+        return count;
+    }
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%llu", (unsigned long long)info.size);
+    FXString size = xf_humansize(buf);
+    return (folderSizeMode == 2) ? size : size + ", " + count;
+}
+
+
+// Forget unfinished folder sizes and cancel their computation
+void FileList::resetFolderSizes()
+{
+    for (std::map<std::string, FolderSizeInfo>::iterator it = foldersizes.begin(); it != foldersizes.end();)
+    {
+        if (it->second.done)
+        {
+            ++it;
+        }
+        else
+        {
+            it = foldersizes.erase(it);
+        }
+    }
+    foldersizepending = 0;
+    if (foldersizeworker)
+    {
+        g_atomic_int_inc(&foldersizeworker->serial);
+    }
+}
+
+
+// Show folder sizes computed by the worker thread
+long FileList::onFolderSizeTimer(FXObject*, FXSelector, void*)
+{
+    if (!foldersizeworker)
+    {
+        return 1;
+    }
+    const gint serial = g_atomic_int_get(&foldersizeworker->serial);
+    const int col = getHeaderIndex(ID_COL_SIZE);
+    std::map<std::string, int> rows;
+    FXbool indexed = false, changed = false;
+    FolderSizeResult* r;
+    while ((r = (FolderSizeResult*)g_async_queue_try_pop(foldersizeworker->results)))
+    {
+        std::map<std::string, FolderSizeInfo>::iterator it;
+        if ((r->serial == serial) && ((it = foldersizes.find(r->path)) != foldersizes.end()))
+        {
+            if (foldersizepending > 0)
+            {
+                foldersizepending--;
+            }
+            FolderSizeInfo& info = it->second;
+            info.size = r->size;
+            info.dirs = r->dirs;
+            info.files = r->files;
+            info.sized = r->sized;
+            info.ok = r->ok;
+            info.done = true;
+            if (col >= 0)
+            {
+                if (!indexed)
+                {
+                    for (int i = 0; i < items.no(); i++)
+                    {
+                        if (((FileItem*)items[i])->isDirectory())
+                        {
+                            rows[getItemFullPathname(i).text()] = i;
+                        }
+                    }
+                    indexed = true;
+                }
+                std::map<std::string, int>::iterator row = rows.find(r->path);
+                if (row != rows.end())
+                {
+                    // Replace the size section of the label
+                    FXString& label = ((FileItem*)items[row->second])->label;
+                    int start = 0;
+                    for (int k = 0; k < col && start >= 0; k++)
+                    {
+                        start = label.find('\t', start);
+                        if (start >= 0)
+                        {
+                            start++;
+                        }
+                    }
+                    if (start >= 0)
+                    {
+                        int end = label.find('\t', start);
+                        if (end < 0)
+                        {
+                            end = label.length();
+                        }
+                        label.replace(start, end - start, formatFolderSize(info));
+                        changed = true;
+                    }
+                }
+            }
+        }
+        g_free(r->path);
+        g_free(r);
+    }
+    if (changed)
+    {
+        update();
+    }
+    if (foldersizepending > 0)
+    {
+        getApp()->addTimeout(this, ID_FOLDERSIZE_TIMER, 200);
+    }
+    return 1;
+}
+
+
+// Folder size display mode, shared by all file lists
+void FileList::appendFolderSizeMenu(FXWindow* owner, FXMenuPane* parent, FileList* list)
+{
+    FXMenuPane* pane = new FXMenuPane(owner);
+    new FXMenuRadio(pane, _("&Blank"), list, ID_FOLDERSIZE_NONE);
+    new FXMenuRadio(pane, _("Item &Count"), list, ID_FOLDERSIZE_COUNT);
+    new FXMenuRadio(pane, _("Total &Size"), list, ID_FOLDERSIZE_SIZE);
+    new FXMenuRadio(pane, _("Size &and Count"), list, ID_FOLDERSIZE_BOTH);
+    new FXMenuCascade(parent, _("Folder Si&zes"), NULL, pane);
+}
+
+
+long FileList::onCmdFolderSizeMode(FXObject*, FXSelector sel, void*)
+{
+    folderSizeMode = FXSELID(sel) - ID_FOLDERSIZE_NONE;
+    getApp()->reg().writeUnsignedEntry("OPTIONS", "folder_size_mode", folderSizeMode);
+    for (size_t i = 0; i < zoomLists.size(); ++i)
+    {
+        FileList* l = zoomLists[i];
+        if (l->getApp() == getApp())
+        {
+            l->listItems(true);
+            l->sortItems();
+            l->update();
+        }
+    }
+    return 1;
+}
+
+
+long FileList::onUpdFolderSizeMode(FXObject* sender, FXSelector sel, void*)
+{
+    FXuint mode = FXSELID(sel) - ID_FOLDERSIZE_NONE;
+    sender->handle(this, FXSEL(SEL_COMMAND, (mode == folderSizeMode) ? ID_CHECK : ID_UNCHECK), NULL);
+    return 1;
+}
+
+
+FXbool FileList::getFolderInfo(int index, FXulong& size, FXuint& dirs, FXuint& files, FXbool& sized)
+{
+    if ((index < 0) || (index >= items.no()) || !((FileItem*)items[index])->isDirectory())
+    {
+        return false;
+    }
+    std::map<std::string, FolderSizeInfo>::iterator it = foldersizes.find(getItemFullPathname(index).text());
+    if ((it == foldersizes.end()) || !it->second.done || !it->second.ok)
+    {
+        return false;
+    }
+    size = it->second.size;
+    dirs = it->second.dirs;
+    files = it->second.files;
+    sized = it->second.sized;
+    return true;
 }
 
 
@@ -4433,6 +4883,8 @@ long FileList::onCmdRefresh(FXObject*, FXSelector, void*)
         associations = new FileDict(getApp());
     }
     allowrefresh = true;
+    foldersizes.clear();
+    resetFolderSizes();
     scan(true);
     return 1;
 }
@@ -4680,6 +5132,7 @@ void FileList::setDirectory(const FXString& pathname, const FXbool histupdate, F
                 expandedset = mit->second;
             }
             expandedstamp = 0;
+            resetFolderSizes();
             directory = xf_cleanpath(path);
             clearItems();
             list = NULL;
@@ -6776,6 +7229,10 @@ fnd:
                     if (S_ISDIR(linfo.st_mode) || S_ISLNK(linfo.st_mode))
                     {
                         hsize = "";
+                        if (detailed && !remote && S_ISDIR(linfo.st_mode) && (name != ".."))
+                        {
+                            hsize = folderSizeLabel(pathname, filemtime);
+                        }
                     }
                     else
                     {

@@ -1672,6 +1672,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     new FXMenuCheck(lpanelmenu, _("I&gnore Case"), lpanel->getList(), FileList::ID_SORT_CASE);
     new FXMenuCheck(lpanelmenu, _("Fol&ders First"), lpanel->getList(), FileList::ID_DIRS_FIRST);
     new FXMenuCheck(lpanelmenu, _("Re&verse Order"), lpanel->getList(), FileList::ID_SORT_REVERSE);
+    FileList::appendFolderSizeMenu(this, lpanelmenu, lpanel->getList());
     lpanelmenutitle = new FXMenuTitle(menubar, _("&Left/Top Panel"), NULL, lpanelmenu);
 
     // Right Panel Menu
@@ -1702,6 +1703,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     new FXMenuCheck(rpanelmenu, _("I&gnore Case"), rpanel->getList(), FileList::ID_SORT_CASE);
     new FXMenuCheck(rpanelmenu, _("&Folders First"), rpanel->getList(), FileList::ID_DIRS_FIRST);
     new FXMenuCheck(rpanelmenu, _("Re&verse Order"), rpanel->getList(), FileList::ID_SORT_REVERSE);
+    FileList::appendFolderSizeMenu(this, rpanelmenu, rpanel->getList());
     rpanelmenutitle = new FXMenuTitle(menubar, _("&Right/Bottom Panel"), NULL, rpanelmenu);
 
     // Scripts menu (dynamic menu)

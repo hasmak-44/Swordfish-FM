@@ -901,6 +901,8 @@ FilePanel::FilePanel(FXWindow* owner, const char* nm, FXComposite* p, DirPanel* 
 
     statuslabel = new FXLabel(hframe, _("Status"), NULL, JUSTIFY_LEFT | LAYOUT_LEFT);
 
+    freelabel = new FXLabel(statusbar, "", NULL, JUSTIFY_RIGHT | LAYOUT_RIGHT | LAYOUT_CENTER_Y);
+
     corner = new FXDragCorner(statusbar);
 
     // Panel separator
@@ -5908,6 +5910,7 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuCheck(menu, _("Ignore C&ase"), current->list, FileList::ID_SORT_CASE);
         new FXMenuCheck(menu, _("Fold&ers First"), current->list, FileList::ID_DIRS_FIRST);
         new FXMenuCheck(menu, _("Re&verse Order"), current->list, FileList::ID_SORT_REVERSE);
+        FileList::appendFolderSizeMenu(this, menu, current->list);
     }
     // Non empty selection
     else
@@ -5952,6 +5955,7 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuCheck(submenu, _("Ignore C&ase"), current->list, FileList::ID_SORT_CASE);
         new FXMenuCheck(submenu, _("Fold&ers First"), current->list, FileList::ID_DIRS_FIRST);
         new FXMenuCheck(submenu, _("Re&verse Order"), current->list, FileList::ID_SORT_REVERSE);
+        FileList::appendFolderSizeMenu(this, submenu, current->list);
         new FXMenuCascade(menu, _("Pane&l"), NULL, submenu);
         new FXMenuSeparator(menu);
 
@@ -7833,6 +7837,8 @@ long FilePanel::onUpdStatus(FXObject* sender, FXSelector, void*)
         if (text.empty())
             text = FXStringVal(list->getNumItems()) + _(" shared folder(s). Double-click a share to connect.");
         statuslabel->setText(text);
+        freelabel->setText("");
+        freedir = "";
         return 1;
     }
     // Update the status bar
@@ -7863,9 +7869,38 @@ long FilePanel::onUpdStatus(FXObject* sender, FXSelector, void*)
     if (num > 1)
     {
         int nbdirs = 0;
+
+        // Folders whose computed size is known: their selected sub-items are already included
+        std::vector<FXString> sizeddirs;
         for (int u = 0; u < list->getNumItems(); u++)
         {
-            if (list->isItemSelected(u) && !list->isItemDirectory(u))
+            FXulong fsize;
+            FXuint fdirs, ffiles;
+            FXbool fsized;
+            if (list->isItemSelected(u) && list->isItemDirectory(u) && (list->getItemText(u) != "..") &&
+                list->getFolderInfo(u, fsize, fdirs, ffiles, fsized) && fsized)
+            {
+                sizeddirs.push_back(list->getItemFullPathname(u) + PATHSEPSTRING);
+            }
+        }
+
+        for (int u = 0; u < list->getNumItems(); u++)
+        {
+            if (!list->isItemSelected(u))
+            {
+                continue;
+            }
+            FXbool inside = false;
+            if (!sizeddirs.empty())
+            {
+                FXString path = list->getItemFullPathname(u);
+                for (size_t d = 0; d < sizeddirs.size() && !inside; d++)
+                {
+                    inside = (path.left(sizeddirs[d].length()) == sizeddirs[d]);
+                }
+            }
+
+            if (!list->isItemDirectory(u) && !inside)
             {
                 size += list->getItemFileSize(u);
 #if __WORDSIZE == 64
@@ -7876,9 +7911,24 @@ long FilePanel::onUpdStatus(FXObject* sender, FXSelector, void*)
                 hsize = xf_humansize(usize);
             }
 
-            if (list->isItemSelected(u) && list->isItemDirectory(u) && (list->getItemText(u) != ".."))
+            if (list->isItemDirectory(u) && (list->getItemText(u) != ".."))
             {
                 nbdirs++;
+
+                // Include the computed folder size, if known
+                FXulong fsize;
+                FXuint fdirs, ffiles;
+                FXbool fsized;
+                if (!inside && list->getFolderInfo(u, fsize, fdirs, ffiles, fsized) && fsized)
+                {
+                    size += fsize;
+#if __WORDSIZE == 64
+                    snprintf(usize, sizeof(usize), "%lu", size);
+#else
+                    snprintf(usize, sizeof(usize), "%llu", size);
+#endif
+                    hsize = xf_humansize(usize);
+                }
             }
         }
 
@@ -7995,10 +8045,29 @@ long FilePanel::onUpdStatus(FXObject* sender, FXSelector, void*)
                 beg = 1; // Skip name
             }
 
+            // Folder details replace the size column text
+            int sizecol = -1;
+            FXString folderdetails;
+            FXulong fsize;
+            FXuint fdirs, ffiles;
+            FXbool fsized;
+            if (list->isItemDirectory(item) && list->getFolderInfo(item, fsize, fdirs, ffiles, fsized))
+            {
+                sizecol = list->getHeaderIndex(FileList::ID_COL_SIZE);
+                if (fsized)
+                {
+                    snprintf(usize, sizeof(usize), "%llu", (unsigned long long)fsize);
+                    folderdetails = xf_humansize(usize) + ", ";
+                }
+                folderdetails += (fdirs == 1) ? FXString(_("1 sub-folder")) : FXStringVal(fdirs) + _(" sub-folders");
+                folderdetails += ", ";
+                folderdetails += (ffiles == 1) ? FXString(_("1 file")) : FXStringVal(ffiles) + _(" files");
+            }
+
             // Status text
             for (FXuint i = beg; i < nbHeaders - 1; i++)
             {
-                FXString txt = str.section('\t', i);
+                FXString txt = ((int)i == sizecol) ? folderdetails : str.section('\t', i);
                 if (txt.length() != 0)
                 {
                     status += txt + " | ";
@@ -8010,6 +8079,24 @@ long FilePanel::onUpdStatus(FXObject* sender, FXSelector, void*)
 
     // Set status label
     statuslabel->setText(status);
+
+    // Free space of the current file system, refreshed every few seconds
+    time_t now = time(NULL);
+    if ((freedir != list->getDirectory()) || (now - freestamp >= 3))
+    {
+        freedir = list->getDirectory();
+        freestamp = now;
+        FXString freetext;
+        struct statvfs vfs;
+        if (!RemoteDirectory::handles(freedir) && (::statvfs(freedir.text(), &vfs) == 0) && (vfs.f_blocks > 0))
+        {
+            char bfree[64], btotal[64];
+            snprintf(bfree, sizeof(bfree), "%llu", (unsigned long long)vfs.f_bavail * vfs.f_frsize);
+            snprintf(btotal, sizeof(btotal), "%llu", (unsigned long long)vfs.f_blocks * vfs.f_frsize);
+            freetext.format(_("%s free of %s"), xf_humansize(bfree).text(), xf_humansize(btotal).text());
+        }
+        freelabel->setText(freetext);
+    }
 
     // Prepend the filter pattern if any
     if ((list->getPattern() != "*") && (list->getPattern() != "*.*"))

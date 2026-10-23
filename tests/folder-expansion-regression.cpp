@@ -365,6 +365,8 @@ int main(int argc, char** argv)
     xdgdatahome = homedir + "/data";
     execpath = executable;
     app.reg().writeStringEntry("SETTINGS", "iconpath", icons.text());
+    // Background folder sizes read child folders by design; these checks cover the listing itself
+    app.reg().writeUnsignedEntry("OPTIONS", "folder_size_mode", 0);
     FXuint status;
     assert(loadAppIcons(&app, &status));
     FXMainWindow* shell = new FXMainWindow(&app, "Folder expansion regression", NULL, NULL,

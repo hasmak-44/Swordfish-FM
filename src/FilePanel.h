@@ -35,6 +35,9 @@ protected:
     FXbool editingPath = false;
     FXPacker* statusbar = NULL;
     FXLabel* statuslabel = NULL;
+    FXLabel* freelabel = NULL;
+    FXString freedir;
+    time_t freestamp = 0;
     FXLabel* filterlabel = NULL;
     FXHorizontalSeparator* panelsep = NULL;
     FXButton* activeicon = NULL;

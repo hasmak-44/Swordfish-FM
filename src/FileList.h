@@ -175,6 +175,24 @@ protected:
     FXuint idColTrash[NMAX_COLS + 2] = { 0 };
     FXuint nbColsTrash = 0;
 
+    // Folder sizes and item counts, computed in the background
+    struct FolderSizeInfo
+    {
+        time_t mtime = 0;
+        FXulong size = 0;
+        FXuint dirs = 0;
+        FXuint files = 0;
+        FXbool sized = false;
+        FXbool ok = false;
+        FXbool done = false;
+    };
+    std::map<std::string, FolderSizeInfo> foldersizes;
+    struct FolderSizeWorker* foldersizeworker = NULL;
+    FXuint foldersizepending = 0;
+    FXString folderSizeLabel(const FXString&, time_t);
+    FXString formatFolderSize(const FolderSizeInfo&) const;
+    void resetFolderSizes();
+
     // Static variables
     static int name_index;                              // Index of name column (always 0)
     static int size_index;                              // Index of size column
@@ -297,6 +315,15 @@ public:
     long onCmdDragReject(FXObject*, FXSelector, void*);
     long onUpdRefreshTimer(FXObject*, FXSelector, void*);
     long onCmdCloseFilter(FXObject*, FXSelector, void*);
+    long onFolderSizeTimer(FXObject*, FXSelector, void*);
+    long onCmdFolderSizeMode(FXObject*, FXSelector, void*);
+    long onUpdFolderSizeMode(FXObject*, FXSelector, void*);
+
+    // Folder size details of a folder item: false if not known (yet)
+    FXbool getFolderInfo(int index, FXulong& size, FXuint& dirs, FXuint& files, FXbool& sized);
+
+    // Append the "Folder Sizes" cascade menu
+    static void appendFolderSizeMenu(FXWindow* owner, FXMenuPane* parent, FileList* list);
 
 public:
     static FXbool compareParents(const IconItem*&, const IconItem*&, int&);
@@ -420,6 +447,11 @@ public:
         ID_ZOOM_IN,
         ID_ZOOM_RESET,
         ID_REMOTE_CHANGED,
+        ID_FOLDERSIZE_TIMER,
+        ID_FOLDERSIZE_NONE,
+        ID_FOLDERSIZE_COUNT,
+        ID_FOLDERSIZE_SIZE,
+        ID_FOLDERSIZE_BOTH,
         ID_LAST
     };
 public:
