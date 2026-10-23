@@ -1,6 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 17 October 2026, after publication of 0.0.1 RC4.
+Last updated: 23 October 2026, after commit `7103fe4` and the RC6 Test 1
+build (see sections 3.14 and 9.0). Earlier sections were written after RC4.
 
 **Purpose:** preserve enough history, decisions, architecture and operational
 knowledge to resume development if the chat, development machine or temporary
@@ -36,6 +37,9 @@ Historical implementation details below do not override the current code.
    the previous timeout warning.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
+9. For the latest state (RC5, the RC6 cycle and what to do next), read
+   section 3.14 and section 9.0 first. RC5 superseded RC4 as the latest
+   public release; both stay frozen.
 
 This guide is a documentation addition after the frozen RC4 application commit.
 It is not part of the already-published RC4 source archive.
@@ -452,6 +456,60 @@ automatically, enable SMB1 or weaken authentication.
    - Windows 10/11 has **not** been tested yet.
 4. A fixed bug: the GVFS DNS-SD scheme is `dns-sd`, not `dnssd`.
 
+### 3.14 RC5, tester reports and the RC6 cycle: 18-23 October
+
+**RC5** (`swordfish-portable-0.0.1-rc5`, commit `0dc2a35`, 18 October) shipped
+the SMB share browsing and mount/unmount lifecycle described in section 9.
+It still embedded version `0.0.1-rc4` because `configure.ac` was not bumped.
+
+On 23 October a photographer tester's report arrived (tab drag to Bookmarks,
+mount buttons, About version/links, duplicate shares, false `udisksctl`
+error, stale device rows, long network labels, thumbnail sort headers, tabs
+not restored, and folders listing only some of their files).
+
+- **Incomplete listings:** fault injection showed that silent `lstat`
+  failures drop entries and a `readdir` EIO yields a partial list without
+  an error. The tester's folder could not be reproduced. A GitHub
+  prerelease `swordfish-rc5-listing-diagnostic-1` (TEST ONLY; its
+  `LISTING-DIAGNOSTIC.md` instructions ship in that archive) logs
+  every entry when `SWORDFISH_LISTING_DIAGNOSTIC=1`. **Tester logs are
+  still awaited.** The matching trace code in `src/FileList.cpp` is
+  uncommitted and must not be committed without the user's approval.
+- **Tabs not restored** (`bb7a3d4`): accepting Preferences re-read the
+  registry before saving custom themes, discarding the dialog's changes, so
+  users with custom themes could never enable "Restore tabs". `saveConfig`
+  now re-reads `xferc`, not the `swordfishrc` defaults copy.
+
+The user then gave a to-do list, grouped as: 1 tabs/bookmarks, 2 visibility,
+3 network names, 4 file list, 5 settings/themes, 6 About/version,
+7 big features. Commits on `portable-layout` (all by hasmak-44 with a
+Copilot co-author trailer):
+
+| Commit | Change |
+|---|---|
+| `4704b38` | Tab drops on sidebar Bookmarks from either pane and onto an empty folder; tab menu "Add to Bookmarks" / "Bookmark All Tabs as Group"; groups shown as "name (group)" with Open/Rename/Remove; drag tab onto tab to reorder; active tab tint and minimum width; hover dragged files over a tab for 2 s to switch, drop on a tab to copy/move/link. |
+| `4011f35` | Accent strip on the active pane, bordered sidebar without the "Folders" row, sidebar highlights the active tab's folder (or nearest visible parent; `smb://` highlights its host). |
+| `7671157` | Hide `ADMIN$`, `IPC$`, `PRINT$`, drive `C$` shares and Samba "nobody"; remember discovered computer names (`[NETWORK NAMES]`) and use them in tabs, labels, address bar and title. |
+| `8649e77` | Version `0.0.1-rc6`; Swordfish FM copyright beside the retained Xfe notice; regenerated autotools output. |
+| `dcb4650` | Type-to-find also matches rows inside expanded subfolders (it compared the stored `tv/Show` label). |
+| `d913800` | Background folder sizes and item counts in Details; "Folder Sizes" panel submenu; status bar "X free of Y", selected folder size/counts, multi-selection totals. |
+| `d03ea17` | Size on disk (allocated blocks, hard links once, other filesystems skipped); sorting by Size sorts folders by size or count depending on the display mode (still-counting folders last); mode also in Preferences > File List. |
+| `05d8d80` | Panel path editor sometimes did not appear (path row not marked for layout); most visible in the top/left panel. |
+| `5ea3bca` | Inline rename: F2, Rename menu, or slow second click on the only selected name; extension left unselected; Enter/click away renames, Escape cancels; multiple selections still use the dialog. |
+| `d85ad73` | Icons view shows image previews while still listing every file (Preferences > File List > Previews option); Thumbnails view shows only previewable files and the status bar says how many are hidden; LibRaw extracts embedded previews of CR3, CR2, NEF, ARW, RAF, ORF, RW2, PEF, DNG, SRW with camera rotation; visible items jump the preview queue. The portable build compiles LibRaw 0.21.5 from a pinned tarball. |
+| `7103fe4` | Thumbnail loading no longer jumps: full list and scrollbar appear at once, previews replace icons in place (visible first) instead of a full rescan every second, no scroll-to-top; pending files stay listed and are dropped from Thumbnails view only if their preview fails. |
+
+Decisions recorded with the user:
+
+- Folder size display options are None / Item count / Size on disk / Both.
+  Sorting by size uses size whenever size is shown, otherwise item count.
+- Thumbnail placeholders are deferred: the photographer tester warned that
+  hiding RAW or sidecar files is risky (users move contents and delete the
+  folder). Icons-view previews were chosen instead, keeping every file visible.
+- When the user attaches the `AUTHORS` file with a message, ignore it.
+- The user prefers short replies and plain-text questions (pop-up question
+  forms cover their view).
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -660,6 +718,25 @@ but are not all checked in or guaranteed available in a new checkout.
 - The preview video test has intermittently missed its readiness deadline
   under concurrent heavy builds and passed standalone. Preserve that caveat;
   do not hide a persistent failure by repeatedly rerunning it.
+- `make -j4` can be killed for lack of memory on the 2-core/8 GB Codespace;
+  use `-j2`. Dependency tracking is disabled, so run `make clean` after
+  changing a header that alters a class layout (for example `FileItem`).
+- If the portable build fails with "parent snapshot ... does not exist",
+  the Docker BuildKit cache is corrupt: run `docker builder prune -f` (or use
+  `DOCKER_BUILDKIT=0`) and rebuild.
+- The Codespace root disk (32 GB, shared with Docker) can fill up during a
+  portable build. `/tmp` is a separate, larger disk. After the builder image
+  exists, run the container directly with `--volume /tmp/<scratch>:/tmp` added
+  to the `docker run` line from `build-portable.sh` so compilation uses `/tmp`;
+  `docker builder prune -f` reclaims stale build cache.
+- The portable build downloads and checks LibRaw 0.21.5 by SHA-256; it needs
+  network access to `www.libraw.org`. The container runs as the invoking
+  (non-root) user, so LibRaw is installed into `/tmp/libraw-prefix` and found
+  through `PKG_CONFIG_PATH`/`LD_LIBRARY_PATH`; installing into `/usr/local`
+  failed with "Permission denied" in the first real container build.
+- To exclude uncommitted work from a test build, export the commit first:
+  `git archive HEAD | tar -x -C /tmp/<dir>` and run
+  `portable/build-portable.sh` from that copy.
 
 ## 8. Portable operation, diagnostics and download recovery
 
@@ -709,6 +786,42 @@ Prefer durable explicit GitHub release/tag links. `/releases/latest` skips
 prereleases and must not be assumed to select RC4.
 
 ## 9. Unfinished work and agreements not to mistake for completed features
+
+### 9.0 Current position (23 October 2026)
+
+- Branch `portable-layout`, last pushed commit `7103fe4`. Version string
+  `0.0.1-rc6`, but **RC6 is not released**. Build RC6 only when the user asks.
+- **RC6 Test 1** is a TEST ONLY GitHub prerelease (`swordfish-rc6-test1`)
+  built from a clean export of the application source at `7103fe4`, with the
+  portable build-script fix committed right after it, so the user and tester
+  can check the section 3.14 work. RC5 and the listing diagnostic prerelease
+  stay unchanged.
+- Commit `d85ad73` accidentally added two packaging lines for the
+  uncommitted listing-diagnostic launcher to `build-portable-in-container`;
+  they were removed from the committed script. The working copy still has
+  them for diagnostic builds.
+- To-do groups 1, 2, 3 and 6 are done. Group 4 (file list) is in progress.
+  Remaining in group 4, in order:
+  1. Auto-size columns (double-click the header divider; item 14).
+  2. Column show/hide right-click menu on the header (item 19).
+  3. Draggable (reorderable) columns (item 20).
+  4. Remember view settings per folder.
+  5. Thumbnail placeholders: deferred by the user.
+- Then group 5 (settings/themes) and group 7 (big features).
+- Open items: tester logs for incomplete listings; discovery of unplugged or
+  unmounted volumes; the uncommitted diagnostic/device hunks (in
+  `src/FileList.cpp`, `src/Places.cpp`, `src/XFileExplorer.cpp`,
+  `src/xfeutils.*`, `src/AppLogger.*`, `portable/README.md`) await approval.
+- Uncommitted but deliberately left alone: regenerated `configure`,
+  `aclocal.m4`, `src/Makefile.in`, `tests/folder-expansion-regression.cpp`,
+  and many staged generated/translation files. Never `git add -A`, reset or
+  clean. Commit explicit paths (or explicit hunks through a temporary index).
+
+Development test loop used in this cycle: an extracted RC5 bundle at
+`/tmp/tabrepro/rcu/Swordfish-Portable-0.0.1-RC5` (temporary, may be gone),
+`src/swordfish` copied into its `usr/bin/`, launched under Xvfb display `:91`
+with Fluxbox, driven with `xdotool`/`wmctrl` and checked with screenshots.
+Clear `<bundle>/portable-data/cache/swordfish/previews` for fresh preview tests.
 
 ### Discovery and network management
 

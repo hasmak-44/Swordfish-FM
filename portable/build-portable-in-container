@@ -46,12 +46,15 @@ printf '%s  %s\n' \
     a74a2e68303d3b9219f82318f935b28c5c4abd7f2c9f7dbf8faa4997c9038305 \
     "$libraw_tarball" | sha256sum --check
 tar -C /tmp -xzf "$libraw_tarball"
+# The container runs unprivileged, so install into a private prefix.
+libraw_prefix=/tmp/libraw-prefix
 (cd "/tmp/LibRaw-$libraw_version" \
-    && ./configure --prefix=/usr/local --disable-examples --disable-openmp \
+    && ./configure --prefix="$libraw_prefix" --disable-examples --disable-openmp \
         --disable-jasper --disable-static \
     && make -j"${JOBS:-1}" \
     && make install)
-ldconfig
+export PKG_CONFIG_PATH="$libraw_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export LD_LIBRARY_PATH="$libraw_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 cd "$source_copy"
 # Never reuse objects compiled on the host: they may need a newer glibc.
@@ -137,8 +140,6 @@ done
 
 install -m 755 portable/AppRun "$output_dir/AppRun"
 install -m 644 portable/README.md "$output_dir/README.md"
-install -m 755 portable/run-listing-diagnostic "$output_dir/run-listing-diagnostic"
-install -m 644 portable/LISTING-DIAGNOSTIC.md "$output_dir/LISTING-DIAGNOSTIC.md"
 mkdir -p "$output_dir/usr/share/doc/swordfish"
 install -m 644 COPYING "$output_dir/usr/share/doc/swordfish/COPYING"
 mkdir -p "$output_dir/usr/share/doc/unzip"
