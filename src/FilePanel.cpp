@@ -749,6 +749,9 @@ FilePanel::FilePanel(FXWindow* owner, const char* nm, FXComposite* p, DirPanel* 
     FXVerticalFrame* cont = new FXVerticalFrame(this, LAYOUT_FILL_Y | LAYOUT_FILL_X | FRAME_NONE,
                                                 0, 0, 0, 0, 0, 0, 0, 0, 0, 1);
 
+    // Accent strip showing at a glance which panel is active
+    activebar = new FXFrame(cont, LAYOUT_FILL_X | LAYOUT_FIX_HEIGHT | FRAME_NONE, 0, 0, 0, 4);
+
     // Container for the path linker
     FXHorizontalFrame* pathframe = new FXHorizontalFrame(cont, LAYOUT_LEFT | JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_LINE,
                                                          0, 0, 0, 0, 2, 2, 2, 2);
@@ -1018,6 +1021,7 @@ void FilePanel::setActive()
     // Set active icon
     activeicon->setIcon(minigreenbuttonicon);
     activeicon->setTipText(_("Panel is active"));
+    activebar->setBackColor(getApp()->getSelbackColor());
 
     pathlink->focus();
     current = this;
@@ -1046,6 +1050,7 @@ void FilePanel::setInactive(FXbool force)
     // Set active icon
     activeicon->setIcon(minigraybuttonicon);
     activeicon->setTipText(_("Activate panel"));
+    activebar->setBackColor(activebar->getParent()->getBackColor());
 
     // By default we set the panel inactive
     if (force)
@@ -1093,10 +1098,12 @@ void FilePanel::showActiveIcon(FXbool show)
     if (show)
     {
         activeicon->show();
+        activebar->show();
     }
     else
     {
         activeicon->hide();
+        activebar->hide();
     }
 }
 

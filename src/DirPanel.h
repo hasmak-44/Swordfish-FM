@@ -32,6 +32,9 @@ protected:
     FXbool sidebarPopupOpen = false;
     void createPlaces(FXWindow*, FXComposite*, FXColor, FXColor, FXuint);
     void syncSidebar();
+    void highlightLocation();
+    FXString highlightedPath;
+    FXbool highlightStale = true;
     std::vector<FXString> tabGroupNames();
     FXVerticalFrame* previewOverlay = NULL;
     FXLabel* previewImageLabel = NULL;
@@ -72,6 +75,7 @@ protected:
     void finishNetworkDiscovery();
     void stopNetworkDiscovery();
     FXButton* activeicon = NULL;
+    FXFrame* activebar = NULL;
     FXString trashlocation;
     FXString trashfileslocation;
     FXString trashinfolocation;

@@ -38,6 +38,7 @@ protected:
     FXLabel* filterlabel = NULL;
     FXHorizontalSeparator* panelsep = NULL;
     FXButton* activeicon = NULL;
+    FXFrame* activebar = NULL;
     FXButton* closefilter = NULL;
     FXString name;
     FXbool ctrlkey = false;

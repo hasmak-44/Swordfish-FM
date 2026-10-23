@@ -625,6 +625,7 @@ void DirPanel::syncSidebar()
             continue;
         }
         sidebarSignatures[group] = signature;
+        highlightStale = true;
         SidebarItem* root = sidebarRoots[group];
         std::vector<FXString> removedMounts;
         if (group == 2)
@@ -724,9 +725,106 @@ void DirPanel::syncSidebar()
     }
 }
 
+// Highlight the sidebar entry for the active tab's folder: an exact match, else the
+// deepest visible entry containing it (a Network host for its smb:// locations)
+void DirPanel::highlightLocation()
+{
+    FilePanel* panel = static_cast<XFileExplorer*>(mainWindow)->getCurrentPanel();
+    if (!sidebar || !panel || sidebarPopupOpen || sidebar->grabbed())
+    {
+        return;
+    }
+    FXString path = panel->getDirectory();
+    while (path.length() > 1 && path[path.length() - 1] == '/')
+    {
+        path.trunc(path.length() - 1);
+    }
+    if (path == highlightedPath && !highlightStale)
+    {
+        return;
+    }
+    auto scoreOf = [&path](SidebarItem* item) -> FXint
+    {
+        FXString location = item->path;
+        if (item->kind == SidebarItem::SERVER)
+        {
+            FXString prefix = "smb://" + location;
+            if (!location.empty() && comparecase(path.left(prefix.length()), prefix) == 0 &&
+                (path.length() == prefix.length() || path[prefix.length()] == '/'))
+            {
+                return 2 * prefix.length() + (path.length() == prefix.length());
+            }
+            return 0;
+        }
+        if (item->kind == SidebarItem::GROUP || item->kind == SidebarItem::TABGROUP || location.empty())
+        {
+            return 0;
+        }
+        while (location.length() > 1 && location[location.length() - 1] == '/')
+        {
+            location.trunc(location.length() - 1);
+        }
+        if (path == location)
+        {
+            return 2 * location.length() + 1;
+        }
+        if (location == "/" || path.left(location.length() + 1) == location + "/")
+        {
+            return 2 * location.length();
+        }
+        return 0;
+    };
+
+    // An entry the user picked keeps the highlight over an equally good one
+    SidebarItem* best = static_cast<SidebarItem*>(sidebar->getCurrentItem());
+    FXint bestScore = (best && best->isSelected()) ? scoreOf(best) : 0;
+
+    // Visible entries in display order, so ties keep the earlier one (Places before Bookmarks)
+    for (FXTreeItem* node = sidebar->getFirstItem(); node; )
+    {
+        SidebarItem* item = static_cast<SidebarItem*>(node);
+        if (node->isExpanded() && node->getFirst())
+        {
+            node = node->getFirst();
+        }
+        else
+        {
+            while (node && !node->getNext())
+            {
+                node = node->getParent();
+            }
+            node = node ? node->getNext() : NULL;
+        }
+        FXint score = scoreOf(item);
+        if (score > bestScore)
+        {
+            best = item;
+            bestScore = score;
+        }
+    }
+    if (bestScore == 0)
+    {
+        best = NULL;
+    }
+    highlightedPath = path;
+    highlightStale = false;
+    if (best && best->isSelected() && sidebar->getCurrentItem() == best)
+    {
+        return;
+    }
+    sidebar->killSelection();
+    if (best)
+    {
+        sidebar->selectItem(best);
+        sidebar->setCurrentItem(best);
+        sidebar->makeItemVisible(best);
+    }
+}
+
 long DirPanel::onSidebarRefresh(FXObject*, FXSelector, void*)
 {
     syncSidebar();
+    highlightLocation();
     getApp()->addTimeout(this, ID_SIDEBAR_REFRESH, 250);
     return 1;
 }
@@ -742,6 +840,7 @@ long DirPanel::onSidebarExpand(FXObject*, FXSelector sel, void* ptr)
     {
         sidebar->onCollapseItem(NULL, sel, ptr);
     }
+    highlightStale = true;
     if (item && item->kind == SidebarItem::GROUP)
     {
         FXString setting = item->key + "_collapsed";
@@ -939,11 +1038,17 @@ DirPanel::DirPanel(FXWindow* owner, FXComposite* p, FXColor listbackcolor, FXCol
                    FXuint opts, int x, int y, int w, int h) :
     FXVerticalFrame(p, opts, x, y, w, h, 0, 0, 0, 0)
 {
+    setFrameStyle(FRAME_LINE);
+
     // Construct directory panel
     FXVerticalFrame* cont = new FXVerticalFrame(this, LAYOUT_FILL_Y | LAYOUT_FILL_X | FRAME_NONE, 0, 0, 0, 0, 0, 0, 0,
                                                 -1);
+    activebar = new FXFrame(cont, LAYOUT_FILL_X | LAYOUT_FIX_HEIGHT | FRAME_NONE, 0, 0, 0, 4);
     FXPacker* packer = new FXHorizontalFrame(cont, LAYOUT_LEFT | JUSTIFY_LEFT | LAYOUT_FILL_X | FRAME_NONE, 0, 0, 0, 0,
                                              0, 0, 1, 0);
+
+    // The title row only duplicated the active-panel accent strip
+    packer->hide();
 
     // Visually indicate if the panel is active
     activeicon = new FXButton(packer, "", minigreenbuttonicon, this, DirPanel::ID_FILELIST,
@@ -1153,6 +1258,7 @@ void DirPanel::setActive()
     // Set active icon
     activeicon->setIcon(minigreenbuttonicon);
     activeicon->setTipText(_("Panel is active"));
+    activebar->setBackColor(getApp()->getSelbackColor());
     isactive = true;
 
     // Set focus on directory list, if displayed
@@ -1173,6 +1279,7 @@ void DirPanel::setInactive()
     // Set active icon
     activeicon->setIcon(minigraybuttonicon);
     activeicon->setTipText(_("Activate panel"));
+    activebar->setBackColor(activebar->getParent()->getBackColor());
     isactive = false;
 }
 
