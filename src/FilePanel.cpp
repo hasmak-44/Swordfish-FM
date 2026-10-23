@@ -2546,7 +2546,7 @@ void FilePanel::finishPathEditing()
         pathtext->show();
         pathlink->hide();
     }
-    recalc();
+    pathedit->getParent()->recalc();
 }
 
 
@@ -2564,7 +2564,8 @@ long FilePanel::onCmdEditPath(FXObject* sender, FXSelector, void*)
     pathtext->hide();
     pathedit->setText(list->getDirectory());
     pathedit->show();
-    recalc();
+    // show() does not dirty the path row, so recalc it directly to lay out the editor
+    pathedit->getParent()->recalc();
     pathedit->setFocus();
     pathedit->selectAll();
     return 1;
