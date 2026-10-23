@@ -256,6 +256,32 @@ FXDEFMAP(TabDragButton) TabDragButtonMap[] =
 FXIMPLEMENT(TabDragButton, FXButton, TabDragButtonMap, ARRAYNUMBER(TabDragButtonMap))
 
 
+// Tab label for a folder: SMB mounts as share@computer, MTP devices by model, servers by name
+static FXString tabLabel(const FXString& pathname)
+{
+    if (pathname == PATHSEPSTRING)
+    {
+        return PATHSEPSTRING;
+    }
+    if (RemoteDirectory::isServer(pathname))
+    {
+        FXString host = pathname.mid(6, pathname.length() - 6);
+        return RemoteDirectory::hostName(host.before('/'));
+    }
+    FXString name = FXPath::name(pathname);
+    if (name.left(10) == "smb-share:")
+    {
+        FXString server = name.mid(name.find("server=") + 7, name.length()).before(',');
+        FXString share = name.mid(name.find("share=") + 6, name.length()).before(',');
+        return share.substitute("%20", " ") + "@" + RemoteDirectory::hostName(server);
+    }
+    if (name.left(4) == "mtp:")
+    {
+        return name.after('_').before('_', 2);
+    }
+    return name;
+}
+
 FXDEFMAP(TabButtons) TabButtonsMap[] =
 {
     FXMAPFUNC(SEL_COMMAND, TabButtons::ID_NEW_TAB, TabButtons::onCmdNewTab),
@@ -429,50 +455,7 @@ void TabButtons::addTab(FXString pathname, FXbool activate)
         tabViews[index] = filepanel->getList()->getViewMode();
 
         // Tab label
-        if (pathname == PATHSEPSTRING)
-        {
-            tabButtons[index]->setText(PATHSEPSTRING);
-        }
-        else
-        {
-            FXString name = FXPath::name(pathname);
-
-            // SMB mount
-            if (name.left(10) == "smb-share:")
-            {
-                FXString tmp;
-                int pos = 0;
-
-                // Server name
-                pos = name.find("server=") + 7;
-                tmp = name.right(name.length() - pos);
-                FXString server = tmp.before(',');
-
-                // Share name
-                pos = name.find("share=") + 6;
-                tmp = name.right(name.length() - pos);
-                FXString share = tmp.before(',');
-                
-                // Tab label
-                FXString label = share.substitute("%20", " ") + "@" + server;
-                tabButtons[index]->setText(label);
-            }
-            
-            // MTP mount
-            else if (name.left(4) == "mtp:")
-            {
-                // Tab label
-                FXString label = name.after('_');
-                label = label.before('_', 2);
-                tabButtons[index]->setText(label);
-            }
-            
-            // Other
-            else
-            {
-                tabButtons[index]->setText(name);
-            }
-        }
+        tabButtons[index]->setText(tabLabel(pathname));
 
         // Set directory
         filepanel->setDirectory(pathname);
@@ -715,7 +698,7 @@ void TabButtons::closeMount(const FXString& mountpoint)
         nbActiveTabs = 1;
         tabPaths[0] = FXSystem::getHomeDirectory();
         tabViews[0] = filepanel->getList()->getViewMode();
-        tabButtons[0]->setText(FXPath::name(tabPaths[0]));
+        tabButtons[0]->setText(tabLabel(tabPaths[0]));
     }
     currentTab = activeRemoved ? FXMIN(oldCurrent, nbActiveTabs - 1) : selected;
     prevTab = currentTab;
@@ -759,50 +742,7 @@ long TabButtons::onUpdCurrentTab(FXObject* senderbj, FXSelector sel, void* ptr)
     // Set current name and path
     tabPaths[currentTab] = pathname;
     tabViews[currentTab] = filepanel->getList()->getViewMode();
-    if (pathname == PATHSEPSTRING)
-    {
-        tabButtons[currentTab]->setText(PATHSEPSTRING);
-    }
-    else
-    {
-        FXString name = FXPath::name(pathname);
-
-        // SMB mount
-        if (name.left(10) == "smb-share:")
-        {
-            FXString tmp;
-            int pos = 0;
-
-            // Server name
-            pos = name.find("server=") + 7;
-            tmp = name.right(name.length() - pos);
-            FXString server = tmp.before(',');
-
-            // Share name
-            pos = name.find("share=") + 6;
-            tmp = name.right(name.length() - pos);
-            FXString share = tmp.before(',');
-            
-            // Tab label
-            FXString label = share.substitute("%20", " ") + "@" + server;
-            tabButtons[currentTab]->setText(label);
-        }
-        
-        // MTP mount
-        else if (name.left(4) == "mtp:")
-        {
-            // Tab label
-            FXString label = name.after('_');
-            label = label.before('_', 2);
-            tabButtons[currentTab]->setText(label);
-        }
-        
-        // Other
-        else
-        {
-            tabButtons[currentTab]->setText(name);
-        }
-    }
+    tabButtons[currentTab]->setText(tabLabel(pathname));
 
     return 0;
 }

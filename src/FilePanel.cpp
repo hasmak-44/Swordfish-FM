@@ -8054,7 +8054,7 @@ void FilePanel::updatePath(FXbool resetEditor)
         pathlink->show();
         pathtext->hide();
     }
-    pathtext->setText(list->getDirectory());
+    pathtext->setText(RemoteDirectory::displayPath(list->getDirectory()));
     if (!editingPath || resetEditor)
     {
         pathedit->setText(list->getDirectory());

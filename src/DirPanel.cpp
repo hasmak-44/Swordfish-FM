@@ -3,6 +3,7 @@
 
 #include "AppLogger.h"
 #include "Preview.h"
+#include "RemoteDirectory.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -560,6 +561,16 @@ void DirPanel::createPlaces(FXWindow* owner, FXComposite* parent, FXColor back, 
         }
     }
     syncSidebar();
+
+    // Names of computers found earlier, for tabs restored before a new search
+    FXStringDict* names = getApp()->reg().find("NETWORK NAMES");
+    if (names)
+    {
+        for (FXint i = names->first(); i < names->size(); i = names->next(i))
+        {
+            RemoteDirectory::setHostName(names->key(i), names->data(i));
+        }
+    }
 }
 
 // Names of the tab groups saved from the Bookmarks menu ("groupN = name;id" in [TAB GROUPS])
@@ -756,7 +767,8 @@ void DirPanel::highlightLocation()
             }
             return 0;
         }
-        if (item->kind == SidebarItem::GROUP || item->kind == SidebarItem::TABGROUP || location.empty())
+        if (item->kind == SidebarItem::GROUP || item->kind == SidebarItem::TABGROUP || location.empty() ||
+            path[0] != '/')
         {
             return 0;
         }
@@ -2124,6 +2136,14 @@ void DirPanel::appendNetworkResult(FXString line)
     if (server.name.empty())
     {
         server.name = server.host;
+    }
+    else if (comparecase(server.name, server.host) != 0 && !server.local)
+    {
+        RemoteDirectory::setHostName(server.host, server.name);
+        if (getApp()->reg().readStringEntry("NETWORK NAMES", server.host.text(), "") != server.name)
+        {
+            getApp()->reg().writeStringEntry("NETWORK NAMES", server.host.text(), server.name.text());
+        }
     }
     std::vector<NetworkServer>::iterator existing = networkServers.begin();
     while (existing != networkServers.end() && existing->key != server.key)
@@ -5570,7 +5590,7 @@ long DirPanel::onUpdTitle(FXObject* sender, FXSelector, void*)
 
     // Path of the current directory in the file panel
     FilePanel* currentpanel = ((XFileExplorer*)mainWindow)->getCurrentPanel();
-    FXString path = currentpanel->getDirectory();
+    FXString path = RemoteDirectory::displayPath(currentpanel->getDirectory());
 
     // Update the path in the window title
     if (getuid() == 0)

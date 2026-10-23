@@ -26,5 +26,9 @@ FXString error(const FXString&);
 void refresh(const FXString&);
 void release(FXObject*, const FXString& subtree = FXString::null);
 FXbool harvest(pid_t, int);
+// Discovered computer names, so tabs and titles can show them instead of an address
+void setHostName(const FXString& host, const FXString& name);
+FXString hostName(const FXString& host);
+FXString displayPath(const FXString& path);
 }
 #endif

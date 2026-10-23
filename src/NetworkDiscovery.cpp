@@ -26,6 +26,16 @@ struct DirectoryLoad
     bool mounted = false;
 };
 
+// Windows administrative pseudo-shares (ADMIN$, IPC$, PRINT$, C$...) cannot be opened from
+// other systems, and "nobody" is Samba's service account rather than a real share.
+bool unusableShare(const char* name)
+{
+    std::string share(name);
+    for (char& c : share) c = static_cast<char>(g_ascii_tolower(c));
+    return share == "admin$" || share == "ipc$" || share == "print$" || share == "nobody" ||
+           (share.length() == 2 && g_ascii_isalpha(share[0]) && share[1] == '$');
+}
+
 void nextEntries(GObject* source, GAsyncResult* result, gpointer data)
 {
     DirectoryLoad* load = static_cast<DirectoryLoad*>(data);
@@ -47,6 +57,7 @@ void nextEntries(GObject* source, GAsyncResult* result, gpointer data)
             const char* targetUri = g_file_info_get_attribute_string(info, G_FILE_ATTRIBUTE_STANDARD_TARGET_URI);
             if (g_file_info_get_file_type(info) != G_FILE_TYPE_MOUNTABLE &&
                 (!targetUri || !g_str_has_prefix(targetUri, "smb://"))) continue;
+            if (unusableShare(name)) continue;
         }
         guint32 mode = g_file_info_get_attribute_uint32(info, G_FILE_ATTRIBUTE_UNIX_MODE);
         GFileType type = g_file_info_get_file_type(info);

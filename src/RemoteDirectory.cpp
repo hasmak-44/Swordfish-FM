@@ -498,3 +498,39 @@ FXbool RemoteDirectory::harvest(pid_t pid, int status)
     }
     return false;
 }
+
+namespace
+{
+std::map<std::string, FXString>& hostNames()
+{
+    static std::map<std::string, FXString> names;
+    return names;
+}
+}
+
+void RemoteDirectory::setHostName(const FXString& host, const FXString& name)
+{
+    FXString lower = host;
+    lower.lower();
+    if (name.empty() || comparecase(name, host) == 0)
+        hostNames().erase(lower.text());
+    else
+        hostNames()[lower.text()] = name;
+}
+
+FXString RemoteDirectory::hostName(const FXString& host)
+{
+    FXString lower = host;
+    lower.lower();
+    auto it = hostNames().find(lower.text());
+    return it == hostNames().end() ? host : it->second;
+}
+
+FXString RemoteDirectory::displayPath(const FXString& path)
+{
+    if (comparecase(path.left(6), "smb://") != 0) return path;
+    FXString rest = path.mid(6, path.length() - 6);
+    FXString host = rest.before('/');
+    FXString name = hostName(host);
+    return name == host ? path : "smb://" + name + rest.mid(host.length(), rest.length() - host.length());
+}
