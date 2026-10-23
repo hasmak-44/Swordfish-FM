@@ -2135,6 +2135,19 @@ int IconList::findItem(const FXString& text, int start, FXuint flgs) const
 }
 
 
+// Type-to-find match: rows of expanded sub folders are labelled "sub/name", so compare the name only
+static FXbool lookupMatches(const FXString& label, const FXString& text, FXbool ignorecase)
+{
+    FXString name = label.section('\t', 0);
+    int slash = name.rfind(PATHSEPCHAR);
+    if (slash >= 0)
+    {
+        name = name.mid(slash + 1, name.length());
+    }
+    return ignorecase ? (compcase(name, text, text.length()) == 0) : (comp(name, text, text.length()) == 0);
+}
+
+
 // Get item by data
 int IconList::findItemByData(const void* ptr, int start, FXuint flgs) const
 {
@@ -3520,6 +3533,11 @@ hop:
 
     case KEY_space:
     case KEY_KP_Space:
+        // While typing a name, a plain space is part of the name
+        if (!lookup.empty() && !(event->state & (SHIFTMASK | CONTROLMASK | ALTMASK)))
+        {
+            goto typed;
+        }
         lookup = FXString::null;
 
         if ((0 <= current) && items[current]->isEnabled())
@@ -3588,17 +3606,20 @@ hop:
         {
             return 0;
         }
+typed:
         lookup.append(event->text);
         getApp()->addTimeout(this, ID_LOOKUPTIMER, getApp()->getTypingSpeed());
 
-        // String lookup can be case insensitive now
-        if (ignorecase)
+        // Search forward from the current item and wrap, including rows of expanded sub folders
+        index = -1;
+        for (int n = 0; n < items.no(); n++)
         {
-            index = findItem(lookup, current, SEARCH_FORWARD | SEARCH_WRAP | SEARCH_PREFIX | SEARCH_IGNORECASE);
-        }
-        else
-        {
-            index = findItem(lookup, current, SEARCH_FORWARD | SEARCH_WRAP | SEARCH_PREFIX);
+            int i = ((current < 0 ? 0 : current) + n) % items.no();
+            if (lookupMatches(items[i]->getText(), lookup, ignorecase))
+            {
+                index = i;
+                break;
+            }
         }
 
         if (0 <= index)
