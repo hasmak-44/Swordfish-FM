@@ -3,7 +3,7 @@
 #
 
 # Initialize
-AC_INIT([swordfish],[0.0.1-rc4])
+AC_INIT([swordfish],[0.0.1-rc6])
 AC_CONFIG_SRCDIR([src/XFileExplorer.cpp])
 AM_INIT_AUTOMAKE([subdir-objects -Wall])
 AC_CONFIG_HEADERS([config.h])

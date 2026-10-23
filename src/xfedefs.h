@@ -16,7 +16,8 @@ enum
 
 
 #ifndef COPYRIGHT
-#define COPYRIGHT    "Copyright (C) 2002-2026 Roland Baudin (roland65@free.fr)"
+#define COPYRIGHT    "Swordfish FM Copyright (C) 2026 Hassanein Makhlouf (hasmak-44)\n" \
+                     "Xfe Copyright (C) 2002-2026 Roland Baudin (roland65@free.fr)"
 #endif
 
 // Default normal font
