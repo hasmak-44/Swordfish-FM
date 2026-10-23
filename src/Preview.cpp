@@ -33,6 +33,7 @@ public:
     FXApp* app = NULL;
     std::deque<Job> pending;
     std::set<std::string> known;
+    std::set<std::string> failed;
     Job active;
     pid_t child = -1;
     FXTime started = 0;
@@ -103,11 +104,15 @@ void PreviewQueue::completed(int status)
         stat(active.temporary.text(), &info) == 0 && info.st_size > 0)
     {
         if (rename(active.temporary.text(), active.output.text()) != 0)
+        {
+            failed.insert(active.output.text());
             appLog(APP_LOG_ERRORS, "preview-cache-publish-failed", active.source + ": " + strerror(errno));
+        }
         else known.erase(active.output.text());
     }
     else
     {
+        failed.insert(active.output.text());
         FXString reason = timedOut ? "time limit exceeded" : "decoder failed";
         FXFile log;
         if (log.open(active.diagnostic, FXIO::Reading))
@@ -153,6 +158,7 @@ long PreviewQueue::tick(FXObject*, FXSelector, void*)
         if (output < 0)
         {
             appLog(APP_LOG_ERRORS, "preview-cache-create-failed", strerror(errno));
+            failed.insert(active.output.text());
             ++version;
         }
         else
@@ -234,8 +240,9 @@ FXbool Preview::textType(const FXString& mime)
            mime == "application/json" || mime == "application/xml");
 }
 
-FXString Preview::request(FXApp* app, const FXString& path, FXint size, FXbool priority)
+FXString Preview::request(FXApp* app, const FXString& path, FXint size, FXbool priority, FXbool* waiting)
 {
+    if (waiting) *waiting = false;
     struct stat info;
     if (stat(path.text(), &info) != 0 || !S_ISREG(info.st_mode)) return "";
     queue.app = app;
@@ -268,15 +275,18 @@ FXString Preview::request(FXApp* app, const FXString& path, FXint size, FXbool p
                 }
             }
         }
+        if (waiting) *waiting = !queue.failed.count(output.text());
         return "";
     }
-    if (queue.pending.size() >= 128 && !priority) return "";
     FXString mime = mimeType(path);
     if (mime.left(6) != "image/" && mime.left(6) != "video/" && mime != "application/pdf") return "";
+    if (waiting) *waiting = true;
+    if (queue.pending.size() >= 128 && !priority) return "";
     if (g_mkdir_with_parents(queue.directory.text(), 0700) != 0)
     {
         if (!queue.cacheError) appLog(APP_LOG_ERRORS, "preview-cache-unavailable", strerror(errno));
         queue.cacheError = true;
+        if (waiting) *waiting = false;
         return "";
     }
     Job job = { FXPath::absolute(path), output, "", "", size };
@@ -306,5 +316,6 @@ void Preview::shutdown()
     queue.stop();
     queue.pending.clear();
     queue.known.clear();
+    queue.failed.clear();
     queue.app = NULL;
 }

@@ -7,7 +7,8 @@
 namespace Preview
 {
 // Returns an empty path while queued or when the format cannot be previewed.
-FXString request(FXApp* app, const FXString& path, FXint size, FXbool priority = false);
+// waiting is set when an empty result may still turn into a preview later.
+FXString request(FXApp* app, const FXString& path, FXint size, FXbool priority = false, FXbool* waiting = NULL);
 FXString mimeType(const FXString& path);
 FXbool textType(const FXString& mime);
 FXulong revision();

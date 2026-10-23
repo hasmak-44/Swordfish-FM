@@ -5061,7 +5061,7 @@ long FileList::onCmdRefreshTimer(FXObject*, FXSelector, void*)
             loadsPreviews() && previewRevision != Preview::revision())
         {
             previewRevision = Preview::revision();
-            scan(true);
+            refreshPreviews();
         }
         getApp()->addTimeout(this, ID_REFRESH_TIMER, REFRESH_INTERVAL);
         return 0;
@@ -5121,7 +5121,11 @@ long FileList::onCmdRefreshTimer(FXObject*, FXSelector, void*)
             boostcount = 0;
             FXbool previewsChanged = loadsPreviews() && previewRevision != Preview::revision();
             previewRevision = Preview::revision();
-            scan(previewsChanged);
+            scan(false);
+            if (previewsChanged)
+            {
+                refreshPreviews();
+            }
             counter = (counter + 1) % REFRESH_FREQUENCY;
         }
     }
@@ -5132,7 +5136,7 @@ long FileList::onCmdRefreshTimer(FXObject*, FXSelector, void*)
         for (int i = getNumItems() - 1; i >= 0; i--)
         {
             FileItem* item = (FileItem*)getItem(i);
-            if (item->isFile() && !item->previewable && isItemVisible(i))
+            if (item->previewPending && isItemVisible(i))
             {
                 Preview::request(getApp(), getItemPathname(i), getViewIconSize(), true);
             }
@@ -5338,6 +5342,129 @@ FXbool FileList::loadsPreviews() const
         return true;
     }
     return getViewMode() == VIEW_ICONS && getApp()->reg().readUnsignedEntry("OPTIONS", "icon_thumbnails", true);
+}
+
+
+FXbool FileList::loadPreviewIcons(FileItem* item, const FXString& pathname, FXbool isLink, FXbool isBrokenLink)
+{
+    item->previewable = false;
+    item->previewPending = false;
+    if (!item->isFile() || !loadsPreviews() || !associations || (item->state & FileItem::FIFO))
+    {
+        return false;
+    }
+
+    FXbool waiting = false;
+    FXString cached = Preview::request(getApp(), pathname, getViewIconSize(), false, &waiting);
+    item->previewPending = waiting;
+    if (cached.empty() || isBrokenLink)
+    {
+        return false;
+    }
+    FXIcon* bigthumb = associations->getIconDict()->getIconSource()->loadIconFile(cached);
+    if (!bigthumb)
+    {
+        item->previewPending = false;
+        return false;
+    }
+
+    // Scaled max sizes
+    FXuint max_bigthumb_size = getViewIconSize();
+    FXuint max_minithumb_size = scalefrac * getApp()->reg().readUnsignedEntry("SETTINGS", "minithumb_size", 16);
+
+    // Possibly scale the big icon (best quality)
+    FXuint w = bigthumb->getWidth();
+    FXuint h = bigthumb->getHeight();
+    if ((w > max_bigthumb_size) || (h > max_bigthumb_size))
+    {
+        if (w > h)
+        {
+            bigthumb->scale(max_bigthumb_size, (max_bigthumb_size * h) / w, 1);
+        }
+        else
+        {
+            bigthumb->scale((max_bigthumb_size * w) / h, max_bigthumb_size, 1);
+        }
+        w = bigthumb->getWidth();
+        h = bigthumb->getHeight();
+    }
+
+    // Copy the big icon to the mini icon (faster than direct rescaling)
+    FXIcon* minithumb = new FXIcon(getApp());
+    FXColor* tmpdata;
+    if (!FXMEMDUP(&tmpdata, bigthumb->getData(), FXColor, w * h))
+    {
+        throw FXMemoryException(_("Unable to load image"));
+    }
+    minithumb->setData(tmpdata, IMAGE_OWNED, w, h);
+
+    // Possibly scale the mini icon (best quality)
+    if ((w > max_minithumb_size) || (h > max_minithumb_size))
+    {
+        if (w > h)
+        {
+            minithumb->scale(max_minithumb_size, (max_minithumb_size * h) / w, 1);
+        }
+        else
+        {
+            minithumb->scale((max_minithumb_size * w) / h, max_minithumb_size, 1);
+        }
+    }
+
+    // Set thumbnail icons as owned
+    if (isLink)
+    {
+        item->setBigIcon(bigthumb, true, biglinkbadgeicon);
+        item->setMiniIcon(minithumb, true, minilinkbadgeicon);
+    }
+    else
+    {
+        item->setBigIcon(bigthumb, true);
+        item->setMiniIcon(minithumb, true);
+    }
+    item->previewable = true;
+    return true;
+}
+
+
+void FileList::refreshPreviews()
+{
+    if (!loadsPreviews())
+    {
+        return;
+    }
+    FXbool changed = false;
+    FXbool dropped = false;
+    for (int i = 0; i < items.no(); i++)
+    {
+        FileItem* item = (FileItem*)items[i];
+        if (item->previewPending)
+        {
+            if (loadPreviewIcons(item, getItemPathname(i), item->isSymlink(), false))
+            {
+                scaleItemIcons(item);
+                if (id())
+                {
+                    item->create();
+                }
+                changed = true;
+            }
+            else if (!item->previewPending && displaythumbnails)
+            {
+                dropped = true;
+            }
+        }
+    }
+
+    // A file that could not be previewed leaves the Thumbnails view
+    if (dropped)
+    {
+        scan(true);
+    }
+    else if (changed)
+    {
+        update();
+    }
 }
 
 
@@ -6161,8 +6288,6 @@ FXbool FileList::updateItems(FXbool force)
     FileAssoc* fileassoc;
     FXString filetype, lowext;
     FXIcon* big, * mini;
-    FXIcon* bigthumb = NULL, * minithumb = NULL;
-    FXIconSource* source;
     time_t filemtime, filectime;
     struct stat info, linfo;
     FXbool isLink, isBrokenLink, isLinkToDir;
@@ -6527,91 +6652,7 @@ FXbool FileList::updateItems(FXbool force)
             }
 
             // Attempt to load thumbnails for image files
-            item->previewable = false;
-            if (item->isFile() && loadsPreviews())
-            {
-                // Scaled max sizes
-                FXuint bigthumb_size = getViewIconSize() / scalefrac;
-                FXuint minithumb_size = getApp()->reg().readUnsignedEntry("SETTINGS", "minithumb_size", 16);
-                FXuint max_bigthumb_size = scalefrac * bigthumb_size;
-                FXuint max_minithumb_size = scalefrac * minithumb_size;
-
-                // Load big icon from file
-                bigthumb = NULL;
-                minithumb = NULL;
-                if (associations)
-                {
-                    source = associations->getIconDict()->getIconSource();
-                    if (!(item->state & FileItem::FIFO)) // Avoid pipes
-                    {
-                        FXString cached = Preview::request(getApp(), pathname, getViewIconSize());
-                        if (!cached.empty()) bigthumb = source->loadIconFile(cached);
-                    }
-                }
-
-                if (bigthumb)
-                {
-                    item->previewable = !isBrokenLink;
-                    FXuint w = bigthumb->getWidth();
-                    FXuint h = bigthumb->getHeight();
-
-                    // Possibly scale the big icon (best quality)
-                    if ((w > max_bigthumb_size) || (h > max_bigthumb_size))
-                    {
-                        if (w > h)
-                        {
-                            bigthumb->scale(max_bigthumb_size, (max_bigthumb_size * h) / w, 1);
-                        }
-                        else
-                        {
-                            bigthumb->scale((max_bigthumb_size * w) / h, max_bigthumb_size, 1);
-                        }
-
-                        // Size has changed
-                        w = bigthumb->getWidth();
-                        h = bigthumb->getHeight();
-                    }
-
-                    // Copy the big icon to the mini icon (faster than direct rescaling)
-                    minithumb = new FXIcon(getApp());
-                    FXColor* tmpdata;
-                    if (!FXMEMDUP(&tmpdata, bigthumb->getData(), FXColor, w * h))
-                    {
-                        throw FXMemoryException(_("Unable to load image"));
-                    }
-                    minithumb->setData(tmpdata, IMAGE_OWNED, w, h);
-
-                    // Possibly scale the mini icon (best quality)
-                    w = minithumb->getWidth();
-                    h = minithumb->getHeight();
-                    if ((w > max_minithumb_size) || (h > max_minithumb_size))
-                    {
-                        if (w > h)
-                        {
-                            minithumb->scale(max_minithumb_size, (max_minithumb_size * h) / w, 1);
-                        }
-                        else
-                        {
-                            minithumb->scale((max_minithumb_size * w) / h, max_minithumb_size, 1);
-                        }
-                    }
-
-                    // Set thumbnail icons as owned
-                    if (!isBrokenLink)
-                    {
-                        if (isLink)
-                        {
-                            item->setBigIcon(bigthumb, true, biglinkbadgeicon);
-                            item->setMiniIcon(minithumb, true, minilinkbadgeicon);
-                        }
-                        else
-                        {
-                            item->setBigIcon(bigthumb, true);
-                            item->setMiniIcon(minithumb, true);
-                        }
-                    }
-                }
-            }
+            loadPreviewIcons(item, pathname, isLink, isBrokenLink);
 
             // Set other item attributes
             item->size = (FXulong)linfo.st_size;
@@ -6722,9 +6763,7 @@ void FileList::listItems(FXbool force)
     FileItem* item, * link;
     FileAssoc* fileassoc;
     FXString filetype, lowext, timeformat;
-    FXIconSource* source;
     FXIcon* big, * mini;
-    FXIcon* bigthumb = NULL, * minithumb = NULL;
     time_t filemtime, filectime;
     struct stat info, linfo;
     struct dirent* dp;
@@ -7471,91 +7510,7 @@ fnd:
                     }
 
                     // Attempt to load thumbnails for image files
-                    item->previewable = false;
-                    if (item->isFile() && loadsPreviews())
-                    {
-                        // Scaled max sizes
-                        FXuint bigthumb_size = getViewIconSize() / scalefrac;
-                        FXuint minithumb_size = getApp()->reg().readUnsignedEntry("SETTINGS", "minithumb_size", 16);
-                        FXuint max_bigthumb_size = scalefrac * bigthumb_size;
-                        FXuint max_minithumb_size = scalefrac * minithumb_size;
-
-                        // Load big icon from file
-                        bigthumb = NULL;
-                        minithumb = NULL;
-                        if (associations)
-                        {
-                            source = associations->getIconDict()->getIconSource();
-                            if (!(item->state & FileItem::FIFO)) // Avoid pipes
-                            {
-                                FXString cached = Preview::request(getApp(), pathname, getViewIconSize());
-                                if (!cached.empty()) bigthumb = source->loadIconFile(cached);
-                            }
-                        }
-
-                        if (bigthumb)
-                        {
-                            item->previewable = !isBrokenLink;
-                            FXuint w = bigthumb->getWidth();
-                            FXuint h = bigthumb->getHeight();
-
-                            // Possibly scale the big icon (best quality)
-                            if ((w > max_bigthumb_size) || (h > max_bigthumb_size))
-                            {
-                                if (w > h)
-                                {
-                                    bigthumb->scale(max_bigthumb_size, (max_bigthumb_size * h) / w, 1);
-                                }
-                                else
-                                {
-                                    bigthumb->scale((max_bigthumb_size * w) / h, max_bigthumb_size, 1);
-                                }
-
-                                // Size has changed
-                                w = bigthumb->getWidth();
-                                h = bigthumb->getHeight();
-                            }
-
-                            // Copy the big icon to the mini icon (faster than direct rescaling)
-                            minithumb = new FXIcon(getApp());
-                            FXColor* tmpdata;
-                            if (!FXMEMDUP(&tmpdata, bigthumb->getData(), FXColor, w * h))
-                            {
-                                throw FXMemoryException(_("Unable to load image"));
-                            }
-                            minithumb->setData(tmpdata, IMAGE_OWNED, w, h);
-
-                            // Possibly scale the mini icon (best quality)
-                            w = minithumb->getWidth();
-                            h = minithumb->getHeight();
-                            if ((w > max_minithumb_size) || (h > max_minithumb_size))
-                            {
-                                if (w > h)
-                                {
-                                    minithumb->scale(max_minithumb_size, (max_minithumb_size * h) / w, 1);
-                                }
-                                else
-                                {
-                                    minithumb->scale((max_minithumb_size * w) / h, max_minithumb_size, 1);
-                                }
-                            }
-
-                            // Set thumbnail icons as owned
-                            if (!isBrokenLink)
-                            {
-                                if (isLink)
-                                {
-                                    item->setBigIcon(bigthumb, true, biglinkbadgeicon);
-                                    item->setMiniIcon(minithumb, true, minilinkbadgeicon);
-                                }
-                                else
-                                {
-                                    item->setBigIcon(bigthumb, true);
-                                    item->setMiniIcon(minithumb, true);
-                                }
-                            }
-                        }
-                    }
+                    loadPreviewIcons(item, pathname, isLink, isBrokenLink);
 
                     // Set other item attributes
                     item->size = (FXulong)linfo.st_size;
@@ -7663,18 +7618,6 @@ fnd:
                     item->create();
                 }
 
-                // Refresh the GUI if an image has to be drawn and recompute the icon height
-                // Don't redraw if there are too many images
-                if (displaythumbnails)
-                {
-                    if (bigthumb && minithumb && (items.no() < REFRESH_COUNT))
-                    {
-                        update();
-                        recompute();
-                        makeItemVisible(0); // Fix some refresh problems
-                        repaint();
-                    }
-                }
             }
             if (dirp) closedir(dirp);
             if (jobparent && items.no() == firstChild && (!remote || !RemoteDirectory::loading(dirname)) &&
@@ -7693,7 +7636,7 @@ fnd:
         for (int i = items.no() - 1; i >= 0; --i)
         {
             FileItem* visible = (FileItem*)items[i];
-            if (!visible->isDirectory() && !visible->previewable)
+            if (!visible->isDirectory() && !visible->previewable && !visible->previewPending)
             {
                 items.erase(i);
                 thumbnailHidden++;

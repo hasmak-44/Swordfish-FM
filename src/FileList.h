@@ -39,6 +39,7 @@ protected:
     FXTime cdate = 0;                              // Changed date (ctime)
     FXTime deldate = 0;                            // Deletion date
     FXbool previewable = false;
+    FXbool previewPending = false;                 // Preview queued or being generated
     FXulong remoteRevision = 0;
 protected:
     FileItem()
@@ -615,6 +616,12 @@ public:
 
     // True when file icons are replaced by previews (Thumbnails view, or Icons view if enabled)
     FXbool loadsPreviews() const;
+
+    // Use the cached preview of a file as its icons; returns true when one was loaded
+    FXbool loadPreviewIcons(FileItem* item, const FXString& pathname, FXbool isLink, FXbool isBrokenLink);
+
+    // Show previews that finished since the last scan without relisting the folder
+    void refreshPreviews();
 
     // Number of files the Thumbnails view leaves out because they have no preview
     int getThumbnailHiddenCount() const
