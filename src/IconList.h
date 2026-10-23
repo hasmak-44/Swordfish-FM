@@ -269,11 +269,21 @@ protected:
     FXbool file_tooltips = true;                    // File tooltips
     FXbool relative_resize = true;                  // Relative resizing of the panels and columns in detailed mode
 
+    // Inline label editor
+    FXTextField* inlineEditor = NULL;
+    FXObject* inlineTarget = NULL;
+    FXSelector inlineMessage = 0;
+    FXString inlineLabel;                           // First label field of the item being edited
+    int inlineIndex = -1;
+    FXbool inlineClosing = false;
+
 protected:
     IconList()
     {
     }
     void recompute();
+    void placeInlineEditor(FXbool endIfHidden);
+    FXbool inlineEditorHasFocus() const;
     void getrowscols(int&, int&, int, int) const;
     void drawLasso(int, int, int, int);
     void lassoChanged(int, int, int, int, int, int, int, int, FXbool);
@@ -336,6 +346,35 @@ public:
     long onUpdToggleAutosize(FXObject*, FXSelector, void*);
     long onCmdHeaderClicked(FXObject*, FXSelector, void*);
     long onCmdReturnKeyPressed(FXObject*, FXSelector, void*);
+    long onInlineEditorCommand(FXObject*, FXSelector, void*);
+    long onInlineEditorKeyPress(FXObject*, FXSelector, void*);
+    long onInlineEditorFocusOut(FXObject*, FXSelector, void*);
+    long onInlineEditorChore(FXObject*, FXSelector, void*);
+
+    // Inline label editing; the target receives SEL_COMMAND with an FXString* holding the new text
+    void setInlineEditTarget(FXObject* tgt, FXSelector sel)
+    {
+        inlineTarget = tgt;
+        inlineMessage = sel;
+    }
+    FXbool hasInlineEditTarget() const
+    {
+        return inlineTarget != NULL;
+    }
+    FXbool isInlineEditing() const
+    {
+        return inlineIndex >= 0;
+    }
+    const FXString& getInlineEditItem() const
+    {
+        return inlineLabel;
+    }
+    FXbool startInlineEdit(int index, const FXString& text, int selstart, int selend);
+    void endInlineEdit(FXbool commit);
+    FXbool forwardInlineEditorKey(FXObject*, FXSelector, void*);
+
+    // Label text rectangle (tx, ty, tw, th) and the room available for editing it (ax, aw), in window coordinates
+    FXbool getItemLabelRect(int index, int& tx, int& ty, int& tw, int& th, int& ax, int& aw) const;
 
 public:
     static int ascending(const IconItem*, const IconItem*);
@@ -357,6 +396,9 @@ public:
         ID_DESELECT_ALL,
         ID_SELECT_INVERSE,
         ID_AUTOSIZE,
+        ID_INLINE_EDITOR,
+        ID_INLINE_COMMIT,
+        ID_INLINE_CANCEL,
         ID_LAST
     };
 public:

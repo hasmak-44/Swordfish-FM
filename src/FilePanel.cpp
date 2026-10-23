@@ -100,6 +100,7 @@ FXDEFMAP(FilePanel) FilePanelMap[] =
     FXMAPFUNCS(SEL_UPDATE, FilePanel::ID_PANE_BACK, FilePanel::ID_PANE_HISTORY, FilePanel::onUpdPaneNavigation),
     FXMAPFUNCS(SEL_COMMAND, FilePanel::ID_PANE_HISTORY_FIRST, FilePanel::ID_PANE_HISTORY_LAST, FilePanel::onCmdPaneNavigation),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_EDIT_PATH, FilePanel::onCmdEditPath),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_INLINE_RENAME, FilePanel::onCmdInlineRename),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_ENTER_PATH, FilePanel::onCmdEnterPath),
     FXMAPFUNC(SEL_KEYPRESS, FilePanel::ID_ENTER_PATH, FilePanel::onPathKeyPress),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_NEW_TAB, FilePanel::onCmdTabs),
@@ -781,6 +782,7 @@ FilePanel::FilePanel(FXWindow* owner, const char* nm, FXComposite* p, DirPanel* 
 
     list = new FileList(owner, cont2, ic, nc, this, ID_FILELIST, showthumbs, deldate_size, origpath_size,
                         options);
+    list->setInlineEditTarget(this, ID_INLINE_RENAME);
 
     // Set list headers size
     for (FXuint i = 0; i < nbCols; i++)
@@ -1872,6 +1874,10 @@ long FilePanel::onKeyPress(FXObject* sender, FXSelector sel, void* ptr)
     {
         return FXVerticalFrame::onKeyPress(sender, sel, ptr);
     }
+    if (list->isInlineEditing())
+    {
+        return list->onKeyPress(sender, sel, ptr);
+    }
 
     FXEvent* event = (FXEvent*)ptr;
 
@@ -2667,6 +2673,26 @@ long FilePanel::onCmdFileMan(FXObject* sender, FXSelector sel, void* ptr)
 
     // Focus on this panel list
     current->list->setFocus();
+
+    // Rename a single item in place
+    if ((FXSELID(sel) == ID_FILE_RENAME) && !fromPaste && (current->list->getNumSelectedItems() == 1))
+    {
+        int index = current->list->getCurrentItem();
+        if ((index < 0) || !current->list->isItemSelected(index))
+        {
+            for (index = 0; index < current->list->getNumItems(); index++)
+            {
+                if (current->list->isItemSelected(index))
+                {
+                    break;
+                }
+            }
+        }
+        if ((index < current->list->getNumItems()) && current->list->beginInlineRename(index))
+        {
+            return 1;
+        }
+    }
 
     // Confirmation dialog?
     FXbool ask_before_copy = getApp()->reg().readUnsignedEntry("OPTIONS", "ask_before_copy", true);
@@ -3575,6 +3601,77 @@ out:
         current->list->setCurrentItem(lastitem);
     }
 
+    return 1;
+}
+
+
+// Rename the item edited in place in the file list
+long FilePanel::onCmdInlineRename(FXObject*, FXSelector, void* ptr)
+{
+    if (!ptr || requiresMountedShare())
+    {
+        return 1;
+    }
+    FXString name = *((FXString*)ptr);
+    FXString item = list->getInlineEditItem();
+    if (item.empty())
+    {
+        return 1;
+    }
+    FXString source = FXPath::absolute(list->getDirectory(), item);
+    if (name.empty() || (name == FXPath::name(source)))
+    {
+        return 1;
+    }
+    if ((name == ".") || (name == "..") || (name.find(PATHSEPCHAR) >= 0))
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Invalid file name: %s"), name.text());
+        return 1;
+    }
+    FXString targetdir = FXPath::directory(source);
+    FXString target = FXPath::absolute(targetdir, name);
+
+    FXString operationDetails;
+    operationDetails.format("operation=rename item_count=1 source=\"%s\" target=\"%s\"", source.text(),
+                            target.text());
+    appLog(APP_LOG_FILE_OPERATIONS, "operation-requested", operationDetails);
+
+    if (!xf_iswritable(targetdir))
+    {
+        MessageBox::error(getApp(), BOX_OK_SU, _("Error"), _("Can't write to %s: Permission denied"), targetdir.text());
+        return 1;
+    }
+
+    File* f = new File(this, _("Rename Files"), RENAME, 1);
+    f->create();
+    FXbool ret = f->rename(source, target);
+
+    // Also remove the corresponding trashinfo file, silently
+    FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
+    if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
+    {
+        FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) + ".trashinfo";
+        unlink(trashinfopathname.text());
+    }
+    delete f;
+
+    next->onCmdRefresh(0, 0, 0);
+    onCmdRefresh(0, 0, 0);
+
+    // Keep the renamed item selected
+    FXString selected = ret ? target : source;
+    for (int u = 0; u < list->getNumItems(); u++)
+    {
+        if (list->getItemPathname(u) == selected)
+        {
+            list->killSelection();
+            list->selectItem(u);
+            list->setCurrentItem(u);
+            list->setAnchorItem(u);
+            list->makeItemVisible(u);
+            break;
+        }
+    }
     return 1;
 }
 

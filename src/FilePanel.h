@@ -151,6 +151,7 @@ public:
         ID_PANE_DESKTOP,
         ID_PANE_HISTORY,
         ID_EDIT_PATH,
+        ID_INLINE_RENAME,
         ID_ENTER_PATH,
         ID_PANE_HISTORY_FIRST,
         ID_PANE_HISTORY_LAST = ID_PANE_HISTORY_FIRST + 63,
@@ -221,6 +222,7 @@ public:
     long onCmdPaneNavigation(FXObject*, FXSelector, void*);
     long onUpdPaneNavigation(FXObject*, FXSelector, void*);
     long onCmdEditPath(FXObject*, FXSelector, void*);
+    long onCmdInlineRename(FXObject*, FXSelector, void*);
     long onCmdEnterPath(FXObject*, FXSelector, void*);
     long onPathKeyPress(FXObject*, FXSelector, void*);
     long onCmdTabs(FXObject*, FXSelector, void*);

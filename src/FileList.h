@@ -171,6 +171,8 @@ protected:
     FXuint deldate_size = 0;
     FXuint origpath_size = 0;
     FXWindow* focuswindow = NULL;                       // Window used to test focus
+    int renameClickIndex = -1;                          // Item clicked again while selected (slow click rename)
+    FXString renameClickLabel;
     FXuint idCol[NMAX_COLS + 1] = { 0 };
     FXuint nbCols = 0;
     FXuint idColTrash[NMAX_COLS + 2] = { 0 };
@@ -242,6 +244,9 @@ public:
     long onCmdRefreshTimer(FXObject*, FXSelector, void*);
     long onRemoteChanged(FXObject*, FXSelector, void*);
     long onLeftBtnPress(FXObject*, FXSelector, void*);
+    long onLeftBtnRelease(FXObject*, FXSelector, void*);
+    long onRenameTimer(FXObject*, FXSelector, void*);
+    FXbool beginInlineRename(int index);
     long onKeyPress(FXObject*, FXSelector, void*);
     void toggleExpand(int index, int forcestate = -1);
     std::set<std::string> getExpanded() const
@@ -459,6 +464,7 @@ public:
         ID_FOLDERSIZE_COUNT,
         ID_FOLDERSIZE_SIZE,
         ID_FOLDERSIZE_BOTH,
+        ID_RENAME_TIMER,
         ID_LAST
     };
 public:

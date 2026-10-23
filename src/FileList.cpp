@@ -358,6 +358,8 @@ FXDEFMAP(FileList) FileListMap[] =
     FXMAPFUNCS(SEL_UPDATE, FileList::ID_ZOOM_OUT, FileList::ID_ZOOM_RESET, FileList::onUpdZoom),
     FXMAPFUNC(SEL_DRAGGED, 0, FileList::onDragged),
     FXMAPFUNC(SEL_LEFTBUTTONPRESS, 0, FileList::onLeftBtnPress),
+    FXMAPFUNC(SEL_LEFTBUTTONRELEASE, 0, FileList::onLeftBtnRelease),
+    FXMAPFUNC(SEL_TIMEOUT, FileList::ID_RENAME_TIMER, FileList::onRenameTimer),
     FXMAPFUNC(SEL_KEYPRESS, 0, FileList::onKeyPress),
     FXMAPFUNC(SEL_TIMEOUT, FileList::ID_REFRESH_TIMER, FileList::onCmdRefreshTimer),
     FXMAPFUNC(SEL_TIMEOUT, FileList::ID_OPEN_TIMER, FileList::onOpenTimer),
@@ -769,6 +771,7 @@ FileList::~FileList()
     getApp()->removeTimeout(this, ID_REFRESH_TIMER);
     getApp()->removeTimeout(this, ID_OPEN_TIMER);
     getApp()->removeTimeout(this, ID_FOLDERSIZE_TIMER);
+    getApp()->removeTimeout(this, ID_RENAME_TIMER);
     if (foldersizeworker)
     {
         // The thread may be busy on a slow disk: cancel it and let it free the shared state when it ends
@@ -5142,6 +5145,8 @@ FXString FileList::getCurrentFile() const
 // Set directory being displayed and update the history if necessary
 void FileList::setDirectory(const FXString& pathname, const FXbool histupdate, FXString prevpath)
 {
+    getApp()->removeTimeout(this, ID_RENAME_TIMER);
+    endInlineEdit(false);
     xf_setwaitcursor(getApp(), BEGIN_CURSOR);
 
     // Only update the history if it was requested
@@ -5725,6 +5730,32 @@ long FileList::onLeftBtnPress(FXObject* sender, FXSelector sel, void* ptr)
 {
     FXEvent* event = (FXEvent*)ptr;
 
+    getApp()->removeTimeout(this, ID_RENAME_TIMER);
+    renameClickIndex = -1;
+
+    // A click in the list while renaming commits the new name
+    if (isInlineEditing())
+    {
+        endInlineEdit(true);
+        return 1;
+    }
+
+    // Clicking the name of the only selected item again starts renaming it, unless it becomes a double click
+    if (isEnabled() && hasInlineEditTarget() && hasFocus() && (single_click == SINGLE_CLICK_NONE) &&
+        (event->click_count == 1) && !(event->state & (SHIFTMASK | CONTROLMASK | ALTMASK | METAMASK)))
+    {
+        int index = getItemAt(event->win_x, event->win_y, event->state);
+        int tx, ty, tw, th, ax, aw;
+        if ((index > 0 || ((index == 0) && (getItemFilename(0) != ".."))) && (index == current) &&
+            items[index]->isSelected() && (getNumSelectedItems() == 1) &&
+            getItemLabelRect(index, tx, ty, tw, th, ax, aw) &&
+            (event->win_x >= tx) && (event->win_x < tx + tw) && (event->win_y >= ty) && (event->win_y < ty + th))
+        {
+            renameClickIndex = index;
+            renameClickLabel = items[index]->getText().section('\t', 0);
+        }
+    }
+
     if (isEnabled() && !(options & FILELIST_SEARCH) && !(options & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS)))
     {
         int index = getItemAt(event->win_x, event->win_y, event->state);
@@ -5744,10 +5775,76 @@ long FileList::onLeftBtnPress(FXObject* sender, FXSelector sel, void* ptr)
 }
 
 
+// A plain click released on the selected item arms the slow click rename
+long FileList::onLeftBtnRelease(FXObject* sender, FXSelector sel, void* ptr)
+{
+    FXuint flg = flags;
+    long ret = IconList::onLeftBtnRelease(sender, sel, ptr);
+    if ((renameClickIndex >= 0) && (flg & FLAG_PRESSED) && !(flg & (FLAG_DODRAG | FLAG_LASSO)))
+    {
+        getApp()->addTimeout(this, ID_RENAME_TIMER, getApp()->getClickSpeed() + 150);
+    }
+    else
+    {
+        renameClickIndex = -1;
+    }
+    return ret;
+}
+
+
+long FileList::onRenameTimer(FXObject*, FXSelector, void*)
+{
+    int index = renameClickIndex;
+    renameClickIndex = -1;
+    if ((index >= 0) && (index == current) && (index < items.no()) && items[index]->isSelected() &&
+        (getNumSelectedItems() == 1) && (items[index]->getText().section('\t', 0) == renameClickLabel) &&
+        hasFocus() && !isInlineEditing())
+    {
+        beginInlineRename(index);
+    }
+    return 1;
+}
+
+
+// Edit the name of an item in place, the extension of files is left unselected
+FXbool FileList::beginInlineRename(int index)
+{
+    getApp()->removeTimeout(this, ID_RENAME_TIMER);
+    renameClickIndex = -1;
+    if (!hasInlineEditTarget() || (index < 0) || (index >= items.no()) || (options & FILELIST_SEARCH) ||
+        RemoteDirectory::handles(directory))
+    {
+        return false;
+    }
+    FXString name = FXPath::name(getItemFilename(index));
+    if (name.empty() || (name == "..") || (name == "."))
+    {
+        return false;
+    }
+    int end = name.length();
+    if (!isItemDirectory(index))
+    {
+        int pos = name.rfind('.');
+        if (pos > 0)
+        {
+            end = pos;
+        }
+    }
+    return startInlineEdit(index, name, 0, end);
+}
+
+
 // Right and Left keys expand and collapse the current folder
 long FileList::onKeyPress(FXObject* sender, FXSelector sel, void* ptr)
 {
     FXEvent* event = (FXEvent*)ptr;
+
+    getApp()->removeTimeout(this, ID_RENAME_TIMER);
+    renameClickIndex = -1;
+    if (forwardInlineEditorKey(sender, sel, ptr))
+    {
+        return 1;
+    }
 
     if (isEnabled() && (current >= 0) && !(event->state & (SHIFTMASK | CONTROLMASK | ALTMASK)) &&
         ((event->code == KEY_Right) || (event->code == KEY_Left) ||

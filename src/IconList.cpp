@@ -947,6 +947,11 @@ FXDEFMAP(IconList) IconListMap[] =
     FXMAPFUNC(SEL_COMMAND, IconList::ID_AUTOSIZE, IconList::onCmdToggleAutosize),
     FXMAPFUNC(SEL_UPDATE, IconList::ID_AUTOSIZE, IconList::onUpdToggleAutosize),
     FXMAPFUNC(SEL_COMMAND, IconList::ID_HEADER_CHANGE, IconList::onCmdHeaderClicked),
+    FXMAPFUNC(SEL_COMMAND, IconList::ID_INLINE_EDITOR, IconList::onInlineEditorCommand),
+    FXMAPFUNC(SEL_KEYPRESS, IconList::ID_INLINE_EDITOR, IconList::onInlineEditorKeyPress),
+    FXMAPFUNC(SEL_FOCUSOUT, IconList::ID_INLINE_EDITOR, IconList::onInlineEditorFocusOut),
+    FXMAPFUNC(SEL_CHORE, IconList::ID_INLINE_COMMIT, IconList::onInlineEditorChore),
+    FXMAPFUNC(SEL_CHORE, IconList::ID_INLINE_CANCEL, IconList::onInlineEditorChore),
 };
 
 
@@ -1157,6 +1162,7 @@ void IconList::moveContents(int x, int y)
         header->setPosition(x);
     }
     scroll(0, top, FXMAX(1, viewport_w - getBackgroundGutter()), viewport_h, dx, dy);
+    placeInlineEditor(true);
 }
 
 
@@ -1359,6 +1365,8 @@ void IconList::layout()
     {
         makeItemVisible(viewable);
     }
+
+    placeInlineEditor(true);
 
     // Force repaint
     update();
@@ -4044,6 +4052,7 @@ long IconList::onRightBtnPress(FXObject*, FXSelector, void* ptr)
 {
     FXEvent* event = (FXEvent*)ptr;
 
+    endInlineEdit(true);
     flags &= ~FLAG_TIP;
     handle(this, FXSEL(SEL_FOCUS_SELF, 0), ptr);
     if (isEnabled())
@@ -4116,6 +4125,282 @@ long IconList::onDoubleClicked(FXObject*, FXSelector, void* ptr)
 long IconList::onTripleClicked(FXObject*, FXSelector, void* ptr)
 {
     return target && target->tryHandle(this, FXSEL(SEL_TRIPLECLICKED, message), ptr);
+}
+
+
+// Label text rectangle of an item and the room available to edit it
+FXbool IconList::getItemLabelRect(int index, int& tx, int& ty, int& tw, int& th, int& ax, int& aw) const
+{
+    if ((index < 0) || (index >= items.no()))
+    {
+        return false;
+    }
+    const IconItem* item = items[index];
+    const FXString& label = item->label;
+    int end = 0, beg = 0;
+    while (end < label.length() && label[end] != '\t')
+    {
+        end++;
+    }
+    th = font->getFontHeight() + 4;
+    if (options & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS))
+    {
+        int r, c;
+        if (options & ICONLIST_COLUMNS)
+        {
+            r = index / FXMAX(ncols, 1);
+            c = index % FXMAX(ncols, 1);
+        }
+        else
+        {
+            c = index / FXMAX(nrows, 1);
+            r = index % FXMAX(nrows, 1);
+        }
+        int ix = pos_x + itemSpace * c;
+        int iy = pos_y + itemHeight * r;
+        tw = 4 + font->getTextWidth(label.text(), end);
+        if (options & ICONLIST_BIG_ICONS)
+        {
+            aw = itemSpace - SIDE_SPACING;
+            tw = FXMIN(tw, aw);
+            tx = ix + (itemSpace - tw) / 2;
+            ty = iy + itemHeight - th - BIG_LINE_SPACING / 2;
+            ax = ix + SIDE_SPACING / 2;
+        }
+        else
+        {
+            int iw = item->miniIcon ? item->miniIcon->getWidth() + MINI_TEXT_SPACING : 0;
+            tx = ix + SIDE_SPACING / 2 + iw;
+            aw = itemSpace - SIDE_SPACING - iw;
+            tw = FXMIN(tw, aw);
+            ty = iy + (itemHeight - th) / 2;
+            ax = tx;
+        }
+        return true;
+    }
+
+    // Detail mode: the name is always in the first column; nested rows show the file name only
+    if ((item->treeMark >= 0) && (item->treeDepth > 0))
+    {
+        for (int k = end; k > 0; k--)
+        {
+            if (label[k - 1] == '/')
+            {
+                beg = k;
+                break;
+            }
+        }
+    }
+    int x = pos_x + SIDE_SPACING / 2;
+    if (item->treeMark >= 0)
+    {
+        x += item->treeDepth * TREE_INDENT + TREE_MARK_W;
+    }
+    if (item->miniIcon)
+    {
+        x += item->miniIcon->getWidth() + DETAIL_TEXT_SPACING;
+    }
+    tx = x;
+    ty = pos_y + header->getDefaultHeight() + index * itemHeight + (itemHeight - th) / 2;
+    ax = x;
+    aw = pos_x + header->getItemSize(0) - x;
+    tw = FXMIN(4 + font->getTextWidth(&label[beg], end - beg), aw);
+    return true;
+}
+
+
+// Return true if the inline editor is in the focus chain of the window
+FXbool IconList::inlineEditorHasFocus() const
+{
+    if (!inlineEditor)
+    {
+        return false;
+    }
+    const FXWindow* w = getShell();
+    while (w && w->getFocus())
+    {
+        w = w->getFocus();
+    }
+    return w == inlineEditor;
+}
+
+
+// Place the inline editor over the label of the edited item
+void IconList::placeInlineEditor(FXbool endIfHidden)
+{
+    if (!isInlineEditing() || !inlineEditor || inlineClosing)
+    {
+        return;
+    }
+
+    // The list may have been refreshed or sorted: find the item again
+    if ((inlineIndex >= items.no()) || (items[inlineIndex]->label.section('\t', 0) != inlineLabel))
+    {
+        int found = -1;
+        for (int i = 0; i < items.no(); i++)
+        {
+            if (items[i]->label.section('\t', 0) == inlineLabel)
+            {
+                found = i;
+                break;
+            }
+        }
+        if (found < 0)
+        {
+            getApp()->addChore(this, ID_INLINE_CANCEL);
+            return;
+        }
+        inlineIndex = found;
+    }
+
+    int tx, ty, tw, th, ax, aw;
+    if (!getItemLabelRect(inlineIndex, tx, ty, tw, th, ax, aw))
+    {
+        return;
+    }
+    int top = (options & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS)) ? 0 : header->getDefaultHeight();
+    int h = FXMAX(th, inlineEditor->getDefaultHeight());
+    int y = ty + (th - h) / 2;
+    int w = FXMAX(aw, font->getTextWidth(inlineEditor->getText()) + 16);
+    int room = viewport_w - getBackgroundGutter() - ax;
+    w = FXMAX(FXMIN(w, room), 40);
+    if (endIfHidden && ((ty < top) || (ty + th > viewport_h)))
+    {
+        getApp()->addChore(this, ID_INLINE_COMMIT);
+    }
+    inlineEditor->position(ax, y, w, h);
+}
+
+
+// Start editing the label of an item in place
+FXbool IconList::startInlineEdit(int index, const FXString& text, int selstart, int selend)
+{
+    if (!inlineTarget || (index < 0) || (index >= items.no()) || inlineClosing)
+    {
+        return false;
+    }
+    if (isInlineEditing())
+    {
+        endInlineEdit(false);
+    }
+    if (!inlineEditor)
+    {
+        inlineEditor = new FXTextField(this, 1, this, ID_INLINE_EDITOR, TEXTFIELD_ENTER_ONLY | FRAME_LINE, 0, 0, 0, 0,
+                                       2, 2, 0, 0);
+        if (id())
+        {
+            inlineEditor->create();
+        }
+    }
+    inlineIndex = index;
+    inlineLabel = items[index]->label.section('\t', 0);
+    inlineEditor->setFont(font);
+    inlineEditor->setText(text);
+    makeItemVisible(index);
+    placeInlineEditor(false);
+    inlineEditor->show();
+    inlineEditor->raise();
+    inlineEditor->setFocus();
+    inlineEditor->setCursorPos(selend);
+    inlineEditor->setSelection(selstart, selend - selstart);
+    return true;
+}
+
+
+// Stop editing; when committing, the new text is sent to the inline edit target
+void IconList::endInlineEdit(FXbool commit)
+{
+    if (!isInlineEditing() || inlineClosing)
+    {
+        return;
+    }
+    inlineClosing = true;
+    getApp()->removeChore(this, ID_INLINE_COMMIT);
+    getApp()->removeChore(this, ID_INLINE_CANCEL);
+    FXString text = inlineEditor->getText();
+    FXbool hadFocus = inlineEditorHasFocus();
+    inlineEditor->killFocus();
+    inlineEditor->hide();
+    inlineIndex = -1;
+    if (hadFocus)
+    {
+        setFocus();
+    }
+    update();
+    if (commit && inlineTarget)
+    {
+        inlineTarget->tryHandle(this, FXSEL(SEL_COMMAND, inlineMessage), (void*)&text);
+    }
+    inlineLabel = "";
+    inlineClosing = false;
+}
+
+
+// Pass a key event to the inline editor; other keys are swallowed while editing
+FXbool IconList::forwardInlineEditorKey(FXObject* sender, FXSelector sel, void* ptr)
+{
+    if (!isInlineEditing() || !inlineEditor)
+    {
+        return false;
+    }
+    inlineEditor->handle(sender, sel, ptr);
+    return true;
+}
+
+
+// Enter pressed in the inline editor
+long IconList::onInlineEditorCommand(FXObject*, FXSelector, void*)
+{
+    endInlineEdit(true);
+    return 1;
+}
+
+
+// Escape cancels inline editing
+long IconList::onInlineEditorKeyPress(FXObject*, FXSelector, void* ptr)
+{
+    FXEvent* event = (FXEvent*)ptr;
+    if (event->code == KEY_Escape)
+    {
+        endInlineEdit(false);
+        return 1;
+    }
+    return 0;
+}
+
+
+// The editor lost the focus: commit once the focus has settled elsewhere
+long IconList::onInlineEditorFocusOut(FXObject*, FXSelector, void*)
+{
+    if (isInlineEditing() && !inlineClosing)
+    {
+        getApp()->addChore(this, ID_INLINE_COMMIT);
+    }
+    return 0;
+}
+
+
+long IconList::onInlineEditorChore(FXObject*, FXSelector sel, void*)
+{
+    if (FXSELID(sel) == ID_INLINE_CANCEL)
+    {
+        endInlineEdit(false);
+    }
+    // Switching to another application keeps the focus chain: keep editing then
+    else if (isInlineEditing() && !inlineEditorHasFocus())
+    {
+        endInlineEdit(true);
+    }
+    else if (isInlineEditing())
+    {
+        int tx, ty, tw, th, ax, aw;
+        int top = (options & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS)) ? 0 : header->getDefaultHeight();
+        if (getItemLabelRect(inlineIndex, tx, ty, tw, th, ax, aw) && ((ty < top) || (ty + th > viewport_h)))
+        {
+            endInlineEdit(true);
+        }
+    }
+    return 1;
 }
 
 
@@ -4858,6 +5143,8 @@ IconList::~IconList()
 {
     getApp()->removeTimeout(this, ID_TIPTIMER);
     getApp()->removeTimeout(this, ID_LOOKUPTIMER);
+    getApp()->removeChore(this, ID_INLINE_COMMIT);
+    getApp()->removeChore(this, ID_INLINE_CANCEL);
     clearItems(false);
     header = (FXHeader*)-1L;
     font = (FXFont*)-1L;
