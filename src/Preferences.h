@@ -139,6 +139,7 @@ private:
     FXTextField* sucmd = NULL;
     FXString oldiconpath;
     FXListBox* languagelist = NULL;
+    FXListBox* foldersizelist = NULL;
     std::vector<FXString> languagecodes;
     FXString oldlanguage;
     FXString oldtxtviewer;

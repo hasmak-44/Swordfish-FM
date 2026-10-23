@@ -34,6 +34,7 @@ protected:
     FileItem* link = NULL;                         // Link to next item
     FileItem* parentitem = NULL;                   // Expanded parent folder item, if nested
     FXulong size = 0;                              // File size
+    FXlong foldersort = -1;                        // Folder size sort key (-1 if unknown)
     FXTime date = 0;                               // File date (mtime)
     FXTime cdate = 0;                              // Changed date (ctime)
     FXTime deldate = 0;                            // Deletion date
@@ -192,6 +193,8 @@ protected:
     FXString folderSizeLabel(const FXString&, time_t);
     FXString formatFolderSize(const FolderSizeInfo&) const;
     void resetFolderSizes();
+    static FXlong folderSortKey(const FolderSizeInfo&);
+    static int compareFolderSizes(const FileItem* a, const FileItem* b);
 
     // Static variables
     static int name_index;                              // Index of name column (always 0)
@@ -324,6 +327,10 @@ public:
 
     // Append the "Folder Sizes" cascade menu
     static void appendFolderSizeMenu(FXWindow* owner, FXMenuPane* parent, FileList* list);
+
+    // Folder size display mode: 0 blank, 1 item count, 2 size on disk, 3 size and count
+    static FXuint getFolderSizeMode(FXApp* app);
+    static void setFolderSizeMode(FXApp* app, FXuint mode);
 
 public:
     static FXbool compareParents(const IconItem*&, const IconItem*&, int&);

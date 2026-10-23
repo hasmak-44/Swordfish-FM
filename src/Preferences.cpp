@@ -1084,6 +1084,16 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     listcol_down = new FXButton(frame, _("\tMove down"), minidownicon, this, ID_LISTCOL_DOWN,
                                 FRAME_GROOVE | LAYOUT_LEFT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 10, 10);
 
+    group = new FXGroupBox(columns, _("Folder Sizes"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    hframe = new FXHorizontalFrame(group, LAYOUT_FILL_X | FRAME_NONE);
+    new FXLabel(hframe, _("Size column shows for folders:"), NULL, JUSTIFY_LEFT | LAYOUT_CENTER_Y);
+    foldersizelist = new FXListBox(hframe, NULL, 0, FRAME_SUNKEN | FRAME_THICK | LAYOUT_CENTER_Y);
+    foldersizelist->appendItem(_("None"));
+    foldersizelist->appendItem(_("Item count"));
+    foldersizelist->appendItem(_("Size on disk"));
+    foldersizelist->appendItem(_("Size on disk and item count"));
+    foldersizelist->setNumVisible(4);
+
     // Fifth tab - Programs
     new FXTabItem(tabbook, _("&Programs"), NULL);
     FXVerticalFrame* programs = createPreferencesPage(tabbook);
@@ -3184,6 +3194,12 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
         restart_theme = true;
     }
 
+    // Folder size display mode applies immediately, no restart needed
+    if ((FXuint)foldersizelist->getCurrentItem() != FileList::getFolderSizeMode(getApp()))
+    {
+        FileList::setFolderSizeMode(getApp(), foldersizelist->getCurrentItem());
+    }
+
     // Language has changed
     int langindex = languagelist->getCurrentItem();
     if (langindex >= 0 && langindex < (int)languagecodes.size() && languagecodes[langindex] != oldlanguage)
@@ -3740,6 +3756,7 @@ FXuint PreferencesBox::execute(FXuint placement)
     alwaysshowtabbar_prev = alwaysshowtabbar->getCheck();
     restoretabs_prev = restoretabs->getCheck();
     show_pathlink_prev = showpathlink->getCheck();
+    foldersizelist->setCurrentItem(FileList::getFolderSizeMode(getApp()));
 #ifdef STARTUP_NOTIFICATION
     usesn_prev = usesn->getCheck();
 #endif

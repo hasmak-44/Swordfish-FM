@@ -24,6 +24,8 @@
 #include <mntent.h>
 #include <vector>
 #include <map>
+#include <set>
+#include <utility>
 #endif
 
 #include "xfedefs.h"
@@ -132,6 +134,11 @@ bool scanFolderSize(FolderSizeWorker* w, gint serial, const char* path, FolderSi
         return true;
     }
     const FXbool wantsize = !folderSizeIsNetwork(path);
+    if (wantsize)
+    {
+        r->size = (guint64)st.st_blocks * 512;
+    }
+    std::set<std::pair<dev_t, ino_t> > hardlinks;
     std::vector<std::string> stack;
     stack.push_back(path);
     FXbool top = true;
@@ -188,17 +195,20 @@ bool scanFolderSize(FolderSizeWorker* w, gint serial, const char* path, FolderSi
             {
                 continue;
             }
+            // Size on disk, as allocated blocks; other file systems mounted inside are skipped
+            if (cs.st_dev != st.st_dev)
+            {
+                continue;
+            }
             if (isdir)
             {
-                if (cs.st_dev == st.st_dev)
-                {
-                    stack.push_back(dir + "/" + n);
-                }
+                stack.push_back(dir + "/" + n);
             }
-            else
+            else if ((cs.st_nlink > 1) && !hardlinks.insert(std::make_pair(cs.st_dev, cs.st_ino)).second)
             {
-                r->size += (guint64)cs.st_size;
+                continue;
             }
+            r->size += (guint64)cs.st_blocks * 512;
         }
         closedir(dp);
         r->ok = true;
@@ -927,6 +937,7 @@ long FileList::onFolderSizeTimer(FXObject*, FXSelector, void*)
                             end = label.length();
                         }
                         label.replace(start, end - start, formatFolderSize(info));
+                        ((FileItem*)items[row->second])->foldersort = folderSortKey(info);
                         changed = true;
                     }
                 }
@@ -937,6 +948,11 @@ long FileList::onFolderSizeTimer(FXObject*, FXSelector, void*)
     }
     if (changed)
     {
+        if ((sortfunc == ascendingSize) || (sortfunc == descendingSize) ||
+            (sortfunc == ascendingSizeMix) || (sortfunc == descendingSizeMix))
+        {
+            sortItems();
+        }
         update();
     }
     if (foldersizepending > 0)
@@ -947,32 +963,76 @@ long FileList::onFolderSizeTimer(FXObject*, FXSelector, void*)
 }
 
 
+// Sort key of a counted folder for the current display mode, -1 if there is none
+FXlong FileList::folderSortKey(const FolderSizeInfo& info)
+{
+    if (!info.done || !info.ok || (folderSizeMode == 0))
+    {
+        return -1;
+    }
+    if (folderSizeMode == 1)
+    {
+        return (FXlong)(info.dirs + info.files);
+    }
+    return info.sized ? (FXlong)info.size : -1;
+}
+
+
+// Compare two folders by size (ascending); folders without a known size go last, by name
+int FileList::compareFolderSizes(const FileItem* a, const FileItem* b)
+{
+    if ((a->foldersort < 0) || (b->foldersort < 0))
+    {
+        return (int)(a->foldersort < 0) - (int)(b->foldersort < 0);
+    }
+    return (a->foldersort > b->foldersort) - (a->foldersort < b->foldersort);
+}
+
+
 // Folder size display mode, shared by all file lists
 void FileList::appendFolderSizeMenu(FXWindow* owner, FXMenuPane* parent, FileList* list)
 {
     FXMenuPane* pane = new FXMenuPane(owner);
-    new FXMenuRadio(pane, _("&Blank"), list, ID_FOLDERSIZE_NONE);
+    new FXMenuRadio(pane, _("&None"), list, ID_FOLDERSIZE_NONE);
     new FXMenuRadio(pane, _("Item &Count"), list, ID_FOLDERSIZE_COUNT);
-    new FXMenuRadio(pane, _("Total &Size"), list, ID_FOLDERSIZE_SIZE);
+    new FXMenuRadio(pane, _("&Size on Disk"), list, ID_FOLDERSIZE_SIZE);
     new FXMenuRadio(pane, _("Size &and Count"), list, ID_FOLDERSIZE_BOTH);
     new FXMenuCascade(parent, _("Folder Si&zes"), NULL, pane);
 }
 
 
-long FileList::onCmdFolderSizeMode(FXObject*, FXSelector sel, void*)
+FXuint FileList::getFolderSizeMode(FXApp* app)
 {
-    folderSizeMode = FXSELID(sel) - ID_FOLDERSIZE_NONE;
-    getApp()->reg().writeUnsignedEntry("OPTIONS", "folder_size_mode", folderSizeMode);
+    if (!folderSizeModeRead)
+    {
+        folderSizeModeRead = true;
+        folderSizeMode = FXMIN(app->reg().readUnsignedEntry("OPTIONS", "folder_size_mode", 3), 3);
+    }
+    return folderSizeMode;
+}
+
+
+void FileList::setFolderSizeMode(FXApp* app, FXuint mode)
+{
+    folderSizeMode = FXMIN(mode, 3);
+    folderSizeModeRead = true;
+    app->reg().writeUnsignedEntry("OPTIONS", "folder_size_mode", folderSizeMode);
     for (size_t i = 0; i < zoomLists.size(); ++i)
     {
         FileList* l = zoomLists[i];
-        if (l->getApp() == getApp())
+        if (l->getApp() == app)
         {
             l->listItems(true);
             l->sortItems();
             l->update();
         }
     }
+}
+
+
+long FileList::onCmdFolderSizeMode(FXObject*, FXSelector sel, void*)
+{
+    setFolderSizeMode(getApp(), FXSELID(sel) - ID_FOLDERSIZE_NONE);
     return 1;
 }
 
@@ -4123,7 +4183,8 @@ int FileList::ascendingSize(const IconItem* pa, const IconItem* pb)
     }
     if (sum == 2)
     {
-        return ascendingCase(pa, pb);
+        int c = compareFolderSizes(a, b);
+        return c ? c : ascendingCase(pa, pb);
     }
 
     FXlong l = a->size - b->size;
@@ -4171,7 +4232,8 @@ int FileList::ascendingSizeMix(const IconItem* pa, const IconItem* pb)
 
     if (adir && bdir)
     {
-        return ascendingCaseMix(pa, pb);
+        int c = compareFolderSizes(a, b);
+        return c ? c : ascendingCaseMix(pa, pb);
     }
     if (adir && !bdir)
     {
@@ -4555,7 +4617,12 @@ int FileList::descendingSize(const IconItem* pa, const IconItem* pb)
     }
     if (sum == 2)
     {
-        return -ascendingCase(pa, pb);
+        int c = compareFolderSizes(a, b);
+        if ((a->foldersort < 0) != (b->foldersort < 0))
+        {
+            return c;
+        }
+        return c ? -c : -ascendingCase(pa, pb);
     }
     FXlong l = a->size - b->size;
     if (l)
@@ -4601,7 +4668,12 @@ int FileList::descendingSizeMix(const IconItem* pa, const IconItem* pb)
 
     if (adir && bdir)
     {
-        return -ascendingCaseMix(pa, pb);
+        int c = compareFolderSizes(a, b);
+        if ((a->foldersort < 0) != (b->foldersort < 0))
+        {
+            return c;
+        }
+        return c ? -c : -ascendingCaseMix(pa, pb);
     }
     if (adir && !bdir)
     {
@@ -7354,6 +7426,15 @@ fnd:
 
                     // Set other item attributes
                     item->size = (FXulong)linfo.st_size;
+                    item->foldersort = -1;
+                    if (detailed && !remote && S_ISDIR(linfo.st_mode))
+                    {
+                        std::map<std::string, FolderSizeInfo>::iterator fs = foldersizes.find(pathname.text());
+                        if (fs != foldersizes.end())
+                        {
+                            item->foldersort = folderSortKey(fs->second);
+                        }
+                    }
                     item->assoc = fileassoc;
                     item->date = filemtime;
                     item->cdate = filectime;
