@@ -613,8 +613,21 @@ fixed except A2 (parked: the user could not reproduce it).
   login prompt leaves Domain blank; `WORKGROUP` is only sent internally.
   Window title and sidebar show `share@computer` / `user@host`
   (`RemoteDirectory::mountLabel`, `titlePath`).
-- Not tested against a real server (no SMB/SSH in the codespace). Packaged as
-  TEST ONLY download `swordfish-rc6-test2` for the user's machine.
+- Not tested against a real server (no SMB/SSH in the codespace).
+- Bundle committed as `5f0949d`. **RC6 Test 2** package
+  (`Swordfish-RC6-Test2-Portable.tar.gz`, sha256 `f9631d43…49951`) was built
+  with `./portable/build-portable.sh` from a clean `git archive` of
+  `5f0949d`; it runs and reports `0.0.1-rc6`. It was **not** published on
+  GitHub: the user downloaded it through a temporary codespace port link,
+  which was then stopped and the copy deleted. Rebuild from `5f0949d` if needed.
+- Clean-up the same night: deleted the uncommitted listing-diagnostic files
+  (`b084062`); deleted the local RC5 release files from `build/` (all four are
+  on the RC5 GitHub release) and `build/discovery-diagnostic`, keeping the
+  user's notes `build/road map.txt` and
+  `build/Swordfish-LinuxQuestions-announcement.txt`. Committed `AGENTS.md`,
+  `.github/copilot-instructions.md` and the portable README device section
+  (`96f0c80`). Still uncommitted on purpose: `.vscode/`, `install-swordfish.sh`
+  (unreviewed), the downloaded repo zips and generated autotools/po files.
 
 ## 4. The archive-command / false idle-timeout bug
 
@@ -896,9 +909,17 @@ prereleases and must not be assumed to select RC4.
 ### 9.0 Current position (25 October 2026)
 
 - **Latest:** the RC6 bug list in section 3.15 is fixed and committed as one
-  bundle; the user is testing package `swordfish-rc6-test2`. Group 4 below is
-  paused until the test results are in.
-- Branch `portable-layout`, last pushed commit `2104a96`. Version string
+  bundle; the user will test the RC6 Test 2 package on 26 October with the
+  checklist below. Group 4 below is paused until the test results are in.
+  A2 (double mounts) is parked unless it comes back.
+- Test checklist: USB mount/unmount/eject and unmount-in-Thunar; internal
+  partition remount and the Mount/Unmount buttons; no Thumbnails setting and
+  zoom works; path-editor right-click menu and Ctrl+L; About/Help links;
+  tab drag-hover at 1.5 s; slow-click rename anywhere in the Name cell; drag
+  auto-scroll and drop selection; Windows server without password, Connect to
+  Server (type + server only, then with a share), `share@computer` names.
+- Branch `portable-layout`, all work pushed (latest commit is this history
+  update, after `96f0c80`). Version string
   `0.0.1-rc6`, but **RC6 is not released**. Build RC6 only when the user asks.
 - **RC6 Test 1** is a TEST ONLY GitHub prerelease (`swordfish-rc6-test1`)
   built from a clean export of the application source at `7103fe4`, with the
