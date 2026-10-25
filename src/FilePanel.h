@@ -153,6 +153,7 @@ public:
         ID_EDIT_PATH,
         ID_INLINE_RENAME,
         ID_ENTER_PATH,
+        ID_PATH_PASTE_GO,
         ID_PANE_HISTORY_FIRST,
         ID_PANE_HISTORY_LAST = ID_PANE_HISTORY_FIRST + 63,
         ID_NEW_TAB,
@@ -225,6 +226,8 @@ public:
     long onCmdInlineRename(FXObject*, FXSelector, void*);
     long onCmdEnterPath(FXObject*, FXSelector, void*);
     long onPathKeyPress(FXObject*, FXSelector, void*);
+    long onPathPopup(FXObject*, FXSelector, void*);
+    long onCmdPathPasteGo(FXObject*, FXSelector, void*);
     long onCmdTabs(FXObject*, FXSelector, void*);
     TabButtons* getTabButtons() const
     {
@@ -241,13 +244,9 @@ public:
             tabbar->hide();
         }
     }
-    void showAddressbar(FXbool visible)
-    {
-        visible ? addressbar->show() : addressbar->hide();
-    }
     void finishPathEditing();
     FXbool navigatePane(const FXString& path);
-    int resolveNetworkPath(const FXString& text, FXString& localpath);
+    int resolveNetworkPath(const FXString& text, FXString& localpath, FXbool savepassword = false);
     void openServerShares(const FXString& host);
     FXbool requiresMountedShare();
     long onCmdEdit(FXObject*, FXSelector, void*);

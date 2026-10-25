@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <mntent.h>
 
 extern FXMainWindow* mainWindow;
 extern FXString execpath, homedir, xdgdatahome, xdgconfighome;
@@ -47,6 +48,23 @@ static int remoteFilesystemCalls;
 static FXString simulatedMount;
 static bool simulateStillMounted;
 static FXString simulatedGvfsDirectory;
+static FXString simulatedMountTable;
+
+extern "C" FILE* fopen(const char* path, const char* mode)
+{
+    typedef FILE* (*Open)(const char*, const char*);
+    static Open realOpen = reinterpret_cast<Open>(dlsym(RTLD_NEXT, "fopen"));
+    return realOpen(!simulatedMountTable.empty() && std::strcmp(path, MTAB_PATH) == 0 ?
+                    simulatedMountTable.text() : path, mode);
+}
+
+extern "C" FILE* setmntent(const char* path, const char* mode)
+{
+    typedef FILE* (*Open)(const char*, const char*);
+    static Open realOpen = reinterpret_cast<Open>(dlsym(RTLD_NEXT, "setmntent"));
+    return realOpen(!simulatedMountTable.empty() && std::strcmp(path, MTAB_PATH) == 0 ?
+                    simulatedMountTable.text() : path, mode);
+}
 
 static void checkRemote(const char* path)
 {
@@ -364,6 +382,38 @@ int main(int argc, char** argv)
     xdgconfighome = homedir + "/config";
     xdgdatahome = homedir + "/data";
     execpath = executable;
+    const FXString hashFixture = fixture + "/mount-hash-regression";
+    FXulong previousHash = 0;
+    int previouslyClamped = 0;
+    for (int n = 0; n < 100; ++n)
+    {
+        const std::string contents = "/dev/sdb1 /media/user/USB-" + std::to_string(n) +
+                                     " vfat rw,nosuid,nodev 0 0\n";
+        {
+            std::ofstream output(hashFixture.text());
+            assert(output);
+            output << contents;
+        }
+        FXulong expected = 7873;
+        for (unsigned char c : contents) expected = expected * 33 + c;
+        if (expected & (FXulong(1) << (sizeof(FXulong) * 8 - 1))) ++previouslyClamped;
+        const FXulong actual = xf_hashfile(hashFixture.text());
+        assert(actual == expected && actual != previousHash);
+        previousHash = actual;
+    }
+    assert(previouslyClamped > 1);
+    assert(unlink(hashFixture.text()) == 0);
+    assert(xf_keepmount("/media/user/USB", "/dev/sdb1"));
+    assert(xf_keepmount("/run/media/user/USB", "/dev/sdb1"));
+    assert(!xf_keepmount("/run/user/1000/gvfs", "gvfsd-fuse"));
+    assert(!xf_keepmount("/run/other", "tmpfs"));
+    assert(!xf_keepmount("/run/mediator", "tmpfs"));
+    FXString commandOutput = "old output";
+    assert(xf_hostcommandoutput("printf 'localized headings without a device column'", commandOutput));
+    assert(commandOutput == "localized headings without a device column");
+    assert(!xf_hostcommandoutput("sh -c 'printf service-unavailable; exit 1'", commandOutput));
+    assert(commandOutput == "service-unavailable");
+    puts("PASS: mount hashes preserve high bits, /run/media is visible, host query uses exit status");
     app.reg().writeStringEntry("SETTINGS", "iconpath", icons.text());
     // Background folder sizes read child folders by design; these checks cover the listing itself
     app.reg().writeUnsignedEntry("OPTIONS", "folder_size_mode", 0);
@@ -380,6 +430,28 @@ int main(int argc, char** argv)
     DirList* tree = new DirList(shell, frame, NULL, 0);
     app.create();
     shell->show();
+    simulatedMountTable = fixture + "/mount-table-regression";
+    auto mountTable = [&](bool attached)
+    {
+        std::ofstream output(simulatedMountTable.text());
+        assert(output);
+        output << "/dev/root / ext4 rw 0 0\n";
+        if (attached)
+            output << "/dev/sdb1 /run/media/test/USB vfat rw 0 0\n";
+    };
+    mountTable(false);
+    MountsList* deviceModel = new MountsList(shell, frame, NULL, 0);
+    assert(deviceModel->findItem("/run/media/test/USB") == -1);
+    mountTable(true);
+    deviceModel->onMountsRefresh(NULL, 0, NULL);
+    assert(deviceModel->findItem("/run/media/test/USB") >= 0);
+    mountTable(false);
+    deviceModel->onMountsRefresh(NULL, 0, NULL);
+    assert(deviceModel->findItem("/run/media/test/USB") == -1);
+    delete deviceModel;
+    assert(unlink(simulatedMountTable.text()) == 0);
+    simulatedMountTable.clear();
+    puts("PASS: /run/media device appears on mount and disappears after external unmount");
     observedWindow = list->id();
     otherClient = XOpenDisplay(NULL);
     assert(otherClient);

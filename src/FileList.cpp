@@ -314,6 +314,9 @@ FXIcon* sizedIcon(FXIcon* source, int size)
 
 // Time interval before opening a folder
 #define OPEN_INTERVAL        1000
+#define DROP_SCROLL_ZONE     32     // Height of the band at the top and bottom of the list that scrolls a drop
+#define DROP_SCROLL_MAXSTEP  24     // Largest scroll step at the edge of the list
+#define DROP_SCROLL_INTERVAL 50
 
 // Counter limit for image refreshing
 #define REFRESH_COUNT        100
@@ -380,6 +383,7 @@ FXDEFMAP(FileList) FileListMap[] =
     FXMAPFUNC(SEL_KEYPRESS, 0, FileList::onKeyPress),
     FXMAPFUNC(SEL_TIMEOUT, FileList::ID_REFRESH_TIMER, FileList::onCmdRefreshTimer),
     FXMAPFUNC(SEL_TIMEOUT, FileList::ID_OPEN_TIMER, FileList::onOpenTimer),
+    FXMAPFUNC(SEL_TIMEOUT, FileList::ID_DROP_SCROLL_TIMER, FileList::onDropScrollTimer),
     FXMAPFUNC(SEL_DND_ENTER, 0, FileList::onDNDEnter),
     FXMAPFUNC(SEL_DND_LEAVE, 0, FileList::onDNDLeave),
     FXMAPFUNC(SEL_DND_DROP, 0, FileList::onDNDDrop),
@@ -741,6 +745,11 @@ void FileList::refreshMtdevices(void)
                 {
                     mtdevices->remove(mnt->mnt_dir);
                 }
+                else
+                {
+                    // A remount must not inherit the "down" state of the previous mount
+                    updevices->remove(mnt->mnt_dir);
+                }
                 mtdevices->insert(mnt->mnt_dir, mnt->mnt_type);
             }
         }
@@ -753,6 +762,7 @@ void FileList::refreshMtdevices(void)
     {
         if (!tmpdict->find(mtdevices->key(s)))
         {
+            updevices->remove(mtdevices->key(s));
             mtdevices->remove(mtdevices->key(s));
         }
     }
@@ -789,6 +799,7 @@ FileList::~FileList()
     getApp()->removeTimeout(this, ID_OPEN_TIMER);
     getApp()->removeTimeout(this, ID_FOLDERSIZE_TIMER);
     getApp()->removeTimeout(this, ID_RENAME_TIMER);
+    getApp()->removeTimeout(this, ID_DROP_SCROLL_TIMER);
     if (foldersizeworker)
     {
         // The thread may be busy on a slow disk: cancel it and let it free the shared state when it ends
@@ -1116,6 +1127,91 @@ long FileList::onOpenTimer(FXObject*, FXSelector, void*)
 }
 
 
+// Give the folder hovered during a drop its normal icon and selection back
+void FileList::clearDropHover()
+{
+    if ((prevIndex >= 0) && (prevIndex < items.no()) && (getItemFilename(prevIndex) == prevName))
+    {
+        if (isItemLink(prevIndex))
+        {
+            setItemMiniIcon(prevIndex, minifolderlinkicon);
+            setItemBigIcon(prevIndex, bigfolderlinkicon);
+        }
+        else
+        {
+            setItemMiniIcon(prevIndex, minifoldericon);
+            setItemBigIcon(prevIndex, bigfoldericon);
+        }
+        if (!prevSelected)
+        {
+            deselectItem(prevIndex);
+        }
+    }
+    prevIndex = -1;
+    prevSelected = false;
+    prevName = FXString::null;
+}
+
+
+// Pixels to scroll when a drop hovers near the top or bottom of the list (positive scrolls up), or 0
+int FileList::dropScrollStep(int y)
+{
+    int top = (options & (ICONLIST_MINI_ICONS | ICONLIST_BIG_ICONS)) ? 0 : header->getDefaultHeight();
+    int bottom = top + viewport_h;
+    int zone = FXCLAMP(8, viewport_h / 4, DROP_SCROLL_ZONE);
+    int maxstep = FXCLAMP(6, itemHeight, DROP_SCROLL_MAXSTEP);
+
+    if ((y < top + zone) && (pos_y < 0))
+    {
+        return FXMAX(2, maxstep * FXMIN(top + zone - y, zone) / zone);
+    }
+    if ((y >= bottom - zone) && (pos_y > viewport_h - getContentHeight()))
+    {
+        return -FXMAX(2, maxstep * FXMIN(y - bottom + zone + 1, zone) / zone);
+    }
+    return 0;
+}
+
+
+// Keep scrolling while a drop hovers near the top or bottom, even when the mouse stands still
+long FileList::onDropScrollTimer(FXObject*, FXSelector, void*)
+{
+    int x, y;
+    FXuint state;
+
+    getCursorPosition(x, y, state);
+    if (!(state & (LEFTBUTTONMASK | MIDDLEBUTTONMASK | RIGHTBUTTONMASK)) || (x < 0) || (x >= width))
+    {
+        return 1;
+    }
+    int step = dropScrollStep(y);
+    if (step == 0)
+    {
+        return 1;
+    }
+    int oldy = pos_y;
+    setPosition(pos_x, pos_y + step);
+    if (pos_y == oldy)
+    {
+        return 1;
+    }
+
+    // Other items are now under the mouse, so update the drop folder
+    int top = (options & (ICONLIST_MINI_ICONS | ICONLIST_BIG_ICONS)) ? 0 : header->getDefaultHeight();
+    if ((y >= top) && (y < top + viewport_h))
+    {
+        FXEvent ev;
+        ev.type = SEL_DND_MOTION;
+        ev.win_x = x;
+        ev.win_y = y;
+        ev.state = state;
+        onDNDMotion(this, FXSEL(SEL_DND_MOTION, 0), &ev);
+    }
+    getApp()->addTimeout(this, ID_DROP_SCROLL_TIMER, DROP_SCROLL_INTERVAL);
+    return 1;
+}
+
+
 // Handle drag-and-drop enter
 long FileList::onDNDEnter(FXObject* sender, FXSelector sel, void* ptr)
 {
@@ -1134,18 +1230,20 @@ long FileList::onDNDLeave(FXObject* sender, FXSelector sel, void* ptr)
 {
     IconList::onDNDLeave(sender, sel, ptr);
 
-    if (prevIndex != -1)
-    {
-        setItemMiniIcon(prevIndex, minifoldericon);
-        setItemBigIcon(prevIndex, bigfoldericon);
-        prevIndex = -1;
-    }
+    clearDropHover();
 
     // Cancel open up timer
     getApp()->removeTimeout(this, ID_OPEN_TIMER);
 
-    // Stop scrolling
+    // Stop scrolling, unless the mouse only moved onto the column header
     stopAutoScroll();
+    int xx, yy;
+    FXuint state;
+    getCursorPosition(xx, yy, state);
+    if ((xx < 0) || (yy < 0) || (xx >= width) || (yy >= height))
+    {
+        getApp()->removeTimeout(this, ID_DROP_SCROLL_TIMER);
+    }
 
     // Restore original directory
     setDirectory(orgdirectory);
@@ -1163,10 +1261,10 @@ long FileList::onDNDMotion(FXObject* sender, FXSelector sel, void* ptr)
     // Cancel open up timer
     getApp()->removeTimeout(this, ID_OPEN_TIMER);
 
-    // Start autoscrolling
-    if (startAutoScroll(event, false))
+    // Scroll when hovering near the top or bottom of the list
+    if ((dropScrollStep(event->win_y) != 0) && !getApp()->hasTimeout(this, ID_DROP_SCROLL_TIMER))
     {
-        return 1;
+        getApp()->addTimeout(this, ID_DROP_SCROLL_TIMER, DROP_SCROLL_INTERVAL);
     }
 
     // Give base class a shot
@@ -1181,20 +1279,7 @@ long FileList::onDNDMotion(FXObject* sender, FXSelector sel, void* ptr)
         index = getItemAt(event->win_x, event->win_y);
         if ((prevIndex != -1) && (prevIndex != index))
         {
-            // Symlink folders have a different icon
-            if (isItemLink(prevIndex))
-            {
-                setItemMiniIcon(prevIndex, minifolderlinkicon);
-                setItemBigIcon(prevIndex, bigfolderlinkicon);
-                deselectItem(prevIndex);
-            }
-            else
-            {
-                setItemMiniIcon(prevIndex, minifoldericon);
-                setItemBigIcon(prevIndex, bigfoldericon);
-                deselectItem(prevIndex);
-            }
-            prevIndex = -1;
+            clearDropHover();
         }
 
         // Drop in the background
@@ -1214,7 +1299,12 @@ long FileList::onDNDMotion(FXObject* sender, FXSelector sel, void* ptr)
         {
             // Set open up timer
             getApp()->addTimeout(this, ID_OPEN_TIMER, OPEN_INTERVAL);
-            prevIndex = index;
+            if (prevIndex != index)
+            {
+                prevIndex = index;
+                prevSelected = isItemSelected(index);
+                prevName = getItemFilename(index);
+            }
             setItemMiniIcon(index, minifolderopenicon);
             setItemBigIcon(index, bigfolderopenicon);
             selectItem(index);
@@ -1295,6 +1385,7 @@ long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
 
     // Stop scrolling
     stopAutoScroll();
+    getApp()->removeTimeout(this, ID_DROP_SCROLL_TIMER);
 
     // Perhaps target wants to deal with it
     if (IconList::onDNDDrop(sender, sel, ptr))
@@ -1356,10 +1447,7 @@ long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
 
     if (prevIndex != -1)
     {
-        setItemMiniIcon(prevIndex, minifoldericon);
-        setItemBigIcon(prevIndex, bigfoldericon);
-        deselectItem(prevIndex);
-        prevIndex = -1;
+        clearDropHover();
     }
     // Restore original directory
     setDirectory(orgdirectory);
@@ -5192,8 +5280,7 @@ FXString FileList::getCurrentFile() const
 // Set directory being displayed and update the history if necessary
 void FileList::setDirectory(const FXString& pathname, const FXbool histupdate, FXString prevpath)
 {
-    getApp()->removeTimeout(this, ID_RENAME_TIMER);
-    endInlineEdit(false);
+    FXbool changed = false;
     xf_setwaitcursor(getApp(), BEGIN_CURSOR);
 
     // Only update the history if it was requested
@@ -5229,6 +5316,11 @@ void FileList::setDirectory(const FXString& pathname, const FXbool histupdate, F
         }
         if (directory != path)
         {
+            // Showing the same folder again (e.g. clicking its tab) keeps the rename and the current item
+            changed = true;
+            getApp()->removeTimeout(this, ID_RENAME_TIMER);
+            renameClickIndex = -1;
+            endInlineEdit(false);
             RemoteDirectory::release(this);
             remoteChangedPending = false;
             updateRemoteBusy();
@@ -5264,7 +5356,7 @@ void FileList::setDirectory(const FXString& pathname, const FXbool histupdate, F
         }
     }
     // If possible, select directory we came from, otherwise select first item
-    if (hasFocus())
+    if (changed && hasFocus())
     {
         int sel_index = 0;
 
@@ -5920,16 +6012,22 @@ long FileList::onLeftBtnPress(FXObject* sender, FXSelector sel, void* ptr)
         return 1;
     }
 
-    // Clicking the name of the only selected item again starts renaming it, unless it becomes a double click
-    if (isEnabled() && hasInlineEditTarget() && hasFocus() && (single_click == SINGLE_CLICK_NONE) &&
+    // Clicking the name of the only selected item again starts renaming it, unless it becomes a double click.
+    // The window must be active, but the list itself may not have the focus yet (after clicking a tab, the
+    // other panel or the folder tree), otherwise the first click back on the item would be lost
+    if (isEnabled() && hasInlineEditTarget() && panelActive && getShell()->hasFocus() &&
+        (single_click == SINGLE_CLICK_NONE) &&
         (event->click_count == 1) && !(event->state & (SHIFTMASK | CONTROLMASK | ALTMASK | METAMASK)))
     {
         int index = getItemAt(event->win_x, event->win_y, event->state);
         int tx, ty, tw, th, ax, aw;
-        if ((index > 0 || ((index == 0) && (getItemFilename(0) != ".."))) && (index == current) &&
+        if ((index > 0 || ((index == 0) && (getItemFilename(0) != ".."))) &&
             items[index]->isSelected() && (getNumSelectedItems() == 1) &&
             getItemLabelRect(index, tx, ty, tw, th, ax, aw) &&
-            (event->win_x >= tx) && (event->win_x < tx + tw) && (event->win_y >= ty) && (event->win_y < ty + th))
+            ((options & ICONLIST_BIG_ICONS) ?
+             ((event->win_x >= tx) && (event->win_x < tx + tw) && (event->win_y >= ty) && (event->win_y < ty + th)) :
+             // In the list views, anywhere in the name cell of the row counts, not only on the text
+             ((event->win_x >= tx) && (event->win_x < ax + aw))))
         {
             renameClickIndex = index;
             renameClickLabel = items[index]->getText().section('\t', 0);

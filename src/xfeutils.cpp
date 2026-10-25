@@ -14,6 +14,9 @@
 #include <libgen.h>
 #include <stdlib.h>
 #include <sys/statvfs.h>
+#if defined(linux)
+#include <mntent.h>
+#endif
 
 #include <fx.h>
 #include <fxkeys.h>
@@ -2200,8 +2203,9 @@ public:
     }
 };
 
-static FXbool queryHostAssociation(const FXString& command, FXString& output)
+FXbool xf_hostcommandoutput(const FXString& command, FXString& output)
 {
+    output.clear();
     FXString query = xf_hostcommand(command) + " 2>&1";
     FILE* pipe = popen(query.text(), "r");
     if (!pipe)
@@ -2219,10 +2223,168 @@ static FXbool queryHostAssociation(const FXString& command, FXString& output)
     return status >= 0 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
+// Device (first mtab field) mounted exactly at dir, or empty
+FXString xf_mountsource(const FXString& dir)
+{
+    FXString source;
+#if defined(linux)
+    FILE* mtab = setmntent(MTAB_PATH, "r");
+    if (mtab)
+    {
+        struct mntent* mnt;
+        while ((mnt = getmntent(mtab)))
+        {
+            if (dir == mnt->mnt_dir)
+            {
+                source = mnt->mnt_fsname;
+            }
+        }
+        endmntent(mtab);
+    }
+#endif
+    return source;
+}
+
+// First mount point of a block device, or empty
+FXString xf_mountpointof(const FXString& device)
+{
+    FXString mountpoint;
+#if defined(linux)
+    FILE* mtab = setmntent(MTAB_PATH, "r");
+    if (mtab)
+    {
+        struct mntent* mnt;
+        while ((mnt = getmntent(mtab)))
+        {
+            if (device == mnt->mnt_fsname)
+            {
+                mountpoint = mnt->mnt_dir;
+                break;
+            }
+        }
+        endmntent(mtab);
+    }
+#endif
+    return mountpoint;
+}
+
+// Root of the desktop (udisks) mount containing path, or empty.
+// These are the drives a file manager mounts, unmounts and ejects itself.
+FXString xf_removablemount(const FXString& path)
+{
+#if defined(linux)
+    FXString best;
+    FILE* mtab = setmntent(MTAB_PATH, "r");
+    if (mtab)
+    {
+        struct mntent* mnt;
+        while ((mnt = getmntent(mtab)))
+        {
+            FXString dir = mnt->mnt_dir;
+            if ((dir.left(7) != "/media/" && dir.left(11) != "/run/media/") ||
+                strncmp(mnt->mnt_fsname, "/dev/", 5) != 0)
+            {
+                continue;
+            }
+            if ((path == dir || path.left(dir.length() + 1) == dir + "/") && dir.length() > best.length())
+            {
+                best = dir;
+            }
+        }
+        endmntent(mtab);
+    }
+    return best;
+#else
+    return FXString::null;
+#endif
+}
+
+// Decode the \xNN escapes used by lsblk --pairs
+static FXString lsblkvalue(const FXString& line, const FXString& key)
+{
+    FXString pattern = key + "=\"";
+    FXint pos = line.find(pattern);
+    if (pos < 0 || (pos > 0 && line[pos - 1] != ' '))
+    {
+        return FXString::null;
+    }
+    FXString value;
+    for (FXint i = pos + pattern.length(); i < line.length() && line[i] != '"'; i++)
+    {
+        if (line[i] == '\\' && i + 3 < line.length() && line[i + 1] == 'x')
+        {
+            value.append((FXchar)strtol(line.mid(i + 2, 2).text(), NULL, 16));
+            i += 3;
+        }
+        else
+        {
+            value.append(line[i]);
+        }
+    }
+    return value;
+}
+
+// Unmounted block devices holding a file system, as "path\tlabel\thotplug"
+// True for USB and other plug-in drives (internal disks must never be powered off); cached briefly
+FXbool xf_hotplugdevice(const FXString& device)
+{
+#if defined(linux)
+    static FXString lastdevice;
+    static FXbool lastresult = false;
+    static FXTime lasttime = 0;
+    FXTime now = FXThread::time();
+    if (device == lastdevice && now - lasttime < 5000000000LL)
+    {
+        return lastresult;
+    }
+    FXString output;
+    lastresult = device.left(5) == "/dev/" &&
+                 xf_hostcommandoutput("timeout -k 1 5 lsblk -n -d -o HOTPLUG " + xf_quote(device) + " </dev/null",
+                                      output) &&
+                 output.trim() == "1";
+    lastdevice = device;
+    lasttime = now;
+    return lastresult;
+#else
+    return false;
+#endif
+}
+
+
+FXbool xf_unmountedvolumes(vector_FXString& volumes)
+{
+    volumes.clear();
+#if defined(linux)
+    FXString output;
+    if (!xf_hostcommandoutput("timeout -k 1 5 lsblk -P -n -o PATH,LABEL,FSTYPE,MOUNTPOINT,HOTPLUG,TYPE </dev/null",
+                              output))
+    {
+        return false;
+    }
+    for (FXint n = 0; n < output.contains('\n') + 1; n++)
+    {
+        FXString line = output.section('\n', n);
+        FXString path = lsblkvalue(line, "PATH");
+        FXString fstype = lsblkvalue(line, "FSTYPE");
+        FXString type = lsblkvalue(line, "TYPE");
+        if (path.left(5) != "/dev/" || fstype.empty() || fstype == "swap" || fstype.right(7) == "_member" ||
+            fstype == "crypto_LUKS" || !lsblkvalue(line, "MOUNTPOINT").empty() ||
+            (type != "part" && type != "disk" && type != "rom"))
+        {
+            continue;
+        }
+        volumes.push_back(path + "\t" + lsblkvalue(line, "LABEL") + "\t" + lsblkvalue(line, "HOTPLUG"));
+    }
+    return true;
+#else
+    return false;
+#endif
+}
+
 FXbool xf_filemimetype(FXWindow* owner, const FXString& pathname, FXString& mimetype)
 {
     mimetype.clear();
-    if (!queryHostAssociation("xdg-mime query filetype " + xf_quote(pathname), mimetype) ||
+    if (!xf_hostcommandoutput("xdg-mime query filetype " + xf_quote(pathname), mimetype) ||
         mimetype.empty() || mimetype.find('\n') >= 0 || mimetype.find('/') < 0)
     {
         appLog(APP_LOG_ERRORS, "mime-query-failed", pathname + ": " + mimetype);
@@ -2244,7 +2406,7 @@ FXuint xf_missingassociation(FXWindow* owner, const FXString& pathname)
         return 3;
     }
     FXString type;
-    if (!queryHostAssociation("xdg-mime query filetype " + xf_quote(pathname), type) ||
+    if (!xf_hostcommandoutput("xdg-mime query filetype " + xf_quote(pathname), type) ||
         type.empty() || type.find('/') <= 0 || type.find('\n') >= 0)
     {
         appLog(APP_LOG_ERRORS, "association-query-failed", FXString("file=\"") + pathname + "\" error=\"" + type + "\"");
@@ -2253,7 +2415,7 @@ FXuint xf_missingassociation(FXWindow* owner, const FXString& pathname)
         return 3;
     }
     FXString desktop;
-    if (!queryHostAssociation("xdg-mime query default " + xf_quote(type), desktop))
+    if (!xf_hostcommandoutput("xdg-mime query default " + xf_quote(type), desktop))
     {
         appLog(APP_LOG_ERRORS, "association-query-failed", desktop);
         MessageBox::warning(owner, BOX_OK, _("Warning"), _("Cannot read the system's default application:\n%s"), desktop.text());
@@ -2674,7 +2836,7 @@ FXbool xf_keepmount(FXString mntdir, FXString mntname)
     if ((mntdir.left(4) != "/sys") &&
         (mntdir.left(4) != "/dev") &&
         (mntdir.left(5) != "/proc") &&
-        (mntdir.left(4) != "/run") &&
+        ((mntdir.left(4) != "/run") || (mntdir.left(11) == "/run/media/")) &&
         (mntname.left(5) != "gvfsd") &&         // gvfsd mounts
         (mntname.left(6) != "portal"))          // Some fuse mounts
     {
@@ -2807,7 +2969,7 @@ FXString xf_substitutecase(const FXString& str, const FXString& org, const FXStr
 // Return 0 if file can't be read
 FXulong xf_hashfile(const FXchar* filename)
 {
-    FXlong hash = 7873;
+    FXulong hash = 7873;
     int c;
     FILE* file = fopen(filename, "r");
 
@@ -2824,7 +2986,7 @@ FXulong xf_hashfile(const FXchar* filename)
 
     fclose(file);
 
-    return (FXulong)FXMAX(hash, 0);
+    return hash;
 }
 
 

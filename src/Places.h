@@ -122,6 +122,13 @@ protected:
     FXStringDict* mounts = NULL;          // String dictionary of mount points
     FXulong hash_prev = 0;
     FXString gvfsmounts_prev = "";
+    FXString blocks_prev = "";
+    FXStringDict knownDevices;            // Block devices seen mounted on /media in this session
+
+    void scan();
+    void addMount(FXString, const FXString&, FXIcon*);
+    static FXString gvfsMounts();
+    static FXString blockDevices();
 
 public:
     MountsList(FXWindow*, FXComposite*, FXObject*, FXSelector, FXColor listbackcolor = FXRGB(255, 255, 255),
@@ -158,6 +165,9 @@ public:
 
     // Select item from key and set it current
     void setMount(FXString&);
+
+    // Rescan on the next refresh
+    void invalidate();
 
     // Refresh mount points
     long onMountsRefresh(FXObject*, FXSelector, void*);

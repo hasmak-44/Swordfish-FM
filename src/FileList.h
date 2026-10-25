@@ -138,6 +138,8 @@ class FXAPI FileList : public IconList
 protected:
     FileItem* list = NULL;                              // File item list
     int prevIndex = 0;
+    FXbool prevSelected = false;                        // Selection of the hovered drop folder before the hover
+    FXString prevName;                                  // Name of the hovered drop folder
     FXString directory;                                 // Current directory
     FXString orgdirectory;                              // Original directory
     FXString dropdirectory;                             // Drop directory
@@ -174,6 +176,7 @@ protected:
     FXuint origpath_size = 0;
     FXWindow* focuswindow = NULL;                       // Window used to test focus
     int renameClickIndex = -1;                          // Item clicked again while selected (slow click rename)
+    FXbool panelActive = true;                          // The panel showing the list is the active one
     FXString renameClickLabel;
     FXuint idCol[NMAX_COLS + 1] = { 0 };
     FXuint nbCols = 0;
@@ -236,6 +239,8 @@ protected:
 
     FXbool updateItems(FXbool);
     void   listItems(FXbool);
+    void   clearDropHover();
+    int    dropScrollStep(int y);
 
 private:
     FileList(const FileList&);
@@ -249,6 +254,12 @@ public:
     long onLeftBtnRelease(FXObject*, FXSelector, void*);
     long onRenameTimer(FXObject*, FXSelector, void*);
     FXbool beginInlineRename(int index);
+
+    // The slow click rename only works in the active panel
+    void setPanelActive(FXbool active)
+    {
+        panelActive = active;
+    }
     long onKeyPress(FXObject*, FXSelector, void*);
     void toggleExpand(int index, int forcestate = -1);
     std::set<std::string> getExpanded() const
@@ -262,6 +273,7 @@ public:
     }
     void boostRefresh(FXuint seconds = 30);
     long onOpenTimer(FXObject*, FXSelector, void*);
+    long onDropScrollTimer(FXObject*, FXSelector, void*);
     long onDNDEnter(FXObject*, FXSelector, void*);
     long onDNDLeave(FXObject*, FXSelector, void*);
     long onDNDMotion(FXObject*, FXSelector, void*);
@@ -468,6 +480,7 @@ public:
         ID_FOLDERSIZE_SIZE,
         ID_FOLDERSIZE_BOTH,
         ID_RENAME_TIMER,
+        ID_DROP_SCROLL_TIMER,
         ID_LAST
     };
 public:

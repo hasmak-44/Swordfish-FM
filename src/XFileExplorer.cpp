@@ -45,8 +45,6 @@
 #define NB_TOOLBARS     5
 
 // Address bar length
-#define ADDRESS_BAR_LENGTH    68
-#define ADDRESS_BAR_HEIGHT    6
 
 // Global variables
 FXString clipboard = "";
@@ -189,8 +187,7 @@ FXDEFMAP(XFileExplorer) XFileExplorerMap[] =
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_EMPTY_TRASH, XFileExplorer::onCmdEmptyTrash),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_TRASH_SIZE, XFileExplorer::onCmdTrashSize),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_XTERM, XFileExplorer::onCmdXTerm),
-    FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_CLEAR_ADDRESS, XFileExplorer::onCmdClearAddress),
-    FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_GOTO_ADDRESS, XFileExplorer::onCmdGotoAddress),
+    FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_EDIT_ADDRESS, XFileExplorer::onCmdEditAddress),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_PREFS, XFileExplorer::onCmdPrefs),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_HORZ_PANELS, XFileExplorer::onCmdHorzVertPanels),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_VERT_PANELS, XFileExplorer::onCmdHorzVertPanels),
@@ -235,7 +232,6 @@ FXDEFMAP(XFileExplorer) XFileExplorerMap[] =
     FXMAPFUNC(SEL_UPDATE, XFileExplorer::ID_SHOW_TWO_PANELS, XFileExplorer::onUpdShowPanels),
     FXMAPFUNC(SEL_UPDATE, XFileExplorer::ID_SHOW_FOLDERS_ONE_PANEL, XFileExplorer::onUpdShowPanels),
     FXMAPFUNC(SEL_UPDATE, XFileExplorer::ID_SHOW_FOLDERS_TWO_PANELS, XFileExplorer::onUpdShowPanels),
-    FXMAPFUNC(SEL_UPDATE, XFileExplorer::ID_GOTO_ADDRESS, XFileExplorer::onUpdAddress),
     FXMAPFUNC(SEL_UPDATE, XFileExplorer::ID_EMPTY_TRASH, XFileExplorer::onUpdEmptyTrash),
     FXMAPFUNC(SEL_UPDATE, XFileExplorer::ID_EMPTY_TRASH, XFileExplorer::onUpdTrashSize),
     FXMAPFUNC(SEL_UPDATE, XFileExplorer::ID_FILE_DELETE, XFileExplorer::onUpdFileDelete),
@@ -608,7 +604,8 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     }
     else
     {
-        addresstoolbar->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_SHOW), NULL);        
+        // Empty slot kept for a future toolbar (the common address bar was removed)
+        addresstoolbar->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_HIDE), NULL);
     }
 
     // Tab toolbar
@@ -1375,20 +1372,10 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     new FXButton(paneltoolbar, TAB + _("Zoom In"), minizoominicon, lpanel, FilePanel::ID_ZOOM_IN,
                  BUTTON_TOOLBAR | LAYOUT_CENTER_Y | LAYOUT_LEFT | FRAME_NONE);
 
-    // Address combo box
+    // Edit the current panel's path
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "clear_address", "Ctrl-L");
-    btn = new FXButton(addresstoolbar, TAB + _("Edit Path") + PARS(key), miniediticon, this, ID_CLEAR_ADDRESS,
-                       BUTTON_TOOLBAR | LAYOUT_CENTER_Y | LAYOUT_LEFT | ICON_BEFORE_TEXT | FRAME_RAISED);
     hotkey = xf_parseaccel(key);
-    btn->addHotKey(hotkey);
-    new FXVerticalSeparator(addresstoolbar, SEPARATOR_GROOVE | LAYOUT_FILL_Y);
-
-    addressbox = new HistComboBox(addresstoolbar, ADDRESS_BAR_LENGTH, true, false, this, ID_GOTO_ADDRESS,
-                                  COMBOBOX_INSERT_LAST | JUSTIFY_LEFT | LAYOUT_CENTER_Y);
-    addressbox->setNumVisible(5);
-    commonpathlink = new PathLinker(addresstoolbar, lpanel->getList(), dirpanel->getList(), LAYOUT_FILL_X);
-    commonpathlink->setEditTarget(this, ID_CLEAR_ADDRESS);
-    addressbox->hide();
+    getAccelTable()->addAccel(hotkey, this, FXSEL(SEL_COMMAND, ID_EDIT_ADDRESS));
 
     // Menus
 
@@ -1881,7 +1868,6 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         startdirs = true;
     }
 
-    prevdir = FXString::null;
     prev_width = getWidth();
 
     // Default programs identifiers
@@ -3767,20 +3753,22 @@ void XFileExplorer::create()
     {        
         // Automount status 
         FXbool automount = getApp()->reg().readUnsignedEntry("OPTIONS", "automount", false);
+        FXbool automountCheckFailed = false;
 
-        // Check if udisks2 is installed
+        // Query the host service, not localized column headings or bundled libraries.
         if (automount)
         {
-            FXString cmd = "udisksctl status";
-            FXString str = xf_getcommandoutput(cmd);
+            FXString output;
 
-            if (str.find("DEVICE") == -1)
+            if (!xf_hostcommandoutput("timeout -k 2 10 udisksctl status", output))
             {
-                MessageBox::error(this, BOX_OK, _("Error"), _("Unable to find udisksctl command on your system.\
-\nPackage udisks2 is probably not installed, Swordfish automounter is disabled."));       
-                
-                getApp()->reg().writeUnsignedEntry("OPTIONS", "automount", false);
+                appLog(APP_LOG_ERRORS, "automount-service-check-failed", output);
+                MessageBox::error(this, BOX_OK, _("Error"),
+                                  _("Unable to query the system disk service using udisksctl.\n"
+                                    "Automount is disabled for this session; your preference is unchanged.\n\n%s"),
+                                  output.text());
                 automount = false;
+                automountCheckFailed = true;
             }            
         }
         
@@ -3792,7 +3780,7 @@ void XFileExplorer::create()
         FXbool restart_automount = getApp()->reg().readUnsignedEntry("OPTIONS", "restart_automount", false);
        
         // Stop automounter if running and (disabled or (enabled and restart))
-        if ( (pid != "") && ( !automount || (automount && restart_automount) ) )
+        if (!automountCheckFailed && (pid != "") && (!automount || restart_automount))
         {
             cmd = "killall -q xfe-automount";
             int ret = system(cmd.text());
@@ -3827,7 +3815,6 @@ XFileExplorer::~XFileExplorer()
 {
     delete menubar;
     delete addresstoolbar;
-    delete addressbox;
     delete filemenu;
     delete toolsmenu;
     delete trashmenu;
@@ -3871,10 +3858,6 @@ long XFileExplorer::onKeyPress(FXObject* sender, FXSelector sel, void* ptr)
 {
     FXEvent* event = (FXEvent*)ptr;
     int current;
-    if (event->code == KEY_Escape && editingCommonPath)
-    {
-        return onCmdClearAddress(this, 0, NULL);
-    }
 
     // Tab was pressed : cycle through the panels from left to right
     if (event->code == KEY_Tab)
@@ -4589,133 +4572,8 @@ long XFileExplorer::onCmdGotoBookmark(FXObject* sender, FXSelector, void*)
     // Set bookmark (select and set current)
     dirpanel->getBookmarksList()->setBookmark(key);
 
-    // Update address list
-    FXString item;
-    int i = 0;
-    int count = addressbox->getNumItems();
-    if (!count)
-    {
-        count++;
-        addressbox->insertItem(0, addressbox->getText());
-    }
-    while (i < count)
-    {
-        item = addressbox->getItem(i++);
-        if (xf_strequal(pathname.text(), (const char*)&item[0]))
-        {
-            i--;
-            break;
-        }
-    }
-    if (i == count)
-    {
-        addressbox->insertItem(0, pathname);
-    }
-
     // Set focus to the active panel
     lpanel->getCurrent()->setFocusOnList();
-
-    return 1;
-}
-
-
-// Clear address bar
-long XFileExplorer::onCmdClearAddress(FXObject*, FXSelector, void*)
-{
-    if (getApp()->reg().readUnsignedEntry("OPTIONS", "common_addressbar", false))
-    {
-        editingCommonPath = !editingCommonPath;
-        if (editingCommonPath)
-        {
-            commonpathlink->hide();
-            addressbox->setText(getCurrentPanel()->getDirectory());
-            addressbox->show();
-            addressbox->setFocus();
-            addressbox->selectAll();
-        }
-        else
-        {
-            addressbox->hide();
-            commonpathlink->show();
-            getCurrentPanel()->setFocusOnList();
-        }
-        addresstoolbar->recalc();
-        return 1;
-    }
-    return getCurrentPanel()->onCmdEditPath(this, FXSEL(SEL_COMMAND, FilePanel::ID_EDIT_PATH), NULL);
-}
-
-
-// Goto address entered into the text field
-long XFileExplorer::onCmdGotoAddress(FXObject*, FXSelector, void*)
-{
-    if (getApp()->reg().readUnsignedEntry("OPTIONS", "common_addressbar", false))
-    {
-        // The pane's validated navigation is shared with the common address bar.
-        FXString path = addressbox->getText();
-        if (path.empty())
-        {
-            MessageBox::warning(this, BOX_OK, _("Warning"), _("File name is empty, operation cancelled"));
-            addressbox->setFocus();
-            return 1;
-        }
-        FXString netpath;
-        int network = getCurrentPanel()->resolveNetworkPath(path, netpath);
-        if (network == 2) return 1;
-        if (network < 0)
-        {
-            addressbox->setFocus();
-            return 1;
-        }
-        path = (network > 0) ? netpath : xf_filefromuri(path);
-        if (path == "~")
-        {
-            path = FXSystem::getHomeDirectory();
-        }
-        else if (path.find("~/") == 0)
-        {
-            path.replace(0, 1, FXSystem::getHomeDirectory());
-        }
-        if (getCurrentPanel()->navigatePane(FXPath::absolute(getCurrentPanel()->getDirectory(), path)))
-        {
-            editingCommonPath = false;
-            addressbox->hide();
-            commonpathlink->show();
-            addresstoolbar->recalc();
-        }
-        else
-        {
-            addressbox->setFocus();
-        }
-        return 1;
-    }
-    // Address where we want to go
-    FXString address = addressbox->getText();
-
-    // In case address is given in URI form, convert it
-    address = ::xf_filefromuri(address);
-
-    // If first two characters are '~/' then replace '~' with home directory
-    if (address.find("~/") == 0)
-    {
-        address.replace(0, 1, FXSystem::getHomeDirectory());
-    }
-
-    // Get complete path
-    FXString path = FXPath::absolute(lpanel->getCurrent()->getDirectory(), address);
-    FXString dir = path;
-
-    // Go up to the lowest directory which still exists
-    while (!FXPath::isTopDirectory(dir) && !xf_isdirectory(dir))
-    {
-        dir = FXPath::upLevel(dir);
-    }
-
-    // Move to this existing directory
-    lpanel->getCurrent()->setDirectory(dir);
-    lpanel->getCurrent()->updatePath();
-    dirpanel->setDirectory(dir, true);
-    addressbox->setText(dir);
 
     return 1;
 }
@@ -4866,12 +4724,23 @@ FXString projectCredit()
              "https://github.com/hasmak-44/Swordfish-FM/issues\n");
 }
 
+// Plain-text references in About and Help that should open the project pages
+void registerProjectLinks()
+{
+    static FXbool named = false;
+    if (!named)
+    {
+        LinkText::addNamedLink("GitHub issues", FXString(projectWebsite) + "/issues");
+        named = true;
+    }
+}
+
 void addProjectLink(FXComposite* parent, XFileExplorer* owner)
 {
     FXWindow* first = parent->getFirst();
     FXButton* link = new FXButton(parent, projectWebsite, NULL, owner, XFileExplorer::ID_PROJECT_WEBSITE,
                                   BUTTON_NORMAL | FRAME_NONE | LAYOUT_SIDE_TOP | LAYOUT_FILL_X);
-    link->setTextColor(FXRGB(0, 80, 180));
+    link->setTextColor(LinkText::linkColor(link->getBackColor()));
     link->setTipText(_("Open the Swordfish FM GitHub repository in your browser"));
     link->setDefaultCursor(parent->getApp()->getDefaultCursor(DEF_HAND_CURSOR));
     if (first) link->reparent(parent, first);
@@ -4904,6 +4773,7 @@ long XFileExplorer::onCmdProjectWebsite(FXObject*, FXSelector, void*)
 
 long XFileExplorer::onCmdHelp(FXObject*, FXSelector, void*)
 {
+    registerProjectLinks();
     // Display help window
     if (helpwindow == NULL)
     {
@@ -4936,6 +4806,7 @@ long XFileExplorer::onCmdHelp(FXObject*, FXSelector, void*)
 // About menu
 long XFileExplorer::onCmdAbout(FXObject*, FXSelector, void*)
 {
+    registerProjectLinks();
     FXString msg;
     msg.format(_("SwordFish Version %s"), VERSION);
 
@@ -5026,65 +4897,10 @@ long XFileExplorer::onCmdRefresh(FXObject*, FXSelector, void*)
 }
 
 
-// Update address
-long XFileExplorer::onUpdAddress(FXObject* sender, FXSelector, void*)
+// Edit the current panel's path (Ctrl-L)
+long XFileExplorer::onCmdEditAddress(FXObject*, FXSelector, void*)
 {
-    FXString currentdir = lpanel->getCurrent()->getDirectory();
-    FXbool common = getApp()->reg().readUnsignedEntry("OPTIONS", "common_addressbar", false);
-    lpanel->showAddressbar(!common);
-    rpanel->showAddressbar(!common);
-    if (common)
-    {
-        addresstoolbar->show();
-        commonpathlink->setLists(getCurrentPanel()->getList(), dirpanel->getList());
-    }
-    else
-    {
-        addresstoolbar->hide();
-        if (editingCommonPath)
-        {
-            editingCommonPath = false;
-            addressbox->hide();
-            commonpathlink->show();
-        }
-    }
-    if (editingCommonPath)
-    {
-        return 1;
-    }
-
-    if (currentdir != prevdir)
-    {
-        // Update address
-        addressbox->setText(xf_cleanpath(currentdir));
-
-        // Update address list
-        FXString item;
-        int i = 0;
-        int count = addressbox->getNumItems();
-        if (!count)
-        {
-            count++;
-            addressbox->insertItem(0, addressbox->getText());
-        }
-        while (i < count)
-        {
-            item = addressbox->getItem(i++);
-            if (xf_strequal(currentdir.text(), (const char*)&item[0]))
-            {
-                i--;
-                break;
-            }
-        }
-        if (i == count)
-        {
-            addressbox->insertItem(0, currentdir);
-        }
-
-        prevdir = currentdir;
-    }
-
-    return 1;
+    return getCurrentPanel()->onCmdEditPath(this, FXSEL(SEL_COMMAND, FilePanel::ID_EDIT_PATH), NULL);
 }
 
 
@@ -6434,7 +6250,6 @@ long XFileExplorer::onUpdFileRestore(FXObject* sender, FXSelector, void* ptr)
 // Update file operation menu items
 long XFileExplorer::onUpdFileMan(FXObject* sender, FXSelector, void*)
 {
-    onUpdAddress(this, 0, NULL);
     // Update show tab bar
     tabtoolbar->hide();
     FilePanel* tabpanels[] = {lpanel, rpanel};

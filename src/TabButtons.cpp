@@ -12,7 +12,7 @@ extern FXString homedir;
 
 
 // Delay before a tab hovered during a file drag becomes the current tab
-#define TAB_HOVER_DELAY 2000
+#define TAB_HOVER_DELAY 1500
 
 
 // Tab label button that can be dragged onto the Bookmarks list or another tab,
@@ -196,6 +196,11 @@ public:
         if (tabs() && index() < tabs()->getNumActiveTabs())
         {
             tabs()->setCurrentTab(index());
+            // Show the new folder right away instead of waiting for the drag to go idle
+            getApp()->forceRefresh();
+            getShell()->layout();
+            getApp()->repaint();
+            getApp()->flush();
         }
         return 1;
     }

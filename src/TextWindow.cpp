@@ -41,7 +41,7 @@ TextWindow::TextWindow(FXWindow* owner, const FXString& name, int nblines, int n
                                                        LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_NONE,
                                                        0, 0, 0, 0, 0, 0, 0, 0);
 
-    text = new FXText(textbox, NULL, 0, TEXT_READONLY | TEXT_WORDWRAP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    text = new LinkText(textbox, NULL, 0, TEXT_READONLY | TEXT_WORDWRAP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     text->setVisibleRows(nblines);
     text->setVisibleColumns(nbcols);
 
@@ -70,7 +70,7 @@ TextWindow::TextWindow(FXApp* app, const FXString& name, int nblines, int nbcols
                                                        LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_NONE,
                                                        0, 0, 0, 0, 0, 0, 0, 0);
 
-    text = new FXText(textbox, NULL, 0, TEXT_READONLY | TEXT_WORDWRAP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    text = new LinkText(textbox, NULL, 0, TEXT_READONLY | TEXT_WORDWRAP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     text->setVisibleRows(nblines);
     text->setVisibleColumns(nbcols);
 

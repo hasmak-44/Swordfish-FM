@@ -19,20 +19,22 @@ extern int ServerNum;
 extern char ShareHistory[SHARE_HIST_SIZE][MAX_SHARE_SIZE];
 extern int ShareNum;
 
-// Domain history
-extern char DomainHistory[DOMAIN_HIST_SIZE][MAX_DOMAIN_SIZE];
-extern int DomainNum;
 
-// User history
-extern char UserHistory[USER_HIST_SIZE][MAX_USER_SIZE];
-extern int UserNum;
+// Server types: label and address scheme
+static const char* const serverTypes[][2] =
+{
+    { N_("Windows share (SMB)"), "smb" },
+    { N_("SSH (SFTP)"), "sftp" },
+    { N_("FTP"), "ftp" },
+    { N_("FTP over TLS (FTPS)"), "ftps" },
+    { N_("WebDAV"), "dav" },
+    { N_("Secure WebDAV (HTTPS)"), "davs" },
+};
 
 
 FXDEFMAP(ConnectDialog) ConnectDialogMap[] =
 {
     FXMAPFUNC(SEL_COMMAND, ConnectDialog::ID_ACCEPT, ConnectDialog::onCmdAccept),
-    FXMAPFUNC(SEL_COMMAND, ConnectDialog::ID_CANCEL, ConnectDialog::onCmdCancel),
-    FXMAPFUNC(SEL_UPDATE, ConnectDialog::ID_SAVE_PASSWD, ConnectDialog::onUpdSavePasswd),
     FXMAPFUNC(SEL_COMMAND, ConnectDialog::ID_SERVER_TYPE, ConnectDialog::onCmdServerType),
     FXMAPFUNC(SEL_UPDATE, ConnectDialog::ID_ACCEPT, ConnectDialog::onUpdAccept),
 };
@@ -56,10 +58,19 @@ ConnectDialog::ConnectDialog(FXWindow* win, FXString title, FilePanel* fpanel, D
 
     FXVerticalFrame* vframe = new FXVerticalFrame(group, LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
-    FXMatrix* matrix = new FXMatrix(vframe, 4, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_COLUMN | LAYOUT_FILL_X);
+    FXMatrix* matrix = new FXMatrix(vframe, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_COLUMN | LAYOUT_FILL_X);
 
-    new FXLabel(matrix, _("Server:") + FXString("     "), NULL, JUSTIFY_LEFT);
+    new FXLabel(matrix, _("Type:"), NULL, JUSTIFY_LEFT);
+    servertype = new ComboBox(matrix, 30, false, false, this, ID_SERVER_TYPE,
+                              COMBOBOX_STATIC | LAYOUT_FILL_COLUMN | LAYOUT_FILL_X);
+    servertype->setNumVisible(ARRAYNUMBER(serverTypes));
+    for (FXuint i = 0; i < ARRAYNUMBER(serverTypes); i++)
+    {
+        servertype->appendItem(_(serverTypes[i][0]));
+    }
+    servertype->setCurrentItem(0);
 
+    new FXLabel(matrix, _("Server:") + FXString("    "), NULL, JUSTIFY_LEFT);
     server = new HistComboBox(matrix, 30, false, true, this, ID_SERVER_NAME,
                                 COMBOBOX_INSERT_LAST | LAYOUT_CENTER_Y | LAYOUT_CENTER_X | LAYOUT_FILL_COLUMN |
                                 LAYOUT_FILL_ROW | LAYOUT_FILL_X);
@@ -69,28 +80,14 @@ ConnectDialog::ConnectDialog(FXWindow* win, FXString title, FilePanel* fpanel, D
         server->appendItem(ServerHistory[i]);
     }
 
-    portlabel = new FXLabel(matrix, FXString("    ") + _("PORT:") + FXString(" "), NULL, JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
-    port = new FXSpinner(matrix, 5, this, ID_PORT, JUSTIFY_RIGHT | LAYOUT_FILL_X | LAYOUT_FILL_ROW, 0, 0, 0, 0, 2,
-                            2, 1, 1);
+    new FXLabel(matrix, _("Port:"), NULL, JUSTIFY_LEFT);
+    FXHorizontalFrame* portframe = new FXHorizontalFrame(matrix, LAYOUT_FILL_COLUMN | LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 0, 0);
+    port = new FXSpinner(portframe, 5, this, ID_PORT, JUSTIFY_RIGHT | FRAME_SUNKEN | FRAME_THICK, 0, 0, 0, 0, 2, 2, 1, 1);
     port->setRange(0, 65535);
     port->setValue(0);
-    portlabel->disable();
-    port->disable();
-    port->setTextColor(getApp()->getBorderColor());
-
-    new FXLabel(matrix, _("Type:"), NULL, JUSTIFY_LEFT);
-
-    servertype = new ComboBox(matrix, 2, false, false, this, ID_SERVER_TYPE, COMBOBOX_STATIC | LAYOUT_FILL_COLUMN | LAYOUT_FILL_X);
-    servertype->setNumVisible(2);
-    servertype->appendItem(_("Windows share"));
-    servertype->appendItem(_("SSH"));
-    servertype->setCurrentItem(0);
-
-    new FXLabel(matrix, "", NULL, JUSTIFY_LEFT);
-    new FXLabel(matrix, "", NULL, JUSTIFY_LEFT);
+    new FXLabel(portframe, _("(0 = standard port)"), NULL, JUSTIFY_LEFT | LAYOUT_CENTER_Y);
 
     sharelabel = new FXLabel(matrix, _("Share:"), NULL, JUSTIFY_LEFT);
-
     share = new HistComboBox(matrix, 30, false, true, this, ID_SHARE_NAME,
                                 COMBOBOX_INSERT_LAST | LAYOUT_CENTER_Y | LAYOUT_CENTER_X | LAYOUT_FILL_COLUMN |
                                 LAYOUT_FILL_ROW | LAYOUT_FILL_X);
@@ -100,57 +97,22 @@ ConnectDialog::ConnectDialog(FXWindow* win, FXString title, FilePanel* fpanel, D
         share->appendItem(ShareHistory[i]);
     }
 
-    group = new FXGroupBox(contents, _("User Details"),
-                                        GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
-
-    vframe = new FXVerticalFrame(group, LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
-
-    matrix = new FXMatrix(vframe, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_COLUMN | LAYOUT_FILL_X);
-
-    domainlabel = new FXLabel(matrix, _("Domain name:") + FXString("    "), NULL, JUSTIFY_LEFT);
-
-    domain = new HistComboBox(matrix, 30, false, true, this, ID_DOMAIN_NAME,
-                                COMBOBOX_INSERT_LAST | LAYOUT_CENTER_Y | LAYOUT_CENTER_X | LAYOUT_FILL_COLUMN |
-                                LAYOUT_FILL_ROW | LAYOUT_FILL_X);
-    domain->setNumVisible(5);
-    for (int i = 0; i < DomainNum; i++)
-    {
-        domain->appendItem(DomainHistory[i]);
-    }
-
-    new FXLabel(matrix, _("User name:") + FXString("    "), NULL, JUSTIFY_LEFT);
-
-    user = new HistComboBox(matrix, 30, false, true, this, ID_USER_NAME,
-                                COMBOBOX_INSERT_LAST | LAYOUT_CENTER_Y | LAYOUT_CENTER_X | LAYOUT_FILL_COLUMN |
-                                LAYOUT_FILL_ROW | LAYOUT_FILL_X);
-    user->setNumVisible(5);
-    for (int i = 0; i < UserNum; i++)
-    {
-        user->appendItem(UserHistory[i]);
-    }
-
-    new FXLabel(matrix, _("Password:") + FXString("    "), NULL, JUSTIFY_LEFT);
-
-    passwd = new FXTextField(matrix, 30, this, ID_PASSWD,
-                               TEXTFIELD_NORMAL | TEXTFIELD_PASSWD | LAYOUT_FILL_COLUMN | LAYOUT_FILL_X |
-                               LAYOUT_CENTER_Y);
-
-    new FXLabel(matrix, "", NULL, JUSTIFY_LEFT);
-    savepasswd = new FXCheckButton(matrix, _("Save password"), this, ID_SAVE_PASSWD);
+    hint = new FXLabel(vframe, FXString::null, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
 
     // Buttons
     FXHorizontalFrame* buttons = new FXHorizontalFrame(contents, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10,
                                                        5, 5);
 
-    // Accept button
-    acceptbtn = new FXButton(buttons, _("&Accept"), NULL, this, ConnectDialog::ID_ACCEPT,
+    // Connect button
+    acceptbtn = new FXButton(buttons, _("C&onnect"), NULL, this, ConnectDialog::ID_ACCEPT,
                              FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     acceptbtn->addHotKey(KEY_Return);
 
     // Cancel button
-    new FXButton(buttons, _("&Cancel"), NULL, this, ConnectDialog::ID_CANCEL,
+    new FXButton(buttons, _("&Cancel"), NULL, this, DialogBox::ID_CANCEL,
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
 
+    updateHint();
 }
 
 
@@ -159,28 +121,7 @@ void ConnectDialog::create()
 {
     // Create dialog box
     DialogBox::create();
-
-    // Set focus to the first empty field
-    if (server->getText() == "")
-    {
-        server->CursorEnd();
-    }
-    else if (share->getText() == "")
-    {
-        share->CursorEnd();        
-    }
-    else if (domain->getText() == "")
-    {
-        domain->CursorEnd();
-    }
-    else if (user->getText() == "")
-    {
-        user->CursorEnd();
-    }
-    else
-    {
-        passwd->setFocus();
-    }
+    server->CursorEnd();
 }
 
 
@@ -190,439 +131,137 @@ ConnectDialog::~ConnectDialog()
     delete acceptbtn;
     delete server;
     delete servertype;
-    delete portlabel;
     delete port;
     delete sharelabel;
-    delete domainlabel;
-    delete domain;
-    delete user;
-    delete passwd;
-    delete savepasswd;
+    delete share;
+    delete hint;
 }
 
 
-// Changes are accepted
+// Address scheme of the selected server type
+FXString ConnectDialog::scheme()
+{
+    int index = servertype->getCurrentItem();
+    if (index < 0 || index >= (int)ARRAYNUMBER(serverTypes))
+    {
+        index = 0;
+    }
+    return serverTypes[index][1];
+}
+
+
+// Share label and help text for the selected server type
+void ConnectDialog::updateHint()
+{
+    if (scheme() == "smb")
+    {
+        sharelabel->setText(_("Share (optional):"));
+        hint->setText(_("Leave the share empty to see all shared folders of the server.\n\
+You will be asked for a user name and password if the server needs them."));
+    }
+    else
+    {
+        sharelabel->setText(_("Folder (optional):"));
+        hint->setText(_("Leave the folder empty to open the top folder of the server.\n\
+You will be asked for a user name and password if the server needs them."));
+    }
+}
+
+
+// Percent-encode a share or folder name for a server address
+static FXString connectEncode(const FXString& str)
+{
+    const char* hex = "0123456789ABCDEF";
+    FXString out;
+    for (int i = 0; i < str.length(); i++)
+    {
+        FXuchar c = (FXuchar)str[i];
+        if (Ascii::isAlphaNumeric(c) || c == '-' || c == '.' || c == '_' || c == '~' || c == '/')
+        {
+            out += (FXchar)c;
+        }
+        else
+        {
+            out += '%';
+            out += hex[c >> 4];
+            out += hex[c & 15];
+        }
+    }
+    return out;
+}
+
+
+// Connect the same way as an address typed in the address bar: the server asks for the login
 long ConnectDialog::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
 {
     DialogBox::onCmdAccept(sender, sel, ptr);
 
-    // SMB server
-    if (servertype->getText() == _("Windows share"))
+    FXString host = server->getText().trim();
+    // Accept a pasted address such as smb://server or \\server
+    while (host.left(1) == "\\" || host.left(1) == "/")
     {
-        return smbMount();
+        host.erase(0, 1);
+    }
+    if (host.find("://") >= 0)
+    {
+        host = host.after('/', 2);
+    }
+    host = host.before('/').before('\\');
+    if (port->getValue() != 0 && host.find(':') < 0)
+    {
+        host += ":" + FXStringVal(port->getValue());
     }
 
-    // SSH server
-    if (servertype->getText() == _("SSH"))
+    FXString target = share->getText().trim();
+    target.substitute('\\', '/');
+    while (target.left(1) == "/")
     {
-        return sftpMount();
-    }
-   
-    return 0;
-}
-
-
-// Mount SMB share
-long ConnectDialog::smbMount(void)
-{
-    // Password is empty, try to retrieve secret using secret-tool
-    if (passwd->getText() == "")
-    {
-        FXString cmd = FXString("secret-tool search") +
-                       " sharetype " + "smb" +
-                       " server " + server->getText() +
-                       " share " + xf_quote(share->getText()) +
-                       " user " + xf_quote(user->getText());
-        
-        FXString ret = xf_getcommandoutput(xf_hostcommand("/bin/sh -c " + xf_quote(cmd)));
-
-        if (ret != "")
-        {   
-            // secret-tool utility not found
-            if (ret.find("secret-tool: not found") != -1)
-            {
-                MessageBox::error(this, BOX_OK, _("Error"), _("Password cannot be retrieved because the secret-tool utility\
- was not found on your system.\n\nPlease install the package that provides secret-tool\
- (libsecret-tools on Debian based systems, libsecret on RedHat based systems)..."));
-                execute(PLACEMENT_OWNER);
-                return 1;                
-            }
-
-            // Secret found
-            else
-            {
-                // Domain
-                int pos1 = ret.find("attribute.domain = ") + 19;
-                int pos2 = ret.find('\n', pos1);           
-                domain->setText(ret.mid(pos1, pos2 - pos1));
-
-                // User
-                pos1 = ret.find("attribute.user = ") + 17;
-                pos2 = ret.find('\n', pos1);
-                user->setText(ret.mid(pos1, pos2 - pos1));
-
-                // Password
-                pos1 = ret.find("secret = ") + 9;
-                pos2 = ret.find('\n', pos1);
-                passwd->setText(ret.mid(pos1, pos2 - pos1));
-            
-                // Blank string
-                ret = "";
-            }
-        }
-        
-        // Secret not found
-        else
-        {
-            MessageBox::error(this, BOX_OK, _("Error"), _("Connection failed, please check your parameters..."));
-            execute(PLACEMENT_OWNER);
-            return 1;
-        }
+        target.erase(0, 1);
     }
 
-    // Connect to server using gio mount
-    FXString cmd = FXString("echo '") +
-                   passwd->getText() + "\\n' | " +
-                   "gio mount smb://" +
-                   domain->getText() + "\\;" +
-                   xf_quote(user->getText()) + "@" +
-                   server->getText() + "/" +
-                   xf_quote(share->getText()) + "/";
-   
-    FXString ret = xf_getcommandoutput(xf_hostcommand("/bin/sh -c " + xf_quote(cmd)));
+    FXString address = scheme() + "://" + host + "/" + connectEncode(target);
 
-    // gio not found
-    if (ret.contains("gio: not found"))
+    FilePanel* panel = filepanel->getCurrent();
+    FXString localpath;
+    if (panel->resolveNetworkPath(address, localpath) == 1)
     {
-        MessageBox::error(this, BOX_OK, _("Error"), _("gio command was not found on your system.\n\n\
-Please install gio and gvfs to be able to connect to a server..."));
-        return 0;                
+        panel->navigatePane(localpath);
     }
-
-    // Connection failed
-    else if (ret.contains("gio:"))
-    {
-        // Keep only significant part of the message
-        FXString str = ret.rbefore('\n');
-        str = str.rafter('\n');
-
-        MessageBox::error(this, BOX_OK, _("Error"), "%s", str.text());
-        return 0;
-    }
-
-    // Connection succeeded, enter mount point
-    FXString gvfspath = "/run/user/" + FXStringVal(FXSystem::user()) + "/gvfs";
-    FXString mntpath = gvfspath + PATHSEPSTRING + "smb-share:domain=" + domain->getText() +
-           ",server=" + server->getText().lower() +
-           ",share=" + share->getText().substitute(" ", "%20").lower() +
-           ",user=" + user->getText().substitute(" ", "%20");
-
-    // Set directory
-    filepanel->getCurrent()->setDirectory(mntpath);
-    dirpanel->setDirectory(mntpath, true);
-
-    // If asked, save password using secret-tool
-    if (savepasswd->getCheck())
-    {
-        FXString cmd = FXString("printf '") +
-                       passwd->getText() +
-                       "' | secret-tool store --label='SMB Share'" +
-                       " sharetype " + "smb" +
-                       " server " + server->getText() +
-                       " share " + xf_quote(share->getText()) +
-                       " domain " + domain->getText() +
-                       " user " + xf_quote(user->getText());
-                       
-        FXString ret = xf_getcommandoutput(xf_hostcommand("/bin/sh -c " + xf_quote(cmd)));
-
-        // secret-tool utility not found
-        if (ret.contains("secret-tool: not found"))
-        {
-            MessageBox::warning(this, BOX_OK, _("Warning"), _("Password cannot be saved because the secret-tool utility\
- was not found on your system.\n\nPlease install the package that provides secret-tool\
- (libsecret-tools on Debian based systems, libsecret on RedHat based systems)..."));
-             return 0;                
-        }
-    }
-
-    // Blank password
-    passwd->setText("");
-
-    return 1;
-}
-
-
-// Mount SSH share
-long ConnectDialog::sftpMount(void)
-{
-    // Password is empty, try to retrieve secret using secret-tool
-    if (passwd->getText() == "")
-    {
-        FXString cmd = FXString("secret-tool search") +
-                       " sharetype " + "sftp" +
-                       " server " + server->getText() +
-                       " user " + user->getText() +
-                       " port " + FXStringVal(port->getValue());
-        
-        FXString ret = xf_getcommandoutput(xf_hostcommand("/bin/sh -c " + xf_quote(cmd)));
-
-        if (ret != "")
-        {   
-            // secret-tool utility not found
-            if (ret.find("secret-tool: not found") != -1)
-            {
-                MessageBox::error(this, BOX_OK, _("Error"), _("Password cannot be retrieved because the secret-tool utility\
- was not found on your system.\n\nPlease install the package that provides secret-tool\
- (libsecret-tools on Debian based systems, libsecret on RedHat based systems)..."));
-                execute(PLACEMENT_OWNER);
-                return 1;                
-            }
-
-            // Secret found
-            else
-            {
-                // User
-                int pos1 = ret.find("attribute.user = ") + 17;
-                int pos2 = ret.find('\n', pos1);
-                user->setText(ret.mid(pos1, pos2 - pos1));
-            
-                // Password
-                pos1 = ret.find("secret = ") + 9;
-                pos2 = ret.find('\n', pos1);
-                passwd->setText(ret.mid(pos1, pos2 - pos1));
-            
-                // Blank string
-                ret = "";
-            }
-        }
-        
-        // Secret not found
-        else
-        {
-            MessageBox::error(this, BOX_OK, _("Error"), _("Connection failed, please check your parameters..."));
-            execute(PLACEMENT_OWNER);
-            return 1;
-        }
-    }
-
-    // Connect to server using gio mount
-    FXString cmd;
-    if (port->getValue() != 22)
-    {
-        cmd = FXString("echo '") +
-                   passwd->getText() + "\\n' | " +
-                   "gio mount sftp://" +
-                   user->getText() + "@" +
-                   server->getText() +
-                   ":" + FXStringVal(port->getValue());
-    }
-    else
-    {
-        cmd = FXString("echo '") +
-                   passwd->getText() + "\\n' | " +
-                   "gio mount sftp://" +
-                   user->getText() + "@" +
-                   server->getText();
-    }
-    
-    FXString ret = xf_getcommandoutput(xf_hostcommand("/bin/sh -c " + xf_quote(cmd)));
-
-    // gio not found
-    if (ret.contains("gio: not found"))
-    {
-        MessageBox::error(this, BOX_OK, _("Error"), _("gio command was not found on your system.\n\n\
-Please install gio and gvfs to be able to connect to a server..."));
-        return 0;                
-    }
-
-    // Connection failed
-    else if (ret.contains("gio:"))
-    {
-        // Keep only significant part of the message
-        FXString str = ret.rbefore('\n');
-        str = str.rafter('\n');
-
-        MessageBox::error(this, BOX_OK, _("Error"), "%s", str.text());
-        return 0;
-    }
-
-    // Connection succeeded, enter mount point
-    FXString gvfspath = "/run/user/" + FXStringVal(FXSystem::user()) + "/gvfs";
-    
-    FXString mntpath;
-    if (port->getValue() != 22)
-    {
-        mntpath = gvfspath + PATHSEPSTRING + "sftp:host=" + server->getText() +
-               ",port=" + FXStringVal(port->getValue()) +
-               ",user=" + user->getText();
-    }
-    else
-    {
-        mntpath = gvfspath + PATHSEPSTRING + "sftp:host=" + server->getText() +
-               ",user=" + user->getText();
-    }
-
-    // Set directory
-    filepanel->getCurrent()->setDirectory(mntpath);
-    dirpanel->setDirectory(mntpath, true);
-
-    // If asked, save password using secret-tool
-    if (savepasswd->getCheck())
-    {
-        FXString cmd = FXString("printf '") +
-                       passwd->getText() +
-                       "' | secret-tool store --label='SSH Share'" +
-                       " sharetype " + "sftp" +
-                       " server " + server->getText() +
-                       " user " + xf_quote(user->getText()) +
-                       " port " + FXStringVal(port->getValue());
-                       
-        FXString ret = xf_getcommandoutput(xf_hostcommand("/bin/sh -c " + xf_quote(cmd)));
-
-        // secret-tool utility not found
-        if (ret.contains("secret-tool: not found"))
-        {
-            MessageBox::warning(this, BOX_OK, _("Warning"), _("Password cannot be saved because the secret-tool utility\
- was not found on your system.\n\nPlease install the package that provides secret-tool\
- (libsecret-tools on Debian based systems, libsecret on RedHat based systems)..."));
-             return 0;                
-        }
-    }   
-
-    // Blank password
-    passwd->setText("");
-
-    return 1;
-}
-
-
-// Changes are cancelled
-long ConnectDialog::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
-{
-    // Blank password
-    passwd->setText("");
-    
-    DialogBox::onCmdCancel(sender, sel, ptr);
-    return 0;
-}
-
-
-// Execute dialog box modally
-FXuint ConnectDialog::execute(FXuint placement)
-{
-    // Blank password
-    passwd->setText("");
-
-    // Execute dialog
-    FXuint ret = DialogBox::execute(placement);
-
-    return ret;
-}
-
-
-// Update save password check button
-long ConnectDialog::onUpdSavePasswd(FXObject* sender, FXSelector sel, void* ptr)
-{
-    // Disable button if password is empty
-    if (passwd->getText() == "")
-    {
-        savepasswd->disable();
-    }
-    else
-    {
-        savepasswd->enable();
-    }
-
     return 1;
 }
 
 
 // Update dialog items according to server type
-long ConnectDialog::onCmdServerType(FXObject* sender, FXSelector sel, void* ptr)
+long ConnectDialog::onCmdServerType(FXObject*, FXSelector, void*)
 {
-    // SMB server
-    if (servertype->getText() == _("Windows share"))
-    {
-        portlabel->disable();
-        port->disable();
-        port->setTextColor(getApp()->getBorderColor());
-        port->setValue(0);
-        sharelabel->show();
-        share->show();
-        domainlabel->show();
-        domain->show();
-    }
-
-    // SSH server
-    if (servertype->getText() == _("SSH"))
-    {
-        portlabel->enable();
-        port->enable();
-        port->setTextColor(getApp()->getForeColor());       
-        if (port->getValue() == 0)
-        {
-            port->setValue(22);  // Default port is 22
-        }
-        sharelabel->hide();
-        share->hide();
-        domainlabel->hide();
-        domain->hide();
-    }
-
-    // Force widget redrawing (don't know how to do it the right way)
-    resize(getWidth() - 1, getHeight() - 1);
-
+    updateHint();
     return 1;
 }
 
 
-// Update accept button
-long ConnectDialog::onUpdAccept(FXObject* sender, FXSelector sel, void* ptr)
+// Update accept button and the histories
+long ConnectDialog::onUpdAccept(FXObject*, FXSelector, void*)
 {
-    if (servertype->getText() == _("Windows share"))
+    if (server->getText().trim().empty())
     {
-        // Disable button if server name or share name are empty
-        if (server->getText() == "" || share->getText() == "")
-        {
-            acceptbtn->disable();
-        }
-        else
-        {
-            acceptbtn->enable();
-        }
+        acceptbtn->disable();
     }
-    
-    if (servertype->getText() == _("SSH"))
+    else
     {
-        // Disable button if server name is empty
-        if (server->getText() == "")
-        {
-            acceptbtn->disable();
-        }
-        else
-        {
-            acceptbtn->enable();
-        }
+        acceptbtn->enable();
     }
-  
+
     // Sort server history
     server->setSortFunc(FXList::ascendingCase);
     server->sortItems();
 
     // Update server history
     ServerNum = 0;
-    if (server->getNumItems() > 0)
+    for (int i = 0; i < server->getNumItems() && ServerNum < SERVER_HIST_SIZE; i++)
     {
-        for (int i = 0; i < server->getNumItems(); i++)
-        {
-            if (ServerNum > SERVER_HIST_SIZE - 1)
-            {
-                break;
-            }
-            FXString str = server->getItemText(i);
-            xf_strlcpy(ServerHistory[i], str.text(), str.length() + 1);
-            ServerNum++;
-        }
+        FXString str = server->getItemText(i);
+        xf_strlcpy(ServerHistory[i], str.text(), str.length() + 1);
+        ServerNum++;
     }
 
     // Sort share history
@@ -631,58 +270,11 @@ long ConnectDialog::onUpdAccept(FXObject* sender, FXSelector sel, void* ptr)
 
     // Update share history
     ShareNum = 0;
-    if (share->getNumItems() > 0)
+    for (int i = 0; i < share->getNumItems() && ShareNum < SHARE_HIST_SIZE; i++)
     {
-        for (int i = 0; i < share->getNumItems(); i++)
-        {
-            if (ShareNum > SHARE_HIST_SIZE - 1)
-            {
-                break;
-            }
-            FXString str = share->getItemText(i);
-            xf_strlcpy(ShareHistory[i], str.text(), str.length() + 1);
-            ShareNum++;
-        }
-    }
-
-    // Sort domain history
-    domain->setSortFunc(FXList::ascendingCase);
-    domain->sortItems();
-
-    // Update domain history
-    DomainNum = 0;
-    if (domain->getNumItems() > 0)
-    {
-        for (int i = 0; i < domain->getNumItems(); i++)
-        {
-            if (DomainNum > DOMAIN_HIST_SIZE - 1)
-            {
-                break;
-            }
-            FXString str = domain->getItemText(i);
-            xf_strlcpy(DomainHistory[i], str.text(), str.length() + 1);
-            DomainNum++;
-        }
-    }
-
-    // Sort user history
-    user->setSortFunc(FXList::ascendingCase);
-    user->sortItems();
-
-    // Update user history
-    UserNum = 0;
-    if (user->getNumItems() > 0)
-    {
-        for (int i = 0; i < user->getNumItems(); i++)
-        {
-            if (UserNum > USER_HIST_SIZE - 1)
-            {
-                break;
-            }
-            FXString str = user->getItemText(i);
-            xf_strlcpy(UserHistory[i], str.text(), str.length() + 1);
-            UserNum++;
-        }
+        FXString str = share->getItemText(i);
+        xf_strlcpy(ShareHistory[i], str.text(), str.length() + 1);
+        ShareNum++;
     }
 
     return 1;

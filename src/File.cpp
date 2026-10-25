@@ -2541,6 +2541,12 @@ int File::mount(const FXString dir, const FXString msg, const FXString cmd, FXSt
     // Hide progress dialog
     forceTimeout();
 
+    // The mount point changed state: forget any cached "down" status
+    if (updevices)
+    {
+        updevices->remove(dir.text());
+    }
+
     int code = exit_status != -1 && WIFEXITED(exit_status) ? WEXITSTATUS(exit_status) : -1;
 
     // Caller wants the command result and handles messages itself

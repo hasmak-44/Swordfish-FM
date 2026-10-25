@@ -176,6 +176,7 @@ public:
 #if defined(linux)
         ID_MOUNT,
         ID_UMOUNT,
+        ID_EJECT,
 #endif
         ID_TOGGLE_PLACES,
         ID_TOGGLE_MOUNTS,
@@ -281,9 +282,18 @@ public:
 
 #if defined(linux)
     long onCmdMount(FXObject*, FXSelector, void*);
+    long onCmdEject(FXObject*, FXSelector, void*);
+    long onUpdEject(FXObject*, FXSelector, void*);
 #endif
 
 public:
+
+#if defined(linux)
+    // Drives handled through the desktop disk service (udisks)
+    void unmountedDevices(std::vector<FXString>& labels, std::vector<FXString>& devices);
+    FXbool openDevice(const FXString& device);
+    FXbool unmountRemovable(const FXString& mountpoint, FXbool eject);
+#endif
 
     void setActive();
     void setInactive();

@@ -103,6 +103,8 @@ FXDEFMAP(FilePanel) FilePanelMap[] =
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_INLINE_RENAME, FilePanel::onCmdInlineRename),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_ENTER_PATH, FilePanel::onCmdEnterPath),
     FXMAPFUNC(SEL_KEYPRESS, FilePanel::ID_ENTER_PATH, FilePanel::onPathKeyPress),
+    FXMAPFUNC(SEL_RIGHTBUTTONRELEASE, FilePanel::ID_ENTER_PATH, FilePanel::onPathPopup),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_PATH_PASTE_GO, FilePanel::onCmdPathPasteGo),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_NEW_TAB, FilePanel::onCmdTabs),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_REMOVE_ALL_TABS, FilePanel::onCmdTabs),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_CLOSE_TAB, FilePanel::onCmdTabs),
@@ -584,7 +586,7 @@ static FXbool networkAskCredentials(FXWindow* owner, const NetworkAddress& addr,
 
 // Mount a typed network address with GVFS and return its local folder.
 // Returns 0 for a local path, 1 for a mounted share, 2 for a server tab, -1 on failure/cancel.
-int FilePanel::resolveNetworkPath(const FXString& text, FXString& localpath)
+int FilePanel::resolveNetworkPath(const FXString& text, FXString& localpath, FXbool savepassword)
 {
 #if defined(linux)
     NetworkAddress addr;
@@ -637,6 +639,16 @@ Please install gio and gvfs to be able to connect to a server..."));
         FXString out = networkRun("", xf_quote(gio) + " mount -a " + xf_quote(networkMountUri(addr, false)) + " </dev/null",
                                   NETWORK_GUEST_TIMEOUT);
         mounted = networkLocalPath(gio, networkMountUri(addr, false));
+        if (mounted.empty() && addr.scheme == "smb")
+        {
+            // Like smb4k: Windows maps an unknown "guest" login with no password to its Guest account
+            NetworkAddress guest = addr;
+            guest.domain = "WORKGROUP";
+            guest.user = "guest";
+            out = networkRun("printf '\\n' | ", xf_quote(gio) + " mount " + xf_quote(networkMountUri(guest, true)),
+                             NETWORK_GUEST_TIMEOUT);
+            mounted = networkLocalPath(gio, networkMountUri(guest, true));
+        }
         if (mounted.empty())
         {
             error = networkLastLine(out);
@@ -646,7 +658,7 @@ Please install gio and gvfs to be able to connect to a server..."));
     FXString domain = addr.domain;
     FXString user = addr.user;
     FXString password = addr.password;
-    FXbool save = false;
+    FXbool save = savepassword;
     if (mounted.empty() && password.empty() && !user.empty() && addr.scheme == "smb")
     {
         // Password saved by Connect to Server
@@ -679,13 +691,13 @@ Please install gio and gvfs to be able to connect to a server..."));
             }
             getApp()->beginWaitCursor();
         }
-        if (addr.scheme == "smb" && domain.empty())
-        {
-            // An empty domain makes GVFS ask for it on stdin before the password
-            domain = "WORKGROUP";
-        }
         NetworkAddress login = addr;
         login.domain = domain;
+        if (addr.scheme == "smb" && domain.empty())
+        {
+            // An empty domain makes GVFS ask for it on stdin before the password; servers ignore this default
+            login.domain = "WORKGROUP";
+        }
         login.user = user;
         FXString out = networkRun("printf '%s\\n' " + xf_quote(password) + " | ",
                                   xf_quote(gio) + " mount " + xf_quote(networkMountUri(login, true)),
@@ -1041,6 +1053,7 @@ void FilePanel::setActive()
     dirpanel->setInactive();
 
     next->setInactive();
+    list->setPanelActive(true);
     list->setFocus();
 
     isactive = true;
@@ -1055,6 +1068,7 @@ void FilePanel::setInactive(FXbool force)
     activeicon->setIcon(minigraybuttonicon);
     activeicon->setTipText(_("Activate panel"));
     activebar->setBackColor(activebar->getParent()->getBackColor());
+    list->setPanelActive(false);
 
     // By default we set the panel inactive
     if (force)
@@ -1112,37 +1126,9 @@ void FilePanel::showActiveIcon(FXbool show)
 }
 
 
-// Update location history when changing directory (home, up or double click)
+// Keep the current item visible after changing directory (home, up or double click)
 void FilePanel::updateLocation()
 {
-    FXString item;
-    int i = 0;
-    ComboBox* address = ((XFileExplorer*)mainWindow)->getAddressBox();
-
-    address->setNumVisible(5);
-    int count = address->getNumItems();
-    FXString p = list->getDirectory();
-
-    // Remember latest directory in the location address
-    if (!count)
-    {
-        count++;
-        address->insertItem(0, address->getText());
-    }
-    while (i < count)
-    {
-        item = address->getItem(i++);
-        if (xf_strequal((const char*)&p[0], (const char*)&item[0]))
-        {
-            i--;
-            break;
-        }
-    }
-    if (i == count)
-    {
-        address->insertItem(0, list->getDirectory());
-    }
-
     // Make current directory visible to avoid scrolling again
     list->makeItemVisible(list->getCurrentItem());
 }
@@ -2613,6 +2599,40 @@ long FilePanel::onCmdEnterPath(FXObject*, FXSelector, void*)
         pathedit->setFocus();
     }
     return 1;
+}
+
+
+// Right-click menu of the path editor
+long FilePanel::onPathPopup(FXObject*, FXSelector, void*)
+{
+    if (!editingPath)
+    {
+        return 0;
+    }
+    FXMenuPane menu(this);
+    new FXMenuCommand(&menu, _("C&ut"), minicuticon, pathedit, FXTextField::ID_CUT_SEL);
+    new FXMenuCommand(&menu, _("&Copy"), minicopyicon, pathedit, FXTextField::ID_COPY_SEL);
+    new FXMenuCommand(&menu, _("&Paste"), minipasteicon, pathedit, FXTextField::ID_PASTE_SEL);
+    new FXMenuCommand(&menu, _("Paste and &Go"), minigotodiricon, this, ID_PATH_PASTE_GO);
+    new FXMenuSeparator(&menu);
+    new FXMenuCommand(&menu, _("Select &All"), NULL, pathedit, FXTextField::ID_SELECT_ALL);
+    menu.create();
+    int x, y;
+    FXuint state;
+    getRoot()->getCursorPosition(x, y, state);
+    menu.popup(NULL, x, y);
+    getApp()->runModalWhileShown(&menu);
+    pathedit->setFocus();
+    return 1;
+}
+
+
+// Replace the path with the clipboard text and open it
+long FilePanel::onCmdPathPasteGo(FXObject*, FXSelector, void*)
+{
+    pathedit->selectAll();
+    pathedit->handle(this, FXSEL(SEL_COMMAND, FXTextField::ID_PASTE_SEL), NULL);
+    return onCmdEnterPath(this, FXSEL(SEL_COMMAND, ID_ENTER_PATH), NULL);
 }
 
 
@@ -7309,6 +7329,24 @@ long FilePanel::onCmdGoScriptDir(FXObject* sender, FXSelector sel, void*)
 
 #if defined(linux)
 // Mount/Unmount file systems
+#if defined(linux)
+// Desktop drive (USB disk...) mounted at or containing dir; cached because update handlers run often
+static FXString removableMountFor(const FXString& dir)
+{
+    static FXString lastdir, lastresult;
+    static FXTime lasttime = 0;
+    FXTime now = FXThread::time();
+    if (dir != lastdir || now - lasttime > 1000000000)
+    {
+        lastdir = dir;
+        lastresult = xf_removablemount(dir);
+        lasttime = now;
+    }
+    return lastresult;
+}
+#endif
+
+
 long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
 {
     if (requiresMountedShare()) return 1;
@@ -7341,6 +7379,47 @@ long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
     {
         dir = xf_readlink(dir);
     }
+
+#if defined(linux)
+    // No fstab entry: offer the plugged-in drives, or unmount the desktop drive we are in
+    if (dirpanel && !fsdevices->find(dir.text()))
+    {
+        if (FXSELID(sel) == ID_MOUNT)
+        {
+            std::vector<FXString> labels, devices;
+            dirpanel->unmountedDevices(labels, devices);
+            if (devices.empty())
+            {
+                return 1;
+            }
+            FXint choice = 0;
+            if (devices.size() > 1)
+            {
+                FXString choices;
+                for (size_t i = 0; i < labels.size(); i++)
+                {
+                    choices += labels[i] + "  (" + devices[i] + ")\n";
+                }
+                choices.trimEnd();
+                choice = FXChoiceBox::ask(this, DECOR_TITLE | DECOR_BORDER | DECOR_RESIZE, _("Mount"),
+                                          _("Choose the drive to mount:"), NULL, choices);
+                if (choice < 0 || choice >= (FXint)devices.size())
+                {
+                    return 1;
+                }
+            }
+            dirpanel->openDevice(devices[choice]);
+            return 1;
+        }
+        FXString removable = removableMountFor(dir);
+        if (!removable.empty())
+        {
+            dirpanel->unmountRemovable(removable, false);
+            onCmdRefresh(0, 0, 0);
+            return 1;
+        }
+    }
+#endif
 
     if (FXSELID(sel) == ID_MOUNT)
     {
@@ -7651,8 +7730,17 @@ long FilePanel::onUpdMount(FXObject* sender, FXSelector sel, void*)
         }
     }
 
-    if (fsdevices->find(dir.text()) && !mtdevices->find(dir.text()) && current->list->getNumItems() &&
-        !current->list->isItemSelected(0))
+    FXbool enable = fsdevices->find(dir.text()) && !mtdevices->find(dir.text()) && current->list->getNumItems() &&
+                    !current->list->isItemSelected(0);
+#if defined(linux)
+    if (!enable && dirpanel && !fsdevices->find(dir.text()))
+    {
+        std::vector<FXString> labels, devices;
+        dirpanel->unmountedDevices(labels, devices);
+        enable = !devices.empty();
+    }
+#endif
+    if (enable)
     {
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
     }
@@ -7689,8 +7777,15 @@ long FilePanel::onUpdUnmount(FXObject* sender, FXSelector sel, void*)
         }
     }
 
-    if ((fsdevices->find(dir.text()) || mtdevices->find(dir.text())) && current->list->getNumItems() &&
-        !current->list->isItemSelected(0))
+    FXbool enable = (fsdevices->find(dir.text()) || mtdevices->find(dir.text())) && current->list->getNumItems() &&
+                    !current->list->isItemSelected(0);
+#if defined(linux)
+    if (!enable && dirpanel && !fsdevices->find(dir.text()))
+    {
+        enable = !removableMountFor(dir).empty();
+    }
+#endif
+    if (enable)
     {
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
     }

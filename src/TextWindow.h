@@ -2,6 +2,7 @@
 #define TEXTWINDOW_H
 
 #include "DialogBox.h"
+#include "MessageBox.h"
 
 class TextWindow : public DialogBox
 {

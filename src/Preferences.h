@@ -169,7 +169,6 @@ private:
     FXCheckButton* relativeresize = NULL;
     FXCheckButton* alwaysshowtabbar = NULL;
     FXCheckButton* restoretabs = NULL;
-    FXCheckButton* commonaddressbar = NULL;
     FXCheckButton* showpathlink = NULL;
 #if defined(linux) && defined(XFE_AUTOMOUNTER)
     FXCheckButton* automountbutton = NULL;
@@ -201,8 +200,6 @@ private:
     FXRadioButton* dirpanel_treestartup = NULL;
     FXSpinner* spindpi = NULL;
     FXSpinner* spinshade = NULL;
-    FXSpinner* bigthumb_spin = NULL;
-    FXSpinner* minithumb_spin = NULL;
     FXDataTarget startdirtarget;
     FXDataTarget newtabdirtarget;
     FXuint startdirmode = 0;
@@ -280,10 +277,6 @@ private:
     FXString sucmd_prev;
     FXint uidpi = 0;
     FXint uidpi_prev = 0;
-    FXint bigthumb_size = 0;
-    FXint minithumb_size = 0;
-    FXint bigthumb_size_prev = 0;
-    FXint minithumb_size_prev = 0;
     FXuint copysuffix_pos = 0;
     FXuint copysuffix_pos_prev = 0;
     FXuint dirpanel_list_startup = 0;
@@ -379,8 +372,6 @@ public:
         ID_LISTCOL,
         ID_LISTCOL_UP,
         ID_LISTCOL_DOWN,
-        ID_BIGTHUMB_SIZE,
-        ID_MINITHUMB_SIZE,
         ID_ASSOCIATION_LIST,
         ID_ASSOCIATION_APPLY,
         ID_ASSOCIATION_RESET,

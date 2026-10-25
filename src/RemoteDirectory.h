@@ -30,5 +30,8 @@ FXbool harvest(pid_t, int);
 void setHostName(const FXString& host, const FXString& name);
 FXString hostName(const FXString& host);
 FXString displayPath(const FXString& path);
+// GVFS mount name as share@computer, user@host or device model (empty if not a GVFS mount)
+FXString mountLabel(const FXString& gvfsname);
+FXString titlePath(const FXString& path);
 }
 #endif

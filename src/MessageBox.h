@@ -1,6 +1,8 @@
 #ifndef MESSAGEBOX_H
 #define MESSAGEBOX_H
 
+#include <vector>
+
 #include "DialogBox.h"
 
 // Message box buttons
@@ -27,6 +29,36 @@ enum
     BOX_CLICKED_SU           = 8                     // The SU button was clicked
 };
 
+
+// Read-only text that shows web addresses as clickable links
+class LinkText : public FXText
+{
+    FXDECLARE(LinkText)
+protected:
+    std::vector<FXint> linkstart;
+    std::vector<FXint> linkend;
+    std::vector<FXString> linkurl;
+    FXHiliteStyle linkstyle;
+    LinkText()
+    {
+    }
+    void findLinks();
+    FXint linkAt(FXint x, FXint y) const;
+private:
+    LinkText(const LinkText&);
+    LinkText& operator=(const LinkText&);
+public:
+    long onMotion(FXObject*, FXSelector, void*);
+    long onLeftBtnRelease(FXObject*, FXSelector, void*);
+public:
+    LinkText(FXComposite* p, FXObject* tgt = NULL, FXSelector sel = 0, FXuint opts = 0);
+    // Readable link colour for the given background (light blue on dark themes)
+    static FXColor linkColor(FXColor back);
+    // Plain words such as "GitHub issues" that should open this address
+    static void addNamedLink(const FXString& words, const FXString& url);
+    virtual void setText(const FXchar* text, FXint n, FXbool notify = false);
+    virtual void setText(const FXString& text, FXbool notify = false);
+};
 
 // Message box
 class FXAPI MessageBox : public DialogBox

@@ -507,6 +507,8 @@ FXDEFMAP(DirPanel) DirPanelMap[] =
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_UMOUNT, DirPanel::onCmdMount),
     FXMAPFUNC(SEL_UPDATE, DirPanel::ID_MOUNT, DirPanel::onUpdMount),
     FXMAPFUNC(SEL_UPDATE, DirPanel::ID_UMOUNT, DirPanel::onUpdUnmount),
+    FXMAPFUNC(SEL_COMMAND, DirPanel::ID_EJECT, DirPanel::onCmdEject),
+    FXMAPFUNC(SEL_UPDATE, DirPanel::ID_EJECT, DirPanel::onUpdEject),
 #endif
     FXMAPFUNC(SEL_UPDATE, DirPanel::ID_PASTE_CLIPBOARD, DirPanel::onUpdPaste),
     FXMAPFUNC(SEL_UPDATE, DirPanel::ID_TOGGLE_HIDDEN, DirPanel::onUpdToggleHidden),
@@ -908,6 +910,17 @@ long DirPanel::onSidebarActivate(FXObject*, FXSelector sel, void* ptr)
         getApp()->flush();
         window->getCurrentPanel()->openServerShares(host);
     }
+#if defined(linux)
+    else if (item->kind == SidebarItem::DEVICE && item->path.left(5) == "/dev/")
+    {
+        if (sidebar->grabbed())
+        {
+            sidebar->ungrab();
+        }
+        getApp()->flush();
+        openDevice(item->path);
+    }
+#endif
     else if (!item->path.empty())
     {
         if (sidebar->grabbed())
@@ -942,7 +955,8 @@ long DirPanel::onSidebarPopup(FXObject*, FXSelector, void* ptr)
         mountslist->setMount(sidebarContext->key);
     }
     FXMenuPane menu(this);
-    if (!sidebarContext->path.empty() && sidebarContext->kind != SidebarItem::SERVER)
+    const FXbool unmountedDrive = sidebarContext->kind == SidebarItem::DEVICE && sidebarContext->path.left(5) == "/dev/";
+    if (!sidebarContext->path.empty() && sidebarContext->kind != SidebarItem::SERVER && !unmountedDrive)
     {
         new FXMenuCommand(&menu, _("New &Tab"), mininewtabicon, this, ID_SIDEBAR_OPEN_TAB);
         if (sidebarContext->kind == SidebarItem::PLACE || sidebarContext->kind == SidebarItem::BOOKMARK ||
@@ -978,6 +992,7 @@ long DirPanel::onSidebarPopup(FXObject*, FXSelector, void* ptr)
     {
         new FXMenuCommand(&menu, _("M&ount"), minimounticon, this, ID_MOUNT);
         new FXMenuCommand(&menu, _("&Unmount"), miniunmounticon, this, ID_UMOUNT);
+        new FXMenuCommand(&menu, _("&Eject (Safely Remove)"), miniunmounticon, this, ID_EJECT);
     }
 #endif
     if (sidebarContext == sidebarRoots[3] || sidebarContext->kind == SidebarItem::SERVER ||
@@ -1333,34 +1348,8 @@ long DirPanel::onCmdDirectory(FXObject*, FXSelector, void* ptr)
             return 0;
         }
         FilePanel* currentpanel = ((XFileExplorer*)mainWindow)->getCurrentPanel();
-        ComboBox* address = ((XFileExplorer*)mainWindow)->getAddressBox();
         currentpanel->setDirectory(directory, true);
         currentpanel->updatePath();
-
-        // Remember latest directory in the location address
-        FXString item;
-        int i = 0;
-        int count = address->getNumItems();
-        FXString p = currentpanel->getDirectory();
-
-        if (!count)
-        {
-            count++;
-            address->insertItem(0, address->getText());
-        }
-        while (i < count)
-        {
-            item = address->getItem(i++);
-            if (xf_strequal((const char*)&p[0], (const char*)&item[0]))
-            {
-                i--;
-                break;
-            }
-        }
-        if (i == count)
-        {
-            address->insertItem(0, currentpanel->getDirectory());
-        }
         xf_setwaitcursor(getApp(), END_CURSOR);
     }
 
@@ -1430,36 +1419,12 @@ long DirPanel::onCmdGotoPlace(FXObject*, FXSelector, void*)
     }
 
     FilePanel* currentpanel = ((XFileExplorer*)mainWindow)->getCurrentPanel();
-    ComboBox* address = ((XFileExplorer*)mainWindow)->getAddressBox();
     currentpanel->setDirectory(directory, true);
     currentpanel->updatePath();
     setDirectory(directory, true);
 
     // Set place (select and set current)
     placeslist->setPlace(key);
-
-    // Update address list
-    FXString item;
-    int i = 0;
-    int count = address->getNumItems();
-    if (!count)
-    {
-        count++;
-        address->insertItem(0, address->getText());
-    }
-    while (i < count)
-    {
-        item = address->getItem(i++);
-        if (xf_strequal(directory.text(), (const char*)&item[0]))
-        {
-            i--;
-            break;
-        }
-    }
-    if (i == count)
-    {
-        address->insertItem(0, directory);
-    }
 
     return 1;
 }
@@ -1565,36 +1530,12 @@ long DirPanel::onCmdGotoMount(FXObject*, FXSelector, void*)
     }
 
     FilePanel* currentpanel = ((XFileExplorer*)mainWindow)->getCurrentPanel();
-    ComboBox* address = ((XFileExplorer*)mainWindow)->getAddressBox();
     currentpanel->setDirectory(directory, true);
     currentpanel->updatePath();
     setDirectory(directory, true);
 
     // Set mount (select and set current)
     mountslist->setMount(key);
-
-    // Update address list
-    FXString item;
-    int i = 0;
-    int count = address->getNumItems();
-    if (!count)
-    {
-        count++;
-        address->insertItem(0, address->getText());
-    }
-    while (i < count)
-    {
-        item = address->getItem(i++);
-        if (xf_strequal(directory.text(), (const char*)&item[0]))
-        {
-            i--;
-            break;
-        }
-    }
-    if (i == count)
-    {
-        address->insertItem(0, directory);
-    }
 
     xf_setwaitcursor(getApp(), END_CURSOR);
     return 1;
@@ -1834,36 +1775,12 @@ long DirPanel::onCmdGotoBookmark(FXObject*, FXSelector, void*)
 
 
     FilePanel* currentpanel = ((XFileExplorer*)mainWindow)->getCurrentPanel();
-    ComboBox* address = ((XFileExplorer*)mainWindow)->getAddressBox();
     currentpanel->setDirectory(directory, true);
     currentpanel->updatePath();
     setDirectory(directory, true);
 
     // Set bookmark (select and set current)
     bookmarkslist->setBookmark(name);
-
-    // Update address list
-    FXString item;
-    int i = 0;
-    int count = address->getNumItems();
-    if (!count)
-    {
-        count++;
-        address->insertItem(0, address->getText());
-    }
-    while (i < count)
-    {
-        item = address->getItem(i++);
-        if (xf_strequal(directory.text(), (const char*)&item[0]))
-        {
-            i--;
-            break;
-        }
-    }
-    if (i == count)
-    {
-        address->insertItem(0, directory);
-    }
 
     return 1;
 }
@@ -2634,34 +2551,10 @@ long DirPanel::onCmdPopupMenuPlaces(FXObject* sender, FXSelector sel, void* ptr)
         }
 
         FilePanel* currentpanel = ((XFileExplorer*)mainWindow)->getCurrentPanel();
-        ComboBox* address = ((XFileExplorer*)mainWindow)->getAddressBox();
         currentpanel->setDirectory(directory, true);
         currentpanel->updatePath();
         setDirectory(directory, true);
         placeslist->setPlace(key);
-
-        // Update address list
-        FXString item;
-        int i = 0;
-        int count = address->getNumItems();
-        if (!count)
-        {
-            count++;
-            address->insertItem(0, address->getText());
-        }
-        while (i < count)
-        {
-            item = address->getItem(i++);
-            if (xf_strequal(directory.text(), (const char*)&item[0]))
-            {
-                i--;
-                break;
-            }
-        }
-        if (i == count)
-        {
-            address->insertItem(0, directory);
-        }
     }
     else
     {
@@ -2714,34 +2607,10 @@ long DirPanel::onCmdPopupMenuMounts(FXObject* sender, FXSelector sel, void* ptr)
         }
 
         FilePanel* currentpanel = ((XFileExplorer*)mainWindow)->getCurrentPanel();
-        ComboBox* address = ((XFileExplorer*)mainWindow)->getAddressBox();
         currentpanel->setDirectory(directory, true);
         currentpanel->updatePath();
         setDirectory(directory, true);
         mountslist->setMount(key);
-
-        // Update address list
-        FXString item;
-        int i = 0;
-        int count = address->getNumItems();
-        if (!count)
-        {
-            count++;
-            address->insertItem(0, address->getText());
-        }
-        while (i < count)
-        {
-            item = address->getItem(i++);
-            if (xf_strequal(directory.text(), (const char*)&item[0]))
-            {
-                i--;
-                break;
-            }
-        }
-        if (i == count)
-        {
-            address->insertItem(0, directory);
-        }
     }
     else
     {
@@ -2822,34 +2691,10 @@ long DirPanel::onCmdPopupMenuBookmarks(FXObject* sender, FXSelector sel, void* p
         }
 
         FilePanel* currentpanel = ((XFileExplorer*)mainWindow)->getCurrentPanel();
-        ComboBox* address = ((XFileExplorer*)mainWindow)->getAddressBox();
         currentpanel->setDirectory(directory, true);
         currentpanel->updatePath();
         setDirectory(directory, true);
         bookmarkslist->setBookmark(key);
-
-        // Update address list
-        FXString item;
-        int i = 0;
-        int count = address->getNumItems();
-        if (!count)
-        {
-            count++;
-            address->insertItem(0, address->getText());
-        }
-        while (i < count)
-        {
-            item = address->getItem(i++);
-            if (xf_strequal(directory.text(), (const char*)&item[0]))
-            {
-                i--;
-                break;
-            }
-        }
-        if (i == count)
-        {
-            address->insertItem(0, directory);
-        }
     }
     else
     {
@@ -4885,6 +4730,16 @@ long DirPanel::onCmdMount(FXObject*, FXSelector sel, void*)
         dir = sidebarContext->path;
     }
 
+    // Plugged-in drive that is not mounted, or a drive mounted by the desktop
+    if (dir.left(5) == "/dev/")
+    {
+        return FXSELID(sel) == ID_MOUNT ? openDevice(dir) : 1;
+    }
+    if (FXSELID(sel) == ID_UMOUNT && !xf_removablemount(dir).empty() && xf_removablemount(dir) == dir)
+    {
+        return unmountRemovable(dir, false);
+    }
+
     // GVFS mount directory
     FXString gvfsdir = "/run/user/" + FXStringVal(FXSystem::user()) + "/gvfs";
 
@@ -5212,7 +5067,7 @@ long DirPanel::onUpdMount(FXObject* sender, FXSelector sel, void*)
         dir = sidebarContext->path;
     }
 
-    if (fsdevices->find(dir.text()) && !mtdevices->find(dir.text()))
+    if ((fsdevices->find(dir.text()) && !mtdevices->find(dir.text())) || dir.left(5) == "/dev/")
     {
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
     }
@@ -5248,6 +5103,186 @@ long DirPanel::onUpdUnmount(FXObject* sender, FXSelector sel, void*)
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_DISABLE), NULL);
     }
 
+    return 1;
+}
+
+
+// Drives listed in the sidebar that are plugged in but not mounted
+void DirPanel::unmountedDevices(std::vector<FXString>& labels, std::vector<FXString>& devices)
+{
+    labels.clear();
+    devices.clear();
+    if (!mountslist)
+    {
+        return;
+    }
+    for (FXint i = 0; i < mountslist->getNumItems(); i++)
+    {
+        FXString name = mountslist->getItemText(i);
+        FXString path = mountslist->getItemPathname(name);
+        if (path.left(5) == "/dev/")
+        {
+            labels.push_back(name);
+            devices.push_back(path);
+        }
+    }
+}
+
+
+// Run a udisksctl command with the progress dialog; returns its output and exit status
+static int runDiskCommand(FXWindow* owner, FXuint op, const FXString& title, const FXString& device,
+                          const FXString& args, FXString& output)
+{
+    // Long timeout: mounting an internal disk may wait for a password dialog
+    FXString cmd = xf_hostcommand("timeout -k 2 120 udisksctl " + args + " </dev/null") + " 2>&1";
+    int status = -1;
+    File* f = new File(owner, title.text(), op);
+    f->create();
+    owner->getApp()->beginWaitCursor();
+    f->mount(device, _("Please wait..."), cmd, &output, &status);
+    owner->getApp()->endWaitCursor();
+    delete f;
+    output.trim();
+    appLog(status == 0 ? APP_LOG_FILE_OPERATIONS : APP_LOG_ERRORS, "disk-command",
+           "udisksctl " + args + " status=" + FXStringVal(status) + " " + output);
+    return status;
+}
+
+
+// Mount a plugged-in drive and open it in the current panel
+FXbool DirPanel::openDevice(const FXString& device)
+{
+    FXString mountpoint = xf_mountpointof(device);
+    if (mountpoint.empty())
+    {
+        FXString output;
+        int status = runDiskCommand(this, MOUNT, _("Mount file system..."), device,
+                                    "mount -b " + xf_quote(device), output);
+        mountpoint = xf_mountpointof(device);
+        if (mountpoint.empty())
+        {
+            if (output.empty())
+            {
+                output.format(_("Command failed (exit status %d)."), status);
+            }
+            MessageBox::error(this, BOX_OK, _("Error"), _("Can't mount %s:\n\n%s"), device.text(), output.text());
+            return false;
+        }
+        if (mountslist)
+        {
+            mountslist->invalidate();
+        }
+    }
+    return static_cast<XFileExplorer*>(mainWindow)->getCurrentPanel()->navigatePane(mountpoint);
+}
+
+
+// Unmount a desktop drive (and optionally power it off so it can be unplugged)
+FXbool DirPanel::unmountRemovable(const FXString& location, FXbool eject)
+{
+    FXString device = location.left(5) == "/dev/" ? location : xf_mountsource(location);
+    FXString mountpoint = location.left(5) == "/dev/" ? xf_mountpointof(location) : location;
+    if (device.left(5) != "/dev/")
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Can't find the drive mounted at %s"), location.text());
+        return false;
+    }
+    FXString output;
+    if (!mountpoint.empty())
+    {
+        // Swordfish's own tabs and working folder would keep the drive busy
+        mainWindow->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_NETWORK_UNMOUNTED), (void*)&mountpoint);
+        FXString cwd = FXSystem::getCurrentDirectory();
+        if (cwd == mountpoint || cwd.left(mountpoint.length() + 1) == mountpoint + "/")
+        {
+            if (chdir(FXSystem::getHomeDirectory().text()) < 0)
+            {
+                appLog(APP_LOG_ERRORS, "unmount-chdir-failed", strerror(errno));
+            }
+        }
+        int status = runDiskCommand(this, UNMOUNT, _("Unmount file system..."), mountpoint,
+                                    "unmount -b " + xf_quote(device), output);
+        if (status != 0 && !xf_mountpointof(device).empty())
+        {
+            if (output.find("DeviceBusy") >= 0 || output.find("target is busy") >= 0)
+            {
+                MessageBox::error(this, BOX_OK, _("Error"),
+                                  _("%s is still in use by another program,\n"
+                                    "for example a terminal or another file manager window.\n"
+                                    "Close it and try again.\n\n%s"), mountpoint.text(), output.text());
+            }
+            else
+            {
+                if (output.empty())
+                {
+                    output.format(_("Command failed (exit status %d)."), status);
+                }
+                MessageBox::error(this, BOX_OK, _("Error"), _("Can't unmount %s:\n\n%s"), mountpoint.text(),
+                                  output.text());
+            }
+            if (mountslist)
+        {
+            mountslist->invalidate();
+        }
+            return false;
+        }
+    }
+    if (eject)
+    {
+        int status = runDiskCommand(this, UNMOUNT, _("Eject drive..."), device, "power-off -b " + xf_quote(device),
+                                    output);
+        if (status != 0)
+        {
+            if (output.empty())
+            {
+                output.format(_("Command failed (exit status %d)."), status);
+            }
+            MessageBox::error(this, BOX_OK, _("Error"),
+                              _("%s was unmounted but could not be powered off:\n\n%s"), device.text(), output.text());
+        }
+    }
+    if (mountslist)
+    {
+        mountslist->invalidate();
+    }
+    return true;
+}
+
+
+// Eject (unmount and power off) the drive under the context menu
+long DirPanel::onCmdEject(FXObject*, FXSelector, void*)
+{
+    if (!sidebarContext || sidebarContext->kind != SidebarItem::DEVICE)
+    {
+        return 0;
+    }
+    FXString path = sidebarContext->path;
+    FXString device = path.left(5) == "/dev/" ? path : xf_mountsource(path);
+    if (!xf_hotplugdevice(device))
+    {
+        return 1;
+    }
+    return unmountRemovable(path, true);
+}
+
+
+// Eject is only for drives handled by the desktop disk service
+long DirPanel::onUpdEject(FXObject* sender, FXSelector, void*)
+{
+    FXbool enable = false;
+    if (sidebarContext && sidebarContext->kind == SidebarItem::DEVICE)
+    {
+        const FXString& path = sidebarContext->path;
+        if (path.left(5) == "/dev/")
+        {
+            enable = xf_hotplugdevice(path);
+        }
+        else if (xf_removablemount(path) == path)
+        {
+            enable = xf_hotplugdevice(xf_mountsource(path));
+        }
+    }
+    sender->handle(this, FXSEL(SEL_COMMAND, enable ? FXWindow::ID_ENABLE : FXWindow::ID_DISABLE), NULL);
     return 1;
 }
 
@@ -5590,7 +5625,7 @@ long DirPanel::onUpdTitle(FXObject* sender, FXSelector, void*)
 
     // Path of the current directory in the file panel
     FilePanel* currentpanel = ((XFileExplorer*)mainWindow)->getCurrentPanel();
-    FXString path = RemoteDirectory::displayPath(currentpanel->getDirectory());
+    FXString path = RemoteDirectory::titlePath(currentpanel->getDirectory());
 
     // Update the path in the window title
     if (getuid() == 0)

@@ -112,11 +112,25 @@ void enumerateDirectory(DirectoryLoad* load)
 void sharePassword(GMountOperation* operation, const char*, const char*, const char*, GAskPasswordFlags flags,
                    gpointer data)
 {
-    bool* anonymous = static_cast<bool*>(data);
-    if (!*anonymous && (flags & G_ASK_PASSWORD_ANONYMOUS_SUPPORTED))
+    // Try anonymous, then a "guest" login with no password (as smb4k does), then ask the user
+    int* stage = static_cast<int*>(data);
+    if (*stage == 0)
     {
-        *anonymous = true;
-        g_mount_operation_set_anonymous(operation, true);
+        *stage = 1;
+        if (flags & G_ASK_PASSWORD_ANONYMOUS_SUPPORTED)
+        {
+            g_mount_operation_set_anonymous(operation, true);
+            g_mount_operation_reply(operation, G_MOUNT_OPERATION_HANDLED);
+            return;
+        }
+    }
+    if (*stage == 1)
+    {
+        *stage = 2;
+        g_mount_operation_set_anonymous(operation, false);
+        g_mount_operation_set_username(operation, "guest");
+        g_mount_operation_set_domain(operation, "WORKGROUP");
+        g_mount_operation_set_password(operation, "");
         g_mount_operation_reply(operation, G_MOUNT_OPERATION_HANDLED);
         return;
     }
@@ -176,8 +190,8 @@ void enumerated(GObject* source, GAsyncResult* result, gpointer data)
         load->mounted = true;
         g_clear_error(&load->error);
         GMountOperation* operation = g_mount_operation_new();
-        g_signal_connect_data(operation, "ask-password", G_CALLBACK(sharePassword), new bool(false),
-            [](gpointer value, GClosure*) { delete static_cast<bool*>(value); }, GConnectFlags(0));
+        g_signal_connect_data(operation, "ask-password", G_CALLBACK(sharePassword), new int(0),
+            [](gpointer value, GClosure*) { delete static_cast<int*>(value); }, GConnectFlags(0));
         g_file_mount_enclosing_volume(load->directory, G_MOUNT_MOUNT_NONE, operation, NULL,
                                       shareServerMounted, load);
         g_object_unref(operation);

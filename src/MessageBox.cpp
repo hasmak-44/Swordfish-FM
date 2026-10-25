@@ -8,6 +8,9 @@
 #include <fxkeys.h>
 #include <FXPNGIcon.h>
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "icons.h"
 #include "xfedefs.h"
 #include "xfeutils.h"
@@ -36,6 +39,173 @@ FXDEFMAP(MessageBox) MessageBoxMap[] =
     FXMAPFUNC(SEL_COMMAND, MessageBox::ID_CLICKED_SU, MessageBox::onCmdSu),
 };
 
+
+
+FXDEFMAP(LinkText) LinkTextMap[] =
+{
+    FXMAPFUNC(SEL_MOTION, 0, LinkText::onMotion),
+    FXMAPFUNC(SEL_LEFTBUTTONRELEASE, 0, LinkText::onLeftBtnRelease),
+};
+
+FXIMPLEMENT(LinkText, FXText, LinkTextMap, ARRAYNUMBER(LinkTextMap))
+
+
+static std::vector<FXString> namedLinkWords;
+static std::vector<FXString> namedLinkUrls;
+
+
+void LinkText::addNamedLink(const FXString& words, const FXString& url)
+{
+    namedLinkWords.push_back(words);
+    namedLinkUrls.push_back(url);
+}
+
+
+FXColor LinkText::linkColor(FXColor back)
+{
+    FXuint luma = (FXREDVAL(back) * 299 + FXGREENVAL(back) * 587 + FXBLUEVAL(back) * 114) / 1000;
+    return luma < 128 ? FXRGB(120, 190, 255) : FXRGB(0, 70, 170);
+}
+
+
+LinkText::LinkText(FXComposite* p, FXObject* tgt, FXSelector sel, FXuint opts) :
+    FXText(p, tgt, sel, opts)
+{
+    memset(&linkstyle, 0, sizeof(linkstyle));
+}
+
+
+void LinkText::setText(const FXchar* str, FXint n, FXbool notify)
+{
+    FXText::setText(str, n, notify);
+    findLinks();
+}
+
+
+void LinkText::setText(const FXString& str, FXbool notify)
+{
+    FXText::setText(str, notify);
+    findLinks();
+}
+
+
+// Underline every http(s) address and remember where it is
+void LinkText::findLinks()
+{
+    linkstart.clear();
+    linkend.clear();
+    linkurl.clear();
+    FXString str = getText();
+    FXint pos = 0;
+    while (true)
+    {
+        FXint http = str.find("http://", pos);
+        FXint https = str.find("https://", pos);
+        FXint start = (http < 0) ? https : (https < 0 ? http : FXMIN(http, https));
+        if (start < 0)
+        {
+            break;
+        }
+        FXint end = start;
+        while (end < str.length() && !strchr(" \t\r\n<>\"'()[]", str[end]))
+        {
+            end++;
+        }
+        while (end > start && strchr(".,;:!?", str[end - 1]))
+        {
+            end--;
+        }
+        linkstart.push_back(start);
+        linkend.push_back(end);
+        linkurl.push_back(str.mid(start, end - start));
+        pos = end;
+    }
+    FXString lower = str;
+    lower.lower();
+    for (size_t n = 0; n < namedLinkWords.size(); n++)
+    {
+        FXString words = namedLinkWords[n];
+        words.lower();
+        for (FXint start = lower.find(words); start >= 0; start = lower.find(words, start + words.length()))
+        {
+            linkstart.push_back(start);
+            linkend.push_back(start + words.length());
+            linkurl.push_back(namedLinkUrls[n]);
+        }
+    }
+    if (linkstart.empty())
+    {
+        return;
+    }
+    linkstyle.normalForeColor = linkColor(getBackColor());
+    linkstyle.normalBackColor = getBackColor();
+    linkstyle.selectForeColor = getSelTextColor();
+    linkstyle.selectBackColor = getSelBackColor();
+    linkstyle.hiliteForeColor = getHiliteTextColor();
+    linkstyle.hiliteBackColor = getHiliteBackColor();
+    linkstyle.activeBackColor = getActiveBackColor();
+    linkstyle.style = STYLE_UNDERLINE;
+    setHiliteStyles(&linkstyle);
+    setStyled(true);
+    for (size_t i = 0; i < linkstart.size(); i++)
+    {
+        changeStyle(linkstart[i], linkend[i] - linkstart[i], 1);
+    }
+}
+
+
+FXint LinkText::linkAt(FXint x, FXint y) const
+{
+    FXint pos = getPosAt(x, y);
+    for (size_t i = 0; i < linkstart.size(); i++)
+    {
+        if (pos >= linkstart[i] && pos < linkend[i])
+        {
+            return (FXint)i;
+        }
+    }
+    return -1;
+}
+
+
+long LinkText::onMotion(FXObject* sender, FXSelector sel, void* ptr)
+{
+    long ret = FXText::onMotion(sender, sel, ptr);
+    FXEvent* event = (FXEvent*)ptr;
+    if (!(event->state & LEFTBUTTONMASK))
+    {
+        FXbool over = linkAt(event->win_x, event->win_y) >= 0;
+        setDefaultCursor(getApp()->getDefaultCursor(over ? DEF_HAND_CURSOR : DEF_TEXT_CURSOR));
+    }
+    return ret;
+}
+
+
+// A plain click (not a text selection drag) on a link opens it in the browser
+long LinkText::onLeftBtnRelease(FXObject* sender, FXSelector sel, void* ptr)
+{
+    long ret = FXText::onLeftBtnRelease(sender, sel, ptr);
+    FXEvent* event = (FXEvent*)ptr;
+    FXint link = linkAt(event->win_x, event->win_y);
+    if (event->moved || link < 0)
+    {
+        return ret;
+    }
+    FXString url = linkurl[link];
+    const char* hostPath = getenv("SWORDFISH_HOST_PATH");
+    FXString opener = FXPath::search(hostPath ? FXString(hostPath) : FXSystem::getExecPath(), "xdg-open");
+    if (opener.empty())
+    {
+        getApp()->beep();
+        return 1;
+    }
+    FXString cmd = xf_hostcommand(xf_quote(opener) + " " + xf_quote(url)) + " >/dev/null 2>&1 &";
+    if (system(cmd.text()) != 0)
+    {
+        getApp()->beep();
+    }
+    return 1;
+}
 
 
 // Object implementation
@@ -79,7 +249,7 @@ void MessageBox::initialize(const FXString& text, FXIcon* ic, FXuint whichbutton
         {
             new FXLabel(info, FXString::null, ic, ICON_BEFORE_TEXT | LAYOUT_CENTER_Y);
         }
-        scrollmsg = new FXText(info, NULL, 0, TEXT_READONLY | TEXT_WORDWRAP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        scrollmsg = new LinkText(info, NULL, 0, TEXT_READONLY | TEXT_WORDWRAP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
         scrollmsg->setVisibleRows(16);
         scrollmsg->setVisibleColumns(72);
     }

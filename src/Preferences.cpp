@@ -781,10 +781,6 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     restoretabs = new FXCheckButton(matrix, _("Restore tabs on startup") + FXString(" "), this, ID_RESTORE_TABS);
     new FXRadioButton(matrix, _("Open new tab in root folder") + FXString(" "), this, PreferencesBox::ID_NEWTAB_ROOTDIR);
 
-    group = new FXGroupBox(settings, _("Address Bars"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
-    commonaddressbar = new FXCheckButton(group, _("Use a common address bar (unchecked: separate bars per pane)"));
-    commonaddressbar->setCheck(getApp()->reg().readUnsignedEntry("OPTIONS", "common_addressbar", false));
-
     group = new FXGroupBox(settings, _("Scrolling"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     matrix = new FXMatrix(group, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP);
@@ -801,27 +797,8 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
                             JUSTIFY_RIGHT | LAYOUT_FILL_X | LAYOUT_FILL_ROW, 0, 0, 0, 0, 2, 2, 1, 1);
     spinner->setRange(1, 100);
 
-    group = new FXGroupBox(settings, _("Thumbnails"),
-                           GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
-    matrix = new FXMatrix(group, 3, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_X);
-    FXHorizontalFrame* hframe = new FXHorizontalFrame(matrix,
-                                                      LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
-    new FXLabel(hframe, _("Small thumbnails size:") + FXString("  "), NULL,
-                JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
-    minithumb_spin = new FXSpinner(hframe, 3, this, ID_MINITHUMB_SIZE, JUSTIFY_RIGHT | LAYOUT_FILL_X | LAYOUT_FILL_ROW,
-                                   0, 0, 0, 0, 2, 2, 1, 1);
-    minithumb_spin->setRange(16, 512);
-    minithumb_size = getApp()->reg().readUnsignedEntry("SETTINGS", "minithumb_size", 24);
-    minithumb_spin->setValue(minithumb_size);
-    new FXLabel(matrix, "     ", NULL, JUSTIFY_LEFT);
-    hframe = new FXHorizontalFrame(matrix, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
-    new FXLabel(hframe, _("Big thumbnails size:") + FXString("  "), NULL,
-                JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
-    bigthumb_spin = new FXSpinner(hframe, 4, this, ID_BIGTHUMB_SIZE, JUSTIFY_RIGHT | LAYOUT_FILL_X | LAYOUT_FILL_ROW, 0,
-                                  0, 0, 0, 2, 2, 1, 1);
-    bigthumb_spin->setRange(32, 1024);
-    bigthumb_size = getApp()->reg().readUnsignedEntry("SETTINGS", "bigthumb_size", 64);
-    bigthumb_spin->setValue(bigthumb_size);
+    // Thumbnail sizes follow the zoom buttons (Ctrl+wheel)
+    FXHorizontalFrame* hframe = NULL;
 
 #if defined(linux) && defined(XFE_AUTOMOUNTER)
     automountgroup = new FXGroupBox(settings, _("Automount"),
@@ -3428,7 +3405,6 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
 
     // Restore tabs
     getApp()->reg().writeUnsignedEntry("OPTIONS", "restore_tabs", (FXuint)restoretabs->getCheck());
-    getApp()->reg().writeUnsignedEntry("OPTIONS", "common_addressbar", (FXuint)commonaddressbar->getCheck());
 
     // Path linker
     FXbool show_pathlink = showpathlink->getCheck();
@@ -3492,18 +3468,6 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
 
         // Update registry
         getApp()->reg().write();       
-    }
-
-    // Thumbnails size
-    bigthumb_size = bigthumb_spin->getValue();
-    if (bigthumb_size != bigthumb_size_prev)
-    {
-        getApp()->reg().writeUnsignedEntry("SETTINGS", "bigthumb_size", bigthumb_size);
-    }
-    minithumb_size = minithumb_spin->getValue();
-    if (minithumb_size != minithumb_size_prev)
-    {
-        getApp()->reg().writeUnsignedEntry("SETTINGS", "minithumb_size", minithumb_size);
     }
 
     // Bar shading
@@ -3653,7 +3617,6 @@ long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
     relativeresize->setCheck(relativeresize_prev);
     alwaysshowtabbar->setCheck(alwaysshowtabbar_prev);
     restoretabs->setCheck(restoretabs_prev);
-    commonaddressbar->setCheck(getApp()->reg().readUnsignedEntry("OPTIONS", "common_addressbar", false));
     showpathlink->setCheck(show_pathlink_prev);
     dirpanel_mode = dirpanel_mode_prev;
     dirpanel_list_startup = dirpanel_list_startup_prev;
@@ -3675,8 +3638,6 @@ long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
     scroll->setCheck(smoothscroll_prev);
     getApp()->setWheelLines(wheellines_prev);
     getApp()->setScrollBarSize(scrollbarsize_prev);
-    bigthumb_spin->setValue(bigthumb_size_prev);
-    minithumb_spin->setValue(minithumb_size_prev);
 #if defined(linux) && defined(XFE_AUTOMOUNTER)
     automountbutton->setCheck(automount_prev);
     autoopenbutton->setCheck(autoopen_prev);
@@ -3816,8 +3777,6 @@ FXuint PreferencesBox::execute(FXuint placement)
     sudocmd_prev = sudocmd->getText();
     sucmd_prev = sucmd->getText();
     uidpi_prev = uidpi;
-    bigthumb_size_prev = bigthumb_size;
-    minithumb_size_prev = minithumb_size;
 
     // Third tab - Dialogs
     ask_prev = ask->getCheck();

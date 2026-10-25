@@ -586,146 +586,10 @@ MountsList::MountsList(FXWindow* owner, FXComposite* p, FXObject* tgt, FXSelecto
     mounts = new FXStringDict();
 
 #if defined(linux)
-
-    FXString name, pathname;
-
-    // Mount points from /etc/mtab
-    struct mntent* mnt;
-    FILE* mtab = setmntent(MTAB_PATH, "r");
-    if (mtab)
-    {
-        while ((mnt = getmntent(mtab)))
-        {
-            // Filter out some file systems
-            if (xf_keepmount(mnt->mnt_dir, mnt->mnt_fsname))
-            {
-                name = mnt->mnt_dir;
-                pathname = mnt->mnt_dir;
-
-                // Root file system
-                if (name == ROOTDIR)
-                {
-                    name = _("File system");
-                    mounts->insert(name.text(), pathname.text());
-                    FXList::appendItem(name, miniharddriveicon);
-                }
-                else if (strncmp(mnt->mnt_type, "cifs", 4) == 0 || strncmp(mnt->mnt_type, "nfs", 3) == 0)
-                {
-                    mounts->insert(name.text(), pathname.text());
-                    FXList::appendItem(name, mininetdriveicon);
-                }
-                else if (strncmp(mnt->mnt_dir, "/media", 6) == 0)
-                {
-                    if (strncmp(mnt->mnt_type, "iso", 3) == 0)
-                    {
-                        mounts->insert(name.text(), pathname.text());
-                        FXList::appendItem(name, minicdromicon);
-                    }
-                    else
-                    {
-                        mounts->insert(name.text(), pathname.text());
-                        FXList::appendItem(name, miniremovabledeviceicon);
-                    }
-                }
-                else
-                {
-                    // Nothing to do
-                }
-            }
-        }
-        endmntent(mtab);
-    }
-
-    // Get mtab hash
     hash_prev = xf_hashfile(MTAB_PATH);
-
-    // Path of GVFS mount points
-    FXString gvfspath = "/run/user/" + FXStringVal(FXSystem::user()) + "/gvfs";
-
-    // Get directory stream pointer
-    DIR* dirp;
-    struct dirent* dp;
-    dirp = opendir(gvfspath.text());
-
-    // Managed to open directory
-    if (dirp)
-    {
-        // Process directory entries
-        while ((dp = readdir(dirp)) != NULL)
-        {
-            // Get name of entry
-            FXString gvfsname = dp->d_name;
-
-            // List of GVFS mounts
-            gvfsmounts_prev += gvfsname;
-
-            // Get mount type
-            FXString mounttype = gvfsname.before(':');
-
-            // Samba share
-            if (mounttype == "smb-share")
-            {
-                FXString tmp;
-                int pos = 0;
-
-                // Server name
-                pos = gvfsname.find("server=") + 7;
-                tmp = gvfsname.right(gvfsname.length() - pos);
-                FXString server = tmp.before(',');
-
-                // Share name
-                pos = gvfsname.find("share=") + 6;
-                tmp = gvfsname.right(gvfsname.length() - pos);
-                FXString share = tmp.before(',');
-
-                // Mount name and path
-                FXString name = share.substitute("%20", " ") + "@" + server;
-                FXString pathname = gvfspath + PATHSEPSTRING + gvfsname;
-                mounts->insert(name.text(), pathname.text());
-                FXList::appendItem(name, mininetdriveicon);
-            }
-
-            // SSH mount
-            if (mounttype == "sftp")
-            {
-                FXString tmp;
-                int pos = 0;
-
-                // Host name
-                pos = gvfsname.find("host=") + 5;
-                tmp = gvfsname.right(gvfsname.length() - pos);
-                FXString host = tmp.before(',');
-
-                // User name
-                pos = gvfsname.find("user=") + 5;
-                tmp = gvfsname.right(gvfsname.length() - pos);
-                FXString user = tmp.before(',');
-
-                // Mount name and path
-                FXString name = user.substitute("%20", " ") + "@" + host;
-                FXString pathname = gvfspath + PATHSEPSTRING + gvfsname;
-                mounts->insert(name.text(), pathname.text());
-                FXList::appendItem(name, mininetdriveicon);
-            }
-
-            // MTP device
-            if (mounttype == "mtp")
-            {
-                // Get mount name
-                FXString name = gvfsname.after('_');
-                name = name.before('_', 2);
-
-                // Mount name and path
-                FXString pathname = gvfspath + PATHSEPSTRING + gvfsname;
-                mounts->insert(name.text(), pathname.text());
-                FXList::appendItem(name, miniremovabledeviceicon);
-            }
-        }
-
-        // Close directory
-        closedir(dirp);
-    }
-
+    blocks_prev = blockDevices();
+    gvfsmounts_prev = gvfsMounts();
+    scan();
 #endif
 }
 
@@ -767,182 +631,174 @@ void MountsList::setMount(FXString& key)
 
 #if defined(linux)
 
-// Refresh mount points
-long MountsList::onMountsRefresh(FXObject* sender, FXSelector, void* ptr)
+// Names in a directory, concatenated (cheap change detection)
+static FXString directoryNames(const FXString& path)
 {
-    // Get mtab hash
-    FXulong hash = xf_hashfile(MTAB_PATH);
-
-    // Check GVFS mounts
-    DIR* dirp;
-    struct dirent* dp;
-    FXString gvfsmounts = "";
-
-    // Path of gfvs mounts
-    FXString gvfspath = "/run/user/" + FXStringVal(FXSystem::user()) + "/gvfs";
-
-    // Obtain gvfs mounts list
-    dirp = opendir(gvfspath.text());
+    FXString names;
+    DIR* dirp = opendir(path.text());
     if (dirp)
     {
+        struct dirent* dp;
         while ((dp = readdir(dirp)) != NULL)
         {
-            gvfsmounts += dp->d_name;
+            names += dp->d_name;
+            names += "\n";
         }
         closedir(dirp);
     }
-    else if (errno != ENOENT)
+    return names;
+}
+
+
+FXString MountsList::gvfsMounts()
+{
+    return directoryNames("/run/user/" + FXStringVal(FXSystem::user()) + "/gvfs");
+}
+
+
+FXString MountsList::blockDevices()
+{
+    return directoryNames("/sys/class/block");
+}
+
+
+// Add a row, keeping labels unique because they are the dictionary keys
+void MountsList::addMount(FXString name, const FXString& pathname, FXIcon* icon)
+{
+    if (mounts->find(name.text()))
     {
-        appLog(APP_LOG_ERRORS, "mount-list-read-failed", gvfspath + ": " + strerror(errno));
-        getApp()->addTimeout(this, ID_MOUNTS_REFRESH, MTAB_POLL_INTERVAL);
-        return 1;
+        name += " (" + FXPath::name(pathname) + ")";
+    }
+    mounts->insert(name.text(), pathname.text());
+    FXList::appendItem(name, icon);
+}
+
+
+// Rebuild the list from mtab, unmounted drives and GVFS mounts
+void MountsList::scan()
+{
+    // Labels are not unique keys: remove every old row, including duplicates.
+    clearItems();
+    mounts->clear();
+
+    struct mntent* mnt;
+    FILE* mtab = setmntent(MTAB_PATH, "r");
+    if (mtab)
+    {
+        while ((mnt = getmntent(mtab)))
+        {
+            // Filter out some file systems
+            if (!xf_keepmount(mnt->mnt_dir, mnt->mnt_fsname))
+            {
+                continue;
+            }
+            FXString pathname = mnt->mnt_dir;
+
+            // Root file system
+            if (pathname == ROOTDIR)
+            {
+                addMount(_("File system"), pathname, miniharddriveicon);
+            }
+            else if (strncmp(mnt->mnt_type, "cifs", 4) == 0 || strncmp(mnt->mnt_type, "nfs", 3) == 0)
+            {
+                addMount(pathname, pathname, mininetdriveicon);
+            }
+            else if (pathname.left(7) == "/media/" || pathname.left(11) == "/run/media/")
+            {
+                // Desktop mounts are named after their volume, like other file managers
+                if (strncmp(mnt->mnt_fsname, "/dev/", 5) == 0)
+                {
+                    knownDevices.insert(mnt->mnt_fsname, "");
+                }
+                addMount(FXPath::name(pathname), pathname,
+                         strncmp(mnt->mnt_type, "iso", 3) == 0 ? minicdromicon : miniremovabledeviceicon);
+            }
+        }
+        endmntent(mtab);
     }
 
-    // Mount points or GVFS mounts have changed
-    if (hash != hash_prev || gvfsmounts != gvfsmounts_prev)
+    // Plugged-in drives that are not mounted, plus any drive mounted earlier in this session.
+    // Their path is the device node; activating them mounts them.
+    vector_FXString volumes;
+    if (xf_unmountedvolumes(volumes))
     {
-        // Update hash
+        for (FXuint i = 0; i < volumes.size(); i++)
+        {
+            FXString device = volumes[i].section('\t', 0);
+            FXString label = volumes[i].section('\t', 1);
+            if (volumes[i].section('\t', 2) != "1" && !knownDevices.find(device.text()))
+            {
+                continue;
+            }
+            addMount(label.empty() ? FXPath::name(device) : label, device, miniremovabledeviceicon);
+        }
+    }
+
+    // GVFS mount points
+    FXString gvfspath = "/run/user/" + FXStringVal(FXSystem::user()) + "/gvfs";
+    DIR* dirp = opendir(gvfspath.text());
+    if (dirp)
+    {
+        struct dirent* dp;
+        while ((dp = readdir(dirp)) != NULL)
+        {
+            FXString gvfsname = dp->d_name;
+            FXString mounttype = gvfsname.before(':');
+            FXString pathname = gvfspath + PATHSEPSTRING + gvfsname;
+
+            // Samba share
+            if (mounttype == "smb-share")
+            {
+                addMount(RemoteDirectory::mountLabel(gvfsname), pathname, mininetdriveicon);
+            }
+
+            // SSH, FTP and WebDAV mounts
+            if (mounttype == "sftp" || mounttype == "ftp" || mounttype == "ftps" || mounttype == "dav" ||
+                mounttype == "davs")
+            {
+                addMount(RemoteDirectory::mountLabel(gvfsname), pathname, mininetdriveicon);
+            }
+
+            // MTP device
+            if (mounttype == "mtp")
+            {
+                FXString name = gvfsname.after('_');
+                addMount(name.before('_', 2), pathname, miniremovabledeviceicon);
+            }
+        }
+        closedir(dirp);
+    }
+}
+
+
+// Refresh mount points
+long MountsList::onMountsRefresh(FXObject* sender, FXSelector, void* ptr)
+{
+    FXulong hash = xf_hashfile(MTAB_PATH);
+    FXString blocks = blockDevices();
+    FXString gvfsmounts = gvfsMounts();
+
+    // Mount points, plugged-in drives or GVFS mounts have changed
+    if (hash != hash_prev || blocks != blocks_prev || gvfsmounts != gvfsmounts_prev)
+    {
         hash_prev = hash;
-
-        // Labels are not unique keys: remove every old row, including duplicates.
-        clearItems();
-
-        // Clear mount points dictionary
-        mounts->clear();
-
-        FXString name, pathname;
-
-        struct mntent* mnt;
-        FILE* mtab = setmntent(MTAB_PATH, "r");
-        if (mtab)
-        {
-            while ((mnt = getmntent(mtab)))
-            {
-                // Filter out some file systems
-                if (xf_keepmount(mnt->mnt_dir, mnt->mnt_fsname))
-                {
-                    name = mnt->mnt_dir;
-                    pathname = mnt->mnt_dir;
-
-                    // Root file system
-                    if (name == ROOTDIR)
-                    {
-                        name = _("File system");
-                        mounts->insert(name.text(), pathname.text());
-                        FXList::appendItem(name, miniharddriveicon);
-                    }
-                    else if (strncmp(mnt->mnt_type, "cifs", 4) == 0 || strncmp(mnt->mnt_type, "nfs", 3) == 0)
-                    {
-                        mounts->insert(name.text(), pathname.text());
-                        FXList::appendItem(name, mininetdriveicon);
-                    }
-                    else if (strncmp(mnt->mnt_dir, "/media", 6) == 0)
-                    {
-                        if (strncmp(mnt->mnt_type, "iso", 3) == 0)
-                        {
-                            mounts->insert(name.text(), pathname.text());
-                            FXList::appendItem(name, minicdromicon);
-                        }
-                        else
-                        {
-                            mounts->insert(name.text(), pathname.text());
-                            FXList::appendItem(name, miniremovabledeviceicon);
-                        }
-                    }
-                    else
-                    {
-                        // Nothing to do
-                    }
-                }
-            }
-            endmntent(mtab);
-        }
-
-        // Update GVFS mounts list
+        blocks_prev = blocks;
         gvfsmounts_prev = gvfsmounts;
-
-        // Get directory stream pointer
-        dirp = opendir(gvfspath.text());
-
-        // Managed to open directory
-        if (dirp)
-        {
-            // Process directory entries
-            while ((dp = readdir(dirp)) != NULL)
-            {
-                // Get name of entry
-                FXString gvfsname = dp->d_name;
-
-                // Get mount type
-                FXString mounttype = gvfsname.before(':');
-
-                // Samba share
-                if (mounttype == "smb-share")
-                {
-                    FXString tmp;
-                    int pos = 0;
-
-                    // Server name
-                    pos = gvfsname.find("server=") + 7;
-                    tmp = gvfsname.right(gvfsname.length() - pos);
-                    FXString server = tmp.before(',');
-
-                    // Share name
-                    pos = gvfsname.find("share=") + 6;
-                    tmp = gvfsname.right(gvfsname.length() - pos);
-                    FXString share = tmp.before(',');
-
-                    // Mount name and path
-                    FXString name = share + "@" + server;
-                    FXString pathname = gvfspath + PATHSEPSTRING + gvfsname;
-                    mounts->insert(name.text(), pathname.text());
-                    FXList::appendItem(name, mininetdriveicon);
-                }
-
-                // SSH mount
-                if (mounttype == "sftp")
-                {
-                    FXString tmp;
-                    int pos = 0;
-
-                    // Host name
-                    pos = gvfsname.find("host=") + 5;
-                    tmp = gvfsname.right(gvfsname.length() - pos);
-                    FXString host = tmp.before(',');
-
-                    // User name
-                    pos = gvfsname.find("user=") + 5;
-                    tmp = gvfsname.right(gvfsname.length() - pos);
-                    FXString user = tmp.before(',');
-
-                    // Mount name and path
-                    FXString name = user.substitute("%20", " ") + "@" + host;
-                    FXString pathname = gvfspath + PATHSEPSTRING + gvfsname;
-                    mounts->insert(name.text(), pathname.text());
-                    FXList::appendItem(name, mininetdriveicon);
-                }
-
-                // MTP device
-                if (mounttype == "mtp")
-                {
-                    // Mount name and path
-                    FXString name = gvfsname.after('_');
-                    name = name.before('_', 2);
-                    FXString pathname = gvfspath + PATHSEPSTRING + gvfsname;
-                    mounts->insert(name.text(), pathname.text());
-                    FXList::appendItem(name, miniremovabledeviceicon);
-                }
-            }
-
-            // Close directory
-            closedir(dirp);
-        }
+        scan();
     }
 
     // Restart timer
     getApp()->addTimeout(this, ID_MOUNTS_REFRESH, MTAB_POLL_INTERVAL);
 
     return 1;
+}
+
+
+// Force a rescan on the next timer tick (after mounting or ejecting)
+void MountsList::invalidate()
+{
+    hash_prev = 0;
+    blocks_prev.clear();
 }
 
 #endif

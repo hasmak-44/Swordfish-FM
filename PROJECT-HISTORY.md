@@ -540,20 +540,20 @@ them in a bundle and build one test package at the end.
 
 | # | Area | Report | Status |
 |---|---|---|---|
-| A1 | Devices | Mount/unmount buttons do nothing | open |
-| A2 | Devices | Shares mounted twice or remounted at random | open |
-| A3 | Devices | Drive unmounted elsewhere stays in the sidebar until restart | open |
-| A4 | Devices | Unmount fails: udisks `DeviceBusy`, "target is busy" | open, see below |
-| A5 | Devices | After unmounting in Swordfish and remounting in Thunar, the drive is listed but "Folder ... doesn't exist" until restart | **fixed, uncommitted** |
-| B1 | Network | Windows server without a password not accessible (check how smb4k does it: guest first) | open |
-| B2 | Network | Connect to Server button, Shift+F5 and File menu do nothing; reuse the discovery/address-bar method | open |
-| B3 | Network | Sidebar and title bar show full paths; want `share@server` (tab label already done) | open |
-| C1 | About/Help | About shows the wrong version; links in About/Help body text are not clickable (incl. GitHub Issues) | open |
-| D1 | File list | Inline rename and panel-to-panel drag erratic (selection lost?) | open |
-| D2 | File list | No auto-scroll when dragging to an item out of view | open |
-| D3 | Tabs | Drag-hover tab switch: make it 1.5 s; the switched tab opens empty for about 2 s | open |
-| E1 | Settings | Remove the thumbnail size setting (replaced by zoom) unless it still does something | open |
-| E2 | Address bar | Right-click menu while editing lacks Copy/Paste | open |
+| A1 | Devices | Mount/unmount buttons do nothing | **fixed** |
+| A2 | Devices | Shares mounted twice or remounted at random | parked: not reproducible |
+| A3 | Devices | Drive unmounted elsewhere stays in the sidebar until restart | **fixed** |
+| A4 | Devices | Unmount fails: udisks `DeviceBusy`, "target is busy" | **fixed** |
+| A5 | Devices | After unmounting in Swordfish and remounting in Thunar, the drive is listed but "Folder ... doesn't exist" until restart | **fixed** |
+| B1 | Network | Windows server without a password not accessible (check how smb4k does it: guest first) | **fixed** |
+| B2 | Network | Connect to Server button, Shift+F5 and File menu do nothing; reuse the discovery/address-bar method | **fixed** |
+| B3 | Network | Sidebar and title bar show full paths; want `share@server` (tab label already done) | **fixed** |
+| C1 | About/Help | About shows the wrong version; links in About/Help body text are not clickable (incl. GitHub Issues) | **fixed** |
+| D1 | File list | Inline rename and panel-to-panel drag erratic (selection lost?) | **fixed** |
+| D2 | File list | No auto-scroll when dragging to an item out of view | **fixed** |
+| D3 | Tabs | Drag-hover tab switch: make it 1.5 s; the switched tab opens empty for about 2 s | **fixed** |
+| E1 | Settings | Remove the thumbnail size setting (replaced by zoom) unless it still does something | **fixed** |
+| E2 | Address bar | Right-click menu while editing lacks Copy/Paste | **fixed** |
 
 User's scenario for the device bugs (USB HDD "My Passport 4", `/dev/sdc1`,
 ntfs3, automounted by Thunar at `/media/Hassanein/My Passport 4`):
@@ -580,6 +580,41 @@ tested on the user's machine.
 drives with `udisksctl unmount -b <device>` (and offer Eject / power off),
 so Thunar stays in sync; move tabs and panels inside the drive to Home before
 unmounting (avoids "target is busy"); then A1-A3.
+
+**RC6 bug bundle (committed together, 25 October).** All items above are
+fixed except A2 (parked: the user could not reproduce it).
+
+- **Devices (A):** `/media` and `/run/media` drives unmount through
+  `udisksctl` (Eject only for hotplug drives), panels inside a drive move to
+  Home first, a busy message names the cause, the Mount/Unmount buttons work,
+  and the sidebar drops drives unmounted elsewhere (`xf_hashfile` fix, see
+  `tests/folder-expansion-regression.cpp`).
+- **Settings/address bar (E, extra):** thumbnail size setting removed (zoom
+  replaces it); right-click menu on the path editor (Cut/Copy/Paste, Paste and
+  Go, Select All). The "common address bar" option and its code were removed
+  at the user's request; Ctrl+L opens the panel path editor. The freed space
+  is reserved for a future custom toolbar.
+- **About/Help (C):** body links are clickable (`LinkText` in
+  `MessageBox.cpp`) and readable on dark themes.
+- **Tabs (D3):** drag-hover switch after 1.5 s, the list is redrawn at once.
+- **File list (D1, D2):** slow-click rename no longer depends on list focus
+  or `current`; it arms anywhere in the Name cell (list/mini-icon modes) and
+  only in the active panel; `FileList::setDirectory` no longer resets the
+  current item when the folder is unchanged. Drop targets restore the hovered
+  folder's selection. A drop-scroll timer (`ID_DROP_SCROLL_TIMER`) scrolls the
+  list while dragging near its top/bottom edge.
+- **Network (B):** guest access tries anonymous, then user `guest` with an
+  empty password (smb4k style) in both `resolveNetworkPath` and the share-list
+  helper (`NetworkDiscovery.cpp`), before asking. Connect to Server was
+  simplified at the user's request to Type (SMB, SFTP, FTP, FTPS, WebDAV,
+  WebDAV HTTPS), Server, Port (0 = standard) and an optional share/folder; it
+  builds the address and hands it to `FilePanel::resolveNetworkPath`, so the
+  server asks for the login. SMB without a share opens the server tab. The
+  login prompt leaves Domain blank; `WORKGROUP` is only sent internally.
+  Window title and sidebar show `share@computer` / `user@host`
+  (`RemoteDirectory::mountLabel`, `titlePath`).
+- Not tested against a real server (no SMB/SSH in the codespace). Packaged as
+  TEST ONLY download `swordfish-rc6-test2` for the user's machine.
 
 ## 4. The archive-command / false idle-timeout bug
 
@@ -860,8 +895,9 @@ prereleases and must not be assumed to select RC4.
 
 ### 9.0 Current position (25 October 2026)
 
-- **Latest:** work is on the RC6 bug list in section 3.15. Fix the bugs in a
-  bundle, then build one test package. Group 4 below is paused until then.
+- **Latest:** the RC6 bug list in section 3.15 is fixed and committed as one
+  bundle; the user is testing package `swordfish-rc6-test2`. Group 4 below is
+  paused until the test results are in.
 - Branch `portable-layout`, last pushed commit `2104a96`. Version string
   `0.0.1-rc6`, but **RC6 is not released**. Build RC6 only when the user asks.
 - **RC6 Test 1** is a TEST ONLY GitHub prerelease (`swordfish-rc6-test1`)

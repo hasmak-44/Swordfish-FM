@@ -526,6 +526,42 @@ FXString RemoteDirectory::hostName(const FXString& host)
     return it == hostNames().end() ? host : it->second;
 }
 
+static FXString mountField(const FXString& name, const char* key)
+{
+    int pos = name.find(key);
+    if (pos < 0) return FXString::null;
+    pos += strlen(key);
+    return name.mid(pos, name.length() - pos).before(',').substitute("%20", " ");
+}
+
+FXString RemoteDirectory::mountLabel(const FXString& gvfsname)
+{
+    if (gvfsname.left(10) == "smb-share:")
+        return mountField(gvfsname, "share=") + "@" + hostName(mountField(gvfsname, "server="));
+    if (gvfsname.left(4) == "mtp:") return gvfsname.after('_').before('_', 2);
+    // sftp, ftp, ftps and dav mounts
+    if (gvfsname.find(":host=") >= 0)
+    {
+        FXString user = mountField(gvfsname, "user=");
+        return (user.empty() ? FXString::null : user + "@") + mountField(gvfsname, "host=");
+    }
+    return FXString::null;
+}
+
+// Short form of a folder for the window title: GVFS mounts as share@computer/subfolder
+FXString RemoteDirectory::titlePath(const FXString& path)
+{
+    int gvfs = path.find("/gvfs/");
+    if (gvfs >= 0)
+    {
+        FXString rest = path.mid(gvfs + 6, path.length() - gvfs - 6);
+        FXString label = mountLabel(rest.before('/'));
+        if (!label.empty())
+            return rest.find('/') < 0 ? label : label + "/" + rest.after('/');
+    }
+    return displayPath(path);
+}
+
 FXString RemoteDirectory::displayPath(const FXString& path)
 {
     if (comparecase(path.left(6), "smb://") != 0) return path;

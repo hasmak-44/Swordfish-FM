@@ -103,9 +103,6 @@ protected:
     FXToolBar* paneltoolbar = NULL;
     FXToolBar* addresstoolbar = NULL;
     FXToolBar* tabtoolbar = NULL;
-    PathLinker* commonpathlink = NULL;
-    FXbool editingCommonPath = false;
-    HistComboBox* addressbox = NULL;
     DirPanel* dirpanel = NULL;
     FilePanel* lpanel = NULL;
     FilePanel* rpanel = NULL;
@@ -144,7 +141,6 @@ protected:
     double treepanel_tree_pct = 0;
     double treetwopanels_tree_pct = 0;
     double treetwopanels_lpanel_pct = 0;
-    FXString prevdir;
     int prev_width = 0;
     FXuint search_xpos = 0;
     FXuint search_ypos = 0;
@@ -204,8 +200,7 @@ public:
         ID_FILE_RESTORE,
         ID_FILE_ASSOC,
         ID_FILE_SEARCH,
-        ID_CLEAR_ADDRESS,
-        ID_GOTO_ADDRESS,
+        ID_EDIT_ADDRESS,
         ID_CHANGED,
         ID_RUN,
         ID_SU,
@@ -295,12 +290,10 @@ public:
     long onCmdRemoveAllBookmarks(FXObject*, FXSelector, void*);
     long onUpdBookmarksMenu(FXObject*, FXSelector, void*);
     long onCmdRebuildBookmarksMenu(FXObject*, FXSelector, void*);
-    long onCmdClearAddress(FXObject*, FXSelector, void*);
-    long onCmdGotoAddress(FXObject*, FXSelector, void*);
+    long onCmdEditAddress(FXObject*, FXSelector, void*);
     long onUpdToggleStatus(FXObject*, FXSelector, void*);
     long onUpdHorzVertPanels(FXObject*, FXSelector, void*);
     long onUpdShowPanels(FXObject*, FXSelector, void*);
-    long onUpdAddress(FXObject*, FXSelector, void*);
     long onUpdEmptyTrash(FXObject*, FXSelector, void*);
     long onUpdTrashSize(FXObject*, FXSelector, void*);
     long onCmdFileDelete(FXObject*, FXSelector, void*);
@@ -394,12 +387,6 @@ public:
     FilePanel* getNextPanel(void)
     {
         return lpanel->getNext();
-    }
-
-    // Return the address box (from location bar)
-    ComboBox* getAddressBox(void)
-    {
-        return addressbox;
     }
 
     // Return a pointer on the directory panel

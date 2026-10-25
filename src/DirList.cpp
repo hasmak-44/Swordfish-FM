@@ -1526,6 +1526,11 @@ long DirList::onMtdevicesRefresh(FXObject*, FXSelector, void*)
                 {
                     mtdevices->remove(mnt->mnt_dir);
                 }
+                else
+                {
+                    // A remount must not inherit the "down" state of the previous mount
+                    updevices->remove(mnt->mnt_dir);
+                }
                 mtdevices->insert(mnt->mnt_dir, mnt->mnt_type);
             }
         }
@@ -1538,6 +1543,7 @@ long DirList::onMtdevicesRefresh(FXObject*, FXSelector, void*)
     {
         if (!tmpdict->find(mtdevices->key(s)))
         {
+            updevices->remove(mtdevices->key(s));
             mtdevices->remove(mtdevices->key(s));
         }
     }
