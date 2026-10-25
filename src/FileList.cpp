@@ -262,6 +262,23 @@ namespace
 std::vector<FileList*> zoomLists;
 const int zoomSizes[] = { 32, 48, 64, 96, 128 };
 
+FXString diagnosticPath(const FXString& path)
+{
+    FXString result;
+    for (int i = 0; i < path.length(); ++i)
+    {
+        unsigned char c = path[i];
+        if (c < 32 || c >= 127 || c == '%' || c == '"')
+        {
+            char escaped[4];
+            snprintf(escaped, sizeof(escaped), "%%%02X", c);
+            result += escaped;
+        }
+        else result += path[i];
+    }
+    return result;
+}
+
 FXIcon* sizedIcon(FXIcon* source, int size)
 {
     if (!source || (source->getWidth() == size && source->getHeight() == size))
@@ -6751,6 +6768,26 @@ FXbool FileList::updateItems(FXbool force)
 void FileList::listItems(FXbool force)
 {
     const FXTime started = FXThread::time();
+    const FXuint logLevel = appLogLevel();
+    const bool diagnostic = logLevel >= APP_LOG_LEVEL_DETAILED;
+    const bool entryDiagnostic = logLevel >= APP_LOG_LEVEL_DEBUG;
+    static FXulong nextScan = 0;
+    const FXString scanId = FXStringVal(++nextScan);
+    FXint readEntries = 0, skippedEntries = 0, completedEntries = 0;
+    auto trace = [&](const char* event, const FXString& details)
+    {
+        appLog(APP_LOG_LISTING_DIAGNOSTIC, event, "scan=" + scanId + " " + details);
+    };
+    auto skipped = [&](const char* reason, const FXString& folder, const FXString& entry)
+    {
+        ++skippedEntries;
+        if (entryDiagnostic)
+            trace("entry-skipped", FXString("reason=") + reason + " path=\"" + diagnosticPath(folder + entry) + "\"");
+    };
+    if (diagnostic)
+        trace("scan-begin", "path=\"" + diagnosticPath(directory) + "\" force=" + FXStringVal(force) +
+              " options=" + FXStringVal(options) + " thumbnails=" + FXStringVal(displaythumbnails) +
+              " filter_folders=" + FXStringVal(filter_folders) + " pattern=\"" + diagnosticPath(pattern) + "\"");
     FXTime metadataTime = 0, permissionTime = 0;
     FXint metadataCalls = 0, permissionCalls = 0;
     std::map<uid_t, FXString> users;
@@ -6793,7 +6830,10 @@ void FileList::listItems(FXbool force)
 
     // Get info about directory
     const FXbool remoteRoot = RemoteDirectory::handles(directory);
-    if (remoteRoot || xf_stat(directory.text(), &info) == 0)
+    if (diagnostic) errno = 0;
+    const int rootResult = remoteRoot ? 0 : xf_stat(directory.text(), &info);
+    const int rootError = errno;
+    if (rootResult == 0)
     {
         if (remoteRoot) memset(&info, 0, sizeof(info));
         // Need latest change no matter what actually changed!
@@ -6898,6 +6938,11 @@ void FileList::listItems(FXbool force)
         parentEntry.info.st_mode = S_IFDIR | 0755;
         const RemoteDirectory::Entry* remoteEntry = NULL;
         dirp = remote ? NULL : opendir(dirname.text());
+        const int openError = dirp || remote ? 0 : errno;
+        if (diagnostic)
+            trace("directory-open", "path=\"" + diagnosticPath(dirname) + "\" remote=" + FXStringVal(remote) +
+                  " errno=" + FXStringVal(openError));
+        int readError = 0;
 
         // Managed to open directory
         if (dirp || remote)
@@ -6906,7 +6951,7 @@ void FileList::listItems(FXbool force)
             // Loop over directory entries
             const bool parentRow = jobdepth == 0 && !RemoteDirectory::isServer(directory);
             while (remote ? (remoteIndex < remoteRows->size() + (parentRow ? 1 : 0)) :
-                            ((dp = readdir(dirp)) != NULL))
+                            ((errno = 0, dp = readdir(dirp), readError = dp ? 0 : errno, dp != NULL)))
             {
                 if (remote)
                 {
@@ -6916,10 +6961,15 @@ void FileList::listItems(FXbool force)
                 }
                 // Directory entry name
                 name = remote ? remoteEntry->name : dp->d_name;
+                ++readEntries;
+                const FXTime entryStarted = entryDiagnostic ? FXThread::time() : 0;
+                if (entryDiagnostic)
+                    trace("entry-begin", "path=\"" + diagnosticPath(dirname + name) + "\"");
 
                 // Nested folders never show . and ..
                 if (jobdepth > 0 && name[0] == '.' && (name[1] == 0 || (name[1] == '.' && name[2] == 0)))
                 {
+                    skipped("nested-dot-entry", dirname, name);
                     continue;
                 }
 
@@ -6930,6 +6980,7 @@ void FileList::listItems(FXbool force)
                                                             !(options & FILELIST_SHOWHIDDEN) &&
                                                             (dirname != trashfileslocation + PATHSEPSTRING))))
                 {
+                    skipped("hidden-or-dot-entry", dirname, name);
                     continue;
                 }
 
@@ -6945,11 +6996,20 @@ void FileList::listItems(FXbool force)
                     linfo = remoteEntry->info;
                     if (remoteEntry->symlink) linfo.st_mode = (linfo.st_mode & ~S_IFMT) | S_IFLNK;
                 }
-                else metadataResult = xf_lstat(pathname.text(), &linfo);
+                else
+                {
+                    if (diagnostic) errno = 0;
+                    metadataResult = xf_lstat(pathname.text(), &linfo);
+                }
+                const int metadataError = metadataResult == 0 ? 0 : errno;
                 metadataTime += FXThread::time() - operationStarted;
                 if (!remote) ++metadataCalls;
                 if (metadataResult != 0)
                 {
+                    if (diagnostic)
+                        trace("metadata-failed", "path=\"" + diagnosticPath(pathname) + "\" errno=" +
+                              FXStringVal(metadataError) + " message=\"" + diagnosticPath(strerror(metadataError)) + "\"");
+                    skipped("metadata-failed", pathname, FXString());
                     continue;
                 }
                 isLink = S_ISLNK(linfo.st_mode);
@@ -6979,6 +7039,7 @@ void FileList::listItems(FXbool force)
                 // If not a directory, nor a link to a directory and we want only directories, skip it
                 if (!isLinkToDir && !S_ISDIR(linfo.st_mode) && (options & FILELIST_SHOWDIRS))
                 {
+                    skipped("directories-only", pathname, FXString());
                     continue;
                 }
 
@@ -6986,6 +7047,7 @@ void FileList::listItems(FXbool force)
                 if ((name != "..") && (isLinkToDir || S_ISDIR(linfo.st_mode)) && filter_folders &&
                     !FXPath::match(pattern, name, matchmode))
                 {
+                    skipped("folder-pattern", pathname, FXString());
                     continue;
                 }
 
@@ -6993,6 +7055,7 @@ void FileList::listItems(FXbool force)
                 if ((!isLinkToDir && !S_ISDIR(linfo.st_mode)) && (name != ".." &&
                     !FXPath::match(pattern, name, matchmode)))
                 {
+                    skipped("file-pattern", pathname, FXString());
                     continue;
                 }
 
@@ -7618,7 +7681,14 @@ fnd:
                     item->create();
                 }
 
+                ++completedEntries;
+                if (entryDiagnostic)
+                    trace("entry-complete", "path=\"" + diagnosticPath(pathname) + "\" elapsed_ms=" +
+                          FXStringVal((FXThread::time() - entryStarted) / 1000000));
             }
+            if (diagnostic)
+                trace("directory-read-end", "path=\"" + diagnosticPath(dirname) + "\" errno=" +
+                      FXStringVal(readError) + " remote=" + FXStringVal(remote));
             if (dirp) closedir(dirp);
             if (jobparent && items.no() == firstChild && (!remote || !RemoteDirectory::loading(dirname)) &&
                 (!remote || RemoteDirectory::error(dirname).empty()))
@@ -7629,6 +7699,8 @@ fnd:
         }
         }
     }
+    else if (diagnostic)
+        trace("root-metadata-failed", "path=\"" + diagnosticPath(directory) + "\" errno=" + FXStringVal(rootError));
 
     thumbnailHidden = 0;
     if (displaythumbnails)
@@ -7676,6 +7748,10 @@ fnd:
 
     // Gotta recalc size of content
     recalc();
+    if (diagnostic)
+        trace("scan-end", "read=" + FXStringVal(readEntries) + " skipped=" + FXStringVal(skippedEntries) +
+              " completed=" + FXStringVal(completedEntries) + " visible=" + FXStringVal(items.no()) +
+              " elapsed_ms=" + FXStringVal((FXThread::time() - started) / 1000000));
     const FXTime elapsed = FXThread::time() - started;
     if (elapsed >= 1000000000LL)
     {

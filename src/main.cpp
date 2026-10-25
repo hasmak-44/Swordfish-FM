@@ -523,6 +523,7 @@ int main(int argc, char* argv[])
 
     // Read registry thru foxhacks
     application->reg().read();
+    appLogSetLevel(application->reg().readUnsignedEntry("OPTIONS", "log_level", APP_LOG_LEVEL_NORMAL));
 
     // Write package format
     application->reg().writeUnsignedEntry("SETTINGS", "package_format", pkg_format);

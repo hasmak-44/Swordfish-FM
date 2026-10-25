@@ -887,6 +887,19 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     }
     root_auth = getApp()->reg().readUnsignedEntry("OPTIONS", "root_auth", 0);
 
+    group = new FXGroupBox(settings, _("Logging"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    vframe = new FXVerticalFrame(group, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X);
+    hframe = new FXHorizontalFrame(vframe, LAYOUT_FILL_X | FRAME_NONE);
+    new FXLabel(hframe, _("Log level:"), NULL, JUSTIFY_LEFT | LAYOUT_CENTER_Y);
+    loglevellist = new FXListBox(hframe, NULL, 0, FRAME_SUNKEN | FRAME_THICK | LAYOUT_CENTER_Y);
+    loglevellist->appendItem(_("Off"));
+    loglevellist->appendItem(_("Errors only"));
+    loglevellist->appendItem(_("Normal"));
+    loglevellist->appendItem(_("Detailed (folder loading summaries)"));
+    loglevellist->appendItem(_("Debug (every file, slower)"));
+    loglevellist->setNumVisible(5);
+    new FXLabel(vframe, _("Log files folder:") + FXString(" ") + appLogDirectory(), NULL, JUSTIFY_LEFT);
+
     FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
     trashcan->setCheck(use_trash_can);
 
@@ -3199,6 +3212,17 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
         restart_theme = true;
     }
 
+    // Log level applies immediately, no restart needed
+    const FXuint newLogLevel = (FXuint)loglevellist->getCurrentItem();
+    const FXuint oldLogLevel = getApp()->reg().readUnsignedEntry("OPTIONS", "log_level", APP_LOG_LEVEL_NORMAL);
+    if (newLogLevel != oldLogLevel)
+    {
+        appLog(APP_LOG_SETTINGS, "log-level-changed",
+               "from=" + FXStringVal(oldLogLevel) + " to=" + FXStringVal(newLogLevel));
+        appLogSetLevel(newLogLevel);
+        getApp()->reg().writeUnsignedEntry("OPTIONS", "log_level", newLogLevel);
+    }
+
     // Folder size display mode applies immediately, no restart needed
     if ((FXuint)foldersizelist->getCurrentItem() != FileList::getFolderSizeMode(getApp()))
     {
@@ -3767,6 +3791,8 @@ FXuint PreferencesBox::execute(FXuint placement)
     restoretabs_prev = restoretabs->getCheck();
     show_pathlink_prev = showpathlink->getCheck();
     foldersizelist->setCurrentItem(FileList::getFolderSizeMode(getApp()));
+    loglevellist->setCurrentItem(FXMIN(getApp()->reg().readUnsignedEntry("OPTIONS", "log_level", APP_LOG_LEVEL_NORMAL),
+                                       (FXuint)APP_LOG_LEVEL_DEBUG));
     iconthumbnails->setCheck(getApp()->reg().readUnsignedEntry("OPTIONS", "icon_thumbnails", true));
 #ifdef STARTUP_NOTIFICATION
     usesn_prev = usesn->getCheck();

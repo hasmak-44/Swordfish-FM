@@ -200,11 +200,26 @@ Writable state is kept in `portable-data` beside the AppDir:
   - `settings.log` records saved program and panel preferences.
   - `errors.log` records selected operational failures, such as unavailable
     associated programs or denied directory access.
+  - `listing-diagnostic.log` records folder loading (Detailed and Debug levels
+    only).
 
-Log entries include timestamps and process IDs. Logging is enabled
-automatically; it records semantic actions and relevant paths, not raw
-keystrokes or mouse movement. Coverage will expand as more actions are
-instrumented.
+Log entries include timestamps and process IDs. They record semantic actions
+and relevant paths, not raw keystrokes or mouse movement. Coverage will expand
+as more actions are instrumented.
+
+The amount of logging is set in Preferences > Settings > Logging, which also
+shows the log folder. The change applies immediately:
+
+- **Off**: nothing is written.
+- **Errors only**: only `errors.log`.
+- **Normal** (default): all categories above except the listing diagnostic.
+- **Detailed**: adds one summary per folder load (entries read, skipped and
+  shown, errors and time taken).
+- **Debug**: also logs every file in each folder load. This slows down large
+  folders and produces big logs, so use it only while investigating a problem.
+
+Logs can contain private file and folder names; review them before sharing.
+`SWORDFISH_LISTING_DIAGNOSTIC=1` still forces the Debug level for one run.
 
 The portable launcher leaves `HOME` unchanged, so file navigation still starts
 from the user's real home directory. Terminal launches restore the host library

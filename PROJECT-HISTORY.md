@@ -475,8 +475,7 @@ not restored, and folders listing only some of their files).
   every entry when `SWORDFISH_LISTING_DIAGNOSTIC=1`. **Closed on
   25 October as a false alarm:** the tester had compared two folders with
   similar names but different contents. No listing bug was found. The
-  matching trace code in `src/FileList.cpp` is still uncommitted and must
-  not be committed without the user's approval.
+  trace code was later committed behind the log level setting (section 9.0).
 - **Tabs not restored** (`bb7a3d4`): accepting Preferences re-read the
   registry before saving custom themes, discarding the dialog's changes, so
   users with custom themes could never enable "Restore tabs". `saveConfig`
@@ -811,11 +810,23 @@ prereleases and must not be assumed to select RC4.
   5. Thumbnail placeholders: deferred by the user.
 - Then group 5 (settings/themes) and group 7 (big features).
 - The incomplete-listing report was closed on 25 October as a false alarm
-  (the tester compared two similarly named folders).
+  (the tester compared two similarly named folders). Its trace code was then
+  kept and committed behind a new **log level** setting (Preferences >
+  Settings > Logging: Off / Errors only / Normal / Detailed / Debug, stored as
+  `OPTIONS/log_level`, default Normal, applied immediately and inherited by
+  child programs through `SWORDFISH_LOG_LEVEL`). Detailed writes per-folder
+  summaries and Debug writes every entry to `listing-diagnostic.log`;
+  `SWORDFISH_LISTING_DIAGNOSTIC=1` still forces Debug. The separate
+  listing-diagnostic test package (`portable/LISTING-DIAGNOSTIC.md`,
+  `portable/run-listing-diagnostic` and its two packaging lines) remains
+  uncommitted and is no longer needed.
 - Open items: discovery of unplugged or
-  unmounted volumes; the uncommitted diagnostic/device hunks (in
-  `src/FileList.cpp`, `src/Places.cpp`, `src/XFileExplorer.cpp`,
-  `src/xfeutils.*`, `src/AppLogger.*`, `portable/README.md`) await approval.
+  unmounted volumes; the uncommitted device/automount hunks (in
+  `src/Places.cpp`, `src/XFileExplorer.cpp`, `src/xfeutils.*` and the
+  "Local devices and automount" section of `portable/README.md`) await approval.
+- The local `configure`/`config.h` in the main checkout are stale (no `PACKAGE`
+  define), so `make` there fails in `Preferences.cpp`. Validate in a scratch
+  copy using the committed `configure`, `aclocal.m4` and `src/Makefile.in`.
 - Uncommitted but deliberately left alone: regenerated `configure`,
   `aclocal.m4`, `src/Makefile.in`, `tests/folder-expansion-regression.cpp`,
   and many staged generated/translation files. Never `git add -A`, reset or

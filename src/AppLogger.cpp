@@ -27,11 +27,68 @@ static const char* logFilename(AppLogCategory category)
         return "settings.log";
     case APP_LOG_ERRORS:
         return "errors.log";
+    case APP_LOG_LISTING_DIAGNOSTIC:
+        return "listing-diagnostic.log";
     }
     return "application.log";
 }
 
-static FXString logDirectory()
+static int currentLevel = -1;
+
+static FXuint clampLevel(long level)
+{
+    if (level < APP_LOG_LEVEL_OFF)
+    {
+        return APP_LOG_LEVEL_OFF;
+    }
+    if (level > APP_LOG_LEVEL_DEBUG)
+    {
+        return APP_LOG_LEVEL_DEBUG;
+    }
+    return static_cast<FXuint>(level);
+}
+
+FXuint appLogLevel()
+{
+    if (currentLevel < 0)
+    {
+        // Companion programs inherit the level chosen by the main window
+        const char* inherited = getenv("SWORDFISH_LOG_LEVEL");
+        char* end = NULL;
+        long level = inherited && *inherited ? strtol(inherited, &end, 10) : APP_LOG_LEVEL_NORMAL;
+        currentLevel = (end && *end) ? APP_LOG_LEVEL_NORMAL : clampLevel(level);
+    }
+
+    // Kept for the published listing-diagnostic instructions
+    const char* diagnostic = getenv("SWORDFISH_LISTING_DIAGNOSTIC");
+    if (diagnostic && strcmp(diagnostic, "1") == 0)
+    {
+        return APP_LOG_LEVEL_DEBUG;
+    }
+    return static_cast<FXuint>(currentLevel);
+}
+
+void appLogSetLevel(FXuint level)
+{
+    currentLevel = clampLevel(level);
+    setenv("SWORDFISH_LOG_LEVEL", FXStringVal(currentLevel).text(), 1);
+}
+
+static bool categoryEnabled(AppLogCategory category)
+{
+    const FXuint level = appLogLevel();
+    switch (category)
+    {
+    case APP_LOG_ERRORS:
+        return level >= APP_LOG_LEVEL_ERRORS;
+    case APP_LOG_LISTING_DIAGNOSTIC:
+        return level >= APP_LOG_LEVEL_DETAILED;
+    default:
+        return level >= APP_LOG_LEVEL_NORMAL;
+    }
+}
+
+FXString appLogDirectory()
 {
     const char* portableData = getenv("SWORDFISH_PORTABLE_DATA");
     if (portableData && *portableData)
@@ -101,7 +158,12 @@ static bool ensureDirectory(const FXString& pathname)
 
 void appLog(AppLogCategory category, const FXString& event, const FXString& details)
 {
-    FXString directory = logDirectory();
+    if (!categoryEnabled(category))
+    {
+        return;
+    }
+
+    FXString directory = appLogDirectory();
     if (!ensureDirectory(directory))
     {
         fprintf(stderr, "Swordfish: cannot create log directory %s: %s\n", directory.text(), strerror(errno));

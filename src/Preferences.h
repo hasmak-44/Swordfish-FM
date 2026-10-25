@@ -140,6 +140,7 @@ private:
     FXString oldiconpath;
     FXListBox* languagelist = NULL;
     FXListBox* foldersizelist = NULL;
+    FXListBox* loglevellist = NULL;
     FXCheckButton* iconthumbnails = NULL;
     std::vector<FXString> languagecodes;
     FXString oldlanguage;
