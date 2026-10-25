@@ -472,9 +472,11 @@ not restored, and folders listing only some of their files).
   an error. The tester's folder could not be reproduced. A GitHub
   prerelease `swordfish-rc5-listing-diagnostic-1` (TEST ONLY; its
   `LISTING-DIAGNOSTIC.md` instructions ship in that archive) logs
-  every entry when `SWORDFISH_LISTING_DIAGNOSTIC=1`. **Tester logs are
-  still awaited.** The matching trace code in `src/FileList.cpp` is
-  uncommitted and must not be committed without the user's approval.
+  every entry when `SWORDFISH_LISTING_DIAGNOSTIC=1`. **Closed on
+  25 October as a false alarm:** the tester had compared two folders with
+  similar names but different contents. No listing bug was found. The
+  matching trace code in `src/FileList.cpp` is still uncommitted and must
+  not be committed without the user's approval.
 - **Tabs not restored** (`bb7a3d4`): accepting Preferences re-read the
   registry before saving custom themes, discarding the dialog's changes, so
   users with custom themes could never enable "Restore tabs". `saveConfig`
@@ -808,7 +810,9 @@ prereleases and must not be assumed to select RC4.
   4. Remember view settings per folder.
   5. Thumbnail placeholders: deferred by the user.
 - Then group 5 (settings/themes) and group 7 (big features).
-- Open items: tester logs for incomplete listings; discovery of unplugged or
+- The incomplete-listing report was closed on 25 October as a false alarm
+  (the tester compared two similarly named folders).
+- Open items: discovery of unplugged or
   unmounted volumes; the uncommitted diagnostic/device hunks (in
   `src/FileList.cpp`, `src/Places.cpp`, `src/XFileExplorer.cpp`,
   `src/xfeutils.*`, `src/AppLogger.*`, `portable/README.md`) await approval.
