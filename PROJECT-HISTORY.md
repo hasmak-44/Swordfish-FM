@@ -37,8 +37,8 @@ Historical implementation details below do not override the current code.
    the previous timeout warning.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state (RC5, the RC6 cycle and what to do next), read
-   section 3.14 and section 9.0 first. RC5 superseded RC4 as the latest
+9. For the latest state (RC5, the RC6 cycle, the RC6 bug list and what to do
+   next), read sections 3.14, 3.15 and 9.0 first. RC5 superseded RC4 as the latest
    public release; both stay frozen.
 
 This guide is a documentation addition after the frozen RC4 application commit.
@@ -511,6 +511,73 @@ Decisions recorded with the user:
 - The user prefers short replies and plain-text questions (pop-up question
   forms cover their view).
 
+### 3.15 Log level, RC6 bug list and the remount fix: 25 October
+
+- `e72535f` recorded the listing false alarm. `2104a96` added the log level
+  setting (section 9.0). Both are pushed. The exact committed tree builds with
+  `./autogen.sh && ./configure && make`; building with the checked-in
+  `src/Makefile.in` fails to link (`Preview::shutdown`) because that file is
+  stale. This predates the log level work.
+- The `swordfish-rc5-listing-diagnostic-1` prerelease and its tag were
+  deleted at the user's request. The obsolete uncommitted
+  `portable/LISTING-DIAGNOSTIC.md`, `portable/run-listing-diagnostic` and
+  their two packaging lines still await a decision.
+- Codespace disk was 91% full. Removed 9 old Copilot CLI versions from
+  `~/.cache/copilot/pkg/linux-x64` (kept the 2 newest), the plain Debian
+  Docker images (kept `swordfish-portable-builder`) and the cpptools cache;
+  now about 85%. Memory is also tight (8 GB): several stale VS Code extension
+  hosts stay alive after reconnects, so `make -j$(nproc)` gets killed. Use
+  `make -j1` in scratch builds, or restart the codespace.
+- The original long chat (session `1c1cc868…`, 38 checkpoints, about 690 MB
+  of events) is too large to restore. Its checkpoint notes are in
+  `~/.copilot/session-state/1c1cc868-95e0-4545-8bf5-1b5f0d7183c6/checkpoints/`.
+
+**RC6 bug list from the user** (`Bugs.txt`, 25 October). Agreed plan: fix
+them in a bundle and build one test package at the end.
+
+| # | Area | Report | Status |
+|---|---|---|---|
+| A1 | Devices | Mount/unmount buttons do nothing | open |
+| A2 | Devices | Shares mounted twice or remounted at random | open |
+| A3 | Devices | Drive unmounted elsewhere stays in the sidebar until restart | open |
+| A4 | Devices | Unmount fails: udisks `DeviceBusy`, "target is busy" | open, see below |
+| A5 | Devices | After unmounting in Swordfish and remounting in Thunar, the drive is listed but "Folder ... doesn't exist" until restart | **fixed, uncommitted** |
+| B1 | Network | Windows server without a password not accessible (check how smb4k does it: guest first) | open |
+| B2 | Network | Connect to Server button, Shift+F5 and File menu do nothing; reuse the discovery/address-bar method | open |
+| B3 | Network | Sidebar and title bar show full paths; want `share@server` (tab label already done) | open |
+| C1 | About/Help | About shows the wrong version; links in About/Help body text are not clickable (incl. GitHub Issues) | open |
+| D1 | File list | Inline rename and panel-to-panel drag erratic (selection lost?) | open |
+| D2 | File list | No auto-scroll when dragging to an item out of view | open |
+| D3 | Tabs | Drag-hover tab switch: make it 1.5 s; the switched tab opens empty for about 2 s | open |
+| E1 | Settings | Remove the thumbnail size setting (replaced by zoom) unless it still does something | open |
+| E2 | Address bar | Right-click menu while editing lacks Copy/Paste | open |
+
+User's scenario for the device bugs (USB HDD "My Passport 4", `/dev/sdc1`,
+ntfs3, automounted by Thunar at `/media/Hassanein/My Passport 4`):
+
+- Unmounted in **Thunar**: the drive disappears from both programs. Normal
+  (Thunar also powers off/ejects it).
+- Unmounted in **Swordfish**: it leaves the Swordfish list but stays greyed
+  out in Thunar. Swordfish runs plain `umount` (`PROGS/unmount`, default
+  `DEFAULT_UMOUNTCMD`), which bypasses udisks. After remounting from Thunar
+  (same folder name), Swordfish listed it but said it doesn't exist until
+  restarted.
+
+**A5 cause and fix:** `xf_stat`/`xf_lstat` in `src/xfeutils.h` return -1
+without calling `stat` for a mount point marked "down" in the global
+`updevices`. When the folder vanished during the 5-second `mtdevices` window,
+a check marked it "down", and `updevices` is only rebuilt every 300 s. The fix
+drops the cached state when a mount point appears or disappears in
+`DirList::onMtdevicesRefresh` and `FileList::refreshMtdevices`, and after any
+mount/unmount command in `File::mount`. Changed: `src/DirList.cpp`,
+`src/FileList.cpp`, `src/File.cpp`. Compiled in a scratch build; not yet
+tested on the user's machine.
+
+**Planned next for the device group:** unmount `/media` and `/run/media`
+drives with `udisksctl unmount -b <device>` (and offer Eject / power off),
+so Thunar stays in sync; move tabs and panels inside the drive to Home before
+unmounting (avoids "target is busy"); then A1-A3.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -788,9 +855,11 @@ prereleases and must not be assumed to select RC4.
 
 ## 9. Unfinished work and agreements not to mistake for completed features
 
-### 9.0 Current position (23 October 2026)
+### 9.0 Current position (25 October 2026)
 
-- Branch `portable-layout`, last pushed commit `7103fe4`. Version string
+- **Latest:** work is on the RC6 bug list in section 3.15. Fix the bugs in a
+  bundle, then build one test package. Group 4 below is paused until then.
+- Branch `portable-layout`, last pushed commit `2104a96`. Version string
   `0.0.1-rc6`, but **RC6 is not released**. Build RC6 only when the user asks.
 - **RC6 Test 1** is a TEST ONLY GitHub prerelease (`swordfish-rc6-test1`)
   built from a clean export of the application source at `7103fe4`, with the
