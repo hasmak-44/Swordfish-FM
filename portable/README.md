@@ -26,6 +26,20 @@ The bundle also provides the original Xfe executable names (`xfa`, `xfi`,
 `xfp`, and `xfw`) as compatibility aliases for saved settings and file
 associations.
 
+## Local devices and automount
+
+Mounted removable disks under `/media/` and `/run/media/` appear in Devices.
+Mount-table changes are polled, including disks unmounted by another application.
+This list is still a mounted-filesystem list, not a complete inventory of
+connected but unmounted volumes.
+
+The optional automounter requires the host UDisks2 service and `udisksctl`.
+Portable bundles include `xfe-automount` and its runtime libraries. The startup
+check runs `udisksctl status` with the host environment and checks its exit status,
+not translated column headings. A failed check reports the actual command output
+and disables startup for that session without erasing the saved preference or
+stopping an already running automounter.
+
 ## Standalone network discovery diagnostic
 
 `network-discovery-diagnostic.py` is an experimental host-side diagnostic, not
