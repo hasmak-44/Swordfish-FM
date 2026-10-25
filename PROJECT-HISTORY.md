@@ -529,8 +529,11 @@ Decisions recorded with the user:
   hosts stay alive after reconnects, so `make -j$(nproc)` gets killed. Use
   `make -j1` in scratch builds, or restart the codespace.
 - The original long chat (session `1c1cc868…`, 38 checkpoints, about 690 MB
-  of events) is too large to restore. Its checkpoint notes are in
-  `~/.copilot/session-state/1c1cc868-95e0-4545-8bf5-1b5f0d7183c6/checkpoints/`.
+  of events) was too large to restore and was deleted on 25 October, after the
+  user downloaded `Swordfish-before-detachment-backup.tar.gz` (the pre-detachment
+  repository backup; sha256 `770aba97…16611`) and confirmed it extracts. Its 38
+  checkpoint notes were kept in the current session folder:
+  `~/.copilot/session-state/e0acc086-d9c4-4a30-a2ec-10767b8e7db5/files/old-chat-1c1cc868-checkpoints/`.
 
 **RC6 bug list from the user** (`Bugs.txt`, 25 October). Agreed plan: fix
 them in a bundle and build one test package at the end.
