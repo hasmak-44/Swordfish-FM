@@ -520,8 +520,8 @@ Decisions recorded with the user:
   stale. This predates the log level work.
 - The `swordfish-rc5-listing-diagnostic-1` prerelease and its tag were
   deleted at the user's request. The obsolete uncommitted
-  `portable/LISTING-DIAGNOSTIC.md`, `portable/run-listing-diagnostic` and
-  their two packaging lines still await a decision.
+  `portable/LISTING-DIAGNOSTIC.md`, `portable/run-listing-diagnostic`, their
+  two packaging lines and the README link were deleted on 25 October.
 - Codespace disk was 91% full. Removed 9 old Copilot CLI versions from
   `~/.cache/copilot/pkg/linux-x64` (kept the 2 newest), the plain Debian
   Docker images (kept `swordfish-portable-builder`) and the cpptools cache;
@@ -926,8 +926,8 @@ prereleases and must not be assumed to select RC4.
   summaries and Debug writes every entry to `listing-diagnostic.log`;
   `SWORDFISH_LISTING_DIAGNOSTIC=1` still forces Debug. The separate
   listing-diagnostic test package (`portable/LISTING-DIAGNOSTIC.md`,
-  `portable/run-listing-diagnostic` and its two packaging lines) remains
-  uncommitted and is no longer needed.
+  `portable/run-listing-diagnostic` and its two packaging lines) was never
+  committed and was deleted on 25 October.
 - Open items: discovery of unplugged or
   unmounted volumes; the uncommitted device/automount hunks (in
   `src/Places.cpp`, `src/XFileExplorer.cpp`, `src/xfeutils.*` and the
