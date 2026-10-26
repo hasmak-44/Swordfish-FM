@@ -124,7 +124,7 @@ size_t xf_strlcpy(char* dst, const char* src, size_t sz)
 
 #ifdef HAVE_LIBNOTIFY
 static const int NOTIFICATION_TIMEOUT_MS = 5000; /* 5 seconds */
-static const char *NOTIFICATION_APP_NAME = "xfe-automount";
+static const char *NOTIFICATION_APP_NAME = "swf-automount";
 
 static void send_notification(char *path)
 {
@@ -149,6 +149,26 @@ static void send_notification(char *path)
     g_object_unref(G_OBJECT(n));
 }
 #endif
+
+
+// Quote a string for safe use as a single shell argument
+static std::string shellquote(const std::string& str)
+{
+    std::string quoted = "'";
+
+    for (char c : str)
+    {
+        if (c == '\'')
+        {
+            quoted += "'\\''";
+        }
+        else
+        {
+            quoted += c;
+        }
+    }
+    return quoted + "'";
+}
 
 
 // Return command output or error message
@@ -271,10 +291,10 @@ static void mount_and_add_filesystem(FileSystemInfo const & result)
     {
         fprintf(stderr, "Mounted at: %s\n", mnt_path);
         
-        // Open a new Xfe window
+        // Open a new Swordfish window
         if (automount_open)
         {           
-            std::string cmd_xfe = std::string("xfe ") + mnt_path + "&";            
+            std::string cmd_xfe = std::string("swordfish ") + shellquote(mnt_path) + " &";
             errno = 0;
             int ret = system(cmd_xfe.data());
             if (ret == -1)
@@ -470,10 +490,10 @@ gboolean mtp_monitor_mount(gpointer data)
                         {
                             if (MTP[ind].to_automount == TRUE)
                             {
-                                // Open a new Xfe window
+                                // Open a new Swordfish window
                                 if (automount_open)
                                 {
-                                    std::string cmd_xfe = std::string("xfe ") + mtp_path + "&";                                    
+                                    std::string cmd_xfe = std::string("swordfish ") + shellquote(mtp_path) + " &";
                                     errno = 0;
                                     int ret = system(cmd_xfe.data());
                                     if (ret == -1)
@@ -535,8 +555,9 @@ int main()
         xdgconfighome = homedir + PATHSEPSTRING CONFIGPATH;
     }
     
-    // Read automount_open variable state from Xfe config file
-    std::string cmd = std::string("grep automount_open ") + xdgconfighome + PATHSEPSTRING + "xfe/xferc";
+    // Read automount_open variable state from the Swordfish config file
+    std::string cmd = std::string("grep automount_open ") +
+                      shellquote(xdgconfighome + PATHSEPSTRING XFECONFIGPATH PATHSEPSTRING "xferc");
     std::string ret = getcommandoutput(std::move(cmd));
     if (ret == "automount_open=1\n")
     {
@@ -557,7 +578,7 @@ int main()
     }
     else
     {
-        fprintf(stderr, "Running Xfe automounter...\n");
+        fprintf(stderr, "Running Swordfish automounter...\n");
     }
 
     GDBusObjectManager* manager = udisks_client_get_object_manager(client);

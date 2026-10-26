@@ -11,7 +11,15 @@
   package named `xfe`, and Xfe's `.run` installer scripts (`buildrun`,
   `installrun`, `uninstall-xfe`), which install or delete `/usr/local/bin/xfe`
   and `/usr/local/share/xfe`.
+- The automount helper is now `swf-automount` instead of `xfe-automount`.
+  Installing Swordfish no longer overwrites Xfe's `/usr/bin/xfe-automount`,
+  and starting Swordfish no longer stops (or starts) Xfe's automounter.
+  The helper reads its "open a window" option from Swordfish's settings and
+  opens new drives in Swordfish instead of Xfe.
 - Credits to Xfe, the FOX Toolkit and X Win Commander are kept in AUTHORS.
+
+### Fixed
+- Automount "open a window" now works for drives whose names contain spaces.
 
 ## swordfish-0.0.1 — first stable release
 

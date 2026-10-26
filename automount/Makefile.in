@@ -88,7 +88,7 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
-bin_PROGRAMS = xfe-automount$(EXEEXT)
+bin_PROGRAMS = swf-automount$(EXEEXT)
 subdir = automount
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -101,12 +101,12 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
-am_xfe_automount_OBJECTS = xfe_automount-xfe-automount.$(OBJEXT)
-xfe_automount_OBJECTS = $(am_xfe_automount_OBJECTS)
+am_swf_automount_OBJECTS = swf_automount-xfe-automount.$(OBJEXT)
+swf_automount_OBJECTS = $(am_swf_automount_OBJECTS)
 am__DEPENDENCIES_1 =
-xfe_automount_DEPENDENCIES = $(am__DEPENDENCIES_1) \
+swf_automount_DEPENDENCIES = $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1)
-xfe_automount_LINK = $(CXXLD) $(xfe_automount_CXXFLAGS) $(CXXFLAGS) \
+swf_automount_LINK = $(CXXLD) $(swf_automount_CXXFLAGS) $(CXXFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -123,7 +123,7 @@ am__v_at_1 =
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__maybe_remake_depfiles = depfiles
-am__depfiles_remade = ./$(DEPDIR)/xfe_automount-xfe-automount.Po
+am__depfiles_remade = ./$(DEPDIR)/swf_automount-xfe-automount.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -142,8 +142,8 @@ AM_V_CXXLD = $(am__v_CXXLD_@AM_V@)
 am__v_CXXLD_ = $(am__v_CXXLD_@AM_DEFAULT_V@)
 am__v_CXXLD_0 = @echo "  CXXLD   " $@;
 am__v_CXXLD_1 = 
-SOURCES = $(xfe_automount_SOURCES)
-DIST_SOURCES = $(xfe_automount_SOURCES)
+SOURCES = $(swf_automount_SOURCES)
+DIST_SOURCES = $(swf_automount_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -195,6 +195,7 @@ ECHO_T = @ECHO_T@
 EGREP = @EGREP@
 ETAGS = @ETAGS@
 EXEEXT = @EXEEXT@
+FFMPEGTHUMBNAILER = @FFMPEGTHUMBNAILER@
 FOX_CONFIG = @FOX_CONFIG@
 FREETYPE_CFLAGS = @FREETYPE_CFLAGS@
 FREETYPE_LIBS = @FREETYPE_LIBS@
@@ -241,6 +242,10 @@ PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 POLKIT_CFLAGS = @POLKIT_CFLAGS@
 POLKIT_LIBS = @POLKIT_LIBS@
 POSUB = @POSUB@
+PREVIEW_CFLAGS = @PREVIEW_CFLAGS@
+PREVIEW_LIBS = @PREVIEW_LIBS@
+PREVIEW_WORKER_CFLAGS = @PREVIEW_WORKER_CFLAGS@
+PREVIEW_WORKER_LIBS = @PREVIEW_WORKER_LIBS@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
@@ -318,9 +323,9 @@ xcb_event_CFLAGS = @xcb_event_CFLAGS@
 xcb_event_LIBS = @xcb_event_LIBS@
 xft_config = @xft_config@
 AUTOMAKE_OPTIONS = subdir-objects
-xfe_automount_SOURCES = xfe-automount.cpp
-xfe_automount_LDADD = $(UDISKS2_LIBS) $(LIBNOTIFY_LIBS)
-xfe_automount_CXXFLAGS = -std=c++17 $(UDISKS2_CFLAGS) $(LIBNOTIFY_CFLAGS)
+swf_automount_SOURCES = xfe-automount.cpp
+swf_automount_LDADD = $(UDISKS2_LIBS) $(LIBNOTIFY_LIBS)
+swf_automount_CXXFLAGS = -std=c++17 $(UDISKS2_CFLAGS) $(LIBNOTIFY_CFLAGS)
 all: all-am
 
 .SUFFIXES:
@@ -397,9 +402,9 @@ uninstall-binPROGRAMS:
 clean-binPROGRAMS:
 	-test -z "$(bin_PROGRAMS)" || rm -f $(bin_PROGRAMS)
 
-xfe-automount$(EXEEXT): $(xfe_automount_OBJECTS) $(xfe_automount_DEPENDENCIES) $(EXTRA_xfe_automount_DEPENDENCIES) 
-	@rm -f xfe-automount$(EXEEXT)
-	$(AM_V_CXXLD)$(xfe_automount_LINK) $(xfe_automount_OBJECTS) $(xfe_automount_LDADD) $(LIBS)
+swf-automount$(EXEEXT): $(swf_automount_OBJECTS) $(swf_automount_DEPENDENCIES) $(EXTRA_swf_automount_DEPENDENCIES) 
+	@rm -f swf-automount$(EXEEXT)
+	$(AM_V_CXXLD)$(swf_automount_LINK) $(swf_automount_OBJECTS) $(swf_automount_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -407,7 +412,7 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/xfe_automount-xfe-automount.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/swf_automount-xfe-automount.Po@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
 	@$(MKDIR_P) $(@D)
@@ -431,19 +436,19 @@ am--depfiles: $(am__depfiles_remade)
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXXCOMPILE) -c -o $@ `$(CYGPATH_W) '$<'`
 
-xfe_automount-xfe-automount.o: xfe-automount.cpp
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xfe_automount_CXXFLAGS) $(CXXFLAGS) -MT xfe_automount-xfe-automount.o -MD -MP -MF $(DEPDIR)/xfe_automount-xfe-automount.Tpo -c -o xfe_automount-xfe-automount.o `test -f 'xfe-automount.cpp' || echo '$(srcdir)/'`xfe-automount.cpp
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/xfe_automount-xfe-automount.Tpo $(DEPDIR)/xfe_automount-xfe-automount.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='xfe-automount.cpp' object='xfe_automount-xfe-automount.o' libtool=no @AMDEPBACKSLASH@
+swf_automount-xfe-automount.o: xfe-automount.cpp
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(swf_automount_CXXFLAGS) $(CXXFLAGS) -MT swf_automount-xfe-automount.o -MD -MP -MF $(DEPDIR)/swf_automount-xfe-automount.Tpo -c -o swf_automount-xfe-automount.o `test -f 'xfe-automount.cpp' || echo '$(srcdir)/'`xfe-automount.cpp
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/swf_automount-xfe-automount.Tpo $(DEPDIR)/swf_automount-xfe-automount.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='xfe-automount.cpp' object='swf_automount-xfe-automount.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xfe_automount_CXXFLAGS) $(CXXFLAGS) -c -o xfe_automount-xfe-automount.o `test -f 'xfe-automount.cpp' || echo '$(srcdir)/'`xfe-automount.cpp
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(swf_automount_CXXFLAGS) $(CXXFLAGS) -c -o swf_automount-xfe-automount.o `test -f 'xfe-automount.cpp' || echo '$(srcdir)/'`xfe-automount.cpp
 
-xfe_automount-xfe-automount.obj: xfe-automount.cpp
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xfe_automount_CXXFLAGS) $(CXXFLAGS) -MT xfe_automount-xfe-automount.obj -MD -MP -MF $(DEPDIR)/xfe_automount-xfe-automount.Tpo -c -o xfe_automount-xfe-automount.obj `if test -f 'xfe-automount.cpp'; then $(CYGPATH_W) 'xfe-automount.cpp'; else $(CYGPATH_W) '$(srcdir)/xfe-automount.cpp'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/xfe_automount-xfe-automount.Tpo $(DEPDIR)/xfe_automount-xfe-automount.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='xfe-automount.cpp' object='xfe_automount-xfe-automount.obj' libtool=no @AMDEPBACKSLASH@
+swf_automount-xfe-automount.obj: xfe-automount.cpp
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(swf_automount_CXXFLAGS) $(CXXFLAGS) -MT swf_automount-xfe-automount.obj -MD -MP -MF $(DEPDIR)/swf_automount-xfe-automount.Tpo -c -o swf_automount-xfe-automount.obj `if test -f 'xfe-automount.cpp'; then $(CYGPATH_W) 'xfe-automount.cpp'; else $(CYGPATH_W) '$(srcdir)/xfe-automount.cpp'; fi`
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/swf_automount-xfe-automount.Tpo $(DEPDIR)/swf_automount-xfe-automount.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='xfe-automount.cpp' object='swf_automount-xfe-automount.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xfe_automount_CXXFLAGS) $(CXXFLAGS) -c -o xfe_automount-xfe-automount.obj `if test -f 'xfe-automount.cpp'; then $(CYGPATH_W) 'xfe-automount.cpp'; else $(CYGPATH_W) '$(srcdir)/xfe-automount.cpp'; fi`
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(swf_automount_CXXFLAGS) $(CXXFLAGS) -c -o swf_automount-xfe-automount.obj `if test -f 'xfe-automount.cpp'; then $(CYGPATH_W) 'xfe-automount.cpp'; else $(CYGPATH_W) '$(srcdir)/xfe-automount.cpp'; fi`
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
@@ -571,7 +576,7 @@ clean: clean-am
 clean-am: clean-binPROGRAMS clean-generic mostlyclean-am
 
 distclean: distclean-am
-		-rm -f ./$(DEPDIR)/xfe_automount-xfe-automount.Po
+		-rm -f ./$(DEPDIR)/swf_automount-xfe-automount.Po
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-tags
@@ -617,7 +622,7 @@ install-ps-am:
 installcheck-am:
 
 maintainer-clean: maintainer-clean-am
-		-rm -f ./$(DEPDIR)/xfe_automount-xfe-automount.Po
+		-rm -f ./$(DEPDIR)/swf_automount-xfe-automount.Po
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 

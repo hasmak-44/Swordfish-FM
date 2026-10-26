@@ -939,8 +939,8 @@ local `upstream` remote (roland65/xfe), now removed from the codespace checkout.
   (`src/main.cpp`), so per-user settings live in `~/.config/swordfish/xferc`.
   That file is inside Swordfish's own folder; renaming would discard existing
   user settings, so it needs a migration if ever changed. Internal source
-  names (`xfedefs.h`, `xfeutils`, `XFileExplorer`, `xfe*.png` icons,
-  `automount/xfe-automount.cpp`) are also unchanged.
+  names (`xfedefs.h`, `xfeutils`, `XFileExplorer`, `xfe*.png` icons, the
+  source file `automount/xfe-automount.cpp`) are also unchanged.
 - The unpublished local `install-swordfish.sh` (copies `/usr/bin/xfe` to
   `/usr/bin/swordfish`, forces `Icon=xfe`) was never committed; it explains how
   the user's very old system install became tangled with Xfe.
@@ -951,6 +951,42 @@ local `upstream` remote (roland65/xfe), now removed from the codespace checkout.
   SMB decision) and is not caused by this change.
 - No new binary release: the portable bundle behaves identically, so
   `swordfish-0.0.1` remains the current download.
+
+Follow-up the same day (automounter), found while cleaning the user's machine:
+- `dpkg -V xfe` on the user's machine showed `/usr/bin/xfe-automount`
+  modified: Swordfish installed its helper under Xfe's name and overwrote it.
+  At startup Swordfish also ran `pgrep xfe-automount` and, with automount off
+  (the default), `killall -q xfe-automount`, so it stopped Xfe's automounter.
+  The helper opened drives with `xfe` and read `~/.config/xfe/xferc`.
+- Fix: program renamed to `swf-automount` (13 characters, under the 15-char
+  process-name limit used by `pgrep`/`killall`); `pgrep -x -u user`,
+  `killall -q -u user`; helper opens drives with `swordfish` and reads
+  `~/.config/swordfish/xferc` (where Swordfish's `automount_open` is saved);
+  paths are shell-quoted (spaces in drive names previously broke "open a
+  window"). Portable build list and READMEs updated; `automount/Makefile.in`
+  regenerated with `automake --gnu automount/Makefile`.
+- Verified with UDisks2 dev headers installed in the codespace (a clean
+  rebuild is required after re-running configure, otherwise
+  `XFileExplorer.o` keeps the build without `XFE_AUTOMOUNTER`). With stand-in
+  processes under Xvfb: `xfe-automount` survives Swordfish startup,
+  `swf-automount` is stopped when automount is off. Quoting tested with spaces
+  and `'; touch` injection. Folder suite 36 PASS, preview PASS.
+- This changes portable behaviour (the bundle ships the helper), so it needs
+  a new release to reach users.
+
+User machine cleanup (26 October, guided step by step):
+- Very old system install (Oct 5, `/usr`, plus leftovers in `/usr/local`):
+  `/usr/bin/swordfish`, `swfa/swfi/swfp/swfw`, `/usr/share/swordfish`,
+  5 desktop files, 5 man pages, `org.swordfish.root.policy` (both prefixes),
+  Papirus/hicolor/pixmaps icons, `xfe.svg.swordfish-backup` (Papirus
+  `xfe.svg` itself verified unmodified) and `swordfish.mo` translations
+  (both prefixes) removed. No dpkg package owned them.
+- Xfe purged and reinstalled from the user's .deb, upgraded from 0.11 to
+  0.13; `dpkg -V xfe` OK; Xfe kept the user's `~/.config/xfe` settings.
+- Kept: `~/.config/swordfish`, the user's menu entry
+  `~/.local/share/applications/swordfish.desktop` (runs
+  `~/Apps/Swordfish-Portable/AppRun`; its icon path points to the Projects
+  drive) and two test entries. Swordfish starts from the menu.
 
 ## 4. The archive-command / false idle-timeout bug
 

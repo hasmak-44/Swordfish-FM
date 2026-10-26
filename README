@@ -444,7 +444,8 @@
  default, it is disabled and can be enabled in the Edit / Preferences / Settings dialog.
 
  The automounter relies on udisks2 and gvfs / gio, so these components must be installed on your system. The process
- is called xfe-automount and is launched at first startup of Xfe. It can possibly be added to your session startup
+ is called swf-automount and is launched at first startup of Swordfish. It reads the "open a window" option from
+ ~/.config/swordfish and opens new drives in Swordfish. It can possibly be added to your session startup
  programs.
 
 

@@ -1,9 +1,9 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
-bin_PROGRAMS = xfe-automount
+bin_PROGRAMS = swf-automount
 
-xfe_automount_SOURCES = xfe-automount.cpp
+swf_automount_SOURCES = xfe-automount.cpp
 
-xfe_automount_LDADD = $(UDISKS2_LIBS) $(LIBNOTIFY_LIBS)
+swf_automount_LDADD = $(UDISKS2_LIBS) $(LIBNOTIFY_LIBS)
 
-xfe_automount_CXXFLAGS = -std=c++17 $(UDISKS2_CFLAGS) $(LIBNOTIFY_CFLAGS)
+swf_automount_CXXFLAGS = -std=c++17 $(UDISKS2_CFLAGS) $(LIBNOTIFY_CFLAGS)

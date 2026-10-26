@@ -3772,8 +3772,8 @@ void XFileExplorer::create()
             }            
         }
         
-        // Check if Xfe automounter is running for the actual user    
-        FXString cmd = "pgrep -u "+ FXSystem::userName(FXSystem::user()) + " xfe-automount";
+        // Check if the Swordfish automounter is running for the actual user
+        FXString cmd = "pgrep -x -u "+ FXSystem::userName(FXSystem::user()) + " swf-automount";
         FXString pid = xf_getcommandoutput(cmd);
 
         // Restart flag
@@ -3782,7 +3782,7 @@ void XFileExplorer::create()
         // Stop automounter if running and (disabled or (enabled and restart))
         if (!automountCheckFailed && (pid != "") && (!automount || restart_automount))
         {
-            cmd = "killall -q xfe-automount";
+            cmd = "killall -q -u " + FXSystem::userName(FXSystem::user()) + " swf-automount";
             int ret = system(cmd.text());
             if (ret < 0)
             {
@@ -3794,7 +3794,7 @@ void XFileExplorer::create()
         if (automount && ( (pid == "") || ( (pid != "") && restart_automount) ) )
         {
             // Run  automounter
-            cmd = "xfe-automount &";
+            cmd = "swf-automount &";
             int ret = system(cmd.text());
             if (ret < 0)
             {

@@ -54,7 +54,9 @@ for internal drives or network shares. The root filesystem cannot be unmounted
 from Swordfish. A busy-drive error must be resolved before safe removal.
 
 The optional automounter requires the host UDisks2 service and `udisksctl`.
-Portable bundles include `xfe-automount` and its runtime libraries. The startup
+Portable bundles include `swf-automount` and its runtime libraries. It is
+named differently from Xfe's `xfe-automount`, so Swordfish never starts or
+stops Xfe's automounter. The startup
 check runs `udisksctl status` with the host environment and checks its exit status,
 not translated column headings. A failed check reports the actual command output
 and disables startup for that session without erasing the saved preference or

@@ -73,7 +73,7 @@ mkdir -p "$output_dir"
 DESTDIR="$output_dir" make install
 
 deploy_args=(--appdir "$output_dir")
-for program in swordfish swfa swfi swfp swfw swordfish-preview swordfish-network xfe-automount; do
+for program in swordfish swfa swfi swfp swfw swordfish-preview swordfish-network swf-automount; do
     executable="$output_dir/usr/bin/$program"
     if [ ! -x "$executable" ]; then
         printf 'Expected installed program is missing: %s\n' "$executable" >&2
