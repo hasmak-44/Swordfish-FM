@@ -1005,6 +1005,23 @@ int main(int argc, char** argv)
         assert(!window->getRightPanel()->getTabButtons()->getPath(index).contains("local-mount"));
     assert(!sharePanel->getDirectory().contains("local-mount"));
     assert(!Preview::pending());
+    {
+        const FXString deep = localMount + "/deep";
+        FXString level = deep;
+        assert(mkdir(level.text(), 0700) == 0);
+        for (int i = 0; i < 40; ++i)
+        {
+            level += "/d" + FXStringVal(i);
+            assert(mkdir(level.text(), 0700) == 0);
+            for (int f = 0; f < 50; ++f) { std::ofstream file((level + "/f" + FXStringVal(f)).text()); }
+        }
+        sharePanel->setDirectory(localMount);
+        pump(app, 5);
+        const FXTime stopStart = FXThread::time();
+        assert(FileList::stopFolderScans(3000));
+        assert(FXThread::time() - stopStart < 2000000000LL);
+        sharePanel->setDirectory(beforeDeviceControls);
+    }
     Preview::request(&app, fixture + "/outside.png", 64, false, &previewWaiting);
     Preview::cancel(localMount);
     assert(Preview::pending());
@@ -1154,7 +1171,13 @@ int main(int argc, char** argv)
     assert(mountMessagesResponder.message.contains("still in use"));
     assert(!xf_mountpointof("/dev/test-usb1").empty());
     unsetenv("SWORDFISH_TEST_DISK_BUSY");
+    const FXString busyOnce = fixture + "/disk-busy-once";
+    { std::ofstream marker(busyOnce.text()); }
+    setenv("SWORDFISH_TEST_DISK_BUSY_ONCE", busyOnce.text(), 1);
     assert(panel->unmountRemovable(fixture + "/folder", false));
+    assert(mountMessagesResponder.errors == previousErrors + 1);
+    assert(access(busyOnce.text(), F_OK) != 0);
+    unsetenv("SWORDFISH_TEST_DISK_BUSY_ONCE");
     assert(xf_mountpointof("/dev/test-usb1").empty());
     assert(panel->openDevice("/dev/test-usb1"));
     // Exercise the visible device-row button, not only the command handler.
@@ -1193,13 +1216,14 @@ int main(int argc, char** argv)
     while (std::getline(diskLog, mountedUri))
         if (mountedUri.find("disk ") == 0) diskCommands.push_back(mountedUri);
     assert((diskCommands == std::vector<std::string>{
-        "disk mount", "disk unmount", "disk unmount", "disk mount", "disk unmount", "disk power-off"}));
+        "disk mount", "disk unmount", "disk unmount", "disk unmount", "disk unmount",
+        "disk mount", "disk unmount", "disk power-off"}));
     unsetenv("SWORDFISH_TEST_DISK_MTAB");
     unsetenv("SWORDFISH_TEST_DISK_PATH");
     app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", mountMessages);
     assert(unlink(simulatedMountTable.text()) == 0);
     simulatedMountTable.clear();
-    puts("PASS: desktop-service mount, busy-unmount failure, remount and safe eject execute the expected commands");
+    puts("PASS: desktop-service mount, busy-unmount failure after one retry, transient busy retried successfully, remount and safe eject execute the expected commands");
     puts("PASS: visible device action button ejects on release; releasing outside cancels without unmounting");
 
     window->onCmdHelp(NULL, 0, NULL);

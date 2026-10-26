@@ -58,6 +58,8 @@ namespace
 {
 FXuint folderSizeMode = 3;                              // 0 none, 1 item count, 2 size, 3 size + count
 FXbool folderSizeModeRead = false;
+gint folderScansActive = 0;                             // Scans currently holding a folder open
+gint folderScanGeneration = 0;                          // Bumped to abort every scan, e.g. before unmount
 
 struct FolderSizeJob
 {
@@ -128,6 +130,10 @@ FXbool folderSizeIsNetwork(const char* path)
 // Returns false if cancelled
 bool scanFolderSize(FolderSizeWorker* w, gint serial, const char* path, FolderSizeResult* r)
 {
+    const gint generation = g_atomic_int_get(&folderScanGeneration);
+    auto cancelled = [&]() {
+        return g_atomic_int_get(&w->serial) != serial || g_atomic_int_get(&folderScanGeneration) != generation;
+    };
     struct stat st;
     if (lstat(path, &st) != 0 || !S_ISDIR(st.st_mode))
     {
@@ -147,6 +153,10 @@ bool scanFolderSize(FolderSizeWorker* w, gint serial, const char* path, FolderSi
     {
         std::string dir = stack.back();
         stack.pop_back();
+        if (cancelled())
+        {
+            return false;
+        }
         DIR* dp = opendir(dir.c_str());
         if (!dp)
         {
@@ -159,7 +169,7 @@ bool scanFolderSize(FolderSizeWorker* w, gint serial, const char* path, FolderSi
         struct dirent* de;
         while ((de = readdir(dp)))
         {
-            if ((++ticks & 255) == 0 && g_atomic_int_get(&w->serial) != serial)
+            if ((++ticks & 31) == 0 && cancelled())
             {
                 closedir(dp);
                 return false;
@@ -237,7 +247,10 @@ gpointer folderSizeThread(gpointer data)
         {
             FolderSizeResult* r = g_new0(FolderSizeResult, 1);
             r->serial = job->serial;
-            if (scanFolderSize(w, job->serial, job->path, r))
+            g_atomic_int_inc(&folderScansActive);
+            const bool finished = scanFolderSize(w, job->serial, job->path, r);
+            g_atomic_int_dec_and_test(&folderScansActive);
+            if (finished)
             {
                 r->path = job->path;
                 job->path = NULL;
@@ -880,6 +893,27 @@ FXString FileList::formatFolderSize(const FolderSizeInfo& info) const
     snprintf(buf, sizeof(buf), "%llu", (unsigned long long)info.size);
     FXString size = xf_humansize(buf);
     return (folderSizeMode == 2) ? size : size + ", " + count;
+}
+
+
+// Abort every folder-size scan, waiting briefly until none still has a folder open
+FXbool FileList::stopFolderScans(FXuint timeoutms)
+{
+    for (FileList* l : zoomLists)
+    {
+        l->resetFolderSizes();
+    }
+    g_atomic_int_inc(&folderScanGeneration);
+    for (FXuint waited = 0; g_atomic_int_get(&folderScansActive) > 0; waited += 10)
+    {
+        if (waited >= timeoutms)
+        {
+            appLog(APP_LOG_ERRORS, "folder-size-scan-still-running", FXStringVal(timeoutms) + "ms");
+            return false;
+        }
+        FXThread::sleep(10000000);
+    }
+    return true;
 }
 
 

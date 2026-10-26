@@ -5264,6 +5264,15 @@ FXbool DirPanel::unmountRemovable(const FXString& location, FXbool eject)
         }
         int status = runDiskCommand(this, UNMOUNT, _("Unmount file system..."), mountpoint,
                                     "unmount -b " + xf_quote(device), output);
+        if (status != 0 && !xf_mountpointof(device).empty() &&
+            (output.find("DeviceBusy") >= 0 || output.find("target is busy") >= 0))
+        {
+            // Background readers just told to stop may need a moment to let go
+            appLog(APP_LOG_FILE_OPERATIONS, "unmount-busy-retry", mountpoint);
+            FXThread::sleep(1500000000);
+            status = runDiskCommand(this, UNMOUNT, _("Unmount file system..."), mountpoint,
+                                    "unmount -b " + xf_quote(device), output);
+        }
         if (status != 0 && !xf_mountpointof(device).empty())
         {
             if (output.find("DeviceBusy") >= 0 || output.find("target is busy") >= 0)

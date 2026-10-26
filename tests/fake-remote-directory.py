@@ -16,6 +16,11 @@ if os.path.basename(sys.argv[0]) == "udisksctl":
     if action == "unmount" and os.environ.get("SWORDFISH_TEST_DISK_BUSY"):
         print("org.freedesktop.UDisks2.Error.DeviceBusy: target is busy")
         sys.exit(1)
+    busy_once = os.environ.get("SWORDFISH_TEST_DISK_BUSY_ONCE")
+    if action == "unmount" and busy_once and os.path.exists(busy_once):
+        os.unlink(busy_once)
+        print("org.freedesktop.UDisks2.Error.DeviceBusy: target is busy")
+        sys.exit(1)
     if action in ("mount", "unmount"):
         with open(os.environ["SWORDFISH_TEST_DISK_MTAB"], "w") as table:
             table.write("/dev/root / ext4 rw 0 0\n")

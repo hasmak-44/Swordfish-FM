@@ -4042,6 +4042,8 @@ long XFileExplorer::onNetworkUnmounted(FXObject*, FXSelector, void* data)
     for (FilePanel* panel : panels)
         if (panel) panel->getTabButtons()->closeMount(mountpoint);
     Preview::cancel(mountpoint);
+    // A folder-size scan may still be reading the drive; the unmount would then fail as busy
+    FileList::stopFolderScans(3000);
     FXString directory = dirpanel->getDirectory();
     if (directory == mountpoint || directory.left(mountpoint.length() + 1) == mountpoint + "/")
         dirpanel->setDirectory(destination, true);

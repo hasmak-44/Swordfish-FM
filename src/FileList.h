@@ -247,6 +247,8 @@ private:
     FileList& operator=(const FileList&);
 
 public:
+    // Stop all folder-size scans and wait (bounded) until none still has a folder open
+    static FXbool stopFolderScans(FXuint timeoutms);
     long onCmdRefresh(FXObject*, FXSelector, void*);
     long onCmdRefreshTimer(FXObject*, FXSelector, void*);
     long onRemoteChanged(FXObject*, FXSelector, void*);

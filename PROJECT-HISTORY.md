@@ -836,6 +836,17 @@ download server was stopped.
   `Swordfish-RC6-Test6-Portable.tar.gz`, 79,674,499 bytes, SHA-256
   `6c2784fe2e4e295302d400b389674b9d154f2a0ac1c152781f16ddee6367e28a`.
   Reports `0.0.1-rc6`; Xvfb startup passes. Test 5 download stopped.
+- Test 6 result (10:58 UTC): USB HDD still DeviceBusy; `fuser -vm` was empty
+  even while the error dialog was open, so the hold was transient. Cause
+  found: the in-process `folder-size` thread walks folders recursively to show
+  sizes. Changing directory only bumps its serial (checked every 256 entries)
+  without waiting, so it was still inside the drive when udisksctl ran
+  milliseconds later. Fix: `FileList::stopFolderScans(3000)` resets all lists,
+  bumps a global scan generation (checked per folder and every 32 entries) and
+  waits until no scan is active; called from `onNetworkUnmounted`. UDisks
+  unmount also retries once after 1.5 s on DeviceBusy. Tests: transient busy
+  succeeds on retry, persistent busy reports after retry, deep-tree scan stops
+  quickly. Full suite passes (36 PASS).
 
 - Source commit: `f69940aa71fe0e451d9f2d5aee22576510a55892`, pushed to
   `portable-layout`. Unrelated staged files and generated build files excluded.

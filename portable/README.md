@@ -158,7 +158,10 @@ rows. When a share or local filesystem is unmounted in Swordfish, tabs under it
 (including inactive tabs and subfolders in either pane) close before the
 unmount command runs, so nothing in Swordfish keeps reading the disappearing
 mount. Queued or running thumbnail previews for files on it are
-cancelled too, so they cannot keep the drive busy. Pending pointer releases are sent to the X server before mount commands
+cancelled too, so they cannot keep the drive busy. Background folder-size scans are stopped,
+and Swordfish waits up to three seconds for them to let go of the drive. If
+UDisks still reports the drive busy, Swordfish retries once after 1.5 seconds
+before showing the error. Pending pointer releases are sent to the X server before mount commands
 or navigation start, so a slow mount cannot hold the desktop's mouse input.
 Shares unmounted by another file manager also have their tabs closed. If a pane loses its last tab, it opens one Home tab. Attempting to open
 an already-mounted share reports its local mount path and reuses the mount
