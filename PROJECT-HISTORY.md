@@ -855,7 +855,8 @@ download server was stopped.
   also clean. USB busy problem resolved. Still untested: internal-partition
   unmount, and whether the desktop stays responsive (freeze hypothesis).
 - Test 7 internal partition (11:19 UTC): Unmount asks for the admin password
-  (polkit), unmounts, row stays listed, click remounts. No freeze reported.
+  (polkit), unmounts, row stays listed greyed, click remounts. Taskbar, dock
+  and Start menu stayed responsive throughout (user confirmed, no freeze).
   Fixes the Test 3 faults (no password prompt, row disappeared, freeze).
 
 - Source commit: `f69940aa71fe0e451d9f2d5aee22576510a55892`, pushed to
