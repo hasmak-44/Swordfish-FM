@@ -867,7 +867,10 @@ download server was stopped.
   read-only in Advanced Sharing; effective Windows account not yet confirmed
   (`net session` pending). Likely Windows permissions (e.g. Everyone with
   Change, or NTFS), not a Swordfish bypass. Proposed option: stop automatic
-  guest attempts and always ask for login with a Guest choice; awaiting user.
+  guest attempts and always ask for login with a Guest choice.
+- User decision (12:00 UTC): keep guest-first SMB behaviour unchanged; it
+  connects and disconnects smoothly. Write access is a Windows permission
+  matter, not a Swordfish change.
   Fixes the Test 3 faults (no password prompt, row disappeared, freeze).
 
 - Source commit: `f69940aa71fe0e451d9f2d5aee22576510a55892`, pushed to
