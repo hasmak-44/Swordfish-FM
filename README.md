@@ -10,12 +10,13 @@ For the development history, confirmed decisions, known limitations and recovery
 instructions if the conversation is lost, read
 [Project history and recovery guide](PROJECT-HISTORY.md).
 
-> **Swordfish-Portable v0.0.1 RC5 — release candidate available for testing**
+> **Swordfish-Portable v0.0.1 — first stable release**
 >
-> RC5 adds on-demand Network discovery, share-browser tabs and corrected network
-> unmount handling to the sidebar/view redesign, asynchronous previews and fast
-> loading of mounted GVFS shares. This is a release candidate, not the final
-> 0.0.1 release. RC4 remains available unchanged.
+> 0.0.1 brings on-demand Network discovery of Windows and Linux file-sharing
+> computers, browsing and mounting their shares, a Devices list with visible
+> Eject/Unmount buttons, protected Root/Home, safe unmounting that closes every
+> tab on the device first, inline rename, tab hover switching and the
+> sidebar/view redesign. Earlier release candidates remain available.
 > 
 > About the name **SwordFish**, The original XFE file manager is known for its speed and versatility, ad I am a life long avid angler, I wanted to choose a name that reflects both the ethos of XFE, and combine with my hobby, Swordfish is one of the fastest and most agile top ocean predators, hence the name ;}
 > 
@@ -50,7 +51,7 @@ Copyright (C) Roland Baudin and contributors.
 
 > If **XFE** is the root, **Swordfish FM** aims to be the evolution.
 
-## Portable Linux release candidate
+## Portable Linux release
 
 A portable Linux build lets you run Swordfish without installing it into the
 system. It currently supports 64-bit x86 Linux.
@@ -60,11 +61,11 @@ system. It currently supports 64-bit x86 Linux.
 The portable build runs on 64-bit x86 Linux. It does not install Swordfish
 system-wide or require extra software to download it.
 
-1. Open the [Swordfish Portable RC5 release](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-portable-0.0.1-rc5)
-   and download **Swordfish-Portable-0.0.1-RC5.zip** under **Assets** (recommended).
+1. Open the [Swordfish 0.0.1 release](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.1)
+   and download **Swordfish-Portable-0.0.1.zip** under **Assets** (recommended).
    Your browser downloads the ZIP using its normal download settings.
 2. Extract the ZIP to the place where you want to keep Swordfish. The ZIP
-   contains the complete `Swordfish-Portable-0.0.1-RC5` folder. **Extract the whole
+   contains the complete `Swordfish-Portable-0.0.1` folder. **Extract the whole
    folder; do not move files out of it. Keep the folder together.**
 3. To update an existing copy, copy the contents of the extracted folder
    into your existing Swordfish folder. If asked, choose to replace the
@@ -76,20 +77,18 @@ system-wide or require extra software to download it.
    that folder and run `./AppRun`, or create a desktop launcher whose command
    points to the `AppRun` file in your Swordfish folder.
 
-This is a release candidate for testing, not a system-wide installation.
+The portable build is not a system-wide installation.
 
 #### Which download should I choose?
 
 | Asset | Purpose |
 | --- | --- |
-| **Swordfish-Portable-0.0.1-RC5.zip** | **Recommended.** Release package built against Debian 10 / glibc 2.28 and launch-tested before publication. |
-| Swordfish-Portable-0.0.1-RC5.tar.gz | The same release package in tar.gz format. |
-| Swordfish-Portable.zip | An alternative build produced automatically by GitHub Actions from the same RC5 source commit. Its build environment, bundled libraries and top-level folder name can differ; it is not byte-for-byte identical to the recommended package. |
-| Swordfish-FM-0.0.1-RC5-source.tar.gz | Source code, not a ready-to-run application. |
+| **Swordfish-Portable-0.0.1.zip** | **Recommended.** Release package built against Debian 10 / glibc 2.28 and launch-tested before publication. |
+| Swordfish-Portable-0.0.1.tar.gz | The same release package in tar.gz format. |
+| Swordfish-FM-0.0.1-source.tar.gz | Source code, not a ready-to-run application. |
 
-Use `Swordfish-RC5-SHA256SUMS` for the versioned release packages;
-`Swordfish-Portable.zip.sha256` applies only to the automatically built ZIP.
-You need only one portable package, not both ZIP files.
+Use `Swordfish-0.0.1-SHA256SUMS` to verify the downloads.
+You need only one portable package.
 
 For technical details or to build it yourself, see
 [portable/README.md](portable/README.md).
