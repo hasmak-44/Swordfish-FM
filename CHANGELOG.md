@@ -1,12 +1,15 @@
 # Swordfish FM portable changelog
 
-## Unreleased
+## swordfish-0.0.2 — Xfe-independent stable release
+
+Changes since `swordfish-0.0.1`. Full details are in
+[PROJECT-HISTORY.md](PROJECT-HISTORY.md), section 3.18.
 
 ### Changed
 - Swordfish no longer reads Xfe's system settings (`/etc/xfe`,
   `/usr/share/xfe`, `/usr/local/share/xfe`, `xferc`). An installed Swordfish
   uses only its own `share/swordfish` folder and `~/.config/swordfish`, so it
-  cannot pick up or disturb an installed Xfe. The portable bundle is unchanged.
+  cannot pick up or disturb an installed Xfe.
 - Removed the inherited Xfe Debian packaging (`debian/`), which still built a
   package named `xfe`, and Xfe's `.run` installer scripts (`buildrun`,
   `installrun`, `uninstall-xfe`), which install or delete `/usr/local/bin/xfe`

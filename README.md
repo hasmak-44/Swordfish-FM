@@ -10,13 +10,14 @@ For the development history, confirmed decisions, known limitations and recovery
 instructions if the conversation is lost, read
 [Project history and recovery guide](PROJECT-HISTORY.md).
 
-> **Swordfish-Portable v0.0.1 — first stable release**
+> **Swordfish-Portable v0.0.2 — stable, independent of Xfe**
 >
-> 0.0.1 brings on-demand Network discovery of Windows and Linux file-sharing
-> computers, browsing and mounting their shares, a Devices list with visible
-> Eject/Unmount buttons, protected Root/Home, safe unmounting that closes every
-> tab on the device first, inline rename, tab hover switching and the
-> sidebar/view redesign. Earlier release candidates remain available.
+> 0.0.2 makes Swordfish fully independent of an installed Xfe: its automount
+> helper is now `swf-automount`, so it can no longer overwrite or stop Xfe's
+> `xfe-automount`, and Swordfish no longer reads Xfe's settings. Everyday use
+> is unchanged from 0.0.1, the first stable release, which brought on-demand
+> Network discovery, a Devices list with Eject/Unmount buttons, safe
+> unmounting, inline rename and the sidebar/view redesign.
 > 
 > About the name **SwordFish**, The original XFE file manager is known for its speed and versatility, ad I am a life long avid angler, I wanted to choose a name that reflects both the ethos of XFE, and combine with my hobby, Swordfish is one of the fastest and most agile top ocean predators, hence the name ;}
 > 
@@ -61,11 +62,11 @@ system. It currently supports 64-bit x86 Linux.
 The portable build runs on 64-bit x86 Linux. It does not install Swordfish
 system-wide or require extra software to download it.
 
-1. Open the [Swordfish 0.0.1 release](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.1)
-   and download **Swordfish-Portable-0.0.1.zip** under **Assets** (recommended).
+1. Open the [Swordfish 0.0.2 release](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.2)
+   and download **Swordfish-Portable-0.0.2.zip** under **Assets** (recommended).
    Your browser downloads the ZIP using its normal download settings.
 2. Extract the ZIP to the place where you want to keep Swordfish. The ZIP
-   contains the complete `Swordfish-Portable-0.0.1` folder. **Extract the whole
+   contains the complete `Swordfish-Portable-0.0.2` folder. **Extract the whole
    folder; do not move files out of it. Keep the folder together.**
 3. To update an existing copy, copy the contents of the extracted folder
    into your existing Swordfish folder. If asked, choose to replace the
@@ -83,11 +84,11 @@ The portable build is not a system-wide installation.
 
 | Asset | Purpose |
 | --- | --- |
-| **Swordfish-Portable-0.0.1.zip** | **Recommended.** Release package built against Debian 10 / glibc 2.28 and launch-tested before publication. |
-| Swordfish-Portable-0.0.1.tar.gz | The same release package in tar.gz format. |
-| Swordfish-FM-0.0.1-source.tar.gz | Source code, not a ready-to-run application. |
+| **Swordfish-Portable-0.0.2.zip** | **Recommended.** Release package built against Debian 10 / glibc 2.28 and launch-tested before publication. |
+| Swordfish-Portable-0.0.2.tar.gz | The same release package in tar.gz format. |
+| Swordfish-FM-0.0.2-source.tar.gz | Source code, not a ready-to-run application. |
 
-Use `Swordfish-0.0.1-SHA256SUMS` to verify the downloads.
+Use `Swordfish-0.0.2-SHA256SUMS` to verify the downloads.
 You need only one portable package.
 
 For technical details or to build it yourself, see
