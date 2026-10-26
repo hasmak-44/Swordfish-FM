@@ -871,6 +871,32 @@ download server was stopped.
 - User decision (12:00 UTC): keep guest-first SMB behaviour unchanged; it
   connects and disconnects smoothly. Write access is a Windows permission
   matter, not a Swordfish change.
+
+### 3.17 Swordfish 0.0.1 stable release: 26 October
+
+User approved Test 7 as the first stable release (12:06 UTC) and chose the
+new tag `swordfish-0.0.1` (old tags `SwordFish-Portable-0.0.1`, `v0.0.2`,
+`v1.0-swordfish-fixed` from early October kept untouched) and updating main.
+- Release commit `7496f0701215c80bf5e0bdde7d724750db5bfcfe`: `configure.ac`
+  version `0.0.1`, README download section and CHANGELOG entry.
+- `main` fast-forwarded from `0a96502` to `7496f07`; annotated tag
+  `swordfish-0.0.1` pushed.
+- Clean `git archive` build, `JOBS=1`, Debian 10 / glibc 2.28. Packaged
+  `AppRun --version` reports `swordfish version 0.0.1` (zip and tar.gz);
+  Xvfb startup passes. Top-level folder `Swordfish-Portable-0.0.1`.
+- GitHub release https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.1
+  (not prerelease, marked Latest). Assets and SHA-256:
+  - `Swordfish-Portable-0.0.1.zip` 84,806,047 `559d86cb9495781fc8469579ba4d184f45ddbc14e7a8b762dbd80971e4bdca88`
+  - `Swordfish-Portable-0.0.1.tar.gz` 79,674,731 `a7d5adf3f27a45a0fb5e249ee53a740aeab0b7c41e1e3f02971eb88010f2a2d1`
+  - `Swordfish-FM-0.0.1-source.tar.gz` 20,391,491 `e667b4f78d3b37f1cd946e04e91f3c4e85997733fe7d0d4297f156e5edc0f10d`
+  - `Swordfish-0.0.1-SHA256SUMS`
+  Downloaded back from GitHub and verified.
+- The `portable-release.yml` workflow only runs for `swordfish-portable-*`
+  tags, so no automatic `Swordfish-Portable.zip` was added and GitHub Pages
+  still serves the older automatic build.
+- Pitfall: this checkout has an `upstream` remote (roland65/xfe); always pass
+  `-R hasmak-44/Swordfish-FM` to `gh release` commands.
+- Test 2–7 download servers are all stopped.
   Fixes the Test 3 faults (no password prompt, row disappeared, freeze).
 
 - Source commit: `f69940aa71fe0e451d9f2d5aee22576510a55892`, pushed to
