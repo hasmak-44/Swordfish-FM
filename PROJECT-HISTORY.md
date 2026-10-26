@@ -818,6 +818,11 @@ download server was stopped.
   X connection before blocking work. Local unmounts previously never closed
   tabs. Regression tests updated/added; full suite passes (36 PASS).
   Trade-off: a failed unmount leaves the user outside the mount.
+- Test 5 built from clean archive of `900fd8d` (`JOBS=1`, Debian Buster,
+  glibc 2.28): `Swordfish-RC6-Test5-Portable.tar.gz`, 79,674,848 bytes,
+  SHA-256 `80c64a9cb4594bf531645473bf2d78681a62ce22548a78c6d0a94a30712368b6`.
+  Reports `0.0.1-rc6`; isolated Xvfb startup passes. Test 4 superseded and
+  its download stopped. Same limited test scope: no internal-partition unmount.
 
 - Source commit: `f69940aa71fe0e451d9f2d5aee22576510a55892`, pushed to
   `portable-layout`. Unrelated staged files and generated build files excluded.
