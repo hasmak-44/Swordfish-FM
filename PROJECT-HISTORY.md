@@ -857,6 +857,17 @@ download server was stopped.
 - Test 7 internal partition (11:19 UTC): Unmount asks for the admin password
   (polkit), unmounts, row stays listed greyed, click remounts. Taskbar, dock
   and Start menu stayed responsive throughout (user confirmed, no freeze).
+- Test 7 network findings (11:56 UTC): left tab bar loss did not recur
+  (treated as one-off). No password prompt for Windows (192.168.1.102,
+  confirmed by user via ipconfig) or mx-hp.local. All GVFS mounts lack
+  `user=` (Windows: data-1, x-recoverd, movies on dell, prog on dell), and
+  the keyring has no Windows entry, so these are no-username (guest or
+  anonymous) connections from Swordfish's guest-first attempt, not saved
+  credentials. Windows still allows editing a text file although Guest is
+  read-only in Advanced Sharing; effective Windows account not yet confirmed
+  (`net session` pending). Likely Windows permissions (e.g. Everyone with
+  Change, or NTFS), not a Swordfish bypass. Proposed option: stop automatic
+  guest attempts and always ask for login with a Guest choice; awaiting user.
   Fixes the Test 3 faults (no password prompt, row disappeared, freeze).
 
 - Source commit: `f69940aa71fe0e451d9f2d5aee22576510a55892`, pushed to
