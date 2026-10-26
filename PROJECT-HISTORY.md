@@ -740,6 +740,23 @@ source and supplying a private temporary codespace download link. This is a
 test build, not a stable release. Record the build result and checksum below
 after validation. Do not mark the entire bug report resolved.
 
+**RC6 Test 3 delivery (26 October):**
+
+- Source commit: `f69940aa71fe0e451d9f2d5aee22576510a55892`, pushed to
+  `portable-layout`. Unrelated staged files and generated build files excluded.
+- Built from a clean archive of that commit using
+  `JOBS=1 ./portable/build-portable.sh` (Debian Buster, glibc 2.28).
+- Download filename: `Swordfish-RC6-Test3-Portable.tar.gz` (about 76 MiB).
+  SHA-256: `66f06ec2614a0d8a07b0e08d10ed046b98b68f126bbc2a6fdf5abd277c088762`.
+- Archive listing passes; packaged executable reports `0.0.1-rc6` and stays
+  running in an isolated Xvfb smoke test without startup errors.
+- Delivered through a temporary private codespace HTTP download link, not
+  published as a GitHub release. Stop the download server after the user
+  confirms successful download/extraction. The source remains on GitHub.
+- Prioritize testing duplicate mounts/login prompts; USB safe-remove button
+  versus toolbar/context Unmount; grey remountable internal/USB devices;
+  network-share Unmount; 1-second tab hover and left tab-bar visibility.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
