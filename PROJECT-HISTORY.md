@@ -847,6 +847,10 @@ download server was stopped.
   unmount also retries once after 1.5 s on DeviceBusy. Tests: transient busy
   succeeds on retry, persistent busy reports after retry, deep-tree scan stops
   quickly. Full suite passes (36 PASS).
+- Test 7 built from clean archive of `c327bb6`:
+  `Swordfish-RC6-Test7-Portable.tar.gz`, 79,675,723 bytes, SHA-256
+  `6848ef55051fe1d57106a2078de3103cb01472fceb6b7ee7c222386300e992c1`.
+  Reports `0.0.1-rc6`; Xvfb startup passes. Test 6 download stopped.
 
 - Source commit: `f69940aa71fe0e451d9f2d5aee22576510a55892`, pushed to
   `portable-layout`. Unrelated staged files and generated build files excluded.
