@@ -1,5 +1,13 @@
 # Swordfish FM portable changelog
 
+## Unreleased
+
+### Changed
+- The automatic portable build now runs for `swordfish-<version>` release
+  tags and attaches the same zip, tar.gz, source and SHA256SUMS files as the
+  hand-made releases. It never replaces files already on a release, and it
+  no longer overwrites the project website.
+
 ## swordfish-0.0.2 — Xfe-independent stable release
 
 Changes since `swordfish-0.0.1`. Full details are in

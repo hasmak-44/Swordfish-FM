@@ -220,12 +220,23 @@ Run as Administrator is restricted to one program or script at a time and uses
 the system authentication service. Swordfish never collects or stores passwords
 and does not elevate the entire file-manager session.
 
-Pushing a tag named `SwordFish-Portable-*` or `swordfish-portable-*` builds the
-portable folder, updates the direct download at
-`https://hasmak-44.github.io/Swordfish-FM/Swordfish-Portable.zip`, and stores a
-copy as a GitHub Actions artifact for 90 days. The workflow also publishes the
-portable ZIP and SHA256 checksum as GitHub Release assets. RC tags are marked
-as prereleases; use the explicit release link in the main README.
+Pushing a release tag such as `swordfish-0.0.3` (or an older-style
+`swordfish-portable-*` / `SwordFish-Portable-*` tag) starts the
+`portable-release.yml` workflow. It builds the portable folder in the Debian
+10 container and packages `Swordfish-Portable-<version>.zip`,
+`Swordfish-Portable-<version>.tar.gz`, `Swordfish-FM-<version>-source.tar.gz`
+and `Swordfish-<version>-SHA256SUMS`, without `portable-data`. A
+`swordfish-<version>` tag must match the version in `configure.ac`.
+
+If the GitHub release does not exist yet, the workflow creates it, using the
+matching `CHANGELOG.md` section as release notes. Versions containing `rc`,
+`test`, `preview`, `beta` or `alpha` become prereleases. It then attaches the
+files. A release that already has any of these files is left unchanged. The
+same files are kept as a GitHub Actions artifact for 90 days. A build can be
+rerun for an existing tag from the Actions page with "Run workflow".
+
+The project website is built from the main README, which links to the latest
+release; use the explicit release link in the main README.
 
 For user download and launch steps, see the main
 [README](../README.md#download-and-start-swordfish).
