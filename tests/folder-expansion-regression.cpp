@@ -766,25 +766,26 @@ int main(int argc, char** argv)
     SidebarItem* hp = static_cast<SidebarItem*>(dell->getNext());
     assert(hp->path == "mx-hp.local" &&
            hp->tip == "Address: mx-hp.local (192.168.1.102)\nFound by: GVFS, WS-Discovery");
-    // A single click opens a normal share-browser tab without mounting anything.
+    // A single click browses the server in the active tab without mounting anything.
     TabButtons* tabs = window->getCurrentPanel()->getTabButtons();
     const FXuint previousTab = tabs->getCurrentTab();
     const FXuint previousCount = tabs->getNumActiveTabs();
     panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_SIDEBAR), dell);
     FilePanel* sharePanel = window->getCurrentPanel();
     assert(sharePanel->getDirectory() == "smb://192.168.1.104");
-    assert(tabs->getNumActiveTabs() == previousCount + 1);
-    const FXuint serverTab = tabs->getCurrentTab();
+    assert(tabs->getNumActiveTabs() == previousCount && tabs->getCurrentTab() == previousTab);
+    panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_SIDEBAR), dell);
+    assert(tabs->getNumActiveTabs() == previousCount && tabs->getCurrentTab() == previousTab);
     pump(app, 650);
     assert(sharePanel->getList()->getNumItems() == 2);
     assert(sharePanel->getList()->getItemFilename(0) == "5TB");
     assert(sharePanel->getList()->getItemFilename(1) == "Team files");
     assert(sharePanel->getList()->getItemPathname(1) == "smb://192.168.1.104/Team%20files");
     assert(access(getenv("SWORDFISH_TEST_MOUNT_LOG"), F_OK) != 0);
-    tabs->onCmdPathButton(NULL, FXSEL(SEL_COMMAND, TabButtons::ID_START_TAB + previousTab), NULL);
+    assert(sharePanel->navigatePane(fixture));
     assert(sharePanel->getDirectory() != "smb://192.168.1.104");
     panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_SIDEBAR), dell);
-    assert(tabs->getNumActiveTabs() == previousCount + 1 && tabs->getCurrentTab() == serverTab);
+    assert(tabs->getNumActiveTabs() == previousCount && tabs->getCurrentTab() == previousTab);
     pump(app, 450);
     assert(sharePanel->getDirectory() == "smb://192.168.1.104" && sharePanel->getList()->getNumItems() == 2);
     FXButton edit(shell, "Edit");
@@ -806,7 +807,7 @@ int main(int argc, char** argv)
     pump(app, 450);
     sharePanel->onCmdPaneNavigation(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_PANE_FORWARD), NULL);
     assert(sharePanel->getDirectory() == fixture + "/large");
-    puts("PASS: server single-click lists shares in a tab without mounting; share double-click mounts only the chosen share");
+    puts("PASS: server single-click lists shares in the active tab without mounting; share double-click mounts only the chosen share");
     const FXString runtime = fixture + "/runtime";
     const FXString gvfs = runtime + "/gvfs";
     const FXString guestMount = gvfs + "/smb-share:user=guest,share=Team%20files,server=reuse.test";
@@ -976,10 +977,24 @@ int main(int argc, char** argv)
                            "touch " + xf_quote(forbiddenMarker), &protectedOutput, &protectedStatus) == -1);
     assert(access(forbiddenMarker.text(), F_OK) != 0);
     puts("PASS: invoking Unmount with no selection launches no command; low-level root/Home guards prevent command execution");
+    const FXString localMount = fixture + "/local-mount";
+    assert(mkdir(localMount.text(), 0700) == 0 && mkdir((localMount + "/sub").text(), 0700) == 0);
+    const FXuint beforeLocalTabs = sharePanel->getTabButtons()->getNumActiveTabs();
+    window->getRightPanel()->getTabButtons()->addTab(localMount, false);
+    sharePanel->getTabButtons()->addTab(localMount + "/sub");
+    assert(sharePanel->getDirectory() == localMount + "/sub");
     app.addTimeout(&mountMessagesResponder, 1, 20);
-    assert(unmount->mount(fixture, "Unmount regression", "printf 'ordinary unmount failed'; exit 7") == -1);
+    assert(unmount->mount(localMount, "Unmount regression", "printf 'ordinary unmount failed'; exit 7") == -1);
     assert(mountMessagesResponder.errors == 1 && mountMessagesResponder.successes == 0);
     assert(mountMessagesResponder.message == "ordinary unmount failed");
+    assert(sharePanel->getTabButtons()->getNumActiveTabs() == beforeLocalTabs);
+    for (FXuint index = 0; index < sharePanel->getTabButtons()->getNumActiveTabs(); ++index)
+        assert(!sharePanel->getTabButtons()->getPath(index).contains("local-mount"));
+    for (FXuint index = 0; index < window->getRightPanel()->getTabButtons()->getNumActiveTabs(); ++index)
+        assert(!window->getRightPanel()->getTabButtons()->getPath(index).contains("local-mount"));
+    assert(!sharePanel->getDirectory().contains("local-mount"));
+    sharePanel->setDirectory(beforeDeviceControls);
+    puts("PASS: local unmount leaves active and background tabs in both panels before running the command");
     setenv("SWORDFISH_TEST_UNMOUNT_FAIL", "1", 1);
     SidebarItem* explicitShare = new SidebarItem("Selected share", mininetdriveicon,
                                                 SidebarItem::DEVICE, simulatedMount);
@@ -1005,9 +1020,14 @@ int main(int argc, char** argv)
     app.addTimeout(&mountMessagesResponder, 1, 20);
     assert(sharePanel->onCmdMount(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_UMOUNT), NULL) == 0);
     assert(mountMessagesResponder.errors == 4 && mountMessagesResponder.successes == 0);
-    assert(sharePanel->getDirectory() == simulatedMount);
+    assert(sharePanel->getDirectory() != simulatedMount);
     assert(!busyCursor);
     unsetenv("SWORDFISH_TEST_UNMOUNT_FAIL");
+    // Tabs were left before the failed attempt; reopen them for the successful case.
+    sharePanel->getTabButtons()->addTab(simulatedMount + "/nested");
+    inactiveMountTab = sharePanel->getTabButtons()->getCurrentTab();
+    sharePanel->getTabButtons()->addTab(simulatedMount);
+    activeMountTab = sharePanel->getTabButtons()->getCurrentTab();
     app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", true);
     navigation->setFocus();
     app.addTimeout(&mountMessagesResponder, 1, 20);
@@ -1017,7 +1037,7 @@ int main(int argc, char** argv)
     assert(sharePanel->getDirectory() == fixture + "/large");
     assert(sharePanel->getTabButtons()->getNumActiveTabs() == inactiveMountTab);
     assert(sharePanel->getTabButtons()->getPath(activeMountTab).empty());
-    assert(sharePanel->getTabButtons()->getPath(serverTab) == fixture + "/large");
+    assert(sharePanel->getTabButtons()->getPath(previousTab) == fixture + "/large");
     navigation->removeItem(explicitShare);
     delete unmount;
     app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", mountMessages);

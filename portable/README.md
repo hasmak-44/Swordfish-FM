@@ -137,7 +137,8 @@ environment. In post-RC4 development builds, expand or click Network to discover
 computers through GVFS/DNS-SD and WS-Discovery. Discovery never mounts anything
 or requests credentials, and does not run at startup.
 
-Single-click a discovered computer to open its shared folders in a normal tab.
+Single-click a discovered computer to list its shared folders in the active tab;
+no new tab is opened, and clicking it again reuses the same tab.
 The host helper's `--shares smb://HOST/` mode opens only the server's GVFS
 browsing connection, not its file shares. It tries anonymous access first and
 requests credentials only if the server requires them. Passwords travel over
@@ -153,9 +154,12 @@ and from inside a share's subfolder. The configured `mount`/`umount` commands
 remain in use for ordinary filesystem mounts. A failed command cannot report
 success, and a GVFS unmount must also remove its mount entry before success is
 shown. The Devices list tracks mount additions/removals without retaining old
-rows. When a share is unmounted, either in Swordfish or another file manager,
-tabs under that share (including inactive tabs and subfolders in either pane)
-close. If a pane loses its last tab, it opens one Home tab. Attempting to open
+rows. When a share or local filesystem is unmounted in Swordfish, tabs under it
+(including inactive tabs and subfolders in either pane) close before the
+unmount command runs, so nothing in Swordfish keeps reading the disappearing
+mount. Pending pointer releases are sent to the X server before mount commands
+or navigation start, so a slow mount cannot hold the desktop's mouse input.
+Shares unmounted by another file manager also have their tabs closed. If a pane loses its last tab, it opens one Home tab. Attempting to open
 an already-mounted share reports its local mount path and reuses the mount
 instead of issuing another mount command.
 Third-party copyright notices, license texts and build package versions are in

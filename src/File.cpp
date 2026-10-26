@@ -2452,9 +2452,18 @@ int File::mount(const FXString dir, const FXString msg, const FXString cmd, FXSt
         if (!output) MessageBox::error(this, BOX_OK, _("Error"), _("Root and Home cannot be unmounted."));
         return -1;
     }
+    // Deliver any pending pointer ungrab before the command can block this process
+    getApp()->flush(true);
     FXbool mount_messages = getApp()->reg().readUnsignedEntry("OPTIONS", "mount_messages", true);
     FXString command = cmd;
     FXString gvfs = xf_gvfsmount(dir);
+    if (op == UNMOUNT && !output)
+    {
+        // Leave the mount first so no tab or tree refresh touches it while it disappears
+        FXString target = gvfs.empty() ? dir : gvfs;
+        mainWindow->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_NETWORK_UNMOUNTED), &target);
+        getApp()->flush(true);
+    }
     if (!gvfs.empty())
     {
         FXString uri = xf_gvfsmounturi(dir);

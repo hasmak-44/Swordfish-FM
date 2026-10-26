@@ -2423,26 +2423,16 @@ void FilePanel::openServerShares(const FXString& host)
         MessageBox::error(this, BOX_OK, _("Error"), _("Invalid server address."));
         return;
     }
-    setActive();
-    tabbuttons->onUpdCurrentTab(this, 0, NULL);
-    for (FXuint index = 0; index < tabbuttons->getNumActiveTabs(); ++index)
+    // Browse the server in the active tab, like opening a folder
+    if (list->getDirectory() == uri)
     {
-        if (tabbuttons->getPath(index) != uri) continue;
-        if (index != tabbuttons->getCurrentTab())
-            tabbuttons->onCmdPathButton(this, FXSEL(SEL_COMMAND, TabButtons::ID_START_TAB + index), NULL);
+        setActive();
         finishPathEditing();
         RemoteDirectory::refresh(uri);
+        list->setFocus();
         return;
     }
-    if (tabbuttons->getNumActiveTabs() >= NMAX_TABS)
-    {
-        MessageBox::warning(this, BOX_OK, _("Shared folders"), _("Close a tab before opening another server."));
-        return;
-    }
-    tabbuttons->addTab(uri);
-    finishPathEditing();
-    updateLocation();
-    list->setFocus();
+    navigatePane(uri);
 }
 
 FXbool FilePanel::requiresMountedShare()
@@ -2456,6 +2446,8 @@ FXbool FilePanel::requiresMountedShare()
 
 FXbool FilePanel::navigatePane(const FXString& pathname)
 {
+    // Deliver any pending pointer ungrab before checking a possibly unresponsive mount
+    getApp()->flush(true);
     xf_setwaitcursor(getApp(), BEGIN_CURSOR);
     if (!RemoteDirectory::handles(pathname) && !xf_isdirectory(pathname))
     {

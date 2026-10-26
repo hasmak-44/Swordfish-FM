@@ -804,6 +804,20 @@ download server was stopped.
   viewing Home, then check grey unmounted-device visibility, then use only a
   spare USB drive with no important data for mount/unmount tests. Do not test
   internal-partition unmounting while the freeze remains unexplained.
+- Test 4 paused before testing (26 Oct, 09:35 UTC). User observation: clicking
+  a discovered server always opened a new tab, so several tabs could point to
+  the same share; after unmounting, leftover tabs may try to read the missing
+  target. During the Test 3 freeze the pointer moved, but taskbar, dock and
+  Start menu ignored clicks, and the system eventually recovered. This matches
+  an X11 pointer grab still held while Swordfish was blocked on I/O (the
+  ungrab request can sit unsent in the Xlib buffer). Hypothesis, not proven.
+- Test 5 corrections: server click browses in the active tab (no new tab);
+  every Unmount through `File::mount` (local and GVFS) closes matching
+  active/background tabs in both panes and moves the tree before the command
+  runs (UDisks eject already did); `File::mount` and `navigatePane` flush the
+  X connection before blocking work. Local unmounts previously never closed
+  tabs. Regression tests updated/added; full suite passes (36 PASS).
+  Trade-off: a failed unmount leaves the user outside the mount.
 
 - Source commit: `f69940aa71fe0e451d9f2d5aee22576510a55892`, pushed to
   `portable-layout`. Unrelated staged files and generated build files excluded.
