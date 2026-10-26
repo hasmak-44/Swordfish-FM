@@ -759,6 +759,22 @@ download server was stopped.
   desktop GVFS session credentials, not proof of Guest identity.
 - Drag-hover tab switching was reported acceptable.
 
+**RC6 Test 4 delivery (26 October):**
+
+- Source commit `91fa0999706280fd95a07be23d9fb3bf386a695c`, pushed to
+  `portable-layout`; clean exported source built using
+  `JOBS=1 ./portable/build-portable.sh` (Debian Buster, glibc 2.28).
+- Filename `Swordfish-RC6-Test4-Portable.tar.gz`, about 76 MiB.
+  SHA-256: `40bae52c4fee837b290854c0bd325a88e4d0f9c6c522e28517ea03b48e09acaf`.
+- Archive listing and isolated packaged GUI startup pass; executable reports
+  `0.0.1-rc6`. Regression suite passed before packaging, including real
+  host inventory and command-level Root/Home refusal.
+- Temporary private codespace download, not a stable release. Stop its
+  server after download/extraction confirmation. Test 3 remains withdrawn.
+- Limited test only: no-selection toolbar state in Home, grey unmounted
+  device visibility, then spare USB mount/unmount. No internal-partition
+  unmount tests; freeze cause still unknown.
+
 **Post-withdrawal corrections (26 October, Test 4 source bundle):**
 
 - Reproduced the inventory failure using the real host command:
@@ -1084,6 +1100,8 @@ prereleases and must not be assumed to select RC4.
 ### 9.0 Current position (26 October 2026)
 
 - **Latest:** Test 2 feedback reopened several bugs; see section 3.16.
+  Test 4 is now built from `91fa099` for limited no-selection/inventory/spare
+  USB testing; delivery details and checksum are in section 3.16.
   **Test 3 is withdrawn:** unsafe Unmount targeting, disappearing unmounted
   devices and a reported system freeze. User will discard it. Download server
   stopped. Prioritize explicit safe Unmount targeting and investigate host
