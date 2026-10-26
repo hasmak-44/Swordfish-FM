@@ -988,6 +988,33 @@ User machine cleanup (26 October, guided step by step):
   `~/Apps/Swordfish-Portable/AppRun`; its icon path points to the Projects
   drive) and two test entries. Swordfish starts from the menu.
 
+### 3.19 Swordfish 0.0.2 release: 26 October
+
+User tested `0.0.2-test1` (built from `1a4b335`, delivered by a temporary
+codespace link the user started himself because the agent was denied
+starting the server): About showed the version, folders/USB Eject/network
+Unmount fine, Xfe kept working with Swordfish open, automount mounted a
+drive and opened a Swordfish window. Desktop (Thunar/Xfce) automount raced
+with Swordfish's; advice: enable only one automounter. Not a regression.
+- Release commit `30a9a315476a9cf358560b5beba27f6c00a3fac7`: version 0.0.2,
+  README banner/download section, CHANGELOG heading. main and
+  portable-layout fast-forwarded; annotated tag `swordfish-0.0.2`.
+- Clean `git archive` build, `JOBS=1`, Debian 10 / glibc 2.28.
+  `AppRun --version` = `swordfish version 0.0.2`; Xvfb smoke passes.
+  `portable-data` (created by the build script) removed before packaging,
+  per the release rule; archives verified to contain no `portable-data`,
+  to contain `usr/bin/swf-automount` and no `xfe-automount`.
+- GitHub release https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.2
+  (Latest, not prerelease). SHA-256:
+  - `Swordfish-Portable-0.0.2.zip` 84,803,698 `e0b2a3a98ad0a3c781000761081c6a218579361fee09e4dbb83835515f4c03fb`
+  - `Swordfish-Portable-0.0.2.tar.gz` 79,671,263 `d101ddda664f057bb3b96fab537c2a64c83171e029967dec64c87b9366f39a82`
+  - `Swordfish-FM-0.0.2-source.tar.gz` 20,409,285 `c68484f8e16495c9fc16a8cdc53aacd758e3fb6333fb5fd4e77a0cd2a4c92061`
+  - `Swordfish-0.0.2-SHA256SUMS`
+  Downloaded back from GitHub and verified.
+- 0.0.1 release stays published. Pages still serves the older automatic
+  build (workflow only triggers on `swordfish-portable-*` tags).
+- The `upstream` remote no longer exists; still pass `-R` to gh.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
