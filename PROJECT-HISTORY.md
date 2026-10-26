@@ -832,6 +832,10 @@ download server was stopped.
   closed. Fix: `Preview::cancel(mount)` drops queued jobs and kills a running
   child under the mount; called from `onNetworkUnmounted` before every unmount
   command. Regression test added; full suite passes (36 PASS).
+- Test 6 built from clean archive of `f0a90d8`:
+  `Swordfish-RC6-Test6-Portable.tar.gz`, 79,674,499 bytes, SHA-256
+  `6c2784fe2e4e295302d400b389674b9d154f2a0ac1c152781f16ddee6367e28a`.
+  Reports `0.0.1-rc6`; Xvfb startup passes. Test 5 download stopped.
 
 - Source commit: `f69940aa71fe0e451d9f2d5aee22576510a55892`, pushed to
   `portable-layout`. Unrelated staged files and generated build files excluded.
