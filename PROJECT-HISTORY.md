@@ -851,6 +851,9 @@ download server was stopped.
   `Swordfish-RC6-Test7-Portable.tar.gz`, 79,675,723 bytes, SHA-256
   `6848ef55051fe1d57106a2078de3103cb01472fceb6b7ee7c222386300e992c1`.
   Reports `0.0.1-rc6`; Xvfb startup passes. Test 6 download stopped.
+- Test 7 result (11:17 UTC, user hardware): USB HDD Eject succeeds; Unmount
+  also clean. USB busy problem resolved. Still untested: internal-partition
+  unmount, and whether the desktop stays responsive (freeze hypothesis).
 
 - Source commit: `f69940aa71fe0e451d9f2d5aee22576510a55892`, pushed to
   `portable-layout`. Unrelated staged files and generated build files excluded.
