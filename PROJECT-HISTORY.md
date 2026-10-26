@@ -1015,6 +1015,28 @@ with Swordfish's; advice: enable only one automounter. Not a regression.
   build (workflow only triggers on `swordfish-portable-*` tags).
 - The `upstream` remote no longer exists; still pass `-R` to gh.
 
+### 3.20 Automatic release build fixed: 26 October
+
+`portable-release.yml` only triggered on `swordfish-portable-*` tags, so
+0.0.1 and 0.0.2 were packaged by hand and its Pages step was stale (the
+website is a legacy Pages build of the `portable-layout` README, which
+links to the latest release). Commit `9d834f8`:
+- Also triggers on `swordfish-[0-9]*` tags; such a tag must equal the
+  `configure.ac` version. Manual "Run workflow" takes an existing tag.
+- Builds in the Debian 10 container and packages the same four files as
+  the hand-made releases (`Swordfish-Portable-<v>.zip`/`.tar.gz` with top
+  folder `Swordfish-Portable-<v>`, `Swordfish-FM-<v>-source.tar.gz`,
+  `Swordfish-<v>-SHA256SUMS`), with `portable-data` removed and checked.
+- Creates the release if missing (notes = matching CHANGELOG section;
+  rc/test/preview/beta/alpha become prereleases, not Latest). If the release
+  already has any of the files, uploads nothing (no replacing, no mixing).
+- Pages deploy steps removed so the README website is not overwritten.
+- Tested: run 40336388846 on `swordfish-0.0.2` built all files and left the
+  verified 0.0.2 release files unchanged. CI builds are not byte-identical
+  to hand builds (timestamps), which is why existing files are never mixed.
+- Future release: rename CHANGELOG `## Unreleased` to `## swordfish-<v> — ...`,
+  set `configure.ac`, commit, push the annotated tag; the workflow publishes.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
