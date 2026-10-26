@@ -1,8 +1,8 @@
 #
-# Xfe default settings
+# Swordfish default settings
 # Version : 05/01/2026
 #
-# These settings are overridden in ~/.config/xfe/xferc
+# These settings are overridden in ~/.config/swordfish/swordfishrc
 #
 
 [SETTINGS]
@@ -16,7 +16,7 @@ iconpath = @prefix@/share/swordfish/icons/default-theme
 [KEYBINDINGS]
 #
 # Default key bindings
-# These shortcuts can be changed by copying them to your .xferc file
+# These shortcuts can be changed by copying them to ~/.config/swordfish/swordfishrc
 #
 
 # Common default key bindings for all Xfe applications
@@ -107,7 +107,7 @@ undo=Ctrl-Z
 
 [FILETYPES]
 #
-# You can add new types and customizations in the file ~/.config/xfe/xferc
+# You can add new types and customizations in the file ~/.config/swordfish/swordfishrc
 # Format :
 # ext = "open command, view command, edit command;short description;bigicon.png;miniicon.png;mime type"
 # Full names instead of ext are allowed

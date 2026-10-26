@@ -914,6 +914,44 @@ new tag `swordfish-0.0.1` (old tags `SwordFish-Portable-0.0.1`, `v0.0.2`,
   versus toolbar/context Unmount; grey remountable internal/USB devices;
   network-share Unmount; 1-second tab hover and left tab-bar visibility.
 
+### 3.18 Disengaging from Xfe: 26 October
+
+User asked to fully disengage from Xfe while keeping the release safe and
+published. GitHub never listed the repository as a fork; the only link was the
+local `upstream` remote (roland65/xfe), now removed from the codespace checkout.
+- `src/foxhacks.cpp`: non-portable installs no longer search `/etc/xfe`,
+  `/usr/share/xfe`, `/usr/local/share/xfe` or `xfe` along PATH, and no longer
+  parse a desktop-wide `xferc`. Order is now the executable's own
+  `../share/swordfish`, then the first of `/etc`, `/usr/share`,
+  `/usr/local/share` + `/swordfish`, then `~/.config/swordfish`. Portable
+  mode is unchanged. Verified with strace under Xvfb against a temporary
+  `/usr/share/xfe/xferc`: the old build opened it, the new build did not.
+- Removed Xfe's Debian packaging (`debian/`, source package `xfe`) and Xfe's
+  `.run` scripts (`buildrun`, `installrun`, `uninstall-xfe`) which install or
+  delete `/usr/local/bin/xfe` and `/usr/local/share/xfe`. `Makefile.am`
+  `EXTRA_DIST` also dropped the never-existing `uninstall-swordfish`;
+  `Makefile.in` regenerated with `automake --gnu Makefile` (only those lines
+  change).
+- AUTHORS names Swordfish FM first and keeps the Xfe, FOX and X Win Commander
+  credits (GPLv2 obligation). README configuration section and
+  `swordfishrc.in` comments now describe Swordfish paths.
+- Deliberately unchanged: the internal FOX application name is still `xfe`
+  (`src/main.cpp`), so per-user settings live in `~/.config/swordfish/xferc`.
+  That file is inside Swordfish's own folder; renaming would discard existing
+  user settings, so it needs a migration if ever changed. Internal source
+  names (`xfedefs.h`, `xfeutils`, `XFileExplorer`, `xfe*.png` icons,
+  `automount/xfe-automount.cpp`) are also unchanged.
+- The unpublished local `install-swordfish.sh` (copies `/usr/bin/xfe` to
+  `/usr/bin/swordfish`, forces `Icon=xfe`) was never committed; it explains how
+  the user's very old system install became tangled with Xfe.
+- Validation: clean archive build + `make install DESTDIR`, folder-expansion
+  suite 36 PASS, preview suite PASS (one timing failure under build load,
+  passed twice on rerun). The network-discovery `shareAuthentication`
+  assertion also fails on the pre-change build (stale test after guest-first
+  SMB decision) and is not caused by this change.
+- No new binary release: the portable bundle behaves identically, so
+  `swordfish-0.0.1` remains the current download.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

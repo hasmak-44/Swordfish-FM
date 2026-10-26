@@ -300,20 +300,16 @@
  Be careful to quit Xfe before manually editing any configuration file, otherwise changes could not be taken
  into account.
 
- The system-wide configuration file xferc is located in /usr/share/xfe, /usr/local/share/xfe
- or /opt/local/share/xfe, in the given order of precedence.
+ Swordfish does not read or write any Xfe configuration (xferc, /usr/share/xfe, ~/.config/xfe).
 
- The local configuration files for Xfe, Xfw, Xfi, Xfa and Xfp are now located in the ~/.config/xfe folder.
- They are named xferc, xfwrc, xfirc, xfarc and xfprc.
- 
- At the very first Xfe run, the system-wide configuration file is copied into the local configuration file
- ~/.config/xfe/xferc which does not exists yet. If the system-wide configuration file is not found
- (in case of an unusal install place), a dialog asks the user to select the right place. It is thus easier to
- customize Xfe (this is particularly true for the file associations) by hand editing because all the local options
- are located in the same file.
+ The system-wide configuration file swordfishrc is read from the share/swordfish folder of the
+ Swordfish installation (for example /usr/local/share/swordfish). If that folder is missing, the first
+ existing folder among /etc/swordfish, /usr/share/swordfish and /usr/local/share/swordfish is used. The portable bundle uses its own share/swordfish folder.
 
- Default PNG icons are located in /usr/share/xfe/icons/default-theme or /usr/local/share/xfe/icons/default-theme,
- depending on your installation. You can easily change the icon theme path in the Preferences dialog.
+ The local configuration files are located in the ~/.config/swordfish folder.
+
+ Default PNG icons are located in share/swordfish/icons/default-theme of the Swordfish installation.
+ You can easily change the icon theme path in the Preferences dialog.
 
 
 

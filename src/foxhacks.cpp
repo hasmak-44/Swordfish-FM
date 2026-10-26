@@ -47,32 +47,22 @@ bool FXRegistry::read()
     }
     else
     {
-        dirname = FXPath::search(REGISTRYPATH, "xfe");
-        if (!dirname.empty())
+        // Prefer the data directory that belongs to this executable's install prefix
+#if defined(linux)
+        char buf[MAXPATHLEN];
+        int nbytes = readlink("/proc/self/exe", buf, MAXPATHLEN);
+
+        if (nbytes > 0)
         {
+            dirname = FXPath::directory(FXString(buf, nbytes)) + "/../share/swordfish";
             ok = readFromDir(dirname, false);
         }
-
-        // !!! Hack to search for directory relative to xfe executable path
-#if defined(linux)
-        if (!ok)
-        {
-            char buf[MAXPATHLEN];
-            int nbytes = readlink("/proc/self/exe", buf, MAXPATHLEN);
-
-            if (nbytes > 0)
-            {
-                dirname = FXPath::directory(FXString(buf, nbytes)) + "/../share/swordfish";
-                ok = readFromDir(dirname, false);
-            }
-        }
 #endif
-        // !!! End of hack !!!
 
-        // Try search along PATH if still not found
+        // Fall back to standard system locations
         if (!ok)
         {
-            dirname = FXPath::search(FXSystem::getExecPath(), "xfe");
+            dirname = FXPath::search(REGISTRYPATH, "swordfish");
             if (!dirname.empty())
             {
                 ok = readFromDir(dirname, false);
@@ -103,12 +93,6 @@ bool FXRegistry::readFromDir(const FXString& dirname, bool mark)
     {
         // Load Swordfish defaults before desktop and per-user overrides.
         if (parseFile(dirname + PATHSEPSTRING XFECONFIGNAME, mark))
-        {
-            ok = true;
-        }
-
-        // First try to load desktop registry
-        if (parseFile(dirname + PATHSEPSTRING DESKTOP, false))
         {
             ok = true;
         }
