@@ -437,6 +437,7 @@ FXDEFMAP(DirPanel) DirPanelMap[] =
     FXMAPFUNC(SEL_CONFIGURE, DirPanel::ID_PREVIEW_LAYOUT, DirPanel::onCmdPreviewLayout),
     FXMAPFUNC(SEL_CLICKED, DirPanel::ID_SIDEBAR, DirPanel::onSidebarActivate),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR, DirPanel::onSidebarActivate),
+    FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR_DEVICE_ACTION, DirPanel::onSidebarDeviceAction),
     FXMAPFUNC(SEL_DOUBLECLICKED, DirPanel::ID_SIDEBAR, DirPanel::onSidebarActivate),
     FXMAPFUNC(SEL_EXPANDED, DirPanel::ID_SIDEBAR, DirPanel::onSidebarExpand),
     FXMAPFUNC(SEL_COLLAPSED, DirPanel::ID_SIDEBAR, DirPanel::onSidebarExpand),
@@ -532,6 +533,7 @@ void DirPanel::createPlaces(FXWindow* owner, FXComposite* parent, FXColor back, 
 {
     placesViewFrame = new SidebarFrame(parent);
     sidebar = new SidebarTree(placesViewFrame, this, ID_SIDEBAR, opts);
+    sidebar->deviceActionSelector = ID_SIDEBAR_DEVICE_ACTION;
     sidebar->setBackColor(back);
     sidebar->setTextColor(fore);
     sidebar->setSortFunc(FXTreeList::ascendingCase);
@@ -698,6 +700,16 @@ void DirPanel::syncSidebar()
             FXIcon* icon = group == 0 ? placeslist->getItemIcon(i) :
                            group == 1 ? minibookmarkicon : mountslist->getItemIcon(i);
             SidebarItem* item = new SidebarItem(name, icon, kind, path, name);
+#if defined(linux)
+            if (kind == SidebarItem::DEVICE && path != ROOTDIR)
+            {
+                FXString device = path.left(5) == "/dev/" ? path : xf_mountsource(path);
+                if (xf_hotplugdevice(device))
+                    item->deviceAction = SidebarItem::EJECT_DEVICE;
+                else if (path.left(5) != "/dev/")
+                    item->deviceAction = SidebarItem::UNMOUNT_DEVICE;
+            }
+#endif
             if (group == 1)
             {
                 FXString iconpath = bookmarkslist->getItemIconPathname(name);
@@ -718,7 +730,7 @@ void DirPanel::syncSidebar()
                     }
                 }
             }
-            item->setHasItems(true);
+            item->setHasItems(kind != SidebarItem::DEVICE || path.left(5) != "/dev/");
             sidebar->appendItem(root, item);
         }
         if (group == 1)
@@ -865,6 +877,32 @@ long DirPanel::onSidebarExpand(FXObject*, FXSelector sel, void* ptr)
         startNetworkDiscovery();
         syncSidebar();
     }
+    return 1;
+}
+
+long DirPanel::onSidebarDeviceAction(FXObject*, FXSelector, void* ptr)
+{
+#if defined(linux)
+    SidebarItem* item = static_cast<SidebarItem*>(ptr);
+    if (!item || item->kind != SidebarItem::DEVICE || item->path == ROOTDIR) return 1;
+    const FXbool popupWasOpen = sidebarPopupOpen;
+    sidebarPopupOpen = true;
+    FXString path = item->path;
+    if (item->deviceAction == SidebarItem::EJECT_DEVICE)
+    {
+        FXString device = path.left(5) == "/dev/" ? path : xf_mountsource(path);
+        if (xf_hotplugdevice(device)) unmountRemovable(path, true);
+    }
+    else if (item->deviceAction == SidebarItem::UNMOUNT_DEVICE)
+    {
+        SidebarItem* previous = sidebarContext;
+        sidebarContext = item;
+        onCmdMount(NULL, FXSEL(SEL_COMMAND, ID_UMOUNT), NULL);
+        sidebarContext = previous;
+    }
+    if (mountslist) mountslist->invalidate();
+    sidebarPopupOpen = popupWasOpen;
+#endif
     return 1;
 }
 
@@ -2627,6 +2665,7 @@ long DirPanel::onCmdPopupMenuMounts(FXObject* sender, FXSelector sel, void* ptr)
 #if defined(linux)
     new FXMenuCommand(menu, _("M&ount"), minimounticon, this, DirPanel::ID_MOUNT);
     new FXMenuCommand(menu, _("&Unmount"), miniunmounticon, this, DirPanel::ID_UMOUNT);
+    new FXMenuCommand(menu, _("&Eject (Safely Remove)"), miniunmounticon, this, DirPanel::ID_EJECT);
     new FXMenuSeparator(menu);
 #endif
     new FXMenuCommand(menu, _("&Properties"), miniattribicon, this, DirPanel::ID_MOUNT_PROPERTIES);
@@ -5094,7 +5133,7 @@ long DirPanel::onUpdUnmount(FXObject* sender, FXSelector sel, void*)
     // GVFS directory
     FXString gvfsdir = "/run/user/" + FXStringVal(FXSystem::user()) + "/gvfs";
 
-    if ((FXPath::directory(dir) == gvfsdir) || (fsdevices->find(dir.text()) || mtdevices->find(dir.text())))
+    if (dir != ROOTDIR && ((FXPath::directory(dir) == gvfsdir) || mtdevices->find(dir.text())))
     {
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
     }
@@ -5108,6 +5147,12 @@ long DirPanel::onUpdUnmount(FXObject* sender, FXSelector sel, void*)
 
 
 // Drives listed in the sidebar that are plugged in but not mounted
+FXString DirPanel::focusedDevice() const
+{
+    SidebarItem* item = static_cast<SidebarItem*>(sidebar->getCurrentItem());
+    return sidebar->hasFocus() && item && item->kind == SidebarItem::DEVICE ? item->path : FXString::null;
+}
+
 void DirPanel::unmountedDevices(std::vector<FXString>& labels, std::vector<FXString>& devices)
 {
     labels.clear();
@@ -5180,6 +5225,11 @@ FXbool DirPanel::openDevice(const FXString& device)
 // Unmount a desktop drive (and optionally power it off so it can be unplugged)
 FXbool DirPanel::unmountRemovable(const FXString& location, FXbool eject)
 {
+    if (location == ROOTDIR)
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("The root file system cannot be unmounted."));
+        return false;
+    }
     FXString device = location.left(5) == "/dev/" ? location : xf_mountsource(location);
     FXString mountpoint = location.left(5) == "/dev/" ? xf_mountpointof(location) : location;
     if (device.left(5) != "/dev/")
@@ -5252,11 +5302,9 @@ FXbool DirPanel::unmountRemovable(const FXString& location, FXbool eject)
 // Eject (unmount and power off) the drive under the context menu
 long DirPanel::onCmdEject(FXObject*, FXSelector, void*)
 {
-    if (!sidebarContext || sidebarContext->kind != SidebarItem::DEVICE)
-    {
-        return 0;
-    }
-    FXString path = sidebarContext->path;
+    FXString path = sidebarContext && sidebarContext->kind == SidebarItem::DEVICE ?
+                    sidebarContext->path : focusedDevice();
+    if (path.empty()) path = dirlist->getItemPathname(static_cast<TreeItem*>(dirlist->getCurrentItem()));
     FXString device = path.left(5) == "/dev/" ? path : xf_mountsource(path);
     if (!xf_hotplugdevice(device))
     {
@@ -5270,9 +5318,11 @@ long DirPanel::onCmdEject(FXObject*, FXSelector, void*)
 long DirPanel::onUpdEject(FXObject* sender, FXSelector, void*)
 {
     FXbool enable = false;
-    if (sidebarContext && sidebarContext->kind == SidebarItem::DEVICE)
+    FXString path = sidebarContext && sidebarContext->kind == SidebarItem::DEVICE ?
+                    sidebarContext->path : focusedDevice();
+    if (path.empty()) path = dirlist->getItemPathname(static_cast<TreeItem*>(dirlist->getCurrentItem()));
+    if (path != ROOTDIR)
     {
-        const FXString& path = sidebarContext->path;
         if (path.left(5) == "/dev/")
         {
             enable = xf_hotplugdevice(path);

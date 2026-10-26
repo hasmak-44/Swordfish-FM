@@ -188,6 +188,7 @@ public:
         ID_CLOSE_PREVIEW,
         ID_PREVIEW_LAYOUT,
         ID_SIDEBAR,
+        ID_SIDEBAR_DEVICE_ACTION,
         ID_SIDEBAR_REFRESH,
         ID_SIDEBAR_OPEN_TAB,
         ID_SIDEBAR_PROPERTIES,
@@ -211,6 +212,7 @@ public:
     long onCmdClosePreview(FXObject*, FXSelector, void*);
     long onCmdPreviewLayout(FXObject*, FXSelector, void*);
     long onSidebarActivate(FXObject*, FXSelector, void*);
+    long onSidebarDeviceAction(FXObject*, FXSelector, void*);
     long onSidebarExpand(FXObject*, FXSelector, void*);
     long onSidebarPopup(FXObject*, FXSelector, void*);
     long onSidebarRefresh(FXObject*, FXSelector, void*);
@@ -291,6 +293,7 @@ public:
 #if defined(linux)
     // Drives handled through the desktop disk service (udisks)
     void unmountedDevices(std::vector<FXString>& labels, std::vector<FXString>& devices);
+    FXString focusedDevice() const;
     FXbool openDevice(const FXString& device);
     FXbool unmountRemovable(const FXString& mountpoint, FXbool eject);
 #endif

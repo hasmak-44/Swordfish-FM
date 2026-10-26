@@ -629,6 +629,117 @@ fixed except A2 (parked: the user could not reproduce it).
   (`96f0c80`). Still uncommitted on purpose: `.vscode/`, `install-swordfish.sh`
   (unreviewed), the downloaded repo zips and generated autotools/po files.
 
+### 3.16 RC6 Test 2 feedback and network mount reuse: 26 October
+
+The user downloaded and extracted the Test 2 portable bundle, then supplied
+an updated `Bugs.txt` through MEGA on 26 October. The prior "fixed" statuses
+describe implementation, not successful validation on the user's machine.
+The new report reopens the following items:
+
+- Mount is disabled and Unmount is unavailable for some mounts.
+- SMB shares sometimes mount twice after entering a password; cancelling
+  the prompt can leave a single usable connection. Guest versus cached
+  account identity is unknown. Guest was configured read-only in Windows,
+  but the user could edit and save a file. Do not infer authenticated
+  identity from the displayed Unix permission bits.
+- Unmounted internal partitions and USB drives should remain visible,
+  greyed and remountable; Eject is missing for removable devices.
+- Reduce tab drag-hover switching from 1.5 seconds to 1 second.
+- Left tab bar disappeared once in vertical layout; restart fixed it and
+  it has not recurred. Screenshots mentioned in the report were not included.
+
+The user authorized investigating the duplicate-mount/login flow first.
+The following changes form the RC6 Test 3 source bundle:
+
+- `FilePanel::networkLocalPath` checks the actual SMB FUSE mount folders
+  under `$XDG_RUNTIME_DIR/gvfs` (fallback `/run/user/UID/gvfs`), decoding
+  attributes independently of their order. An unspecified login reuses an
+  existing mount; explicit user/domain values must match. `gio info` fallback
+  uses `LC_ALL=C` because its `local path:` line is otherwise localized.
+- Recheck after guest attempts and before submitting credentials, including
+  after a login dialog closes, to avoid a second mount when a connection
+  has already appeared. Existing-mount notification explicitly mentions
+  possible saved credentials; logs record the reused path without passwords.
+- Tests simulate a successful mount invisible to `gio info` under the
+  original login URI, a cached authenticated mount, and a different explicit
+  user. They check returned paths and exact mount command counts. Existing
+  test expectations were updated for last night's short sidebar labels and
+  the anonymous-plus-guest timeout sequence.
+- Validation: clean scratch autotools build, then
+  `tests/run-folder-expansion-regression.sh` with staged installed icons;
+  complete suite passes. No real Windows/SMB server was available, so this
+  is a tested client-side correction, not confirmation of Windows account
+  identity or of every reported network issue.
+
+**Device follow-up (26 October, Test 3):**
+
+- Found the inventory parser's core fault: searching for `TYPE="` matched
+  inside `FSTYPE="`, then returned an empty result instead of continuing to
+  the actual `TYPE` field. Consequently all unmounted volumes were discarded.
+  Fixed the field-boundary search and added realistic `lsblk --pairs`
+  regression data.
+- Devices now includes unmounted internal filesystems as well as hotplug
+  volumes. Previously mounted desktop volumes retain their label even when
+  unprivileged `lsblk` omits FSTYPE. Blank unknown volumes, swap, encrypted
+  containers and filesystem members remain excluded. Inventory command
+  failures are logged.
+- Unmounted device rows render grey but remain enabled/clickable; they do
+  not offer directory expansion. Disconnected volumes leave the list.
+- Mount/Unmount toolbar target selection respects a focused Devices entry,
+  ignores the parent (`..`) row, and resolves GVFS roots and containing data
+  mounts. Unmount does not depend on a nonempty file list. Root is protected.
+  Desktop mounts use udisks even when also listed in fstab.
+- Eject's enablement also works with focused Devices entries and the legacy
+  mount menu. Hotplug volumes qualify; internal drives and network shares do
+  not. Busy unmount remains an error, not a forced detach.
+- Validation: scratch build and full folder-expansion regression suite pass.
+  New mocked host-command tests cover internal/USB inventory, missing FSTYPE,
+  removal, Mount/Unmount/Eject enablement, and the command sequence for mount,
+  busy failure, unmount, remount and safe eject. Physical hardware and desktop
+  authorization prompts still require user testing.
+
+**Tab follow-up (26 October, Test 3):**
+
+- Changed `TAB_HOVER_DELAY` in `TabButtons.cpp` from 1500 to 1000 ms.
+  The existing immediate refresh on timeout is preserved.
+- Could not reproduce the one-off disappearing left tab bar. Added an
+  explicit parent `recalc()` when `FilePanel::showTabbar` changes visibility,
+  following the same FOX layout pattern used by the path editor. Redundant
+  show/hide calls return without dirtying layout.
+- Tests switch panel orientation and resize six times while hiding/showing
+  both tab bars; assert nonzero tab/scroll/bar geometry and no vertical
+  clipping. Direct hover-timeout dispatch verifies that the inactive tab is
+  selected and its folder list is immediately populated.
+- Scratch build and the complete regression suite pass. An attempted
+  in-process real-DND test did not negotiate FOX's drag state and was not
+  retained. The configured 1000 ms is verified in source, but end-to-end
+  pointer-hover timing still needs desktop testing. The original intermittent
+  missing bar is not claimed definitively resolved.
+
+**Visible Devices action buttons (26 October, Test 3):**
+
+- User clarified that a visible button is required in the device list, not
+  only a context-menu command. Confirmed behaviour: the USB row button does
+  Eject / Safely Remove; USB Unmount remains in toolbar and context menu.
+- Sidebar rows now draw a right-aligned action button: Eject for supported
+  hotplug devices (mounted or unmounted), Unmount for mounted internal
+  partitions and network shares; no button for root or unmounted internal
+  partitions. Tooltips name the action. Device classification is cached in
+  the row during sidebar synchronization, not queried during painting.
+- Press/release handling consumes only button clicks, releases the pointer
+  before running disk operations, and cancels if released outside the button.
+  Sidebar rebuilds are suspended while an action runs, like context menus.
+- Scratch build and full regression suite pass, including a visible-button
+  hit-test and simulated click through the actual safe-eject command path.
+  Hardware behaviour still needs user validation.
+
+Remaining: test network/device changes, the 1-second hover, and the tab-bar
+layout safeguard on the user's machine. On 26 October the user authorized
+saving and pushing this bundle, building RC6 Test 3 from its clean committed
+source and supplying a private temporary codespace download link. This is a
+test build, not a stable release. Record the build result and checksum below
+after validation. Do not mark the entire bug report resolved.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -906,12 +1017,17 @@ prereleases and must not be assumed to select RC4.
 
 ## 9. Unfinished work and agreements not to mistake for completed features
 
-### 9.0 Current position (25 October 2026)
+### 9.0 Current position (26 October 2026)
 
-- **Latest:** the RC6 bug list in section 3.15 is fixed and committed as one
+- **Latest:** Test 2 feedback reopened several bugs; see section 3.16.
+  Network, device controls, visible device-row actions and tab corrections
+  pass the regression suite and form the RC6 Test 3 bundle. The user authorized
+  its commit/push and clean portable build; real-network/hardware validation
+  remains pending. See the delivery record in section 3.16.
+- **Previous delivery:** the RC6 bug list in section 3.15 was implemented and committed as one
   bundle; the user will test the RC6 Test 2 package on 26 October with the
   checklist below. Group 4 below is paused until the test results are in.
-  A2 (double mounts) is parked unless it comes back.
+  A2 (double mounts) has now recurred and is under investigation.
 - Test checklist: USB mount/unmount/eject and unmount-in-Thunar; internal
   partition remount and the Mount/Unmount buttons; no Thumbnails setting and
   zoom works; path-editor right-click menu and Ctrl+L; About/Help links;

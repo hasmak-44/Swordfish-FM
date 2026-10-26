@@ -2245,6 +2245,28 @@ FXString xf_mountsource(const FXString& dir)
     return source;
 }
 
+// Longest non-system, non-root mount containing a path.
+FXString xf_mountroot(const FXString& path)
+{
+    FXString best;
+#if defined(linux)
+    FILE* mtab = setmntent(MTAB_PATH, "r");
+    if (mtab)
+    {
+        struct mntent* mnt;
+        while ((mnt = getmntent(mtab)))
+        {
+            FXString dir = mnt->mnt_dir;
+            if (dir == ROOTDIR || !xf_keepmount(dir, mnt->mnt_fsname)) continue;
+            if ((path == dir || path.left(dir.length() + 1) == dir + "/") && dir.length() > best.length())
+                best = dir;
+        }
+        endmntent(mtab);
+    }
+#endif
+    return best;
+}
+
 // First mount point of a block device, or empty
 FXString xf_mountpointof(const FXString& device)
 {
@@ -2304,7 +2326,11 @@ static FXString lsblkvalue(const FXString& line, const FXString& key)
 {
     FXString pattern = key + "=\"";
     FXint pos = line.find(pattern);
-    if (pos < 0 || (pos > 0 && line[pos - 1] != ' '))
+    while (pos > 0 && line[pos - 1] != ' ')
+    {
+        pos = line.find(pattern, pos + 1);
+    }
+    if (pos < 0)
     {
         return FXString::null;
     }
@@ -2324,7 +2350,6 @@ static FXString lsblkvalue(const FXString& line, const FXString& key)
     return value;
 }
 
-// Unmounted block devices holding a file system, as "path\tlabel\thotplug"
 // True for USB and other plug-in drives (internal disks must never be powered off); cached briefly
 FXbool xf_hotplugdevice(const FXString& device)
 {
@@ -2351,14 +2376,17 @@ FXbool xf_hotplugdevice(const FXString& device)
 }
 
 
+// Unmounted block devices as "path\tlabel\thotplug\tfstype".
+// Keep unknown types for volumes already seen mounted (unprivileged lsblk may omit FSTYPE).
 FXbool xf_unmountedvolumes(vector_FXString& volumes)
 {
     volumes.clear();
 #if defined(linux)
     FXString output;
-    if (!xf_hostcommandoutput("timeout -k 1 5 lsblk -P -n -o PATH,LABEL,FSTYPE,MOUNTPOINT,HOTPLUG,TYPE </dev/null",
+    if (!xf_hostcommandoutput("timeout -k 1 5 lsblk -l -P -n -o PATH,LABEL,FSTYPE,MOUNTPOINT,HOTPLUG,TYPE </dev/null",
                               output))
     {
+        appLog(APP_LOG_ERRORS, "device-inventory-failed", output);
         return false;
     }
     for (FXint n = 0; n < output.contains('\n') + 1; n++)
@@ -2367,13 +2395,13 @@ FXbool xf_unmountedvolumes(vector_FXString& volumes)
         FXString path = lsblkvalue(line, "PATH");
         FXString fstype = lsblkvalue(line, "FSTYPE");
         FXString type = lsblkvalue(line, "TYPE");
-        if (path.left(5) != "/dev/" || fstype.empty() || fstype == "swap" || fstype.right(7) == "_member" ||
+        if (path.left(5) != "/dev/" || fstype == "swap" || fstype.right(7) == "_member" ||
             fstype == "crypto_LUKS" || !lsblkvalue(line, "MOUNTPOINT").empty() ||
             (type != "part" && type != "disk" && type != "rom"))
         {
             continue;
         }
-        volumes.push_back(path + "\t" + lsblkvalue(line, "LABEL") + "\t" + lsblkvalue(line, "HOTPLUG"));
+        volumes.push_back(path + "\t" + lsblkvalue(line, "LABEL") + "\t" + lsblkvalue(line, "HOTPLUG") + "\t" + fstype);
     }
     return true;
 #else

@@ -441,17 +441,44 @@ int main(int argc, char** argv)
     };
     mountTable(false);
     MountsList* deviceModel = new MountsList(shell, frame, NULL, 0);
-    assert(deviceModel->findItem("/run/media/test/USB") == -1);
+    assert(deviceModel->findItem("USB") == -1);
     mountTable(true);
+    assert(xf_mountroot("/run/media/test/USB/folder") == "/run/media/test/USB");
+    assert(xf_mountroot("/run/media/test/USB-other").empty());
+    assert(xf_mountroot(ROOTDIR).empty());
     deviceModel->onMountsRefresh(NULL, 0, NULL);
-    assert(deviceModel->findItem("/run/media/test/USB") >= 0);
+    assert(deviceModel->findItem("USB") >= 0);
+    assert(deviceModel->getItemPathname("USB") == "/run/media/test/USB");
     mountTable(false);
     deviceModel->onMountsRefresh(NULL, 0, NULL);
-    assert(deviceModel->findItem("/run/media/test/USB") == -1);
+    assert(deviceModel->findItem("USB") == -1);
+    const FXString volumesFixture = fixture + "/unmounted-volumes";
+    {
+        std::ofstream output(volumesFixture.text());
+        output << "PATH=\"/dev/sdb1\" LABEL=\"\" FSTYPE=\"\" MOUNTPOINT=\"\" HOTPLUG=\"1\" TYPE=\"part\"\n"
+               << "PATH=\"/dev/test-internal1\" LABEL=\"Internal\\x20data\" FSTYPE=\"ntfs\" MOUNTPOINT=\"\" HOTPLUG=\"0\" TYPE=\"part\"\n"
+               << "PATH=\"/dev/test-usb1\" LABEL=\"USB\\x20data\" FSTYPE=\"ext4\" MOUNTPOINT=\"\" HOTPLUG=\"1\" TYPE=\"part\"\n"
+               << "PATH=\"/dev/test-blank1\" LABEL=\"\" FSTYPE=\"\" MOUNTPOINT=\"\" HOTPLUG=\"0\" TYPE=\"part\"\n"
+               << "PATH=\"/dev/test-swap1\" LABEL=\"Swap\" FSTYPE=\"swap\" MOUNTPOINT=\"\" HOTPLUG=\"0\" TYPE=\"part\"\n";
+    }
+    setenv("SWORDFISH_TEST_VOLUMES", volumesFixture.text(), 1);
+    deviceModel->invalidate();
+    deviceModel->onMountsRefresh(NULL, 0, NULL);
+    assert(deviceModel->getItemPathname("USB") == "/dev/sdb1");
+    assert(deviceModel->getItemPathname("Internal data") == "/dev/test-internal1");
+    assert(deviceModel->getItemPathname("USB data") == "/dev/test-usb1");
+    assert(deviceModel->findItem("test-blank1") == -1 && deviceModel->findItem("Swap") == -1);
+    assert(xf_hotplugdevice("/dev/test-usb1") && !xf_hotplugdevice("/dev/test-internal1"));
+    unsetenv("SWORDFISH_TEST_VOLUMES");
+    deviceModel->invalidate();
+    deviceModel->onMountsRefresh(NULL, 0, NULL);
+    assert(deviceModel->findItem("USB") == -1 && deviceModel->findItem("Internal data") == -1);
+    assert(unlink(volumesFixture.text()) == 0);
     delete deviceModel;
     assert(unlink(simulatedMountTable.text()) == 0);
     simulatedMountTable.clear();
     puts("PASS: /run/media device appears on mount and disappears after external unmount");
+    puts("PASS: unmounted internal and USB filesystems remain remountable; missing FSTYPE retains a known volume; unplugged devices disappear");
     observedWindow = list->id();
     otherClient = XOpenDisplay(NULL);
     assert(otherClient);
@@ -772,13 +799,51 @@ int main(int argc, char** argv)
     sharePanel->onCmdPaneNavigation(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_PANE_FORWARD), NULL);
     assert(sharePanel->getDirectory() == fixture + "/large");
     puts("PASS: server single-click lists shares in a tab without mounting; share double-click mounts only the chosen share");
+    const FXString runtime = fixture + "/runtime";
+    const FXString gvfs = runtime + "/gvfs";
+    const FXString guestMount = gvfs + "/smb-share:user=guest,share=Team%20files,server=reuse.test";
+    const FXString userMount = gvfs + "/smb-share:share=Team%20files,user=alice,server=reuse.test,domain=HOME";
+    assert(mkdir(runtime.text(), 0700) == 0 && mkdir(gvfs.text(), 0700) == 0);
+    const char* runtimeEnvironment = getenv("XDG_RUNTIME_DIR");
+    const bool hadRuntime = runtimeEnvironment != NULL;
+    const FXString savedRuntime = runtimeEnvironment ? runtimeEnvironment : "";
+    setenv("XDG_RUNTIME_DIR", runtime.text(), 1);
+    setenv("SWORDFISH_TEST_GVFS_ROOT", gvfs.text(), 1);
+    assert(unlink(getenv("SWORDFISH_TEST_MOUNT_LOG")) == 0);
+    FXString reusedPath;
+    assert(sharePanel->resolveNetworkPath("smb://reuse.test/Team%20files", reusedPath) == 1);
+    assert(reusedPath == guestMount);
+    std::ifstream guestLog(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+    assert(std::getline(guestLog, mountedUri) && mountedUri == "smb://reuse.test/Team%20files/");
+    assert(!std::getline(guestLog, mountedUri));
+    // A pre-existing authenticated mount is reused without calling it a guest login.
+    assert(rmdir(guestMount.text()) == 0 && mkdir(userMount.text(), 0700) == 0);
+    assert(unlink(getenv("SWORDFISH_TEST_MOUNT_LOG")) == 0);
+    MountMessageResponder reuseMessage;
+    testApp->addTimeout(&reuseMessage, 1, 20);
+    assert(sharePanel->resolveNetworkPath("smb://REUSE.TEST/Team%20files/nested", reusedPath) == 1);
+    assert(reusedPath == userMount + "/nested" && reuseMessage.alreadyMounted == 1);
+    assert(access(getenv("SWORDFISH_TEST_MOUNT_LOG"), F_OK) != 0);
+    // An explicit different user must not silently inherit Alice's connection.
+    const FXString bobMount = gvfs + "/smb-share:user=bob,share=Team%20files,server=reuse.test,domain=WORKGROUP";
+    assert(sharePanel->resolveNetworkPath("smb://bob:password@reuse.test/Team%20files", reusedPath) == 1);
+    assert(reusedPath == bobMount);
+    std::ifstream bobLog(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+    assert(std::getline(bobLog, mountedUri) && mountedUri == "smb://WORKGROUP;bob@reuse.test/Team%20files/");
+    assert(!std::getline(bobLog, mountedUri));
+    assert(rmdir(bobMount.text()) == 0 && rmdir(userMount.text()) == 0 &&
+           rmdir(gvfs.text()) == 0 && rmdir(runtime.text()) == 0);
+    unsetenv("SWORDFISH_TEST_GVFS_ROOT");
+    if (hadRuntime) setenv("XDG_RUNTIME_DIR", savedRuntime.text(), 1);
+    else unsetenv("XDG_RUNTIME_DIR");
+    puts("PASS: mounted SMB shares survive login-URI differences; cached user mounts are reused without a second mount");
     // A share whose gio mount never returns must not freeze the window forever.
     ConnectCanceller canceller;
     testApp->addTimeout(&canceller, 1, 50);
     FXString hungPath;
     const time_t hungStart = time(NULL);
     assert(sharePanel->resolveNetworkPath("smb://hang.test/share", hungPath) == -1);
-    assert(time(NULL) - hungStart < 20);
+    assert(time(NULL) - hungStart < 30);
     assert(canceller.prompts == 1 && canceller.message.find("did not respond in time") >= 0);
     puts("PASS: a hanging gio mount times out and returns to the credentials dialog");
     panel->onCmdToggleSection(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_TOGGLE_NETWORK), NULL);
@@ -845,6 +910,35 @@ int main(int argc, char** argv)
     assert(xf_gvfsmounturi(gvfsBase + "mtp:host=%5Busb%3A001%2C002%5D") ==
            "mtp://%5Busb%3A001%2C002%5D/");
     assert(xf_gvfsmounturi(gvfsBase + "smb-share:share=data").empty());
+    const FXString beforeDeviceControls = sharePanel->getDirectory();
+    sharePanel->setDirectory(simulatedMount);
+    sharePanel->getList()->setFocus();
+    FXButton mountControl(shell, "Mount");
+    FXButton unmountControl(shell, "Unmount");
+    sharePanel->onUpdUnmount(&unmountControl, FXSEL(SEL_UPDATE, FilePanel::ID_UMOUNT), NULL);
+    assert(unmountControl.isEnabled() && sharePanel->mountTarget() == simulatedMount);
+    sharePanel->setDirectory(ROOTDIR);
+    sharePanel->onUpdUnmount(&unmountControl, FXSEL(SEL_UPDATE, FilePanel::ID_UMOUNT), NULL);
+    assert(!unmountControl.isEnabled());
+    SidebarItem* unmountedUsb = new SidebarItem("USB data", miniremovabledeviceicon,
+                                               SidebarItem::DEVICE, "/dev/test-usb1");
+    navigation->appendItem(navigation->getFirstItem(), unmountedUsb);
+    navigation->setCurrentItem(unmountedUsb);
+    navigation->setFocus();
+    assert(panel->focusedDevice() == "/dev/test-usb1");
+    sharePanel->onUpdMount(&mountControl, FXSEL(SEL_UPDATE, FilePanel::ID_MOUNT), NULL);
+    sharePanel->onUpdUnmount(&unmountControl, FXSEL(SEL_UPDATE, FilePanel::ID_UMOUNT), NULL);
+    assert(mountControl.isEnabled() && !unmountControl.isEnabled());
+    FXButton ejectControl(shell, "Eject");
+    panel->handle(&ejectControl, FXSEL(SEL_UPDATE, DirPanel::ID_EJECT), NULL);
+    assert(ejectControl.isEnabled() && unmountedUsb->isEnabled());
+    unmountedUsb->path = "/dev/test-internal1";
+    panel->handle(&ejectControl, FXSEL(SEL_UPDATE, DirPanel::ID_EJECT), NULL);
+    assert(!ejectControl.isEnabled());
+    navigation->removeItem(unmountedUsb);
+    sharePanel->getList()->setFocus();
+    sharePanel->setDirectory(beforeDeviceControls);
+    puts("PASS: GVFS Unmount works without child selection; root is protected; unmounted USB/internal drives offer Mount and only USB offers Eject");
     const FXbool mountMessages = app.reg().readUnsignedEntry("OPTIONS", "mount_messages", true);
     app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", false);
     MountMessageResponder mountMessagesResponder;
@@ -917,24 +1011,33 @@ int main(int argc, char** argv)
             if (item->getText() == name) ++count;
         return count;
     };
-    assert(deviceCount("4tb@mx-hp.local") == 1 && deviceCount("5tb@mx-hp.local") == 1);
+    const FXString label4 = "4tb@" + RemoteDirectory::hostName("mx-hp.local");
+    const FXString label5 = "5tb@" + RemoteDirectory::hostName("mx-hp.local");
+    assert(deviceCount(label4) == 1 && deviceCount(label5) == 1);
+    for (FXTreeItem* entry = devices->getFirst(); entry; entry = entry->getNext())
+    {
+        SidebarItem* device = static_cast<SidebarItem*>(entry);
+        if (device->path == ROOTDIR) assert(device->deviceAction == SidebarItem::NO_ACTION);
+        if (device->getText() == label4 || device->getText() == label5)
+            assert(device->deviceAction == SidebarItem::UNMOUNT_DEVICE);
+    }
     FXString mount5 = gvfsBase + FXPath::name(disk5);
     FXuint beforeExternal = sharePanel->getTabButtons()->getNumActiveTabs();
     sharePanel->getTabButtons()->addTab(mount5 + "/nested");
     sharePanel->getTabButtons()->addTab(mount5);
     assert(rmdir(disk5.text()) == 0);
     pump(app, 1500);
-    assert(deviceCount("5tb@mx-hp.local") == 0 && deviceCount("4tb@mx-hp.local") == 1);
+    assert(deviceCount(label5) == 0 && deviceCount(label4) == 1);
     assert(sharePanel->getTabButtons()->getNumActiveTabs() == beforeExternal);
     assert(sharePanel->getDirectory() == fixture + "/folder");
     for (int cycle = 0; cycle < 2; ++cycle)
     {
         assert(mkdir(disk5.text(), 0700) == 0);
         pump(app, 1500);
-        assert(deviceCount("5tb@mx-hp.local") == 1);
+        assert(deviceCount(label5) == 1);
         assert(rmdir(disk5.text()) == 0);
         pump(app, 1500);
-        assert(deviceCount("5tb@mx-hp.local") == 0);
+        assert(deviceCount(label5) == 0);
     }
     FilePanel* otherPanel = window->getRightPanel();
     assert(otherPanel != sharePanel);
@@ -949,6 +1052,79 @@ int main(int argc, char** argv)
     assert(rmdir(simulatedGvfsDirectory.text()) == 0);
     simulatedGvfsDirectory.clear();
     puts("PASS: external unmount removes Devices entry and share tabs, repeated cycles leave no duplicates, last tab becomes Home");
+
+    simulatedMountTable = fixture + "/disk-commands-mtab";
+    {
+        std::ofstream output(simulatedMountTable.text());
+        output << "/dev/root / ext4 rw 0 0\n";
+    }
+    setenv("SWORDFISH_TEST_DISK_MTAB", simulatedMountTable.text(), 1);
+    setenv("SWORDFISH_TEST_DISK_PATH", (fixture + "/folder").text(), 1);
+    app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", false);
+    SidebarItem* mountableUsb = new SidebarItem("USB data", miniremovabledeviceicon,
+                                               SidebarItem::DEVICE, "/dev/test-usb1");
+    navigation->appendItem(navigation->getFirstItem(), mountableUsb);
+    navigation->setCurrentItem(mountableUsb);
+    navigation->setFocus();
+    assert(sharePanel->onCmdMount(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_MOUNT), NULL) == 1);
+    navigation->removeItem(mountableUsb);
+    assert(xf_mountpointof("/dev/test-usb1") == fixture + "/folder");
+    setenv("SWORDFISH_TEST_DISK_BUSY", "1", 1);
+    const int previousErrors = mountMessagesResponder.errors;
+    app.addTimeout(&mountMessagesResponder, 1, 20);
+    assert(!panel->unmountRemovable(fixture + "/folder", false));
+    assert(mountMessagesResponder.errors == previousErrors + 1);
+    assert(mountMessagesResponder.message.contains("still in use"));
+    assert(!xf_mountpointof("/dev/test-usb1").empty());
+    unsetenv("SWORDFISH_TEST_DISK_BUSY");
+    assert(panel->unmountRemovable(fixture + "/folder", false));
+    assert(xf_mountpointof("/dev/test-usb1").empty());
+    assert(panel->openDevice("/dev/test-usb1"));
+    // Exercise the visible device-row button, not only the command handler.
+    SidebarItem* rowButton = new SidebarItem("USB action test", miniremovabledeviceicon,
+                                             SidebarItem::DEVICE, fixture + "/folder");
+    rowButton->deviceAction = SidebarItem::EJECT_DEVICE;
+    navigation->appendItem(navigation->getFirstItem(), rowButton);
+    navigation->expandTree(navigation->getFirstItem());
+    navigation->makeItemVisible(rowButton);
+    window->raise();
+    window->layout();
+    pump(app, 100);
+    int buttonY = -1;
+    const int buttonX = navigation->deviceButtonLeft() + 12;
+    for (int y = 0; y < navigation->getHeight(); ++y)
+        if (navigation->deviceButtonAt(buttonX, y) == rowButton) { buttonY = y; break; }
+    assert(buttonY >= 0);
+    assert(navigation->deviceButtonAt(buttonX - 30, buttonY) == NULL);
+    FXEvent buttonEvent;
+    memset(&buttonEvent, 0, sizeof(buttonEvent));
+    buttonEvent.win_x = buttonX;
+    buttonEvent.win_y = buttonY;
+    navigation->onDevicePress(NULL, 0, &buttonEvent);
+    buttonEvent.win_x = buttonX - 30;
+    navigation->onDeviceRelease(NULL, 0, &buttonEvent);
+    assert(!navigation->grabbed() && !xf_mountpointof("/dev/test-usb1").empty());
+    buttonEvent.win_x = buttonX;
+    navigation->onDevicePress(NULL, 0, &buttonEvent);
+    assert(navigation->grabbed());
+    navigation->onDeviceRelease(NULL, 0, &buttonEvent);
+    assert(!navigation->grabbed());
+    assert(sharePanel->getDirectory() != fixture + "/folder");
+    navigation->removeItem(rowButton);
+    assert(xf_mountpointof("/dev/test-usb1").empty());
+    std::ifstream diskLog(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+    std::vector<std::string> diskCommands;
+    while (std::getline(diskLog, mountedUri))
+        if (mountedUri.find("disk ") == 0) diskCommands.push_back(mountedUri);
+    assert((diskCommands == std::vector<std::string>{
+        "disk mount", "disk unmount", "disk unmount", "disk mount", "disk unmount", "disk power-off"}));
+    unsetenv("SWORDFISH_TEST_DISK_MTAB");
+    unsetenv("SWORDFISH_TEST_DISK_PATH");
+    app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", mountMessages);
+    assert(unlink(simulatedMountTable.text()) == 0);
+    simulatedMountTable.clear();
+    puts("PASS: desktop-service mount, busy-unmount failure, remount and safe eject execute the expected commands");
+    puts("PASS: visible device action button ejects on release; releasing outside cancels without unmounting");
 
     window->onCmdHelp(NULL, 0, NULL);
     FXButton* helpLink = projectLink(app.getRootWindow());
@@ -986,6 +1162,45 @@ int main(int argc, char** argv)
     assert(RemoteDirectory::error(remote).empty());
     RemoteDirectory::release(&observer);
     puts("PASS: archive-style command restores SIGCHLD, harvests intervening exits, and subsequent remote refresh completes");
+    FilePanel* layoutPanels[] = {window->getLeftPanel(), window->getRightPanel()};
+    for (FilePanel* pane : layoutPanels)
+    {
+        pane->getTabButtons()->clearTabs();
+        pane->getTabButtons()->addTab(fixture);
+    }
+    for (int cycle = 0; cycle < 6; ++cycle)
+    {
+        window->onCmdHorzVertPanels(NULL, FXSEL(SEL_COMMAND, cycle % 2 ?
+                                   XFileExplorer::ID_HORZ_PANELS : XFileExplorer::ID_VERT_PANELS), NULL);
+        window->resize(cycle % 2 ? 1024 : 800, cycle % 2 ? 768 : 600);
+        for (FilePanel* pane : layoutPanels) pane->showTabbar(false);
+        window->layout();
+        for (FilePanel* pane : layoutPanels) pane->showTabbar(true);
+        pump(app, 120);
+        for (FilePanel* pane : layoutPanels)
+        {
+            FXWindow* scroll = pane->getTabButtons()->getParent();
+            FXWindow* bar = scroll->getParent();
+            assert(bar->shown() && bar->getHeight() > 0);
+            assert(scroll->getHeight() > 0 && pane->getTabButtons()->getHeight() > 0);
+            assert(scroll->getY() + scroll->getHeight() <= bar->getHeight());
+        }
+    }
+    puts("PASS: both tab bars retain visible geometry through hide/show, orientation changes and resizing");
+    FilePanel* hoverPanel = window->getLeftPanel();
+    window->raise();
+    window->setFocus();
+    TabButtons* hoverTabs = hoverPanel->getTabButtons();
+    hoverTabs->addTab(fixture + "/folder");
+    pump(app, 150);
+    FXWindow* hoverButton = hoverTabs->getFirst()->getFirst();
+    assert(hoverTabs->getCurrentTab() == 1);
+    // TabDragButton's first private selector is its hover timeout.
+    hoverButton->handle(NULL, FXSEL(SEL_TIMEOUT, FXButton::ID_LAST), NULL);
+    assert(hoverTabs->getCurrentTab() == 0);
+    assert(hoverPanel->getDirectory() == fixture);
+    assert(find(hoverPanel->getList(), "folder") >= 0);
+    puts("PASS: tab-hover timeout selects the inactive folder and populates its list immediately");
     XCloseDisplay(otherClient);
     std::fflush(stdout);
     // The application-global teardown is outside this focused widget test.

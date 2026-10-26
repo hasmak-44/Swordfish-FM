@@ -4,6 +4,36 @@ import os
 import stat
 import sys
 import time
+from urllib.parse import unquote, urlsplit
+
+if os.path.basename(sys.argv[0]) == "udisksctl":
+    assert not os.environ.get("LD_LIBRARY_PATH")
+    assert not os.environ.get("GIO_MODULE_DIR")
+    action = sys.argv[1]
+    assert sys.argv[2:] == ["-b", "/dev/test-usb1"]
+    with open(os.environ["SWORDFISH_TEST_MOUNT_LOG"], "a") as log:
+        log.write("disk " + action + "\n")
+    if action == "unmount" and os.environ.get("SWORDFISH_TEST_DISK_BUSY"):
+        print("org.freedesktop.UDisks2.Error.DeviceBusy: target is busy")
+        sys.exit(1)
+    if action in ("mount", "unmount"):
+        with open(os.environ["SWORDFISH_TEST_DISK_MTAB"], "w") as table:
+            table.write("/dev/root / ext4 rw 0 0\n")
+            if action == "mount":
+                table.write("/dev/test-usb1 " + os.environ["SWORDFISH_TEST_DISK_PATH"] + " ext4 rw 0 0\n")
+    else:
+        assert action == "power-off"
+    sys.exit(0)
+
+if os.path.basename(sys.argv[0]) == "lsblk":
+    assert not os.environ.get("LD_LIBRARY_PATH")
+    assert not os.environ.get("GIO_MODULE_DIR")
+    if "HOTPLUG" in sys.argv:
+        print("1" if sys.argv[-1] == "/dev/test-usb1" else "0")
+    elif os.environ.get("SWORDFISH_TEST_VOLUMES"):
+        with open(os.environ["SWORDFISH_TEST_VOLUMES"]) as volumes:
+            print(volumes.read(), end="")
+    sys.exit(0)
 
 if os.path.basename(sys.argv[0]) == "xdg-open":
     assert not os.environ.get("LD_LIBRARY_PATH")
@@ -17,6 +47,11 @@ if os.path.basename(sys.argv[0]) == "gio":
     assert not os.environ.get("LD_LIBRARY_PATH")
     assert not os.environ.get("GIO_MODULE_DIR")
     state = os.environ["SWORDFISH_TEST_MOUNT_LOG"]
+    gvfs = os.environ.get("SWORDFISH_TEST_GVFS_ROOT")
+    if gvfs and sys.argv[1] == "info":
+        # A mount registered under a different login URI isn't resolved by gio info.
+        print("gio: location is not mounted")
+        sys.exit(1)
     if sys.argv[1:3] == ["mount", "-u"]:
         with open(state, "a") as log:
             log.write("unmount " + sys.argv[-1] + "\n")
@@ -24,7 +59,7 @@ if os.path.basename(sys.argv[0]) == "gio":
             print("gio: share is busy")
             sys.exit(1)
         sys.exit(0)
-    if "//hang.test/" in sys.argv[-1]:
+    if urlsplit(sys.argv[-1]).hostname == "hang.test":
         # Mimic gio asking for credentials again and again on a closed stdin
         if sys.argv[1] == "mount":
             time.sleep(600)
@@ -33,7 +68,15 @@ if os.path.basename(sys.argv[0]) == "gio":
     if sys.argv[1] == "mount":
         with open(state, "a") as log:
             log.write(sys.argv[-1] + "\n")
+        if gvfs:
+            login = unquote(urlsplit(sys.argv[-1]).username or "guest")
+            domain, user = login.split(";", 1) if ";" in login else ("", login)
+            name = f"smb-share:user={user},share=Team%20files,server=reuse.test"
+            if domain:
+                name += ",domain=" + domain
+            os.mkdir(os.path.join(gvfs, name))
     elif sys.argv[1] == "info":
+        assert os.environ.get("LC_ALL") == "C", "Mount discovery must not parse localized output"
         if os.path.exists(state):
             print("local path: " + os.environ["SWORDFISH_TEST_MOUNT_PATH"])
         else:

@@ -235,6 +235,7 @@ public:
     }
     void showTabbar(FXbool visible)
     {
+        if (tabbar->shown() == visible) return;
         if (visible)
         {
             tabbar->show();
@@ -243,9 +244,11 @@ public:
         {
             tabbar->hide();
         }
+        tabbar->getParent()->recalc();
     }
     void finishPathEditing();
     FXbool navigatePane(const FXString& path);
+    FXString mountTarget();
     int resolveNetworkPath(const FXString& text, FXString& localpath, FXbool savepassword = false);
     void openServerShares(const FXString& host);
     FXbool requiresMountedShare();

@@ -15,6 +15,9 @@ public:
     FXString tip;
     FXbool loaded = false;
     FXTime modified = 0;
+    enum DeviceAction { NO_ACTION, UNMOUNT_DEVICE, EJECT_DEVICE };
+    DeviceAction deviceAction = NO_ACTION;
+    virtual void draw(const FXTreeList* list, FXDC& dc, FXint x, FXint y, FXint w, FXint h) const;
     SidebarItem(const FXString& text, FXIcon* icon, Kind type, const FXString& location = "",
                 const FXString& name = "") :
         FXTreeItem(text, icon, icon), kind(type), path(location), key(name) {}
@@ -30,6 +33,7 @@ protected:
     FXDragType uriType = 0;
     FXbool remoteBusy = false;
     FXString remoteError;
+    FXString pressedDevice;
 public:
     SidebarTree(FXComposite* parent, FXObject* target, FXSelector selector, FXuint opts);
     virtual FXint getContentHeight();
@@ -38,6 +42,11 @@ public:
     long onCollapseItem(FXObject*, FXSelector, void*);
     long onRemoteChanged(FXObject*, FXSelector, void*);
     long onQueryTip(FXObject*, FXSelector, void*);
+    long onDevicePress(FXObject*, FXSelector, void*);
+    long onDeviceRelease(FXObject*, FXSelector, void*);
+    FXint deviceButtonLeft() const;
+    SidebarItem* deviceButtonAt(FXint x, FXint y) const;
+    FXSelector deviceActionSelector = 0;
     enum { ID_REMOTE_CHANGED = FXTreeList::ID_LAST };
     ~SidebarTree();
     long onDNDEnter(FXObject*, FXSelector, void*);

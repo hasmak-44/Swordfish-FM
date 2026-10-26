@@ -31,12 +31,78 @@ FXDEFMAP(SidebarTree) SidebarTreeMap[] =
     FXMAPFUNC(SEL_COLLAPSED, 0, SidebarTree::onCollapseItem),
     FXMAPFUNC(SEL_EXPANDED, 0, SidebarTree::onExpandItem),
     FXMAPFUNC(SEL_QUERY_TIP, 0, SidebarTree::onQueryTip),
+    FXMAPFUNC(SEL_LEFTBUTTONPRESS, 0, SidebarTree::onDevicePress),
+    FXMAPFUNC(SEL_LEFTBUTTONRELEASE, 0, SidebarTree::onDeviceRelease),
     FXMAPFUNC(SEL_DND_ENTER, 0, SidebarTree::onDNDEnter),
     FXMAPFUNC(SEL_DND_MOTION, 0, SidebarTree::onDNDMotion),
     FXMAPFUNC(SEL_DND_DROP, 0, SidebarTree::onDNDDrop)
 };
 FXIMPLEMENT(SidebarTree, FXTreeList, SidebarTreeMap, ARRAYNUMBER(SidebarTreeMap))
 FXIMPLEMENT(SidebarFrame, FXPacker, NULL, 0)
+
+void SidebarItem::draw(const FXTreeList* list, FXDC& dc, FXint x, FXint y, FXint w, FXint h) const
+{
+    if (kind == DEVICE && path.left(5) == "/dev/")
+    {
+        // Render as unavailable without disabling clicks needed to remount it.
+        SidebarItem appearance(label, closedIcon, kind);
+        appearance.setOpenIcon(openIcon);
+        appearance.state = (state & ~(OPENICONOWNED | CLOSEDICONOWNED)) | DISABLED;
+        appearance.FXTreeItem::draw(list, dc, x, y, w, h);
+    }
+    else FXTreeItem::draw(list, dc, x, y, w, h);
+    if (deviceAction != NO_ACTION)
+    {
+        const SidebarTree* tree = static_cast<const SidebarTree*>(list);
+        FXint left = tree->deviceButtonLeft();
+        dc.setForeground(isSelected() ? list->getSelBackColor() : list->getBackColor());
+        dc.fillRectangle(left, y, 24, h);
+        dc.setForeground(isSelected() ? list->getSelTextColor() : list->getTextColor());
+        dc.drawRectangle(left + 2, y + 2, 19, h - 5);
+        FXPoint triangle[] = {FXPoint(left + 7, y + h / 2 + 1),
+                              FXPoint(left + 12, y + h / 2 - 5),
+                              FXPoint(left + 17, y + h / 2 + 1)};
+        dc.fillPolygon(triangle, 3);
+        dc.fillRectangle(left + 7, y + h / 2 + 4, 11, 2);
+    }
+}
+
+FXint SidebarTree::deviceButtonLeft() const
+{
+    return FXMAX(0, viewport_w - 26);
+}
+
+SidebarItem* SidebarTree::deviceButtonAt(FXint x, FXint y) const
+{
+    SidebarItem* item = static_cast<SidebarItem*>(getItemAt(x, y));
+    return item && item->deviceAction != SidebarItem::NO_ACTION &&
+           x >= deviceButtonLeft() && x < deviceButtonLeft() + 24 ? item : NULL;
+}
+
+long SidebarTree::onDevicePress(FXObject* sender, FXSelector sel, void* ptr)
+{
+    FXEvent* event = static_cast<FXEvent*>(ptr);
+    SidebarItem* item = deviceButtonAt(event->win_x, event->win_y);
+    if (!item) return FXTreeList::onLeftBtnPress(sender, sel, ptr);
+    pressedDevice = item->path;
+    setFocus();
+    grab();
+    return 1;
+}
+
+long SidebarTree::onDeviceRelease(FXObject* sender, FXSelector sel, void* ptr)
+{
+    if (pressedDevice.empty()) return FXTreeList::onLeftBtnRelease(sender, sel, ptr);
+    FXString path = pressedDevice;
+    pressedDevice.clear();
+    if (grabbed()) ungrab();
+    getApp()->flush();
+    FXEvent* event = static_cast<FXEvent*>(ptr);
+    SidebarItem* item = deviceButtonAt(event->win_x, event->win_y);
+    if (item && item->path == path && target && deviceActionSelector)
+        target->handle(this, FXSEL(SEL_COMMAND, deviceActionSelector), item);
+    return 1;
+}
 
 SidebarTree::SidebarTree(FXComposite* parent, FXObject* target, FXSelector selector, FXuint opts) :
     FXTreeList(parent, target, selector, opts | TREELIST_BROWSESELECT | TREELIST_SHOWS_BOXES |
@@ -72,6 +138,13 @@ long SidebarTree::onQueryTip(FXObject* sender, FXSelector sel, void* ptr)
         FXuint buttons;
         getCursorPosition(x, y, buttons);
         SidebarItem* item = static_cast<SidebarItem*>(getItemAt(x, y));
+        if (item && deviceButtonAt(x, y))
+        {
+            FXString tip = item->deviceAction == SidebarItem::EJECT_DEVICE ?
+                           _("Eject (Safely Remove)") : _("Unmount");
+            sender->handle(this, FXSEL(SEL_COMMAND, ID_SETSTRINGVALUE), (void*)&tip);
+            return 1;
+        }
         if (item && !item->tip.empty())
         {
             FXString tip = item->tip;
@@ -86,6 +159,7 @@ long SidebarTree::onExpandItem(FXObject*, FXSelector, void* ptr)
 {
     const FXTime started = FXThread::time();
     SidebarItem* item = static_cast<SidebarItem*>(ptr);
+    if (item && item->kind == SidebarItem::DEVICE && item->path.left(5) == "/dev/") return 1;
     if (grabbed())
     {
         // A slow filesystem must not keep the desktop's pointer grabbed.
@@ -708,7 +782,7 @@ void MountsList::scan()
                 // Desktop mounts are named after their volume, like other file managers
                 if (strncmp(mnt->mnt_fsname, "/dev/", 5) == 0)
                 {
-                    knownDevices.insert(mnt->mnt_fsname, "");
+                    knownDevices.insert(mnt->mnt_fsname, FXPath::name(pathname).text());
                 }
                 addMount(FXPath::name(pathname), pathname,
                          strncmp(mnt->mnt_type, "iso", 3) == 0 ? minicdromicon : miniremovabledeviceicon);
@@ -726,10 +800,9 @@ void MountsList::scan()
         {
             FXString device = volumes[i].section('\t', 0);
             FXString label = volumes[i].section('\t', 1);
-            if (volumes[i].section('\t', 2) != "1" && !knownDevices.find(device.text()))
-            {
-                continue;
-            }
+            const char* previousLabel = knownDevices.find(device.text());
+            if (volumes[i].section('\t', 3).empty() && !previousLabel) continue;
+            if (label.empty() && previousLabel) label = previousLabel;
             addMount(label.empty() ? FXPath::name(device) : label, device, miniremovabledeviceicon);
         }
     }

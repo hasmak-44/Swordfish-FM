@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <sys/time.h>
 #include <mntent.h>
+#include <dirent.h>
 
 #include <fx.h>
 #include <fxkeys.h>
@@ -506,9 +507,57 @@ static FXString networkRun(const FXString& input, const FXString& command, int s
 
 
 // Local FUSE path of a mounted GVFS location, or an empty string when it isn't mounted
-static FXString networkLocalPath(const FXString& gio, const FXString& uri)
+static FXString networkLocalPath(const FXString& gio, const NetworkAddress& addr)
 {
-    FXString out = networkRun("", xf_quote(gio) + " info -a standard::name " + xf_quote(uri) + " </dev/null", NETWORK_INFO_TIMEOUT);
+    if (addr.scheme == "smb")
+    {
+        const char* runtime = getenv("XDG_RUNTIME_DIR");
+        FXString base = runtime && *runtime ? FXString(runtime) : "/run/user/" + FXStringVal(getuid());
+        base += "/gvfs";
+        DIR* directory = opendir(base.text());
+        if (directory)
+        {
+            FXString mounted;
+            struct dirent* entry;
+            while ((entry = readdir(directory)) != NULL)
+            {
+                FXString name = entry->d_name;
+                if (name.left(10) != "smb-share:") continue;
+                FXString path = base + "/" + name;
+                // Decode GVFS attributes without depending on their order or the login URI.
+                NetworkAddress existing;
+                FXString port;
+                FXString fields = name.after(':');
+                while (!fields.empty())
+                {
+                    FXString field = fields.before(',');
+                    FXString key = field.before('=');
+                    FXString value = networkDecode(field.after('='));
+                    if (key == "server") existing.host = value;
+                    else if (key == "share") existing.share = value;
+                    else if (key == "user") existing.user = value;
+                    else if (key == "domain") existing.domain = value;
+                    else if (key == "port") port = value;
+                    if (fields.find(',') < 0) break;
+                    fields = fields.after(',');
+                }
+                if (!port.empty() && port != "445") existing.host += ":" + port;
+                if (comparecase(existing.host, addr.host) != 0 || comparecase(existing.share, addr.share) != 0)
+                    continue;
+                if (!addr.user.empty() && comparecase(existing.user, addr.user) != 0) continue;
+                if (!addr.domain.empty() && comparecase(existing.domain, addr.domain) != 0) continue;
+                if (xf_isdirectory(path))
+                {
+                    mounted = path;
+                    break;
+                }
+            }
+            closedir(directory);
+            if (!mounted.empty()) return mounted;
+        }
+    }
+    FXString out = networkRun("", "env LC_ALL=C " + xf_quote(gio) + " info -a standard::name " +
+                             xf_quote(networkMountUri(addr, true)) + " </dev/null", NETWORK_INFO_TIMEOUT);
     int pos = out.find("local path: ");
     if (pos < 0)
     {
@@ -616,17 +665,16 @@ Please install gio and gvfs to be able to connect to a server..."));
     }
     getApp()->beginWaitCursor();
 
-    // Already mounted (with or without the typed user name)?
-    FXString mounted = networkLocalPath(gio, networkMountUri(addr, true));
-    if (mounted.empty() && !addr.user.empty())
-    {
-        mounted = networkLocalPath(gio, networkMountUri(addr, false));
-    }
+    // An unspecified login may reuse a session mount; an explicit login must match it.
+    FXString mounted = networkLocalPath(gio, addr);
     if (!mounted.empty())
     {
+        appLog(APP_LOG_FILE_OPERATIONS, "network-mount-reused", "path=\"" + mounted + "\"");
         getApp()->endWaitCursor();
         MessageBox::information(this, BOX_OK, _("Already mounted"),
-                                _("Share is already mounted at %s"), mounted.text());
+                                _("Share is already mounted at %s\n\n"
+                                  "Reusing the existing connection; it may use saved login credentials."),
+                                mounted.text());
         localpath = mounted;
         if (!addr.subpath.empty()) localpath += PATHSEPSTRING + addr.subpath;
         return 1;
@@ -635,19 +683,19 @@ Please install gio and gvfs to be able to connect to a server..."));
     FXString error;
     if (mounted.empty() && addr.user.empty() && addr.password.empty())
     {
-        // Guest access first
+        // GVFS may also reuse credentials saved by the desktop session.
         FXString out = networkRun("", xf_quote(gio) + " mount -a " + xf_quote(networkMountUri(addr, false)) + " </dev/null",
                                   NETWORK_GUEST_TIMEOUT);
-        mounted = networkLocalPath(gio, networkMountUri(addr, false));
+        mounted = networkLocalPath(gio, addr);
         if (mounted.empty() && addr.scheme == "smb")
         {
-            // Like smb4k: Windows maps an unknown "guest" login with no password to its Guest account
+            // Some SMB servers accept an explicit guest login instead of anonymous access.
             NetworkAddress guest = addr;
             guest.domain = "WORKGROUP";
             guest.user = "guest";
             out = networkRun("printf '\\n' | ", xf_quote(gio) + " mount " + xf_quote(networkMountUri(guest, true)),
                              NETWORK_GUEST_TIMEOUT);
-            mounted = networkLocalPath(gio, networkMountUri(guest, true));
+            mounted = networkLocalPath(gio, addr);
         }
         if (mounted.empty())
         {
@@ -682,6 +730,11 @@ Please install gio and gvfs to be able to connect to a server..."));
 
     for (int attempt = 0; mounted.empty(); attempt++)
     {
+        NetworkAddress login = addr;
+        login.user = user;
+        login.domain = domain;
+        mounted = networkLocalPath(gio, login);
+        if (!mounted.empty()) break;
         if (password.empty() || attempt > 0)
         {
             getApp()->endWaitCursor();
@@ -691,18 +744,21 @@ Please install gio and gvfs to be able to connect to a server..."));
             }
             getApp()->beginWaitCursor();
         }
-        NetworkAddress login = addr;
+        // Another application or a session credential agent may have completed a mount
+        // while the login dialog was open. Do not start a second login in that case.
+        login.user = user;
         login.domain = domain;
+        mounted = networkLocalPath(gio, login);
+        if (!mounted.empty()) break;
         if (addr.scheme == "smb" && domain.empty())
         {
-            // An empty domain makes GVFS ask for it on stdin before the password; servers ignore this default
+            // Avoid an extra stdin prompt before the password.
             login.domain = "WORKGROUP";
         }
-        login.user = user;
         FXString out = networkRun("printf '%s\\n' " + xf_quote(password) + " | ",
                                   xf_quote(gio) + " mount " + xf_quote(networkMountUri(login, true)),
                                   NETWORK_MOUNT_TIMEOUT);
-        mounted = networkLocalPath(gio, networkMountUri(login, true));
+        mounted = networkLocalPath(gio, login);
         if (mounted.empty())
         {
             error = networkLastLine(out);
@@ -7330,8 +7386,8 @@ long FilePanel::onCmdGoScriptDir(FXObject* sender, FXSelector sel, void*)
 #if defined(linux)
 // Mount/Unmount file systems
 #if defined(linux)
-// Desktop drive (USB disk...) mounted at or containing dir; cached because update handlers run often
-static FXString removableMountFor(const FXString& dir)
+// Data mount containing dir; cached because update handlers run often.
+static FXString dataMountFor(const FXString& dir)
 {
     static FXString lastdir, lastresult;
     static FXTime lasttime = 0;
@@ -7339,7 +7395,7 @@ static FXString removableMountFor(const FXString& dir)
     if (dir != lastdir || now - lasttime > 1000000000)
     {
         lastdir = dir;
-        lastresult = xf_removablemount(dir);
+        lastresult = xf_mountroot(dir);
         lasttime = now;
     }
     return lastresult;
@@ -7347,31 +7403,41 @@ static FXString removableMountFor(const FXString& dir)
 #endif
 
 
+FXString FilePanel::mountTarget()
+{
+    FXString dir = current->list->getDirectory();
+    if (dirpanel)
+    {
+        FXString device = dirpanel->focusedDevice();
+        if (!device.empty()) return device;
+    }
+    for (int i = 0; i < current->list->getNumItems(); ++i)
+    {
+        if (current->list->isItemSelected(i) && current->list->getItemFilename(i) != "..")
+            dir = current->list->getItemPathname(i);
+    }
+    FXString gvfs = xf_gvfsmount(dir);
+    if (!gvfs.empty()) return gvfs;
+    if (fsdevices->find(dir.text()) && !mtdevices->find(dir.text())) return dir;
+    FXString mount = dataMountFor(dir);
+    return mount.empty() ? dir : mount;
+}
+
+
 long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
 {
-    if (requiresMountedShare()) return 1;
     int ret;
     FXString cmd, msg, msgwait;
     FXuint op;
     File* f;
-    FXString dir;
+    FXString dir = mountTarget();
+    if (RemoteDirectory::isServer(dir) && requiresMountedShare()) return 1;
 
     current->list->setFocus();
-
-    // Use the selected directory in FilePanel if any or use the selected directory in DirPanel
-    if (current->list->getNumSelectedItems() == 0)
+    if (FXSELID(sel) == ID_UMOUNT && dir == ROOTDIR)
     {
-        dir = current->list->getDirectory();
-    }
-    else
-    {
-        for (int u = 0; u < current->list->getNumItems(); u++)
-        {
-            if (current->list->isItemSelected(u))
-            {
-                dir = current->list->getItemPathname(u);
-            }
-        }
+        MessageBox::error(this, BOX_OK, _("Error"), _("The root file system cannot be unmounted."));
+        return 1;
     }
 
     // If symbolic link, read the linked directory
@@ -7381,6 +7447,16 @@ long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
     }
 
 #if defined(linux)
+    if (dir.left(5) == "/dev/" && FXSELID(sel) == ID_MOUNT)
+    {
+        return dirpanel->openDevice(dir);
+    }
+    if (dirpanel && FXSELID(sel) == ID_UMOUNT && !xf_removablemount(dir).empty())
+    {
+        dirpanel->unmountRemovable(xf_removablemount(dir), false);
+        onCmdRefresh(0, 0, 0);
+        return 1;
+    }
     // No fstab entry: offer the plugged-in drives, or unmount the desktop drive we are in
     if (dirpanel && !fsdevices->find(dir.text()))
     {
@@ -7409,13 +7485,6 @@ long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
                 }
             }
             dirpanel->openDevice(devices[choice]);
-            return 1;
-        }
-        FXString removable = removableMountFor(dir);
-        if (!removable.empty())
-        {
-            dirpanel->unmountRemovable(removable, false);
-            onCmdRefresh(0, 0, 0);
             return 1;
         }
     }
@@ -7709,29 +7778,9 @@ long FilePanel::onCmdArchiveClose(FXObject*, FXSelector, void*)
 // Update the Mount button
 long FilePanel::onUpdMount(FXObject* sender, FXSelector sel, void*)
 {
-    FXString dir;
+    FXString dir = mountTarget();
 
-    int num = current->list->getNumSelectedItems();
-
-    // Use the selected directory in FilePanel if any
-    // or use the selected directory in DirPanel
-    if (num == 0)
-    {
-        dir = current->list->getDirectory();
-    }
-    else
-    {
-        for (int u = 0; u < current->list->getNumItems(); u++)
-        {
-            if (current->list->isItemSelected(u))
-            {
-                dir = current->list->getItemPathname(u);
-            }
-        }
-    }
-
-    FXbool enable = fsdevices->find(dir.text()) && !mtdevices->find(dir.text()) && current->list->getNumItems() &&
-                    !current->list->isItemSelected(0);
+    FXbool enable = (fsdevices->find(dir.text()) && !mtdevices->find(dir.text())) || dir.left(5) == "/dev/";
 #if defined(linux)
     if (!enable && dirpanel && !fsdevices->find(dir.text()))
     {
@@ -7756,33 +7805,13 @@ long FilePanel::onUpdMount(FXObject* sender, FXSelector sel, void*)
 // Update the Unmount button
 long FilePanel::onUpdUnmount(FXObject* sender, FXSelector sel, void*)
 {
-    FXString dir;
+    FXString dir = mountTarget();
 
-    int num = current->list->getNumSelectedItems();
-
-    // Use the selected directory in FilePanel if any
-    // or use the selected directory in DirPanel
-    if (num == 0)
-    {
-        dir = current->list->getDirectory();
-    }
-    else
-    {
-        for (int u = 0; u < current->list->getNumItems(); u++)
-        {
-            if (current->list->isItemSelected(u))
-            {
-                dir = current->list->getItemPathname(u);
-            }
-        }
-    }
-
-    FXbool enable = (fsdevices->find(dir.text()) || mtdevices->find(dir.text())) && current->list->getNumItems() &&
-                    !current->list->isItemSelected(0);
+    FXbool enable = dir != ROOTDIR && (mtdevices->find(dir.text()) || !xf_gvfsmount(dir).empty());
 #if defined(linux)
     if (!enable && dirpanel && !fsdevices->find(dir.text()))
     {
-        enable = !removableMountFor(dir).empty();
+        enable = !dataMountFor(dir).empty();
     }
 #endif
     if (enable)

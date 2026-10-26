@@ -28,10 +28,25 @@ associations.
 
 ## Local devices and automount
 
-Mounted removable disks under `/media/` and `/run/media/` appear in Devices.
-Mount-table changes are polled, including disks unmounted by another application.
-This list is still a mounted-filesystem list, not a complete inventory of
-connected but unmounted volumes.
+Mounted disks under `/media/` and `/run/media/` appear in Devices.
+Connected, unmounted filesystems reported by the host `lsblk` also appear,
+including internal partitions. These entries are grey but remain clickable
+to mount and open them. Mount-table changes are polled, including disks
+unmounted by another application. Unknown filesystems, locked encrypted
+volumes and swap are not offered as new mountable volumes.
+
+An action button at the right of a USB/hotplug device row safely removes it
+(unmount, then power off). Mounted internal partitions and network shares
+have an Unmount button instead. Root and unmounted internal partitions have
+no action button. To unmount a USB drive without powering it off, use Unmount
+in the toolbar or the device's right-click menu.
+
+Mounting and unmounting desktop-managed disks requires the host UDisks2
+service and `udisksctl`; system policy may ask for an administrator password.
+Unmount leaves the connected drive available for remounting. Eject (Safely
+Remove) additionally powers off supported hotplug drives; it is not enabled
+for internal drives or network shares. The root filesystem cannot be unmounted
+from Swordfish. A busy-drive error must be resolved before safe removal.
 
 The optional automounter requires the host UDisks2 service and `udisksctl`.
 Portable bundles include `xfe-automount` and its runtime libraries. The startup

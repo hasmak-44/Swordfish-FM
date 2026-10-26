@@ -709,6 +709,7 @@ FXString xf_terminalprogram(FXApp*);
 FXString xf_hostcommand(const FXString&);
 FXbool xf_hostcommandoutput(const FXString&, FXString&);
 FXString xf_mountsource(const FXString&);
+FXString xf_mountroot(const FXString&);
 FXString xf_mountpointof(const FXString&);
 FXString xf_removablemount(const FXString&);
 FXbool xf_unmountedvolumes(vector_FXString&);

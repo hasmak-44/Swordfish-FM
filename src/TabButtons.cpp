@@ -12,7 +12,7 @@ extern FXString homedir;
 
 
 // Delay before a tab hovered during a file drag becomes the current tab
-#define TAB_HOVER_DELAY 1500
+#define TAB_HOVER_DELAY 1000
 
 
 // Tab label button that can be dragged onto the Bookmarks list or another tab,
