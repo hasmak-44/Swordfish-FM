@@ -854,6 +854,9 @@ download server was stopped.
 - Test 7 result (11:17 UTC, user hardware): USB HDD Eject succeeds; Unmount
   also clean. USB busy problem resolved. Still untested: internal-partition
   unmount, and whether the desktop stays responsive (freeze hypothesis).
+- Test 7 internal partition (11:19 UTC): Unmount asks for the admin password
+  (polkit), unmounts, row stays listed, click remounts. No freeze reported.
+  Fixes the Test 3 faults (no password prompt, row disappeared, freeze).
 
 - Source commit: `f69940aa71fe0e451d9f2d5aee22576510a55892`, pushed to
   `portable-layout`. Unrelated staged files and generated build files excluded.
