@@ -26,6 +26,7 @@ if os.path.basename(sys.argv[0]) == "udisksctl":
     sys.exit(0)
 
 if os.path.basename(sys.argv[0]) == "lsblk":
+    assert not ("-l" in sys.argv and "-P" in sys.argv), "lsblk --list and --pairs are mutually exclusive"
     assert not os.environ.get("LD_LIBRARY_PATH")
     assert not os.environ.get("GIO_MODULE_DIR")
     if "HOTPLUG" in sys.argv:

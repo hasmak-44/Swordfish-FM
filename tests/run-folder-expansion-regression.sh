@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+# Exercise the real host syntax before replacing lsblk with a fixture.
+lsblk -P -n -o PATH,LABEL,FSTYPE,MOUNTPOINT,HOTPLUG,TYPE >/dev/null
 icons=${1:-/usr/share/swordfish/icons/default-theme}
 if [[ ! -d "$icons" ]]; then
     echo "Pass an installed or portable default-theme icon directory as the first argument." >&2

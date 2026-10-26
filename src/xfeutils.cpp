@@ -2245,6 +2245,15 @@ FXString xf_mountsource(const FXString& dir)
     return source;
 }
 
+// Never disconnect root, Home, or a filesystem containing Home.
+FXbool xf_protectedmount(const FXString& path)
+{
+    if (path.empty()) return true;
+    FXString root = FXPath::simplify(path);
+    FXString home = FXPath::simplify(FXSystem::getHomeDirectory());
+    return root == ROOTDIR || root == home || home.left(root.length() + 1) == root + "/";
+}
+
 // Longest non-system, non-root mount containing a path.
 FXString xf_mountroot(const FXString& path)
 {
@@ -2383,7 +2392,7 @@ FXbool xf_unmountedvolumes(vector_FXString& volumes)
     volumes.clear();
 #if defined(linux)
     FXString output;
-    if (!xf_hostcommandoutput("timeout -k 1 5 lsblk -l -P -n -o PATH,LABEL,FSTYPE,MOUNTPOINT,HOTPLUG,TYPE </dev/null",
+    if (!xf_hostcommandoutput("timeout -k 1 5 lsblk -P -n -o PATH,LABEL,FSTYPE,MOUNTPOINT,HOTPLUG,TYPE </dev/null",
                               output))
     {
         appLog(APP_LOG_ERRORS, "device-inventory-failed", output);

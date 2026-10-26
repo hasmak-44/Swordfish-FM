@@ -41,6 +41,11 @@ have an Unmount button instead. Root and unmounted internal partitions have
 no action button. To unmount a USB drive without powering it off, use Unmount
 in the toolbar or the device's right-click menu.
 
+Toolbar Mount/Unmount requires an explicitly selected device or exact mount
+point. With no selection (or only `..` selected), both buttons are disabled;
+the current folder is not inferred as an unmount target. Root, Home and a
+filesystem containing Home are protected from unmounting.
+
 Mounting and unmounting desktop-managed disks requires the host UDisks2
 service and `udisksctl`; system policy may ask for an administrator password.
 Unmount leaves the connected drive available for remounting. Eject (Safely

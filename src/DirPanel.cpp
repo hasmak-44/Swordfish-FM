@@ -701,7 +701,7 @@ void DirPanel::syncSidebar()
                            group == 1 ? minibookmarkicon : mountslist->getItemIcon(i);
             SidebarItem* item = new SidebarItem(name, icon, kind, path, name);
 #if defined(linux)
-            if (kind == SidebarItem::DEVICE && path != ROOTDIR)
+            if (kind == SidebarItem::DEVICE && !xf_protectedmount(path))
             {
                 FXString device = path.left(5) == "/dev/" ? path : xf_mountsource(path);
                 if (xf_hotplugdevice(device))
@@ -884,7 +884,12 @@ long DirPanel::onSidebarDeviceAction(FXObject*, FXSelector, void* ptr)
 {
 #if defined(linux)
     SidebarItem* item = static_cast<SidebarItem*>(ptr);
-    if (!item || item->kind != SidebarItem::DEVICE || item->path == ROOTDIR) return 1;
+    if (!item || item->kind != SidebarItem::DEVICE) return 1;
+    if (xf_protectedmount(item->path))
+    {
+        MessageBox::warning(this, BOX_OK, _("Unmount"), _("Root and Home cannot be unmounted."));
+        return 1;
+    }
     const FXbool popupWasOpen = sidebarPopupOpen;
     sidebarPopupOpen = true;
     FXString path = item->path;
@@ -4769,6 +4774,12 @@ long DirPanel::onCmdMount(FXObject*, FXSelector sel, void*)
         dir = sidebarContext->path;
     }
 
+    if (FXSELID(sel) == ID_UMOUNT && xf_protectedmount(dir))
+    {
+        MessageBox::warning(this, BOX_OK, _("Unmount"), _("Root and Home cannot be unmounted."));
+        return 1;
+    }
+
     // Plugged-in drive that is not mounted, or a drive mounted by the desktop
     if (dir.left(5) == "/dev/")
     {
@@ -5133,7 +5144,7 @@ long DirPanel::onUpdUnmount(FXObject* sender, FXSelector sel, void*)
     // GVFS directory
     FXString gvfsdir = "/run/user/" + FXStringVal(FXSystem::user()) + "/gvfs";
 
-    if (dir != ROOTDIR && ((FXPath::directory(dir) == gvfsdir) || mtdevices->find(dir.text())))
+    if (!xf_protectedmount(dir) && ((FXPath::directory(dir) == gvfsdir) || mtdevices->find(dir.text())))
     {
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
     }
@@ -5225,9 +5236,10 @@ FXbool DirPanel::openDevice(const FXString& device)
 // Unmount a desktop drive (and optionally power it off so it can be unplugged)
 FXbool DirPanel::unmountRemovable(const FXString& location, FXbool eject)
 {
-    if (location == ROOTDIR)
+    FXString mountedAt = location.left(5) == "/dev/" ? xf_mountpointof(location) : location;
+    if (xf_protectedmount(location) || (!mountedAt.empty() && xf_protectedmount(mountedAt)))
     {
-        MessageBox::error(this, BOX_OK, _("Error"), _("The root file system cannot be unmounted."));
+        MessageBox::error(this, BOX_OK, _("Error"), _("Root and Home cannot be unmounted."));
         return false;
     }
     FXString device = location.left(5) == "/dev/" ? location : xf_mountsource(location);
@@ -5321,7 +5333,7 @@ long DirPanel::onUpdEject(FXObject* sender, FXSelector, void*)
     FXString path = sidebarContext && sidebarContext->kind == SidebarItem::DEVICE ?
                     sidebarContext->path : focusedDevice();
     if (path.empty()) path = dirlist->getItemPathname(static_cast<TreeItem*>(dirlist->getCurrentItem()));
-    if (path != ROOTDIR)
+    if (!xf_protectedmount(path))
     {
         if (path.left(5) == "/dev/")
         {

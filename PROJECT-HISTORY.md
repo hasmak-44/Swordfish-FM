@@ -742,6 +742,53 @@ after validation. Do not mark the entire bug report resolved.
 
 **RC6 Test 3 delivery (26 October):**
 
+**WITHDRAWN after user testing at 09:04 UTC on 26 October. Do not reuse or
+redistribute this build.** The user agreed to discard it; the temporary
+download server was stopped.
+
+- Unmount remains active with no device selected and attempts to unmount
+  Home. This is an unsafe target-selection regression; fix it before another
+  test package. Do not infer a data mount from the current Home directory.
+- All unmounted devices still disappear, including a local partition.
+  Mocked inventory regressions did not establish behaviour on the user's
+  host; investigate actual host inventory output before claiming this fixed.
+- The user reported the system frozen after local-partition unmount. Cause
+  is unknown; do not attribute it to authorization or a specific operation
+  without evidence. Further testing of this build was stopped.
+- Network mounting did not ask for a password, consistent with shared
+  desktop GVFS session credentials, not proof of Guest identity.
+- Drag-hover tab switching was reported acceptable.
+
+**Post-withdrawal corrections (26 October, Test 4 source bundle):**
+
+- Reproduced the inventory failure using the real host command:
+  `lsblk -l -P ...` exits 1 with "mutually exclusive arguments".
+  Removed `-l`; `--pairs` alone provides the needed records. The mocked
+  command now rejects this invalid combination, and the regression suite
+  calls the production `xf_unmountedvolumes` against real host `lsblk`
+  read-only, in addition to the fixture-based lifecycle tests.
+- Removed the toolbar's inferred current-folder/containing-mount target.
+  Mount/Unmount now require an explicit focused Devices entry or one selected
+  exact mount point; no selection, multiple selections and `..` do not
+  select the current folder. No-device Mount chooser fallback removed.
+  Arbitrary files, descendants and symlinks are not promoted to mount roots.
+- Added shared protection for Root, Home and filesystems containing Home
+  in toolbar eligibility/dispatch, sidebar actions, context unmount and
+  desktop-drive operations, plus a final low-level `File::mount` refusal.
+  The no-selection handler displays a warning and launches no command.
+- Scratch build and full regression suite pass, including real inventory,
+  no-selection dispatch, and low-level tests proving Root/Home refusal does
+  not execute a supplied marker-writing command. Existing device/network/tab
+  and visible-button regressions also pass.
+- User authorized a limited Test 4 build at 09:18 UTC. Disappearing devices have a reproduced
+  command-level cause and correction, but need host validation. Freeze
+  remains unexplained; do not assert that correcting these faults proves
+  the freeze resolved.
+- Test 4 scope: first check that no selection disables Mount/Unmount while
+  viewing Home, then check grey unmounted-device visibility, then use only a
+  spare USB drive with no important data for mount/unmount tests. Do not test
+  internal-partition unmounting while the freeze remains unexplained.
+
 - Source commit: `f69940aa71fe0e451d9f2d5aee22576510a55892`, pushed to
   `portable-layout`. Unrelated staged files and generated build files excluded.
 - Built from a clean archive of that commit using
@@ -1037,6 +1084,10 @@ prereleases and must not be assumed to select RC4.
 ### 9.0 Current position (26 October 2026)
 
 - **Latest:** Test 2 feedback reopened several bugs; see section 3.16.
+  **Test 3 is withdrawn:** unsafe Unmount targeting, disappearing unmounted
+  devices and a reported system freeze. User will discard it. Download server
+  stopped. Prioritize explicit safe Unmount targeting and investigate host
+  volume inventory before building again; freeze cause remains unknown.
   Network, device controls, visible device-row actions and tab corrections
   pass the regression suite and form the RC6 Test 3 bundle. The user authorized
   its commit/push and clean portable build; real-network/hardware validation

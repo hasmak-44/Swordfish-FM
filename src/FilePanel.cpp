@@ -7384,43 +7384,21 @@ long FilePanel::onCmdGoScriptDir(FXObject* sender, FXSelector sel, void*)
 
 
 #if defined(linux)
-// Mount/Unmount file systems
-#if defined(linux)
-// Data mount containing dir; cached because update handlers run often.
-static FXString dataMountFor(const FXString& dir)
-{
-    static FXString lastdir, lastresult;
-    static FXTime lasttime = 0;
-    FXTime now = FXThread::time();
-    if (dir != lastdir || now - lasttime > 1000000000)
-    {
-        lastdir = dir;
-        lastresult = xf_mountroot(dir);
-        lasttime = now;
-    }
-    return lastresult;
-}
-#endif
-
-
+// Only an explicit device or exact mount selection is a toolbar target.
 FXString FilePanel::mountTarget()
 {
-    FXString dir = current->list->getDirectory();
     if (dirpanel)
     {
         FXString device = dirpanel->focusedDevice();
         if (!device.empty()) return device;
     }
+    if (current->list->getNumSelectedItems() != 1) return FXString::null;
     for (int i = 0; i < current->list->getNumItems(); ++i)
     {
         if (current->list->isItemSelected(i) && current->list->getItemFilename(i) != "..")
-            dir = current->list->getItemPathname(i);
+            return current->list->getItemPathname(i);
     }
-    FXString gvfs = xf_gvfsmount(dir);
-    if (!gvfs.empty()) return gvfs;
-    if (fsdevices->find(dir.text()) && !mtdevices->find(dir.text())) return dir;
-    FXString mount = dataMountFor(dir);
-    return mount.empty() ? dir : mount;
+    return FXString::null;
 }
 
 
@@ -7431,6 +7409,12 @@ long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
     FXuint op;
     File* f;
     FXString dir = mountTarget();
+    if (dir.empty() || xf_protectedmount(dir))
+    {
+        MessageBox::warning(this, BOX_OK, _("Unmount / Mount"),
+                            _("Select a device or mount point first. Root and Home cannot be unmounted."));
+        return 1;
+    }
     if (RemoteDirectory::isServer(dir) && requiresMountedShare()) return 1;
 
     current->list->setFocus();
@@ -7441,10 +7425,7 @@ long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
     }
 
     // If symbolic link, read the linked directory
-    if (xf_islink(dir))
-    {
-        dir = xf_readlink(dir);
-    }
+    // Do not follow a selected symlink into an unrelated mount.
 
 #if defined(linux)
     if (dir.left(5) == "/dev/" && FXSELID(sel) == ID_MOUNT)
@@ -7457,36 +7438,11 @@ long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
         onCmdRefresh(0, 0, 0);
         return 1;
     }
-    // No fstab entry: offer the plugged-in drives, or unmount the desktop drive we are in
-    if (dirpanel && !fsdevices->find(dir.text()))
+    if (!fsdevices->find(dir.text()) && !mtdevices->find(dir.text()) &&
+        xf_gvfsmount(dir) != dir)
     {
-        if (FXSELID(sel) == ID_MOUNT)
-        {
-            std::vector<FXString> labels, devices;
-            dirpanel->unmountedDevices(labels, devices);
-            if (devices.empty())
-            {
-                return 1;
-            }
-            FXint choice = 0;
-            if (devices.size() > 1)
-            {
-                FXString choices;
-                for (size_t i = 0; i < labels.size(); i++)
-                {
-                    choices += labels[i] + "  (" + devices[i] + ")\n";
-                }
-                choices.trimEnd();
-                choice = FXChoiceBox::ask(this, DECOR_TITLE | DECOR_BORDER | DECOR_RESIZE, _("Mount"),
-                                          _("Choose the drive to mount:"), NULL, choices);
-                if (choice < 0 || choice >= (FXint)devices.size())
-                {
-                    return 1;
-                }
-            }
-            dirpanel->openDevice(devices[choice]);
-            return 1;
-        }
+        MessageBox::warning(this, BOX_OK, _("Mount / Unmount"), _("Select an exact mount point or device."));
+        return 1;
     }
 #endif
 
@@ -7780,15 +7736,8 @@ long FilePanel::onUpdMount(FXObject* sender, FXSelector sel, void*)
 {
     FXString dir = mountTarget();
 
-    FXbool enable = (fsdevices->find(dir.text()) && !mtdevices->find(dir.text())) || dir.left(5) == "/dev/";
-#if defined(linux)
-    if (!enable && dirpanel && !fsdevices->find(dir.text()))
-    {
-        std::vector<FXString> labels, devices;
-        dirpanel->unmountedDevices(labels, devices);
-        enable = !devices.empty();
-    }
-#endif
+    FXbool enable = !dir.empty() && !xf_protectedmount(dir) &&
+                    ((fsdevices->find(dir.text()) && !mtdevices->find(dir.text())) || dir.left(5) == "/dev/");
     if (enable)
     {
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
@@ -7807,13 +7756,8 @@ long FilePanel::onUpdUnmount(FXObject* sender, FXSelector sel, void*)
 {
     FXString dir = mountTarget();
 
-    FXbool enable = dir != ROOTDIR && (mtdevices->find(dir.text()) || !xf_gvfsmount(dir).empty());
-#if defined(linux)
-    if (!enable && dirpanel && !fsdevices->find(dir.text()))
-    {
-        enable = !dataMountFor(dir).empty();
-    }
-#endif
+    FXbool enable = !dir.empty() && !xf_protectedmount(dir) &&
+                    (mtdevices->find(dir.text()) || xf_gvfsmount(dir) == dir);
     if (enable)
     {
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);

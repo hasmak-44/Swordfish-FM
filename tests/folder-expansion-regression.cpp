@@ -414,6 +414,14 @@ int main(int argc, char** argv)
     assert(!xf_hostcommandoutput("sh -c 'printf service-unavailable; exit 1'", commandOutput));
     assert(commandOutput == "service-unavailable");
     puts("PASS: mount hashes preserve high bits, /run/media is visible, host query uses exit status");
+    const char* hostPathEnvironment = getenv("SWORDFISH_HOST_PATH");
+    const FXString savedHostPath = hostPathEnvironment ? hostPathEnvironment : "";
+    setenv("SWORDFISH_HOST_PATH", "/usr/bin:/bin", 1);
+    vector_FXString actualVolumes;
+    assert(xf_unmountedvolumes(actualVolumes));
+    if (hostPathEnvironment) setenv("SWORDFISH_HOST_PATH", savedHostPath.text(), 1);
+    else unsetenv("SWORDFISH_HOST_PATH");
+    puts("PASS: production volume inventory command succeeds against real host lsblk (read-only)");
     app.reg().writeStringEntry("SETTINGS", "iconpath", icons.text());
     // Background folder sizes read child folders by design; these checks cover the listing itself
     app.reg().writeUnsignedEntry("OPTIONS", "folder_size_mode", 0);
@@ -916,10 +924,23 @@ int main(int argc, char** argv)
     FXButton mountControl(shell, "Mount");
     FXButton unmountControl(shell, "Unmount");
     sharePanel->onUpdUnmount(&unmountControl, FXSEL(SEL_UPDATE, FilePanel::ID_UMOUNT), NULL);
-    assert(unmountControl.isEnabled() && sharePanel->mountTarget() == simulatedMount);
+    assert(!unmountControl.isEnabled() && sharePanel->mountTarget().empty());
     sharePanel->setDirectory(ROOTDIR);
     sharePanel->onUpdUnmount(&unmountControl, FXSEL(SEL_UPDATE, FilePanel::ID_UMOUNT), NULL);
     assert(!unmountControl.isEnabled());
+    sharePanel->setDirectory(FXSystem::getHomeDirectory());
+    sharePanel->getList()->killSelection();
+    sharePanel->onUpdUnmount(&unmountControl, FXSEL(SEL_UPDATE, FilePanel::ID_UMOUNT), NULL);
+    sharePanel->onUpdMount(&mountControl, FXSEL(SEL_UPDATE, FilePanel::ID_MOUNT), NULL);
+    assert(!unmountControl.isEnabled() && !mountControl.isEnabled());
+    assert(sharePanel->mountTarget().empty());
+    assert(xf_protectedmount(ROOTDIR) && xf_protectedmount(FXSystem::getHomeDirectory()));
+    assert(xf_protectedmount(FXPath::directory(FXSystem::getHomeDirectory())));
+    assert(!xf_protectedmount("/media/test/USB"));
+    MountMessageResponder noSelectionMessage;
+    app.addTimeout(&noSelectionMessage, 1, 20);
+    assert(sharePanel->onCmdMount(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_UMOUNT), NULL) == 1);
+    assert(noSelectionMessage.message.contains("Select a device"));
     SidebarItem* unmountedUsb = new SidebarItem("USB data", miniremovabledeviceicon,
                                                SidebarItem::DEVICE, "/dev/test-usb1");
     navigation->appendItem(navigation->getFirstItem(), unmountedUsb);
@@ -938,21 +959,38 @@ int main(int argc, char** argv)
     navigation->removeItem(unmountedUsb);
     sharePanel->getList()->setFocus();
     sharePanel->setDirectory(beforeDeviceControls);
-    puts("PASS: GVFS Unmount works without child selection; root is protected; unmounted USB/internal drives offer Mount and only USB offers Eject");
+    puts("PASS: no selection disables Mount/Unmount, including Home and GVFS; explicit device selection works; root and Home are protected");
     const FXbool mountMessages = app.reg().readUnsignedEntry("OPTIONS", "mount_messages", true);
     app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", false);
     MountMessageResponder mountMessagesResponder;
     File* unmount = new File(window, "Unmount regression", UNMOUNT);
     unmount->create();
+    FXString protectedOutput;
+    int protectedStatus = 0;
+    const FXString forbiddenMarker = fixture + "/unmount-must-not-run";
+    assert(unmount->mount(FXSystem::getHomeDirectory(), "Protected Home",
+                           "touch " + xf_quote(forbiddenMarker), &protectedOutput, &protectedStatus) == -1);
+    assert(protectedStatus == -1 && protectedOutput.contains("cannot be unmounted"));
+    assert(access(forbiddenMarker.text(), F_OK) != 0);
+    assert(unmount->mount(ROOTDIR, "Protected root",
+                           "touch " + xf_quote(forbiddenMarker), &protectedOutput, &protectedStatus) == -1);
+    assert(access(forbiddenMarker.text(), F_OK) != 0);
+    puts("PASS: invoking Unmount with no selection launches no command; low-level root/Home guards prevent command execution");
     app.addTimeout(&mountMessagesResponder, 1, 20);
     assert(unmount->mount(fixture, "Unmount regression", "printf 'ordinary unmount failed'; exit 7") == -1);
     assert(mountMessagesResponder.errors == 1 && mountMessagesResponder.successes == 0);
     assert(mountMessagesResponder.message == "ordinary unmount failed");
     setenv("SWORDFISH_TEST_UNMOUNT_FAIL", "1", 1);
+    SidebarItem* explicitShare = new SidebarItem("Selected share", mininetdriveicon,
+                                                SidebarItem::DEVICE, simulatedMount);
+    navigation->appendItem(navigation->getFirstItem(), explicitShare);
+    navigation->setCurrentItem(explicitShare);
+    navigation->setFocus();
     app.addTimeout(&mountMessagesResponder, 1, 20);
     assert(unmount->mount(simulatedMount, "Unmount regression", "exit 99") == -1);
     assert(mountMessagesResponder.errors == 2 && mountMessagesResponder.message.contains("share is busy"));
     unsetenv("SWORDFISH_TEST_UNMOUNT_FAIL");
+    navigation->setFocus();
     simulateStillMounted = true;
     app.addTimeout(&mountMessagesResponder, 1, 20);
     assert(unmount->mount(simulatedMount, "Unmount regression", "exit 99") == -1);
@@ -963,6 +1001,7 @@ int main(int argc, char** argv)
     sharePanel->getTabButtons()->addTab(simulatedMount);
     FXuint activeMountTab = sharePanel->getTabButtons()->getCurrentTab();
     setenv("SWORDFISH_TEST_UNMOUNT_FAIL", "1", 1);
+    navigation->setFocus();
     app.addTimeout(&mountMessagesResponder, 1, 20);
     assert(sharePanel->onCmdMount(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_UMOUNT), NULL) == 0);
     assert(mountMessagesResponder.errors == 4 && mountMessagesResponder.successes == 0);
@@ -970,6 +1009,7 @@ int main(int argc, char** argv)
     assert(!busyCursor);
     unsetenv("SWORDFISH_TEST_UNMOUNT_FAIL");
     app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", true);
+    navigation->setFocus();
     app.addTimeout(&mountMessagesResponder, 1, 20);
     assert(sharePanel->onCmdMount(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_UMOUNT), NULL) == 1);
     assert(mountMessagesResponder.errors == 4 && mountMessagesResponder.successes == 1);
@@ -978,6 +1018,7 @@ int main(int argc, char** argv)
     assert(sharePanel->getTabButtons()->getNumActiveTabs() == inactiveMountTab);
     assert(sharePanel->getTabButtons()->getPath(activeMountTab).empty());
     assert(sharePanel->getTabButtons()->getPath(serverTab) == fixture + "/large");
+    navigation->removeItem(explicitShare);
     delete unmount;
     app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", mountMessages);
     std::ifstream unmountLog(getenv("SWORDFISH_TEST_MOUNT_LOG"));
@@ -1096,8 +1137,7 @@ int main(int argc, char** argv)
         if (navigation->deviceButtonAt(buttonX, y) == rowButton) { buttonY = y; break; }
     assert(buttonY >= 0);
     assert(navigation->deviceButtonAt(buttonX - 30, buttonY) == NULL);
-    FXEvent buttonEvent;
-    memset(&buttonEvent, 0, sizeof(buttonEvent));
+    FXEvent buttonEvent = {};
     buttonEvent.win_x = buttonX;
     buttonEvent.win_y = buttonY;
     navigation->onDevicePress(NULL, 0, &buttonEvent);

@@ -1,6 +1,7 @@
 // File management class with progress dialog
 
 #include "config.h"
+#include "AppLogger.h"
 #include "i18n.h"
 
 #include <fcntl.h>
@@ -2443,6 +2444,14 @@ FXString File::sourcesize(const FXString src, FXulong* totalsize, const FXbool u
 #if defined(linux)
 int File::mount(const FXString dir, const FXString msg, const FXString cmd, FXString* output, int* status)
 {
+    if (op == UNMOUNT && xf_protectedmount(dir))
+    {
+        if (status) *status = -1;
+        if (output) *output = _("Root and Home cannot be unmounted.");
+        appLog(APP_LOG_ERRORS, "protected-unmount-refused", dir);
+        if (!output) MessageBox::error(this, BOX_OK, _("Error"), _("Root and Home cannot be unmounted."));
+        return -1;
+    }
     FXbool mount_messages = getApp()->reg().readUnsignedEntry("OPTIONS", "mount_messages", true);
     FXString command = cmd;
     FXString gvfs = xf_gvfsmount(dir);
