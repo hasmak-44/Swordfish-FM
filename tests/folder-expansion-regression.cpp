@@ -3,6 +3,7 @@
 #include "DirList.h"
 #include "Places.h"
 #include "XFileExplorer.h"
+#include "Preview.h"
 #include "RemoteDirectory.h"
 #include "DialogBox.h"
 #include "TabButtons.h"
@@ -983,6 +984,16 @@ int main(int argc, char** argv)
     window->getRightPanel()->getTabButtons()->addTab(localMount, false);
     sharePanel->getTabButtons()->addTab(localMount + "/sub");
     assert(sharePanel->getDirectory() == localMount + "/sub");
+    const char pngHeader[] = "\x89PNG\r\n\x1a\n";
+    for (const FXString& image : { localMount + "/sub/photo.png", fixture + "/outside.png" })
+    {
+        std::ofstream file(image.text(), std::ios::binary);
+        file.write(pngHeader, sizeof(pngHeader) - 1);
+    }
+    Preview::shutdown();
+    FXbool previewWaiting = false;
+    Preview::request(&app, localMount + "/sub/photo.png", 64, false, &previewWaiting);
+    assert(previewWaiting && Preview::pending());
     app.addTimeout(&mountMessagesResponder, 1, 20);
     assert(unmount->mount(localMount, "Unmount regression", "printf 'ordinary unmount failed'; exit 7") == -1);
     assert(mountMessagesResponder.errors == 1 && mountMessagesResponder.successes == 0);
@@ -993,8 +1004,13 @@ int main(int argc, char** argv)
     for (FXuint index = 0; index < window->getRightPanel()->getTabButtons()->getNumActiveTabs(); ++index)
         assert(!window->getRightPanel()->getTabButtons()->getPath(index).contains("local-mount"));
     assert(!sharePanel->getDirectory().contains("local-mount"));
+    assert(!Preview::pending());
+    Preview::request(&app, fixture + "/outside.png", 64, false, &previewWaiting);
+    Preview::cancel(localMount);
+    assert(Preview::pending());
+    Preview::shutdown();
     sharePanel->setDirectory(beforeDeviceControls);
-    puts("PASS: local unmount leaves active and background tabs in both panels before running the command");
+    puts("PASS: local unmount leaves active and background tabs in both panels and cancels previews under the mount before running the command");
     setenv("SWORDFISH_TEST_UNMOUNT_FAIL", "1", 1);
     SidebarItem* explicitShare = new SidebarItem("Selected share", mininetdriveicon,
                                                 SidebarItem::DEVICE, simulatedMount);

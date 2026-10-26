@@ -310,6 +310,27 @@ FXbool Preview::harvest(pid_t pid, int status)
     queue.completed(status);
     return true;
 }
+void Preview::cancel(const FXString& mountpoint)
+{
+    const FXString prefix = mountpoint + "/";
+    auto inside = [&](const FXString& source) {
+        return source == mountpoint || source.left(prefix.length()) == prefix;
+    };
+    for (std::deque<Job>::iterator job = queue.pending.begin(); job != queue.pending.end();)
+    {
+        if (!inside(job->source)) { ++job; continue; }
+        queue.known.erase(job->output.text());
+        job = queue.pending.erase(job);
+    }
+    if (queue.child > 0 && inside(queue.active.source))
+    {
+        queue.stop();
+        queue.known.erase(queue.active.output.text());
+        appLog(APP_LOG_FILE_OPERATIONS, "preview-cancelled-for-unmount", queue.active.source);
+        if (queue.app && !queue.pending.empty()) queue.app->addTimeout(&queue, PreviewQueue::ID_TICK, 1);
+    }
+}
+
 void Preview::shutdown()
 {
     if (queue.app) queue.app->removeTimeout(&queue, PreviewQueue::ID_TICK);

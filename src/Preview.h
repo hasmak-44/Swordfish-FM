@@ -14,6 +14,8 @@ FXbool textType(const FXString& mime);
 FXulong revision();
 FXbool pending();
 FXbool harvest(pid_t pid, int status);
+// Drops queued previews under a mount and stops a running one, so it can be unmounted.
+void cancel(const FXString& mountpoint);
 void shutdown();
 }
 

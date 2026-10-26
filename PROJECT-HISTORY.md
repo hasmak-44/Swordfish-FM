@@ -823,6 +823,15 @@ download server was stopped.
   SHA-256 `80c64a9cb4594bf531645473bf2d78681a62ce22548a78c6d0a94a30712368b6`.
   Reports `0.0.1-rc6`; isolated Xvfb startup passes. Test 4 superseded and
   its download stopped. Same limited test scope: no internal-partition unmount.
+- Test 5 results (10:24 UTC): repeated server clicks reuse one tab (pass);
+  share open in 3 tabs, all closed on unmount (pass). USB HDD Unmount/Eject
+  refused: UDisks DeviceBusy "target is busy" for /dev/sdc1. No other app had
+  the drive open; `fuser`/`lsof` empty afterwards; unmount worked after a
+  while. Cause found: the preview queue (up to 128 jobs, `swordfish-preview`
+  child per file, 12 s limit) kept opening files on the drive after its tabs
+  closed. Fix: `Preview::cancel(mount)` drops queued jobs and kills a running
+  child under the mount; called from `onNetworkUnmounted` before every unmount
+  command. Regression test added; full suite passes (36 PASS).
 
 - Source commit: `f69940aa71fe0e451d9f2d5aee22576510a55892`, pushed to
   `portable-layout`. Unrelated staged files and generated build files excluded.

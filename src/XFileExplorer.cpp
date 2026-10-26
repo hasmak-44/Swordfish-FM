@@ -4041,6 +4041,7 @@ long XFileExplorer::onNetworkUnmounted(FXObject*, FXSelector, void* data)
     FilePanel* panels[] = { lpanel, rpanel };
     for (FilePanel* panel : panels)
         if (panel) panel->getTabButtons()->closeMount(mountpoint);
+    Preview::cancel(mountpoint);
     FXString directory = dirpanel->getDirectory();
     if (directory == mountpoint || directory.left(mountpoint.length() + 1) == mountpoint + "/")
         dirpanel->setDirectory(destination, true);
