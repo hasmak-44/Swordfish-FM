@@ -89,7 +89,9 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 bin_PROGRAMS = swordfish$(EXEEXT) swfa$(EXEEXT) swfi$(EXEEXT) \
-	swfp$(EXEEXT) swfw$(EXEEXT)
+	swfp$(EXEEXT) swfw$(EXEEXT) swordfish-preview$(EXEEXT) \
+	swordfish-network$(EXEEXT)
+libexec_PROGRAMS = swordfish-command-link$(EXEEXT)
 @STARTUPNOTIFY_TRUE@am__append_1 = ../libsn/sn-common.c  \
 @STARTUPNOTIFY_TRUE@              ../libsn/sn-launchee.c \
 @STARTUPNOTIFY_TRUE@              ../libsn/sn-launcher.c \
@@ -150,17 +152,18 @@ mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
-am__installdirs = "$(DESTDIR)$(bindir)"
-PROGRAMS = $(bin_PROGRAMS)
-am__swfa_SOURCES_DIST = ../st/x.c ../st/st.c AppLogger.cpp icons.cpp \
-	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
-	CommandWindow.cpp DialogBox.cpp DirHistBox.cpp DirList.cpp \
-	File.cpp FileDialog.cpp FileDict.cpp FileList.cpp \
-	HistInputDialog.cpp IconList.cpp InputDialog.cpp \
-	MessageBox.cpp OverwriteBox.cpp PathLinker.cpp StringList.cpp \
-	TextLabel.cpp XFileArchive.cpp ../libsn/sn-common.c \
-	../libsn/sn-launchee.c ../libsn/sn-launcher.c \
-	../libsn/sn-list.c ../libsn/sn-monitor.c ../libsn/sn-util.c \
+am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(libexecdir)"
+PROGRAMS = $(bin_PROGRAMS) $(libexec_PROGRAMS)
+am__swfa_SOURCES_DIST = ../st/x.c ../st/st.c AppLogger.cpp Preview.cpp \
+	RemoteDirectory.cpp icons.cpp startupnotification.cpp \
+	xfeutils.cpp ComboBox.cpp CommandWindow.cpp DialogBox.cpp \
+	DirHistBox.cpp DirList.cpp File.cpp FileDialog.cpp \
+	FileDict.cpp FileList.cpp HistInputDialog.cpp IconList.cpp \
+	InputDialog.cpp MessageBox.cpp OverwriteBox.cpp PathLinker.cpp \
+	StringList.cpp TextLabel.cpp XFileArchive.cpp \
+	../libsn/sn-common.c ../libsn/sn-launchee.c \
+	../libsn/sn-launcher.c ../libsn/sn-list.c \
+	../libsn/sn-monitor.c ../libsn/sn-util.c \
 	../libsn/sn-xmessages.c ../libsn/sn-xutils.c
 am__dirstamp = $(am__leading_dot)dirstamp
 @STARTUPNOTIFY_TRUE@am__objects_1 = ../libsn/sn-common.$(OBJEXT) \
@@ -172,7 +175,8 @@ am__dirstamp = $(am__leading_dot)dirstamp
 @STARTUPNOTIFY_TRUE@	../libsn/sn-xmessages.$(OBJEXT) \
 @STARTUPNOTIFY_TRUE@	../libsn/sn-xutils.$(OBJEXT)
 am_swfa_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) \
-	AppLogger.$(OBJEXT) icons.$(OBJEXT) \
+	AppLogger.$(OBJEXT) Preview.$(OBJEXT) \
+	RemoteDirectory.$(OBJEXT) icons.$(OBJEXT) \
 	startupnotification.$(OBJEXT) xfeutils.$(OBJEXT) \
 	ComboBox.$(OBJEXT) CommandWindow.$(OBJEXT) DialogBox.$(OBJEXT) \
 	DirHistBox.$(OBJEXT) DirList.$(OBJEXT) File.$(OBJEXT) \
@@ -184,18 +188,20 @@ am_swfa_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) \
 	XFileArchive.$(OBJEXT) $(am__objects_1)
 swfa_OBJECTS = $(am_swfa_OBJECTS)
 swfa_DEPENDENCIES =
-am__swfi_SOURCES_DIST = ../st/x.c ../st/st.c AppLogger.cpp icons.cpp \
-	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
-	CommandWindow.cpp DialogBox.cpp DirList.cpp DirHistBox.cpp \
-	File.cpp FileDialog.cpp FileDict.cpp FileList.cpp \
-	HistInputDialog.cpp IconList.cpp InputDialog.cpp \
-	MessageBox.cpp OverwriteBox.cpp PathLinker.cpp StringList.cpp \
-	TextLabel.cpp XFileImage.cpp ../libsn/sn-common.c \
-	../libsn/sn-launchee.c ../libsn/sn-launcher.c \
-	../libsn/sn-list.c ../libsn/sn-monitor.c ../libsn/sn-util.c \
+am__swfi_SOURCES_DIST = ../st/x.c ../st/st.c AppLogger.cpp Preview.cpp \
+	RemoteDirectory.cpp icons.cpp startupnotification.cpp \
+	xfeutils.cpp ComboBox.cpp CommandWindow.cpp DialogBox.cpp \
+	DirList.cpp DirHistBox.cpp File.cpp FileDialog.cpp \
+	FileDict.cpp FileList.cpp HistInputDialog.cpp IconList.cpp \
+	InputDialog.cpp MessageBox.cpp OverwriteBox.cpp PathLinker.cpp \
+	StringList.cpp TextLabel.cpp XFileImage.cpp \
+	../libsn/sn-common.c ../libsn/sn-launchee.c \
+	../libsn/sn-launcher.c ../libsn/sn-list.c \
+	../libsn/sn-monitor.c ../libsn/sn-util.c \
 	../libsn/sn-xmessages.c ../libsn/sn-xutils.c
 am_swfi_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) \
-	AppLogger.$(OBJEXT) icons.$(OBJEXT) \
+	AppLogger.$(OBJEXT) Preview.$(OBJEXT) \
+	RemoteDirectory.$(OBJEXT) icons.$(OBJEXT) \
 	startupnotification.$(OBJEXT) xfeutils.$(OBJEXT) \
 	ComboBox.$(OBJEXT) CommandWindow.$(OBJEXT) DialogBox.$(OBJEXT) \
 	DirList.$(OBJEXT) DirHistBox.$(OBJEXT) File.$(OBJEXT) \
@@ -207,18 +213,20 @@ am_swfi_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) \
 	$(am__objects_1)
 swfi_OBJECTS = $(am_swfi_OBJECTS)
 swfi_DEPENDENCIES =
-am__swfp_SOURCES_DIST = ../st/x.c ../st/st.c AppLogger.cpp icons.cpp \
-	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
-	CommandWindow.cpp DialogBox.cpp DirHistBox.cpp DirList.cpp \
-	File.cpp FileDialog.cpp FileDict.cpp FileList.cpp \
-	HistInputDialog.cpp IconList.cpp InputDialog.cpp \
-	MessageBox.cpp OverwriteBox.cpp PathLinker.cpp StringList.cpp \
-	TextLabel.cpp XFilePackage.cpp ../libsn/sn-common.c \
-	../libsn/sn-launchee.c ../libsn/sn-launcher.c \
-	../libsn/sn-list.c ../libsn/sn-monitor.c ../libsn/sn-util.c \
+am__swfp_SOURCES_DIST = ../st/x.c ../st/st.c AppLogger.cpp Preview.cpp \
+	RemoteDirectory.cpp icons.cpp startupnotification.cpp \
+	xfeutils.cpp ComboBox.cpp CommandWindow.cpp DialogBox.cpp \
+	DirHistBox.cpp DirList.cpp File.cpp FileDialog.cpp \
+	FileDict.cpp FileList.cpp HistInputDialog.cpp IconList.cpp \
+	InputDialog.cpp MessageBox.cpp OverwriteBox.cpp PathLinker.cpp \
+	StringList.cpp TextLabel.cpp XFilePackage.cpp \
+	../libsn/sn-common.c ../libsn/sn-launchee.c \
+	../libsn/sn-launcher.c ../libsn/sn-list.c \
+	../libsn/sn-monitor.c ../libsn/sn-util.c \
 	../libsn/sn-xmessages.c ../libsn/sn-xutils.c
 am_swfp_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) \
-	AppLogger.$(OBJEXT) icons.$(OBJEXT) \
+	AppLogger.$(OBJEXT) Preview.$(OBJEXT) \
+	RemoteDirectory.$(OBJEXT) icons.$(OBJEXT) \
 	startupnotification.$(OBJEXT) xfeutils.$(OBJEXT) \
 	ComboBox.$(OBJEXT) CommandWindow.$(OBJEXT) DialogBox.$(OBJEXT) \
 	DirHistBox.$(OBJEXT) DirList.$(OBJEXT) File.$(OBJEXT) \
@@ -230,19 +238,21 @@ am_swfp_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) \
 	XFilePackage.$(OBJEXT) $(am__objects_1)
 swfp_OBJECTS = $(am_swfp_OBJECTS)
 swfp_DEPENDENCIES =
-am__swfw_SOURCES_DIST = ../st/x.c ../st/st.c AppLogger.cpp icons.cpp \
-	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
-	ColorSelector.cpp CommandWindow.cpp DialogBox.cpp \
-	DirHistBox.cpp DirList.cpp File.cpp FileDialog.cpp \
-	FileDict.cpp FileList.cpp FontDialog.cpp HistInputDialog.cpp \
-	IconList.cpp InputDialog.cpp MessageBox.cpp OverwriteBox.cpp \
-	PathLinker.cpp StringList.cpp TextLabel.cpp WriteWindow.cpp \
-	XFileWrite.cpp ../libsn/sn-common.c ../libsn/sn-launchee.c \
+am__swfw_SOURCES_DIST = ../st/x.c ../st/st.c AppLogger.cpp Preview.cpp \
+	RemoteDirectory.cpp icons.cpp startupnotification.cpp \
+	xfeutils.cpp ComboBox.cpp ColorSelector.cpp CommandWindow.cpp \
+	DialogBox.cpp DirHistBox.cpp DirList.cpp File.cpp \
+	FileDialog.cpp FileDict.cpp FileList.cpp FontDialog.cpp \
+	HistInputDialog.cpp IconList.cpp InputDialog.cpp \
+	MessageBox.cpp OverwriteBox.cpp PathLinker.cpp StringList.cpp \
+	TextLabel.cpp WriteWindow.cpp XFileWrite.cpp \
+	../libsn/sn-common.c ../libsn/sn-launchee.c \
 	../libsn/sn-launcher.c ../libsn/sn-list.c \
 	../libsn/sn-monitor.c ../libsn/sn-util.c \
 	../libsn/sn-xmessages.c ../libsn/sn-xutils.c
 am_swfw_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) \
-	AppLogger.$(OBJEXT) icons.$(OBJEXT) \
+	AppLogger.$(OBJEXT) Preview.$(OBJEXT) \
+	RemoteDirectory.$(OBJEXT) icons.$(OBJEXT) \
 	startupnotification.$(OBJEXT) xfeutils.$(OBJEXT) \
 	ComboBox.$(OBJEXT) ColorSelector.$(OBJEXT) \
 	CommandWindow.$(OBJEXT) DialogBox.$(OBJEXT) \
@@ -256,16 +266,18 @@ am_swfw_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) \
 swfw_OBJECTS = $(am_swfw_OBJECTS)
 swfw_DEPENDENCIES =
 am__swordfish_SOURCES_DIST = ../st/x.c ../st/st.c AppLogger.cpp \
-	icons.cpp startupnotification.cpp xfeutils.cpp \
-	ArchInputDialog.cpp BookmarkDialog.cpp BrowseInputDialog.cpp \
-	ColorSelector.cpp ComboBox.cpp CommandWindow.cpp \
-	ConnectDialog.cpp DialogBox.cpp DirHistBox.cpp DirList.cpp \
-	DirPanel.cpp ExecuteBox.cpp File.cpp FileDialog.cpp \
-	FileDict.cpp FileList.cpp FilePanel.cpp FontDialog.cpp \
-	HistInputDialog.cpp IconList.cpp InputDialog.cpp \
-	KeyBindings.cpp KeyBindingsDialog.cpp MessageBox.cpp \
-	OverwriteBox.cpp PathLinker.cpp Places.cpp Preferences.cpp \
-	SystemIcons.cpp Properties.cpp RenameDialog.cpp \
+	CustomActions.cpp CustomActionsUI.cpp Preview.cpp \
+	RemoteDirectory.cpp icons.cpp startupnotification.cpp \
+	xfeutils.cpp ArchInputDialog.cpp BookmarkDialog.cpp \
+	BrowseInputDialog.cpp ColorSelector.cpp ComboBox.cpp \
+	CommandWindow.cpp ConnectDialog.cpp DialogBox.cpp \
+	DirHistBox.cpp DirList.cpp DirPanel.cpp ExecuteBox.cpp \
+	Execution.cpp File.cpp FileDialog.cpp FileDict.cpp \
+	FileList.cpp FilePanel.cpp FontDialog.cpp HistInputDialog.cpp \
+	IconList.cpp InputDialog.cpp KeyBindings.cpp \
+	KeyBindingsDialog.cpp MessageBox.cpp OverwriteBox.cpp \
+	PathLinker.cpp Places.cpp Preferences.cpp SystemIcons.cpp \
+	SystemIntegration.cpp Properties.cpp RenameDialog.cpp \
 	SearchPanel.cpp SearchWindow.cpp StringList.cpp TabButtons.cpp \
 	TextLabel.cpp TextWindow.cpp XFileExplorer.cpp main.cpp \
 	../libsn/sn-common.c ../libsn/sn-launchee.c \
@@ -273,27 +285,45 @@ am__swordfish_SOURCES_DIST = ../st/x.c ../st/st.c AppLogger.cpp \
 	../libsn/sn-monitor.c ../libsn/sn-util.c \
 	../libsn/sn-xmessages.c ../libsn/sn-xutils.c
 am_swordfish_OBJECTS = ../st/x.$(OBJEXT) ../st/st.$(OBJEXT) \
-	AppLogger.$(OBJEXT) icons.$(OBJEXT) \
+	AppLogger.$(OBJEXT) CustomActions.$(OBJEXT) \
+	CustomActionsUI.$(OBJEXT) Preview.$(OBJEXT) \
+	RemoteDirectory.$(OBJEXT) icons.$(OBJEXT) \
 	startupnotification.$(OBJEXT) xfeutils.$(OBJEXT) \
 	ArchInputDialog.$(OBJEXT) BookmarkDialog.$(OBJEXT) \
 	BrowseInputDialog.$(OBJEXT) ColorSelector.$(OBJEXT) \
 	ComboBox.$(OBJEXT) CommandWindow.$(OBJEXT) \
 	ConnectDialog.$(OBJEXT) DialogBox.$(OBJEXT) \
 	DirHistBox.$(OBJEXT) DirList.$(OBJEXT) DirPanel.$(OBJEXT) \
-	ExecuteBox.$(OBJEXT) File.$(OBJEXT) FileDialog.$(OBJEXT) \
-	FileDict.$(OBJEXT) FileList.$(OBJEXT) FilePanel.$(OBJEXT) \
-	FontDialog.$(OBJEXT) HistInputDialog.$(OBJEXT) \
-	IconList.$(OBJEXT) InputDialog.$(OBJEXT) KeyBindings.$(OBJEXT) \
+	ExecuteBox.$(OBJEXT) Execution.$(OBJEXT) File.$(OBJEXT) \
+	FileDialog.$(OBJEXT) FileDict.$(OBJEXT) FileList.$(OBJEXT) \
+	FilePanel.$(OBJEXT) FontDialog.$(OBJEXT) \
+	HistInputDialog.$(OBJEXT) IconList.$(OBJEXT) \
+	InputDialog.$(OBJEXT) KeyBindings.$(OBJEXT) \
 	KeyBindingsDialog.$(OBJEXT) MessageBox.$(OBJEXT) \
 	OverwriteBox.$(OBJEXT) PathLinker.$(OBJEXT) Places.$(OBJEXT) \
 	Preferences.$(OBJEXT) SystemIcons.$(OBJEXT) \
-	Properties.$(OBJEXT) RenameDialog.$(OBJEXT) \
-	SearchPanel.$(OBJEXT) SearchWindow.$(OBJEXT) \
-	StringList.$(OBJEXT) TabButtons.$(OBJEXT) TextLabel.$(OBJEXT) \
-	TextWindow.$(OBJEXT) XFileExplorer.$(OBJEXT) main.$(OBJEXT) \
-	$(am__objects_1)
+	SystemIntegration.$(OBJEXT) Properties.$(OBJEXT) \
+	RenameDialog.$(OBJEXT) SearchPanel.$(OBJEXT) \
+	SearchWindow.$(OBJEXT) StringList.$(OBJEXT) \
+	TabButtons.$(OBJEXT) TextLabel.$(OBJEXT) TextWindow.$(OBJEXT) \
+	XFileExplorer.$(OBJEXT) main.$(OBJEXT) $(am__objects_1)
 swordfish_OBJECTS = $(am_swordfish_OBJECTS)
 swordfish_DEPENDENCIES =
+am_swordfish_command_link_OBJECTS = swordfish-command-link.$(OBJEXT)
+swordfish_command_link_OBJECTS = $(am_swordfish_command_link_OBJECTS)
+swordfish_command_link_DEPENDENCIES =
+swordfish_command_link_LINK = $(CXXLD) $(AM_CXXFLAGS) $(CXXFLAGS) \
+	$(swordfish_command_link_LDFLAGS) $(LDFLAGS) -o $@
+am_swordfish_network_OBJECTS = NetworkDiscovery.$(OBJEXT)
+swordfish_network_OBJECTS = $(am_swordfish_network_OBJECTS)
+am__DEPENDENCIES_1 =
+swordfish_network_DEPENDENCIES = $(am__DEPENDENCIES_1)
+swordfish_network_LINK = $(CXXLD) $(AM_CXXFLAGS) $(CXXFLAGS) \
+	$(swordfish_network_LDFLAGS) $(LDFLAGS) -o $@
+am_swordfish_preview_OBJECTS =  \
+	swordfish_preview-PreviewWorker.$(OBJEXT)
+swordfish_preview_OBJECTS = $(am_swordfish_preview_OBJECTS)
+swordfish_preview_DEPENDENCIES = $(am__DEPENDENCIES_1)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -320,26 +350,32 @@ am__depfiles_remade = ../libsn/$(DEPDIR)/sn-common.Po \
 	./$(DEPDIR)/ArchInputDialog.Po ./$(DEPDIR)/BookmarkDialog.Po \
 	./$(DEPDIR)/BrowseInputDialog.Po ./$(DEPDIR)/ColorSelector.Po \
 	./$(DEPDIR)/ComboBox.Po ./$(DEPDIR)/CommandWindow.Po \
-	./$(DEPDIR)/ConnectDialog.Po ./$(DEPDIR)/DialogBox.Po \
+	./$(DEPDIR)/ConnectDialog.Po ./$(DEPDIR)/CustomActions.Po \
+	./$(DEPDIR)/CustomActionsUI.Po ./$(DEPDIR)/DialogBox.Po \
 	./$(DEPDIR)/DirHistBox.Po ./$(DEPDIR)/DirList.Po \
 	./$(DEPDIR)/DirPanel.Po ./$(DEPDIR)/ExecuteBox.Po \
-	./$(DEPDIR)/File.Po ./$(DEPDIR)/FileDialog.Po \
-	./$(DEPDIR)/FileDict.Po ./$(DEPDIR)/FileList.Po \
-	./$(DEPDIR)/FilePanel.Po ./$(DEPDIR)/FontDialog.Po \
-	./$(DEPDIR)/HistInputDialog.Po ./$(DEPDIR)/IconList.Po \
-	./$(DEPDIR)/InputDialog.Po ./$(DEPDIR)/KeyBindings.Po \
-	./$(DEPDIR)/KeyBindingsDialog.Po ./$(DEPDIR)/MessageBox.Po \
+	./$(DEPDIR)/Execution.Po ./$(DEPDIR)/File.Po \
+	./$(DEPDIR)/FileDialog.Po ./$(DEPDIR)/FileDict.Po \
+	./$(DEPDIR)/FileList.Po ./$(DEPDIR)/FilePanel.Po \
+	./$(DEPDIR)/FontDialog.Po ./$(DEPDIR)/HistInputDialog.Po \
+	./$(DEPDIR)/IconList.Po ./$(DEPDIR)/InputDialog.Po \
+	./$(DEPDIR)/KeyBindings.Po ./$(DEPDIR)/KeyBindingsDialog.Po \
+	./$(DEPDIR)/MessageBox.Po ./$(DEPDIR)/NetworkDiscovery.Po \
 	./$(DEPDIR)/OverwriteBox.Po ./$(DEPDIR)/PathLinker.Po \
 	./$(DEPDIR)/Places.Po ./$(DEPDIR)/Preferences.Po \
-	./$(DEPDIR)/Properties.Po ./$(DEPDIR)/RenameDialog.Po \
+	./$(DEPDIR)/Preview.Po ./$(DEPDIR)/Properties.Po \
+	./$(DEPDIR)/RemoteDirectory.Po ./$(DEPDIR)/RenameDialog.Po \
 	./$(DEPDIR)/SearchPanel.Po ./$(DEPDIR)/SearchWindow.Po \
 	./$(DEPDIR)/StringList.Po ./$(DEPDIR)/SystemIcons.Po \
-	./$(DEPDIR)/TabButtons.Po ./$(DEPDIR)/TextLabel.Po \
-	./$(DEPDIR)/TextWindow.Po ./$(DEPDIR)/WriteWindow.Po \
-	./$(DEPDIR)/XFileArchive.Po ./$(DEPDIR)/XFileExplorer.Po \
-	./$(DEPDIR)/XFileImage.Po ./$(DEPDIR)/XFilePackage.Po \
-	./$(DEPDIR)/XFileWrite.Po ./$(DEPDIR)/icons.Po \
-	./$(DEPDIR)/main.Po ./$(DEPDIR)/startupnotification.Po \
+	./$(DEPDIR)/SystemIntegration.Po ./$(DEPDIR)/TabButtons.Po \
+	./$(DEPDIR)/TextLabel.Po ./$(DEPDIR)/TextWindow.Po \
+	./$(DEPDIR)/WriteWindow.Po ./$(DEPDIR)/XFileArchive.Po \
+	./$(DEPDIR)/XFileExplorer.Po ./$(DEPDIR)/XFileImage.Po \
+	./$(DEPDIR)/XFilePackage.Po ./$(DEPDIR)/XFileWrite.Po \
+	./$(DEPDIR)/icons.Po ./$(DEPDIR)/main.Po \
+	./$(DEPDIR)/startupnotification.Po \
+	./$(DEPDIR)/swordfish-command-link.Po \
+	./$(DEPDIR)/swordfish_preview-PreviewWorker.Po \
 	./$(DEPDIR)/xfeutils.Po
 am__mv = mv -f
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
@@ -354,6 +390,10 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
+AM_V_lt = $(am__v_lt_@AM_V@)
+am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
+am__v_lt_0 = --silent
+am__v_lt_1 = 
 CXXCOMPILE = $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
 	$(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS)
 AM_V_CXX = $(am__v_CXX_@AM_V@)
@@ -368,10 +408,14 @@ am__v_CXXLD_ = $(am__v_CXXLD_@AM_DEFAULT_V@)
 am__v_CXXLD_0 = @echo "  CXXLD   " $@;
 am__v_CXXLD_1 = 
 SOURCES = $(swfa_SOURCES) $(swfi_SOURCES) $(swfp_SOURCES) \
-	$(swfw_SOURCES) $(swordfish_SOURCES)
+	$(swfw_SOURCES) $(swordfish_SOURCES) \
+	$(swordfish_command_link_SOURCES) $(swordfish_network_SOURCES) \
+	$(swordfish_preview_SOURCES)
 DIST_SOURCES = $(am__swfa_SOURCES_DIST) $(am__swfi_SOURCES_DIST) \
 	$(am__swfp_SOURCES_DIST) $(am__swfw_SOURCES_DIST) \
-	$(am__swordfish_SOURCES_DIST)
+	$(am__swordfish_SOURCES_DIST) \
+	$(swordfish_command_link_SOURCES) $(swordfish_network_SOURCES) \
+	$(swordfish_preview_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -423,6 +467,7 @@ ECHO_T = @ECHO_T@
 EGREP = @EGREP@
 ETAGS = @ETAGS@
 EXEEXT = @EXEEXT@
+FFMPEGTHUMBNAILER = @FFMPEGTHUMBNAILER@
 FOX_CONFIG = @FOX_CONFIG@
 FREETYPE_CFLAGS = @FREETYPE_CFLAGS@
 FREETYPE_LIBS = @FREETYPE_LIBS@
@@ -469,6 +514,10 @@ PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 POLKIT_CFLAGS = @POLKIT_CFLAGS@
 POLKIT_LIBS = @POLKIT_LIBS@
 POSUB = @POSUB@
+PREVIEW_CFLAGS = @PREVIEW_CFLAGS@
+PREVIEW_LIBS = @PREVIEW_LIBS@
+PREVIEW_WORKER_CFLAGS = @PREVIEW_WORKER_CFLAGS@
+PREVIEW_WORKER_LIBS = @PREVIEW_WORKER_LIBS@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
@@ -546,54 +595,68 @@ xcb_event_CFLAGS = @xcb_event_CFLAGS@
 xcb_event_LIBS = @xcb_event_LIBS@
 xft_config = @xft_config@
 AUTOMAKE_OPTIONS = subdir-objects
-swordfish_SOURCES = ../st/x.c ../st/st.c AppLogger.cpp icons.cpp \
-	startupnotification.cpp xfeutils.cpp ArchInputDialog.cpp \
-	BookmarkDialog.cpp BrowseInputDialog.cpp ColorSelector.cpp \
-	ComboBox.cpp CommandWindow.cpp ConnectDialog.cpp DialogBox.cpp \
+swordfish_command_link_SOURCES = swordfish-command-link.cpp
+swordfish_command_link_LDFLAGS = -Wl,--as-needed
+swordfish_command_link_LDADD = 
+swordfish_network_SOURCES = NetworkDiscovery.cpp
+swordfish_network_LDADD = $(PREVIEW_LIBS)
+swordfish_network_LDFLAGS = -Wl,--as-needed
+swordfish_preview_SOURCES = PreviewWorker.cpp
+swordfish_preview_CPPFLAGS = $(AM_CPPFLAGS) $(PREVIEW_WORKER_CFLAGS)
+swordfish_preview_LDADD = $(PREVIEW_WORKER_LIBS)
+swordfish_SOURCES = ../st/x.c ../st/st.c AppLogger.cpp \
+	CustomActions.cpp CustomActionsUI.cpp Preview.cpp \
+	RemoteDirectory.cpp icons.cpp startupnotification.cpp \
+	xfeutils.cpp ArchInputDialog.cpp BookmarkDialog.cpp \
+	BrowseInputDialog.cpp ColorSelector.cpp ComboBox.cpp \
+	CommandWindow.cpp ConnectDialog.cpp DialogBox.cpp \
 	DirHistBox.cpp DirList.cpp DirPanel.cpp ExecuteBox.cpp \
-	File.cpp FileDialog.cpp FileDict.cpp FileList.cpp \
-	FilePanel.cpp FontDialog.cpp HistInputDialog.cpp IconList.cpp \
-	InputDialog.cpp KeyBindings.cpp KeyBindingsDialog.cpp \
-	MessageBox.cpp OverwriteBox.cpp PathLinker.cpp Places.cpp \
-	Preferences.cpp SystemIcons.cpp Properties.cpp \
-	RenameDialog.cpp SearchPanel.cpp SearchWindow.cpp \
-	StringList.cpp TabButtons.cpp TextLabel.cpp TextWindow.cpp \
-	XFileExplorer.cpp main.cpp $(am__append_1)
+	Execution.cpp File.cpp FileDialog.cpp FileDict.cpp \
+	FileList.cpp FilePanel.cpp FontDialog.cpp HistInputDialog.cpp \
+	IconList.cpp InputDialog.cpp KeyBindings.cpp \
+	KeyBindingsDialog.cpp MessageBox.cpp OverwriteBox.cpp \
+	PathLinker.cpp Places.cpp Preferences.cpp SystemIcons.cpp \
+	SystemIntegration.cpp Properties.cpp RenameDialog.cpp \
+	SearchPanel.cpp SearchWindow.cpp StringList.cpp TabButtons.cpp \
+	TextLabel.cpp TextWindow.cpp XFileExplorer.cpp main.cpp \
+	$(am__append_1)
 swordfish_LDADD = @LIBINTL@ -lutil
-swfa_SOURCES = ../st/x.c ../st/st.c AppLogger.cpp icons.cpp \
-	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
-	CommandWindow.cpp DialogBox.cpp DirHistBox.cpp DirList.cpp \
-	File.cpp FileDialog.cpp FileDict.cpp FileList.cpp \
-	HistInputDialog.cpp IconList.cpp InputDialog.cpp \
-	MessageBox.cpp OverwriteBox.cpp PathLinker.cpp StringList.cpp \
-	TextLabel.cpp XFileArchive.cpp $(am__append_2)
-swfa_LDADD = @LIBINTL@ -lutil
-swfi_SOURCES = ../st/x.c ../st/st.c AppLogger.cpp icons.cpp \
-	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
-	CommandWindow.cpp DialogBox.cpp DirList.cpp DirHistBox.cpp \
-	File.cpp FileDialog.cpp FileDict.cpp FileList.cpp \
-	HistInputDialog.cpp IconList.cpp InputDialog.cpp \
-	MessageBox.cpp OverwriteBox.cpp PathLinker.cpp StringList.cpp \
-	TextLabel.cpp XFileImage.cpp $(am__append_3)
-swfi_LDADD = @LIBINTL@ -lutil
-swfp_SOURCES = ../st/x.c ../st/st.c AppLogger.cpp icons.cpp \
-	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
-	CommandWindow.cpp DialogBox.cpp DirHistBox.cpp DirList.cpp \
-	File.cpp FileDialog.cpp FileDict.cpp FileList.cpp \
-	HistInputDialog.cpp IconList.cpp InputDialog.cpp \
-	MessageBox.cpp OverwriteBox.cpp PathLinker.cpp StringList.cpp \
-	TextLabel.cpp XFilePackage.cpp $(am__append_4)
-swfp_LDADD = @LIBINTL@ -lutil
-swfw_SOURCES = ../st/x.c ../st/st.c AppLogger.cpp icons.cpp \
-	startupnotification.cpp xfeutils.cpp ComboBox.cpp \
-	ColorSelector.cpp CommandWindow.cpp DialogBox.cpp \
+swfa_SOURCES = ../st/x.c ../st/st.c AppLogger.cpp Preview.cpp \
+	RemoteDirectory.cpp icons.cpp startupnotification.cpp \
+	xfeutils.cpp ComboBox.cpp CommandWindow.cpp DialogBox.cpp \
 	DirHistBox.cpp DirList.cpp File.cpp FileDialog.cpp \
-	FileDict.cpp FileList.cpp FontDialog.cpp HistInputDialog.cpp \
-	IconList.cpp InputDialog.cpp MessageBox.cpp OverwriteBox.cpp \
-	PathLinker.cpp StringList.cpp TextLabel.cpp WriteWindow.cpp \
-	XFileWrite.cpp $(am__append_5)
+	FileDict.cpp FileList.cpp HistInputDialog.cpp IconList.cpp \
+	InputDialog.cpp MessageBox.cpp OverwriteBox.cpp PathLinker.cpp \
+	StringList.cpp TextLabel.cpp XFileArchive.cpp $(am__append_2)
+swfa_LDADD = @LIBINTL@ -lutil
+swfi_SOURCES = ../st/x.c ../st/st.c AppLogger.cpp Preview.cpp \
+	RemoteDirectory.cpp icons.cpp startupnotification.cpp \
+	xfeutils.cpp ComboBox.cpp CommandWindow.cpp DialogBox.cpp \
+	DirList.cpp DirHistBox.cpp File.cpp FileDialog.cpp \
+	FileDict.cpp FileList.cpp HistInputDialog.cpp IconList.cpp \
+	InputDialog.cpp MessageBox.cpp OverwriteBox.cpp PathLinker.cpp \
+	StringList.cpp TextLabel.cpp XFileImage.cpp $(am__append_3)
+swfi_LDADD = @LIBINTL@ -lutil
+swfp_SOURCES = ../st/x.c ../st/st.c AppLogger.cpp Preview.cpp \
+	RemoteDirectory.cpp icons.cpp startupnotification.cpp \
+	xfeutils.cpp ComboBox.cpp CommandWindow.cpp DialogBox.cpp \
+	DirHistBox.cpp DirList.cpp File.cpp FileDialog.cpp \
+	FileDict.cpp FileList.cpp HistInputDialog.cpp IconList.cpp \
+	InputDialog.cpp MessageBox.cpp OverwriteBox.cpp PathLinker.cpp \
+	StringList.cpp TextLabel.cpp XFilePackage.cpp $(am__append_4)
+swfp_LDADD = @LIBINTL@ -lutil
+swfw_SOURCES = ../st/x.c ../st/st.c AppLogger.cpp Preview.cpp \
+	RemoteDirectory.cpp icons.cpp startupnotification.cpp \
+	xfeutils.cpp ComboBox.cpp ColorSelector.cpp CommandWindow.cpp \
+	DialogBox.cpp DirHistBox.cpp DirList.cpp File.cpp \
+	FileDialog.cpp FileDict.cpp FileList.cpp FontDialog.cpp \
+	HistInputDialog.cpp IconList.cpp InputDialog.cpp \
+	MessageBox.cpp OverwriteBox.cpp PathLinker.cpp StringList.cpp \
+	TextLabel.cpp WriteWindow.cpp XFileWrite.cpp $(am__append_5)
 swfw_LDADD = @LIBINTL@ -lutil
-AM_CPPFLAGS = -I. -I$(top_srcdir) -I$(top_srcdir)/intl
+AM_CPPFLAGS = -I. -I$(top_srcdir) -I$(top_srcdir)/intl \
+             -DSWORDFISH_COMMAND_LINK_HELPER=\"$(libexecdir)/swordfish-command-link\"
+
 EXTRA_DIST = ../libsn/sn-common.h	\
 	          ../libsn/sn-internals.h \
 	          ../libsn/sn-launchee.h \
@@ -613,6 +676,10 @@ EXTRA_DIST = ../libsn/sn-common.h	\
 			  ../st/x.h \
 			  xfedefs.h \
               AppLogger.h \
+              CustomActions.h \
+              CustomActionsUI.h \
+              Preview.h \
+              RemoteDirectory.h \
               SystemIcons.h \
               help.h \
               icons.h \
@@ -632,6 +699,7 @@ EXTRA_DIST = ../libsn/sn-common.h	\
 			  DirList.h \
 			  DirPanel.h \
 			  ExecuteBox.h \
+			  Execution.h \
               File.h \
 			  FileDialog.h \
 			  FileDict.h \
@@ -649,6 +717,7 @@ EXTRA_DIST = ../libsn/sn-common.h	\
 			  Places.h \
 			  Properties.h \
 			  Preferences.h \
+              SystemIntegration.h \
 			  RenameDialog.h \
 			  SearchPanel.h \
 			  SearchWindow.h \
@@ -738,6 +807,48 @@ uninstall-binPROGRAMS:
 
 clean-binPROGRAMS:
 	-test -z "$(bin_PROGRAMS)" || rm -f $(bin_PROGRAMS)
+install-libexecPROGRAMS: $(libexec_PROGRAMS)
+	@$(NORMAL_INSTALL)
+	@list='$(libexec_PROGRAMS)'; test -n "$(libexecdir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(libexecdir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(libexecdir)" || exit 1; \
+	fi; \
+	for p in $$list; do echo "$$p $$p"; done | \
+	sed 's/$(EXEEXT)$$//' | \
+	while read p p1; do if test -f $$p \
+	  ; then echo "$$p"; echo "$$p"; else :; fi; \
+	done | \
+	sed -e 'p;s,.*/,,;n;h' \
+	    -e 's|.*|.|' \
+	    -e 'p;x;s,.*/,,;s/$(EXEEXT)$$//;$(transform);s/$$/$(EXEEXT)/' | \
+	sed 'N;N;N;s,\n, ,g' | \
+	$(AWK) 'BEGIN { files["."] = ""; dirs["."] = 1 } \
+	  { d=$$3; if (dirs[d] != 1) { print "d", d; dirs[d] = 1 } \
+	    if ($$2 == $$4) files[d] = files[d] " " $$1; \
+	    else { print "f", $$3 "/" $$4, $$1; } } \
+	  END { for (d in files) print "f", d, files[d] }' | \
+	while read type dir files; do \
+	    if test "$$dir" = .; then dir=; else dir=/$$dir; fi; \
+	    test -z "$$files" || { \
+	      echo " $(INSTALL_PROGRAM_ENV) $(INSTALL_PROGRAM) $$files '$(DESTDIR)$(libexecdir)$$dir'"; \
+	      $(INSTALL_PROGRAM_ENV) $(INSTALL_PROGRAM) $$files "$(DESTDIR)$(libexecdir)$$dir" || exit $$?; \
+	    } \
+	; done
+
+uninstall-libexecPROGRAMS:
+	@$(NORMAL_UNINSTALL)
+	@list='$(libexec_PROGRAMS)'; test -n "$(libexecdir)" || list=; \
+	files=`for p in $$list; do echo "$$p"; done | \
+	  sed -e 'h;s,^.*/,,;s/$(EXEEXT)$$//;$(transform)' \
+	      -e 's/$$/$(EXEEXT)/' \
+	`; \
+	test -n "$$list" || exit 0; \
+	echo " ( cd '$(DESTDIR)$(libexecdir)' && rm -f" $$files ")"; \
+	cd "$(DESTDIR)$(libexecdir)" && rm -f $$files
+
+clean-libexecPROGRAMS:
+	-test -z "$(libexec_PROGRAMS)" || rm -f $(libexec_PROGRAMS)
 ../st/$(am__dirstamp):
 	@$(MKDIR_P) ../st
 	@: > ../st/$(am__dirstamp)
@@ -791,6 +902,18 @@ swordfish$(EXEEXT): $(swordfish_OBJECTS) $(swordfish_DEPENDENCIES) $(EXTRA_sword
 	@rm -f swordfish$(EXEEXT)
 	$(AM_V_CXXLD)$(CXXLINK) $(swordfish_OBJECTS) $(swordfish_LDADD) $(LIBS)
 
+swordfish-command-link$(EXEEXT): $(swordfish_command_link_OBJECTS) $(swordfish_command_link_DEPENDENCIES) $(EXTRA_swordfish_command_link_DEPENDENCIES) 
+	@rm -f swordfish-command-link$(EXEEXT)
+	$(AM_V_CXXLD)$(swordfish_command_link_LINK) $(swordfish_command_link_OBJECTS) $(swordfish_command_link_LDADD) $(LIBS)
+
+swordfish-network$(EXEEXT): $(swordfish_network_OBJECTS) $(swordfish_network_DEPENDENCIES) $(EXTRA_swordfish_network_DEPENDENCIES) 
+	@rm -f swordfish-network$(EXEEXT)
+	$(AM_V_CXXLD)$(swordfish_network_LINK) $(swordfish_network_OBJECTS) $(swordfish_network_LDADD) $(LIBS)
+
+swordfish-preview$(EXEEXT): $(swordfish_preview_OBJECTS) $(swordfish_preview_DEPENDENCIES) $(EXTRA_swordfish_preview_DEPENDENCIES) 
+	@rm -f swordfish-preview$(EXEEXT)
+	$(AM_V_CXXLD)$(CXXLINK) $(swordfish_preview_OBJECTS) $(swordfish_preview_LDADD) $(LIBS)
+
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
 	-rm -f ../libsn/*.$(OBJEXT)
@@ -817,11 +940,14 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ComboBox.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CommandWindow.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ConnectDialog.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CustomActions.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CustomActionsUI.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/DialogBox.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/DirHistBox.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/DirList.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/DirPanel.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ExecuteBox.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/Execution.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/File.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/FileDialog.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/FileDict.Po@am__quote@ # am--include-marker
@@ -834,16 +960,20 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/KeyBindings.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/KeyBindingsDialog.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/MessageBox.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/NetworkDiscovery.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/OverwriteBox.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/PathLinker.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/Places.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/Preferences.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/Preview.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/Properties.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/RemoteDirectory.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/RenameDialog.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/SearchPanel.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/SearchWindow.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/StringList.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/SystemIcons.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/SystemIntegration.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/TabButtons.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/TextLabel.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/TextWindow.Po@am__quote@ # am--include-marker
@@ -856,6 +986,8 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/icons.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/main.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/startupnotification.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/swordfish-command-link.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/swordfish_preview-PreviewWorker.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/xfeutils.Po@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
@@ -895,6 +1027,20 @@ am--depfiles: $(am__depfiles_remade)
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXXCOMPILE) -c -o $@ `$(CYGPATH_W) '$<'`
+
+swordfish_preview-PreviewWorker.o: PreviewWorker.cpp
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(swordfish_preview_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT swordfish_preview-PreviewWorker.o -MD -MP -MF $(DEPDIR)/swordfish_preview-PreviewWorker.Tpo -c -o swordfish_preview-PreviewWorker.o `test -f 'PreviewWorker.cpp' || echo '$(srcdir)/'`PreviewWorker.cpp
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/swordfish_preview-PreviewWorker.Tpo $(DEPDIR)/swordfish_preview-PreviewWorker.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='PreviewWorker.cpp' object='swordfish_preview-PreviewWorker.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(swordfish_preview_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o swordfish_preview-PreviewWorker.o `test -f 'PreviewWorker.cpp' || echo '$(srcdir)/'`PreviewWorker.cpp
+
+swordfish_preview-PreviewWorker.obj: PreviewWorker.cpp
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(swordfish_preview_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT swordfish_preview-PreviewWorker.obj -MD -MP -MF $(DEPDIR)/swordfish_preview-PreviewWorker.Tpo -c -o swordfish_preview-PreviewWorker.obj `if test -f 'PreviewWorker.cpp'; then $(CYGPATH_W) 'PreviewWorker.cpp'; else $(CYGPATH_W) '$(srcdir)/PreviewWorker.cpp'; fi`
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/swordfish_preview-PreviewWorker.Tpo $(DEPDIR)/swordfish_preview-PreviewWorker.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='PreviewWorker.cpp' object='swordfish_preview-PreviewWorker.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(swordfish_preview_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o swordfish_preview-PreviewWorker.obj `if test -f 'PreviewWorker.cpp'; then $(CYGPATH_W) 'PreviewWorker.cpp'; else $(CYGPATH_W) '$(srcdir)/PreviewWorker.cpp'; fi`
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
@@ -984,7 +1130,7 @@ check-am: all-am
 check: check-am
 all-am: Makefile $(PROGRAMS)
 installdirs:
-	for dir in "$(DESTDIR)$(bindir)"; do \
+	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(libexecdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -1023,7 +1169,8 @@ maintainer-clean-generic:
 	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-clean-am: clean-binPROGRAMS clean-generic mostlyclean-am
+clean-am: clean-binPROGRAMS clean-generic clean-libexecPROGRAMS \
+	mostlyclean-am
 
 distclean: distclean-am
 		-rm -f ../libsn/$(DEPDIR)/sn-common.Po
@@ -1044,11 +1191,14 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/ComboBox.Po
 	-rm -f ./$(DEPDIR)/CommandWindow.Po
 	-rm -f ./$(DEPDIR)/ConnectDialog.Po
+	-rm -f ./$(DEPDIR)/CustomActions.Po
+	-rm -f ./$(DEPDIR)/CustomActionsUI.Po
 	-rm -f ./$(DEPDIR)/DialogBox.Po
 	-rm -f ./$(DEPDIR)/DirHistBox.Po
 	-rm -f ./$(DEPDIR)/DirList.Po
 	-rm -f ./$(DEPDIR)/DirPanel.Po
 	-rm -f ./$(DEPDIR)/ExecuteBox.Po
+	-rm -f ./$(DEPDIR)/Execution.Po
 	-rm -f ./$(DEPDIR)/File.Po
 	-rm -f ./$(DEPDIR)/FileDialog.Po
 	-rm -f ./$(DEPDIR)/FileDict.Po
@@ -1061,16 +1211,20 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/KeyBindings.Po
 	-rm -f ./$(DEPDIR)/KeyBindingsDialog.Po
 	-rm -f ./$(DEPDIR)/MessageBox.Po
+	-rm -f ./$(DEPDIR)/NetworkDiscovery.Po
 	-rm -f ./$(DEPDIR)/OverwriteBox.Po
 	-rm -f ./$(DEPDIR)/PathLinker.Po
 	-rm -f ./$(DEPDIR)/Places.Po
 	-rm -f ./$(DEPDIR)/Preferences.Po
+	-rm -f ./$(DEPDIR)/Preview.Po
 	-rm -f ./$(DEPDIR)/Properties.Po
+	-rm -f ./$(DEPDIR)/RemoteDirectory.Po
 	-rm -f ./$(DEPDIR)/RenameDialog.Po
 	-rm -f ./$(DEPDIR)/SearchPanel.Po
 	-rm -f ./$(DEPDIR)/SearchWindow.Po
 	-rm -f ./$(DEPDIR)/StringList.Po
 	-rm -f ./$(DEPDIR)/SystemIcons.Po
+	-rm -f ./$(DEPDIR)/SystemIntegration.Po
 	-rm -f ./$(DEPDIR)/TabButtons.Po
 	-rm -f ./$(DEPDIR)/TextLabel.Po
 	-rm -f ./$(DEPDIR)/TextWindow.Po
@@ -1083,6 +1237,8 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/icons.Po
 	-rm -f ./$(DEPDIR)/main.Po
 	-rm -f ./$(DEPDIR)/startupnotification.Po
+	-rm -f ./$(DEPDIR)/swordfish-command-link.Po
+	-rm -f ./$(DEPDIR)/swordfish_preview-PreviewWorker.Po
 	-rm -f ./$(DEPDIR)/xfeutils.Po
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
@@ -1106,7 +1262,7 @@ install-dvi: install-dvi-am
 
 install-dvi-am:
 
-install-exec-am: install-binPROGRAMS
+install-exec-am: install-binPROGRAMS install-libexecPROGRAMS
 
 install-html: install-html-am
 
@@ -1147,11 +1303,14 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/ComboBox.Po
 	-rm -f ./$(DEPDIR)/CommandWindow.Po
 	-rm -f ./$(DEPDIR)/ConnectDialog.Po
+	-rm -f ./$(DEPDIR)/CustomActions.Po
+	-rm -f ./$(DEPDIR)/CustomActionsUI.Po
 	-rm -f ./$(DEPDIR)/DialogBox.Po
 	-rm -f ./$(DEPDIR)/DirHistBox.Po
 	-rm -f ./$(DEPDIR)/DirList.Po
 	-rm -f ./$(DEPDIR)/DirPanel.Po
 	-rm -f ./$(DEPDIR)/ExecuteBox.Po
+	-rm -f ./$(DEPDIR)/Execution.Po
 	-rm -f ./$(DEPDIR)/File.Po
 	-rm -f ./$(DEPDIR)/FileDialog.Po
 	-rm -f ./$(DEPDIR)/FileDict.Po
@@ -1164,16 +1323,20 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/KeyBindings.Po
 	-rm -f ./$(DEPDIR)/KeyBindingsDialog.Po
 	-rm -f ./$(DEPDIR)/MessageBox.Po
+	-rm -f ./$(DEPDIR)/NetworkDiscovery.Po
 	-rm -f ./$(DEPDIR)/OverwriteBox.Po
 	-rm -f ./$(DEPDIR)/PathLinker.Po
 	-rm -f ./$(DEPDIR)/Places.Po
 	-rm -f ./$(DEPDIR)/Preferences.Po
+	-rm -f ./$(DEPDIR)/Preview.Po
 	-rm -f ./$(DEPDIR)/Properties.Po
+	-rm -f ./$(DEPDIR)/RemoteDirectory.Po
 	-rm -f ./$(DEPDIR)/RenameDialog.Po
 	-rm -f ./$(DEPDIR)/SearchPanel.Po
 	-rm -f ./$(DEPDIR)/SearchWindow.Po
 	-rm -f ./$(DEPDIR)/StringList.Po
 	-rm -f ./$(DEPDIR)/SystemIcons.Po
+	-rm -f ./$(DEPDIR)/SystemIntegration.Po
 	-rm -f ./$(DEPDIR)/TabButtons.Po
 	-rm -f ./$(DEPDIR)/TextLabel.Po
 	-rm -f ./$(DEPDIR)/TextWindow.Po
@@ -1186,6 +1349,8 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/icons.Po
 	-rm -f ./$(DEPDIR)/main.Po
 	-rm -f ./$(DEPDIR)/startupnotification.Po
+	-rm -f ./$(DEPDIR)/swordfish-command-link.Po
+	-rm -f ./$(DEPDIR)/swordfish_preview-PreviewWorker.Po
 	-rm -f ./$(DEPDIR)/xfeutils.Po
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
@@ -1202,23 +1367,24 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-binPROGRAMS
+uninstall-am: uninstall-binPROGRAMS uninstall-libexecPROGRAMS
 
 .MAKE: install-am install-strip
 
 .PHONY: CTAGS GTAGS TAGS all all-am am--depfiles check check-am clean \
-	clean-binPROGRAMS clean-generic cscopelist-am ctags ctags-am \
-	distclean distclean-compile distclean-generic distclean-tags \
-	distdir dvi dvi-am html html-am info info-am install \
-	install-am install-binPROGRAMS install-data install-data-am \
-	install-dvi install-dvi-am install-exec install-exec-am \
-	install-html install-html-am install-info install-info-am \
+	clean-binPROGRAMS clean-generic clean-libexecPROGRAMS \
+	cscopelist-am ctags ctags-am distclean distclean-compile \
+	distclean-generic distclean-tags distdir dvi dvi-am html \
+	html-am info info-am install install-am install-binPROGRAMS \
+	install-data install-data-am install-dvi install-dvi-am \
+	install-exec install-exec-am install-html install-html-am \
+	install-info install-info-am install-libexecPROGRAMS \
 	install-man install-pdf install-pdf-am install-ps \
 	install-ps-am install-strip installcheck installcheck-am \
 	installdirs maintainer-clean maintainer-clean-generic \
 	mostlyclean mostlyclean-compile mostlyclean-generic pdf pdf-am \
 	ps ps-am tags tags-am uninstall uninstall-am \
-	uninstall-binPROGRAMS
+	uninstall-binPROGRAMS uninstall-libexecPROGRAMS
 
 .PRECIOUS: Makefile
 

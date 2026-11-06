@@ -42,41 +42,66 @@ FXIMPLEMENT(SidebarFrame, FXPacker, NULL, 0)
 
 void SidebarItem::draw(const FXTreeList* list, FXDC& dc, FXint x, FXint y, FXint w, FXint h) const
 {
-    if (kind == DEVICE && path.left(5) == "/dev/")
-    {
-        // Render as unavailable without disabling clicks needed to remount it.
-        SidebarItem appearance(label, closedIcon, kind);
-        appearance.setOpenIcon(openIcon);
-        appearance.state = (state & ~(OPENICONOWNED | CLOSEDICONOWNED)) | DISABLED;
-        appearance.FXTreeItem::draw(list, dc, x, y, w, h);
-    }
-    else FXTreeItem::draw(list, dc, x, y, w, h);
-    if (deviceAction != NO_ACTION)
+    FXTreeItem::draw(list, dc, x, y, w, h);
+    if (deviceAction != NO_ACTION || canEject)
     {
         const SidebarTree* tree = static_cast<const SidebarTree*>(list);
-        FXint left = tree->deviceButtonLeft();
-        dc.setForeground(isSelected() ? list->getSelBackColor() : list->getBackColor());
-        dc.fillRectangle(left, y, 24, h);
-        dc.setForeground(isSelected() ? list->getSelTextColor() : list->getTextColor());
-        dc.drawRectangle(left + 2, y + 2, 19, h - 5);
-        FXPoint triangle[] = {FXPoint(left + 7, y + h / 2 + 1),
-                              FXPoint(left + 12, y + h / 2 - 5),
-                              FXPoint(left + 17, y + h / 2 + 1)};
-        dc.fillPolygon(triangle, 3);
-        dc.fillRectangle(left + 7, y + h / 2 + 4, 11, 2);
+        for (int button = 0; button < 2; ++button)
+        {
+            if (button == 0 ? deviceAction == NO_ACTION : !canEject) continue;
+            FXint left = tree->deviceButtonLeft(button == 1);
+            dc.setForeground(isSelected() ? list->getSelBackColor() : list->getBackColor());
+            dc.fillRectangle(left, y, 24, h);
+            dc.setForeground(isSelected() ? list->getSelTextColor() : list->getTextColor());
+            dc.drawRectangle(left + 2, y + 2, 19, h - 5);
+            dc.setForeground(button == 0 && deviceAction == MOUNT_DEVICE ?
+                             FXRGB(46, 204, 113) : FXRGB(255, 64, 64));
+            FXint mid = y + h / 2;
+            if (button == 1)
+            {
+                FXPoint triangle[] = {FXPoint(left + 7, mid + 1), FXPoint(left + 12, mid - 5),
+                                      FXPoint(left + 17, mid + 1)};
+                dc.fillPolygon(triangle, 3);
+                dc.fillRectangle(left + 7, mid + 4, 11, 2);
+            }
+            else if (deviceAction == MOUNT_DEVICE)
+            {
+                FXPoint triangle[] = {FXPoint(left + 8, mid - 6), FXPoint(left + 17, mid),
+                                      FXPoint(left + 8, mid + 6)};
+                dc.fillPolygon(triangle, 3);
+            }
+            else
+            {
+                FXPoint stop[] = {FXPoint(left + 9, mid - 6), FXPoint(left + 15, mid - 6),
+                                  FXPoint(left + 18, mid - 3), FXPoint(left + 18, mid + 3),
+                                  FXPoint(left + 15, mid + 6), FXPoint(left + 9, mid + 6),
+                                  FXPoint(left + 6, mid + 3), FXPoint(left + 6, mid - 3)};
+                dc.fillPolygon(stop, 8);
+            }
+        }
     }
 }
 
-FXint SidebarTree::deviceButtonLeft() const
+FXint SidebarTree::deviceButtonLeft(FXbool eject) const
 {
-    return FXMAX(0, viewport_w - 26);
+    return FXMAX(0, viewport_w - (eject ? 26 : 50));
 }
 
 SidebarItem* SidebarTree::deviceButtonAt(FXint x, FXint y) const
 {
     SidebarItem* item = static_cast<SidebarItem*>(getItemAt(x, y));
-    return item && item->deviceAction != SidebarItem::NO_ACTION &&
-           x >= deviceButtonLeft() && x < deviceButtonLeft() + 24 ? item : NULL;
+    return deviceActionAt(x, y) != SidebarItem::NO_ACTION ? item : NULL;
+}
+
+SidebarItem::DeviceAction SidebarTree::deviceActionAt(FXint x, FXint y) const
+{
+    SidebarItem* item = static_cast<SidebarItem*>(getItemAt(x, y));
+    if (!item) return SidebarItem::NO_ACTION;
+    if (item->canEject && x >= deviceButtonLeft() && x < deviceButtonLeft() + 24)
+        return SidebarItem::EJECT_DEVICE;
+    if (x >= deviceButtonLeft(false) && x < deviceButtonLeft(false) + 24)
+        return item->deviceAction;
+    return SidebarItem::NO_ACTION;
 }
 
 long SidebarTree::onDevicePress(FXObject* sender, FXSelector sel, void* ptr)
@@ -85,6 +110,7 @@ long SidebarTree::onDevicePress(FXObject* sender, FXSelector sel, void* ptr)
     SidebarItem* item = deviceButtonAt(event->win_x, event->win_y);
     if (!item) return FXTreeList::onLeftBtnPress(sender, sel, ptr);
     pressedDevice = item->path;
+    pressedAction = deviceActionAt(event->win_x, event->win_y);
     setFocus();
     grab();
     return 1;
@@ -94,13 +120,19 @@ long SidebarTree::onDeviceRelease(FXObject* sender, FXSelector sel, void* ptr)
 {
     if (pressedDevice.empty()) return FXTreeList::onLeftBtnRelease(sender, sel, ptr);
     FXString path = pressedDevice;
+    SidebarItem::DeviceAction action = pressedAction;
     pressedDevice.clear();
+    pressedAction = SidebarItem::NO_ACTION;
     if (grabbed()) ungrab();
     getApp()->flush();
     FXEvent* event = static_cast<FXEvent*>(ptr);
     SidebarItem* item = deviceButtonAt(event->win_x, event->win_y);
-    if (item && item->path == path && target && deviceActionSelector)
-        target->handle(this, FXSEL(SEL_COMMAND, deviceActionSelector), item);
+    if (item && item->path == path && deviceActionAt(event->win_x, event->win_y) == action &&
+        target && deviceActionSelector)
+    {
+        SidebarDeviceRequest request = {item, action};
+        target->handle(this, FXSEL(SEL_COMMAND, deviceActionSelector), &request);
+    }
     return 1;
 }
 
@@ -140,8 +172,9 @@ long SidebarTree::onQueryTip(FXObject* sender, FXSelector sel, void* ptr)
         SidebarItem* item = static_cast<SidebarItem*>(getItemAt(x, y));
         if (item && deviceButtonAt(x, y))
         {
-            FXString tip = item->deviceAction == SidebarItem::EJECT_DEVICE ?
-                           _("Eject (Safely Remove)") : _("Unmount");
+            SidebarItem::DeviceAction action = deviceActionAt(x, y);
+            FXString tip = action == SidebarItem::EJECT_DEVICE ? _("Eject (Safely Remove)") :
+                           action == SidebarItem::MOUNT_DEVICE ? _("Mount") : _("Unmount");
             sender->handle(this, FXSEL(SEL_COMMAND, ID_SETSTRINGVALUE), (void*)&tip);
             return 1;
         }
@@ -159,7 +192,8 @@ long SidebarTree::onExpandItem(FXObject*, FXSelector, void* ptr)
 {
     const FXTime started = FXThread::time();
     SidebarItem* item = static_cast<SidebarItem*>(ptr);
-    if (item && item->kind == SidebarItem::DEVICE && item->path.left(5) == "/dev/") return 1;
+    if (item && item->kind == SidebarItem::DEVICE &&
+        (item->path.left(5) == "/dev/" || item->deviceAction == SidebarItem::MOUNT_DEVICE)) return 1;
     if (grabbed())
     {
         // A slow filesystem must not keep the desktop's pointer grabbed.
@@ -754,6 +788,7 @@ void MountsList::scan()
     // Labels are not unique keys: remove every old row, including duplicates.
     clearItems();
     mounts->clear();
+    mountedRemotes.clear();
 
     struct mntent* mnt;
     FILE* mtab = setmntent(MTAB_PATH, "r");
@@ -831,6 +866,11 @@ void MountsList::scan()
             {
                 addMount(RemoteDirectory::mountLabel(gvfsname), pathname, mininetdriveicon);
             }
+            if (!xf_gvfsmounturi(pathname).empty() && mounttype != "mtp")
+            {
+                knownRemotes[pathname] = RemoteDirectory::mountLabel(gvfsname);
+                mountedRemotes.insert(pathname);
+            }
 
             // MTP device
             if (mounttype == "mtp")
@@ -841,6 +881,25 @@ void MountsList::scan()
         }
         closedir(dirp);
     }
+    for (const auto& remote : knownRemotes)
+    {
+        if (mountedRemotes.find(remote.first) == mountedRemotes.end())
+            addMount(remote.second, remote.first, mininetdriveicon);
+    }
+}
+
+FXbool MountsList::disconnected(const FXString& path) const
+{
+    return knownRemotes.find(path) != knownRemotes.end() &&
+           mountedRemotes.find(path) == mountedRemotes.end();
+}
+
+void MountsList::forgetRemote(const FXString& path)
+{
+    knownRemotes.erase(path);
+    mountedRemotes.erase(path);
+    scan();
+    invalidate();
 }
 
 

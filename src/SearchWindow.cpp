@@ -1003,6 +1003,7 @@ int SearchWindow::execCmd(FXString command)
         args[3] = NULL;                         // a new process
 
         setpgid(0, 0);                          // Allows to kill the whole group
+        xf_restorehostenv();
         execvp(args[0], args);                  // Start a new process which will execute the command
         _exit(EXIT_FAILURE);                    // We'll get here only if an error occurred
     }

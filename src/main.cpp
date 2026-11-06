@@ -8,7 +8,6 @@
 #include <sys/types.h>
 #include <string.h>
 #include <time.h>
-#include <vector>
 
 #include <fx.h>
 #include <fxkeys.h>
@@ -30,37 +29,6 @@
 
 // Main window
 FXMainWindow* mainWindow = NULL;
-
-static void setNetWmIcon(FXMainWindow* window, FXIcon* icon)
-{
-    if (!window || !icon || !icon->getData())
-    {
-        fprintf(stderr, "Cannot set _NET_WM_ICON: window icon is unavailable\n");
-        return;
-    }
-
-    const FXint width = icon->getWidth();
-    const FXint height = icon->getHeight();
-    const FXColor* pixels = icon->getData();
-    const size_t pixel_count = static_cast<size_t>(width) * height;
-    std::vector<unsigned long> property(2 + pixel_count);
-    property[0] = width;
-    property[1] = height;
-
-    for (size_t i = 0; i < pixel_count; ++i)
-    {
-        property[i + 2] = (static_cast<unsigned long>(FXALPHAVAL(pixels[i])) << 24) |
-                          (static_cast<unsigned long>(FXREDVAL(pixels[i])) << 16) |
-                          (static_cast<unsigned long>(FXGREENVAL(pixels[i])) << 8) |
-                          FXBLUEVAL(pixels[i]);
-    }
-
-    Display* display = static_cast<Display*>(window->getApp()->getDisplay());
-    XChangeProperty(display, static_cast<Window>(window->id()), XInternAtom(display, "_NET_WM_ICON", False),
-                    XA_CARDINAL, 32, PropModeReplace, reinterpret_cast<const unsigned char*>(property.data()),
-                    static_cast<int>(property.size()));
-    XFlush(display);
-}
 
 // Exec path
 FXString execpath;
@@ -521,6 +489,23 @@ int main(int argc, char* argv[])
     FXApp* application = new FXApp(appname, vdrname);
     application->init(argc, argv);
 
+    FXbool firstRun = true;
+    FXString settingsError;
+    for (const FXString& name : {FXString(XFECONFIGNAME), FXString(appname) + "rc"})
+    {
+        FXString path = xdgconfighome + PATHSEPSTRING XFECONFIGPATH PATHSEPSTRING + name;
+        struct stat info;
+        if (lstat(path.text(), &info) == 0)
+        {
+            firstRun = false;
+            if (access(path.text(), R_OK) != 0) settingsError = path + ": " + strerror(errno);
+        }
+        else if (errno != ENOENT)
+        {
+            firstRun = false;
+            settingsError = path + ": " + strerror(errno);
+        }
+    }
     // Read registry thru foxhacks
     application->reg().read();
     appLogSetLevel(application->reg().readUnsignedEntry("OPTIONS", "log_level", APP_LOG_LEVEL_NORMAL));
@@ -629,6 +614,10 @@ int main(int argc, char* argv[])
 \n\nPlease check your Swordfish installation..."));
     }
 
+    if (!settingsError.empty())
+        MessageBox::error(mainWindow, BOX_OK, _("Settings could not be read"), "%s", settingsError.text());
+    if (firstRun && !application->reg().readBoolEntry("OPTIONS", "welcome_completed", false))
+        application->addTimeout(mainWindow, XFileExplorer::ID_WELCOME, 100);
     FXint exitCode = application->run();
     appLog(APP_LOG_APPLICATION, "stopped", FXString("exit_code=") + FXStringVal(exitCode));
     return exitCode;

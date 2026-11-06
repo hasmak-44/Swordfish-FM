@@ -37,6 +37,81 @@
                              ICONLIST_AUTOSIZE)
 #define TYPE_MASK           (ICONLIST_FILELIST | ICONLIST_SEARCH | ICONLIST_STANDARD)
 
+class ColumnHeader : public FXHeader
+{
+    FXDECLARE(ColumnHeader)
+protected:
+    ColumnHeader() {}
+    FXint source = -1;
+    FXint start = 0;
+    FXbool dragging = false;
+public:
+    ColumnHeader(IconList* owner) :
+        FXHeader(owner, owner, IconList::ID_HEADER_CHANGE,
+                 HEADER_TRACKING | HEADER_BUTTON | HEADER_RESIZE | FRAME_GROOVE) {}
+
+    long onPress(FXObject* sender, FXSelector sel, void* ptr)
+    {
+        FXEvent* event = static_cast<FXEvent*>(ptr);
+        source = getItemAt(event->win_x);
+        start = event->win_x;
+        dragging = false;
+        if (source < 0 || source >= getNumItems()) source = -1;
+        if (source >= 0)
+        {
+            FXint left = getPosition();
+            for (FXint column = 0; column < source; ++column) left += getItemSize(column);
+            FXint right = left + getItemSize(source);
+            if (event->win_x - left < 6 || right - event->win_x < 6) source = -1;
+        }
+        return FXHeader::onLeftBtnPress(sender, sel, ptr);
+    }
+
+    long onMove(FXObject* sender, FXSelector sel, void* ptr)
+    {
+        FXEvent* event = static_cast<FXEvent*>(ptr);
+        if (source > 0 && (event->state & LEFTBUTTONMASK) &&
+            (dragging || abs(event->win_x - start) >= getApp()->getDragDelta()))
+        {
+            dragging = true;
+            setDefaultCursor(getApp()->getDefaultCursor(DEF_MOVE_CURSOR));
+            return 1;
+        }
+        return FXHeader::onMotion(sender, sel, ptr);
+    }
+
+    long onRelease(FXObject* sender, FXSelector sel, void* ptr)
+    {
+        FXEvent* event = static_cast<FXEvent*>(ptr);
+        FXint from = source, to = getItemAt(event->win_x);
+        FXbool moved = dragging;
+        source = -1;
+        dragging = false;
+        FXObject* receiver = getTarget();
+        if (moved) setTarget(NULL);
+        long result = FXHeader::onLeftBtnRelease(sender, sel, ptr);
+        setTarget(receiver);
+        setDefaultCursor(getApp()->getDefaultCursor(DEF_ARROW_CURSOR));
+        if (moved && to > 0 && to < getNumItems() && event->win_y >= 0 && event->win_y < getHeight())
+            static_cast<IconList*>(getParent())->moveColumn(from, to);
+        return result;
+    }
+
+    long onMenu(FXObject*, FXSelector, void* ptr)
+    {
+        return static_cast<IconList*>(getParent())->showColumnMenu(static_cast<FXEvent*>(ptr));
+    }
+};
+
+FXDEFMAP(ColumnHeader) ColumnHeaderMap[] =
+{
+    FXMAPFUNC(SEL_LEFTBUTTONPRESS, 0, ColumnHeader::onPress),
+    FXMAPFUNC(SEL_MOTION, 0, ColumnHeader::onMove),
+    FXMAPFUNC(SEL_LEFTBUTTONRELEASE, 0, ColumnHeader::onRelease),
+    FXMAPFUNC(SEL_RIGHTBUTTONRELEASE, 0, ColumnHeader::onMenu),
+};
+FXIMPLEMENT(ColumnHeader, FXHeader, ColumnHeaderMap, ARRAYNUMBER(ColumnHeaderMap))
+
 
 
 // Object implementation
@@ -998,8 +1073,7 @@ IconList::IconList(FXComposite* p, FXuint *ic, FXuint nc, FXObject* tgt, FXSelec
     }
 
     // Header
-    header = new FXHeader(this, this, IconList::ID_HEADER_CHANGE,
-                          HEADER_TRACKING | HEADER_BUTTON | HEADER_RESIZE | FRAME_GROOVE);
+    header = new ColumnHeader(this);
     target = tgt;
     message = sel;
     nrows = 1;

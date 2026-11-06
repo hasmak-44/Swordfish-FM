@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420" role="img" aria-labelledby="title description">
+  <title id="title">Mouse and keyboard basics</title>
+  <desc id="description">A mouse with left button, right button, and scroll wheel labelled, beside keyboard examples for Enter, Escape, Shift, and Control.</desc>
+  <rect width="900" height="420" rx="24" fill="#f3f7fa"/>
+  <g font-family="system-ui, sans-serif" fill="#202a35">
+    <text x="54" y="58" font-size="30" font-weight="700">Mouse</text>
+    <rect x="96" y="100" width="190" height="265" rx="92" fill="#fff" stroke="#304758" stroke-width="8"/>
+    <path d="M191 108v110M102 222h178" stroke="#304758" stroke-width="6"/>
+    <path d="M195 119v54" stroke="#0c6b65" stroke-width="16" stroke-linecap="round"/>
+    <rect x="111" y="114" width="72" height="91" rx="28" fill="#bce8de"/>
+    <rect x="208" y="114" width="63" height="91" rx="28" fill="#ffe5ab"/>
+    <text x="57" y="240" font-size="20" font-weight="700">Left button</text>
+    <path d="M154 228L154 204" stroke="#0c6b65" stroke-width="3"/>
+    <text x="201" y="240" font-size="20" font-weight="700">Right button</text>
+    <path d="M243 228L243 204" stroke="#b57a00" stroke-width="3"/>
+    <text x="115" y="397" font-size="20" font-weight="700">Scroll wheel: roll to move the list</text>
+    <path d="M191 181v36" stroke="#304758" stroke-width="12" stroke-linecap="round"/>
+    <text x="390" y="58" font-size="30" font-weight="700">Keyboard keys used in this guide</text>
+    <g font-size="24" font-weight="700" text-anchor="middle">
+      <rect x="390" y="95" width="145" height="72" rx="12" fill="#fff" stroke="#8093a2" stroke-width="3"/>
+      <text x="462" y="141">Enter</text>
+      <rect x="555" y="95" width="145" height="72" rx="12" fill="#fff" stroke="#8093a2" stroke-width="3"/>
+      <text x="627" y="141">Esc</text>
+      <rect x="720" y="95" width="130" height="72" rx="12" fill="#fff" stroke="#8093a2" stroke-width="3"/>
+      <text x="785" y="141">Space</text>
+      <rect x="390" y="190" width="210" height="72" rx="12" fill="#d9e8f4" stroke="#50728a" stroke-width="3"/>
+      <text x="495" y="236">Shift</text>
+      <rect x="620" y="190" width="230" height="72" rx="12" fill="#d9e8f4" stroke="#50728a" stroke-width="3"/>
+      <text x="735" y="236">Ctrl</text>
+    </g>
+    <text x="390" y="310" font-size="19">Hold Shift or Ctrl while you click</text>
+    <text x="390" y="340" font-size="19">when selecting more than one item.</text>
+    <text x="390" y="390" font-size="17" fill="#526170">Key names may look slightly different on your keyboard.</text>
+  </g>
+</svg>

@@ -1,8 +1,91 @@
 # Swordfish FM portable changelog
 
-## Unreleased
+## swordfish-0.0.3-beta1 — 6 November 2026
+
+Published as **0.0.3 beta 1**, the latest release, following user acceptance of
+Test 8. This is beta software, not a declaration of final 0.0.3 stability.
+The stable 0.0.2 release remains available unchanged.
+
+### Added
+- Custom Actions editor with nested folders, cascading context menus,
+  separators, selection/pattern conditions, safe path placeholders,
+  confirmation and terminal execution. A separate custom toolbar displays
+  checked actions or folder dropdowns; its configuration stays separate from
+  the built-in main toolbars.
+- Custom-action file patterns accept `.ext` shorthand as well as `*.ext`,
+  including compound endings such as `.tar.gz`. Folder actions also work on
+  the current folder without a selection; an explicit background option remains.
+- Top-level Custom Actions menu and Preferences page, context-menu editing
+  access, and a Thunar-style action editor with Basic/Appearance Conditions
+  tabs, command browsing, icon preview and prominent no-selection setting.
+- Separate custom-action Program/Parameters fields and working directory,
+  live preview, scrollable parameter legend, and non-executing Test Action
+  checks. Existing full commands remain supported. Added selection-count,
+  basename-without-extension and extension placeholders.
+- Searchable installed-system-icon chooser for custom actions and groups,
+  with a maximizable, categorized icon grid and a default/no-custom-icon option.
+  Image Files opens the normal file chooser with a preview below its left sidebar.
+  Host theme names remain usable in portable mode; previews stay bounded.
+- Duplicate Action, explicit installed-program icon suggestions, and
+  unsaved-change protection in the action editor and properties.
+- Illustrated offline beginner User Manual, available from Help and the
+  first-run welcome; the same HTML/images are suitable for online hosting.
+- Optional System Integration tab: desktop shortcut, applications-menu entry
+  and command link, all unchecked initially, with ownership checks. Command
+  locations come from the existing host PATH; exact/shared destinations are
+  confirmed, protected changes use system authorization, and PATH is never edited.
+- Details column-heading checklist and live heading dragging, retaining
+  Preferences controls. Visibility/order are per panel, shared by its tabs;
+  Preferences selects Left/Top or Right/Bottom and applies without restarting.
+  Column widths remain per-tab.
+- Preferences shortcut at the far right of the menu bar and a first-run
+  welcome for new personal settings profiles.
+
+### Fixed
+- Restored the original built-in toolbars, command order and theme icon sizes.
+  Removed experimental toolbar editors, presentation/context menus, overflow
+  controls and size/display overrides. Existing Custom Actions and their saved
+  settings remain intact, with menu/context access and the separate custom toolbar.
+- The icon chooser's Browse button opens an image-file dialog rather than a
+  folder-only dialog; the selected file is listed and previewed automatically.
+- Custom toolbar editing uses the main toolbar's Settings icon at the far right
+  with an "Edit Custom Actions" tooltip and no text.
+- Custom action and folder icons fit the toolbar instead of expanding it to
+  their original image size. Successful custom actions launch without an
+  output window by default; failures show output, with an explicit option
+  to show successful command output too.
+- Closing after changing Details column visibility no longer stops before
+  saving tabs and window layout. Widths are saved from each pane's actual
+  columns, including reordered search-result columns.
+- Tabs retain independent column widths across switching, reordering and
+  restored sessions. Failed-unmount tab restoration preserves these too.
+- Unmounted device names retain readable theme text and add "(unmounted)"
+  instead of using disabled/inverted text.
+- Preferences pages scroll by readable line-sized increments instead of single
+  pixels; nested lists retain their own scrolling.
+- Open Archive as Folder stays visible for supported archives even without
+  archivemount installed (including ISO images). Missing-tool guidance offers
+  to open the upstream installation page, without installing software.
+- Failed unmounts restore the tabs closed for that filesystem, including their
+  order, active tab and view modes. Busy errors identify visible processes
+  where possible and ask users to close applications using the device.
+- File-panel and search-results context menus offer separate Rename and Bulk
+  Rename entries, enabled for one and multiple selected items respectively.
+- Built-in search runs system tools with the host library environment, avoiding
+  the portable `libselinux.so.1` version warning from `find`.
+- Search windows and dialogs use the Swordfish application icon in both legacy
+  window-manager hints and the modern taskbar/dock icon property.
 
 ### Changed
+- Context menus group editing and rename together, followed by copy/move/link
+  actions. Copy Path replaces Copy Name and copies plain full paths; Other
+  Pane commands use the destination pane's active tab.
+- A selected folder offers Open in New Tab in the file-panel context menu,
+  opening an active tab in the same pane without replacing the original tab.
+- Devices have separate stop/go Mount/Unmount and Eject buttons. Disconnected
+  SMB/SFTP shares remain remountable for the session; eject forgets their
+  sidebar entry without touching credentials. USB eject unmounts all drive
+  partitions first and aborts on failure, without forced unmounts.
 - The automatic portable build now runs for `swordfish-<version>` release
   tags and attaches the same zip, tar.gz, source and SHA256SUMS files as the
   hand-made releases. It never replaces files already on a release, and it

@@ -10,6 +10,13 @@ DIST_SUBDIRS = po m4 src automount icons
 
 rcdir = $(prefix)/share/swordfish
 rc_DATA = swordfishrc
+manualdir = $(rcdir)/manual
+dist_manual_DATA = docs/manual/index.html
+manualimagesdir = $(manualdir)/images
+dist_manualimages_DATA = docs/manual/images/workspace.png docs/manual/images/annotated-workspace.png \
+                        docs/manual/images/welcome.png docs/manual/images/preferences.png \
+                        docs/manual/images/context-menu.png docs/manual/images/mouse-and-keyboard.svg \
+                        docs/manual/images/copy-vs-move.svg
 pkdir = $(prefix)/share/polkit-1/actions
 
 EXTRA_DIST = autogen.sh install-swordfish-system.sh iconlinks.sh config.h i18n.h org.swordfish.root.policy.in.in swordfish.1 swordfish-archive.1 swordfish-image.1 swordfish-package.1 swordfish-write.1 \
@@ -17,6 +24,11 @@ EXTRA_DIST = autogen.sh install-swordfish-system.sh iconlinks.sh config.h i18n.h
              tests/preview-regression.cpp tests/run-preview-regression.sh \
              tests/network-discovery-regression.cpp tests/run-network-discovery-regression.sh \
              tests/folder-expansion-regression.cpp tests/run-folder-expansion-regression.sh \
+             tests/search-window-regression.cpp tests/run-search-window-regression.sh \
+             tests/system-integration-regression.cpp tests/run-system-integration-regression.sh \
+             tests/custom-actions-regression.cpp tests/run-custom-actions-regression.sh \
+             tests/custom-actions-ui-regression.cpp tests/run-custom-actions-ui-regression.sh \
+             tests/run-command-link-regression.sh \
              tests/fake-remote-directory.py tests/native-directory-helper-regression.py \
              ABOUT-NLS TODO BUGS swordfishrc.in *.desktop.in.in \
                  $(top_srcdir)/icons/*

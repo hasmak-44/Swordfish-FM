@@ -642,6 +642,7 @@ FXlong xf_getavailablespace(const FXString&);
 FXHotKey xf_parseaccel(const FXString&);
 FXbool xf_existcommand(const FXString);
 void xf_restorehostenv();
+FXString xf_devicebusy(const FXString& mountpoint);
 FXString xf_getkeybinding(FXEvent*);
 
 int xf_mkpath(const char*, mode_t);
@@ -672,6 +673,7 @@ FXString xf_localedir();
 
 FXString xf_filefromuri(FXString);
 FXString xf_filetouri(const FXString&);
+FXString xf_encodeuripath(const FXString&);
 
 // XDND Direct Save (XDS) drops, used by archive managers such as Engrampa and File Roller
 enum

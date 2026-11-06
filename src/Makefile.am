@@ -1,6 +1,11 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
 bin_PROGRAMS = swordfish swfa swfi swfp swfw swordfish-preview swordfish-network
+libexec_PROGRAMS = swordfish-command-link
+
+swordfish_command_link_SOURCES = swordfish-command-link.cpp
+swordfish_command_link_LDFLAGS = -Wl,--as-needed
+swordfish_command_link_LDADD =
 
 swordfish_network_SOURCES = NetworkDiscovery.cpp
 swordfish_network_LDADD = $(PREVIEW_LIBS)
@@ -13,6 +18,8 @@ swordfish_preview_LDADD = $(PREVIEW_WORKER_LIBS)
 swordfish_SOURCES = ../st/x.c \
               ../st/st.c \
               AppLogger.cpp \
+              CustomActions.cpp \
+              CustomActionsUI.cpp \
               Preview.cpp \
               RemoteDirectory.cpp \
               icons.cpp \
@@ -48,6 +55,7 @@ swordfish_SOURCES = ../st/x.c \
 			  Places.cpp \
 			  Preferences.cpp \
 			  SystemIcons.cpp \
+              SystemIntegration.cpp \
               Properties.cpp \
 			  RenameDialog.cpp \
 			  SearchPanel.cpp \
@@ -244,7 +252,8 @@ swfw_LDADD = @LIBINTL@ -lutil
 
 localedir = $(datadir)/locale
 
-AM_CPPFLAGS = -I. -I$(top_srcdir) -I$(top_srcdir)/intl
+AM_CPPFLAGS = -I. -I$(top_srcdir) -I$(top_srcdir)/intl \
+             -DSWORDFISH_COMMAND_LINK_HELPER=\"$(libexecdir)/swordfish-command-link\"
 DEFS = -DLOCALEDIR=\"$(localedir)\" @DEFS@
 
 EXTRA_DIST =  ../libsn/sn-common.h	\
@@ -266,6 +275,8 @@ EXTRA_DIST =  ../libsn/sn-common.h	\
 			  ../st/x.h \
 			  xfedefs.h \
               AppLogger.h \
+              CustomActions.h \
+              CustomActionsUI.h \
               Preview.h \
               RemoteDirectory.h \
               SystemIcons.h \
@@ -305,6 +316,7 @@ EXTRA_DIST =  ../libsn/sn-common.h	\
 			  Places.h \
 			  Properties.h \
 			  Preferences.h \
+              SystemIntegration.h \
 			  RenameDialog.h \
 			  SearchPanel.h \
 			  SearchWindow.h \

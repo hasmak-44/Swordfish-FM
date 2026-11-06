@@ -1,7 +1,8 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 23 October 2026, after commit `7103fe4` and the RC6 Test 1
-build (see sections 3.14 and 9.0). Earlier sections were written after RC4.
+Last updated: 6 November 2026, for the accepted 0.0.3 beta 1 release
+(section 3.39). Latest release: `swordfish-0.0.3-beta1`.
+Stable fallback: `swordfish-0.0.2`.
 
 **Purpose:** preserve enough history, decisions, architecture and operational
 knowledge to resume development if the chat, development machine or temporary
@@ -19,27 +20,26 @@ Historical implementation details below do not override the current code.
    and [portable/README.md](portable/README.md).
 2. Inspect the current branch, commit and both staged and unstaged changes.
    Do not reset or clean the worktree to make it look like a fresh checkout.
-3. The frozen application baseline is **0.0.1 RC4**:
+3. The current published stable baseline is **0.0.2**:
    - Repository: <https://github.com/hasmak-44/Swordfish-FM>
    - Development/default branch used for this work: `portable-layout`
-   - Release tag: `swordfish-portable-0.0.1-rc4`
-   - Application commit: `ff33180f0321c7d1192e579973d7f4d88014da7a`
-   - [Public RC4 prerelease](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-portable-0.0.1-rc4)
-4. Treat RC4 as locked. Make later changes in later commits; do not move its tag,
-   silently replace its assets, or imply that untested development is RC4.
+   - Release tag: `swordfish-0.0.2`
+   - Application commit: `30a9a315476a9cf358560b5beba27f6c00a3fac7`
+   - [Stable release](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.2)
+4. Treat published releases as locked. Do not move their tags, replace their
+   assets, or present local test builds as a new stable release.
 5. The **Network discovery section is intentionally hidden**, not accidentally
    missing. Mounted shares and Connect to Server remain available.
 6. The native remote loader is a major verified improvement. Do not remove
    `swordfish-network` just because discovery is hidden: its `--list` mode
    provides the fast mounted-share loader.
-7. The latest user acceptance sequence was: fast remote navigation and triangle
-   expansion, archive-folder open/close, then over five minutes idle without
-   the previous timeout warning.
+7. User-confirmed fixes include the portable search warning, child-window icons
+   and the missing-archivemount guidance. Other device, rename and Beta 1 work
+   still needs real-machine acceptance (sections 3.21 and 3.23).
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state (RC5, the RC6 cycle, the RC6 bug list and what to do
-   next), read sections 3.14, 3.15 and 9.0 first. RC5 superseded RC4 as the latest
-   public release; both stay frozen.
+9. For the latest state, read section 3.39 first, then sections 3.28-3.38. The RC4-RC6 notes are
+   historical context, not the current release or pending-work status.
 
 This guide is a documentation addition after the frozen RC4 application commit.
 It is not part of the already-published RC4 source archive.
@@ -1037,6 +1037,615 @@ links to the latest release). Commit `9d834f8`:
 - Future release: rename CHANGELOG `## Unreleased` to `## swordfish-<v> — ...`,
   set `configure.ac`, commit, push the annotated tag; the workflow publishes.
 
+### 3.21 Local usability fixes and improvements-test3: 28 October
+
+These changes are local and uncommitted after `8a09b64`. The user requested
+a test build and history update, **not a push, release or stable-version bump**.
+The application still reports 0.0.2; the archive name identifies the test.
+
+- Search now restores the host library environment before running find/grep,
+  fixing the bundled libselinux version warning. Child windows/dialogs receive
+  the Swordfish taskbar icon. The user confirmed both fixes in bugfix-test1.
+- File-panel and search context menus separate Rename (one selection) from
+  Bulk Rename (multiple selections). F2 remains selection-aware and unchanged.
+- Devices have independent stop/go and eject controls: red stop for Unmount,
+  green go for Mount/Remount, and red eject matching the user's screenshot.
+  Internal unmountable partitions have no eject control; Root/Home stay
+  protected. USB eject releases all partitions before powering off the drive
+  and aborts on failure. No forced unmount or application termination is used.
+- Supported SMB/SFTP shares can be unmounted and remounted through the existing
+  authentication flow. Their disconnected entries survive for the current
+  session only. Eject disconnects/forgets the entry, never stored credentials.
+- Busy failures identify processes visible through /proc where possible and
+  say "Please close all applications using the device and try again."
+  If the filesystem remains mounted, failed unmount restores affected tabs,
+  including both panes' order, selected tabs and view modes. This work was
+  paused at the user's request, then verified when preparing this test build.
+- Open Archive as Folder remains available for supported archives, including
+  ISO, when archivemount is absent. A consent prompt offers the upstream
+  installation page in the host browser. Nothing is installed automatically;
+  archivemount and privileged host FUSE support are not bundled.
+
+Validation before packaging: full native make, search-window regression suite
+(search environment, icons, rename guards, archive menu/browser consent), and
+folder-expansion regression suite (device actions, remount authentication,
+multi-partition eject, protected mounts, real busy-process identification,
+and failed-unmount tab restoration) passed. The restored-folder cursor check
+now waits up to three seconds for asynchronous loading rather than asserting
+before the load completes. Earlier fixed-delay remote-loading checks have
+occasionally failed under load; do not hide failures by assuming a pass.
+
+Test archive: `build/Swordfish-Portable-0.0.2-improvements-test3.tar.gz`;
+matching checksums: `build/Swordfish-Portable-0.0.2-improvements-test3-SHA256SUMS`.
+Built with the Debian 10 portable builder (glibc 2.28). Docker initially had a
+missing cached layer; rebuilding this image with `--no-cache` fixed packaging
+without deleting shared Docker data. The package reports 0.0.2 and its visible
+main window appeared and survived resizing under Xvfb. All 42 folder/device
+checks and six search-window checks passed. Runtime `portable-data` is removed
+before final packaging; it is recreated on launch. Real USB/share behavior and
+button colours still need the user's test; automated fixtures are not acceptance.
+The earlier devices-test2 archive does not include busy-tab restoration,
+archive guidance or the button colours.
+
+Delivery: served temporarily from the codespace on port 8765 (SHA256
+`fada0a3733c2c2d850cf4272f2badadd4a587608c9996fd02c7aef745ff43d39`).
+On 28 October the user downloaded, extracted and launched it successfully;
+the server was then stopped. Real-machine testing is in progress. Next step:
+wait for the user's Test 3 report (device colours, USB/share unmount, remount
+and eject, busy-device message/tab restoration, rename entries, archive help).
+
+Pending separately: beginner manual, then custom actions/custom toolbar;
+native Wayland/cross-platform investigation. No port is claimed. Preserve
+the saved local-change backup and user screenshots; do not reset the worktree.
+
+### 3.22 Preferences scrolling and folder new-tab action: 29 October
+
+Before starting the agreed beginner manual, the user requested two local
+changes: Open in New Tab for a selected folder, and investigation of slow /
+apparently incomplete Preferences scrolling (General and Appearance; the
+theme list itself already scrolled).
+
+- File-panel context menus now offer Open in New Tab for one selected folder.
+  It activates a new tab in that pane, preserves the original tab and observes
+  the existing tab limit. Files, multiple selections and the parent entry
+  cannot invoke the action.
+- Preferences page scrollbars previously used FOX's default one-pixel line
+  increment. They now use font-sized increments. Regression checks at a
+  reduced dialog height cover wheel movement, both ends of each overflowing
+  page, visibility of the bottom control group, and independent nested-list
+  scrolling. A separate range-truncation bug has not been reproduced.
+- The regression runner uses the application's configured compiler flags,
+  since Preferences has conditional fields that must match the linked object.
+
+These are local source changes, not a new portable build or user acceptance.
+The existing downloaded Test 3 archive is unchanged. No push or publication
+was requested. Other discussion items remain pending; the future complete
+customization engine is explicitly exploratory, not an implementation task.
+
+### 3.23 Agreed Beta 1 usability, welcome and manual: 29 October
+
+The user clarified that all agreed changes should be applied together, not
+only the manual. The next local version is **0.0.3-beta1**; stable 0.0.2 and
+the downloaded improvements-test3 archive remain unchanged. No commit, push
+or publication is authorized by this implementation agreement.
+
+Implemented locally:
+
+- Unmounted device names use normal readable theme text with an
+  `(unmounted)` suffix. The visible suffix is not part of the device's stable
+  identity; the green Mount button remains available.
+- Each tab remembers its own column widths, keyed by column identity rather
+  than position. Widths follow switching, reordering, tab removal, restored
+  sessions and failed-unmount tab restoration.
+- A Preferences button at the right of the menu bar opens the existing
+  dialog. The current theme supplies a tools/wrench image, not a new icon
+  set or a complete UI customization engine.
+- File and search context menus group edit/rename actions separately from
+  copy/move/link actions, without new submenus. Copy Path replaces Copy Name
+  and copies plain full paths, one per selected item. Other Pane commands
+  use the destination pane's active tab; Link joins Copy and Move.
+- The selected-folder new-tab command and readable Preferences scrolling
+  from section 3.22 are included.
+- Help / User Manual opens the bundled offline HTML in the host browser.
+  The manual has 28 beginner chapters, real application screenshots, an
+  annotated workspace and two explanatory drawings. It assumes no previous
+  computer knowledge. Its HTML/images can also be hosted online; no online
+  publication or separately maintained PDF is claimed.
+- New personal settings profiles receive a welcome with Read User Manual,
+  Next and Start Using choices. The next page offers Customize and System
+  Integration. Existing settings suppress the welcome. Detection checks
+  personal settings files, not just FOX's successful bundled-default read.
+- Preferences has a separate System Integration page. Desktop shortcut,
+  applications-menu entry and personal command link all start unchecked.
+  Changes are per-user; portable shortcuts invoke AppRun. Ownership checks
+  protect unrelated files, edits and symlinks. Removing a selection removes
+  only an unchanged Swordfish-created item. Host PATH collisions are refused.
+  Instructions explain desktop Allow Launching, PATH visibility and repairing
+  links after moving a portable folder. Errors keep Preferences open.
+
+Validation so far: full native autotools build, search/UI regressions (including
+actual copy, move and link into the other pane's active tab), integration
+ownership/collision tests, and manual link/image checks pass. An isolated
+native first-run launch showed the welcome once and not on the next launch.
+The folder/device suite subsequently passed in full with its strict 150 ms
+single-event latency limit unchanged. Earlier runs hit that limit at 154-159 ms
+on this shared development machine. Complete portable validation and the user's
+real-machine acceptance must be recorded separately.
+
+Future custom actions, toolbar customization and a hierarchical UI styling
+engine remain discussions, not Beta 1 implementation.
+
+### 3.24 PATH destinations and live Details columns: 29 October
+
+The user approved implementation after discussion:
+
+- Do not add a directory to PATH. Offer existing host PATH directories instead,
+  preferring writable locations; create a missing personal `.local/bin` only
+  when it is already listed in PATH. Show the full link path and whether it is
+  personal/shared or needs administrator authorization before applying.
+- Protected standard command destinations use explicit `pkexec` system
+  authorization, never an application password box. A small non-setuid
+  `swordfish-command-link` helper is installed in libexec and bundled for portable
+  use. It restricts destinations and actions, validates targets, refuses
+  unrelated links and keeps root-owned per-user ownership records. Protected
+  removal requires authorization too. Cancel/error keeps Preferences open.
+  Desktop and applications-menu entries remain per-user.
+- Right-click a Details heading for a show/hide checklist. Drag the middle of
+  one heading onto another to reorder immediately; widths follow their column.
+  Name remains visible and first. Search retains Folder Name; Trash keeps its
+  two recovery columns fixed. Existing Preferences controls remain available.
+- Tabs persist column order/visibility as well as widths, including reordering,
+  closing and failed-unmount rollback. Changing column defaults in Preferences
+  invalidates older saved tab layouts after restart so the Preferences controls
+  continue to work rather than being silently overridden.
+- Tab dragging already exists and is unchanged. The user had simply missed it.
+
+The UI regression exercises actual header mouse events and the checklist,
+field alignment and widths, search rows arriving after a layout change,
+saved/restored tab layouts, and changed Preferences defaults. Integration tests
+cover PATH alternatives, conflicts, ownership and helper discovery. Privileged
+helper creation/removal checks run only inside an ephemeral network-isolated
+Docker container, with the repository mounted read-only; they do not write
+shared host directories or request a real password. Actual desktop authorization
+interaction still needs real-machine acceptance. No commit/push/publication
+was requested, and no new portable delivery is claimed by this section.
+
+### 3.25 Local Beta 1 portable test build: 29 October
+
+The user requested a tar.gz test build served through the Codespace, with its
+download port opened. Built `Swordfish-Portable-0.0.3-beta1` from the current
+uncommitted source, including section 3.24, using Debian 10/glibc 2.28.
+The legacy Docker builder avoids the previously damaged BuildKit cache.
+
+The actual portable binary reports 0.0.3-beta1. Xvfb launch checks passed for
+the new-profile welcome, resizing, graceful shutdown, settings persistence
+and no repeated welcome on the next launch. The package includes the offline
+manual and non-setuid command-link helper. Fresh smoke-test portable-data is
+removed before the final archive. Matching local source and SHA256 checksums
+accompany the test build. Native UI/integration/device regression results
+remain recorded above; real desktop authorization and user acceptance remain
+pending. This is a local test delivery, not a published release or a commit.
+Stable 0.0.2 and previous downloaded test archives are unchanged.
+
+After the user confirmed downloading Beta 1, the port-8765 server was stopped.
+At the user's low-disk-space request, expanded local test bundles, obsolete
+Test 1/Test 2 archives, native compilation outputs and the autotools cache were
+removed. The current Beta 1 binary/source/checksums, Test 3 rollback archive,
+manual/UI references, user attachments and source/backups were retained.
+Workspace free space increased from 2.8 GB to 3.9 GB; build/ shrank from 1.3 GB
+to 173 MB. Future build scratch/staging should use the separate /tmp filesystem
+where practical (38 GB free at cleanup), retaining only final deliverables in
+the workspace. Docker data was left alone because it may be shared.
+
+### 3.26 Tabs/layout not saved after changing visible columns: 29 October
+
+The user reported that after changing columns through a heading's right-click
+menu, reopening returned to one pane and a Home tab. The menu correctly changes
+only the active tab; Preferences retains its separate default choices.
+
+Reproduced the delivered Beta 1 shutdown failure:
+`FileList::getHeaderSize: index out of range.` The legacy configuration saver
+checked global default visibility before reading each pane's current column
+width. A hidden column therefore returned index -1, causing process exit before
+tabs, panel layout and the rest of the session were saved. This is an interrupted
+save, not evidence that the settings file itself became corrupt.
+
+The local fix shares width-saving logic across left, right and search panes,
+checks actual column presence and preserves stored widths for absent columns.
+Search Folder Name width is located by column identity, no longer fixed at
+position 1. Added a regression invoking the real configuration saver after
+column toggles/reordering in both panes and search, then launching a separate
+process to verify both panes, tab paths/order/selection, views and column
+layouts/widths restore. The full native build and expanded UI regression pass,
+including that separate-process save/restore test. Validation builds use /tmp to avoid filling workspace
+storage. This source fix has not yet been delivered as a replacement portable
+archive; the original Beta 1 download remains unchanged.
+
+### 3.27 Independent pane column preferences: 29 October
+
+The user confirmed that visibility/order should be shared by all tabs in a
+pane, with left/top and right/bottom independent. This replaces the earlier
+per-tab visibility/order design; widths remain per-tab.
+
+Preferences → File List now selects Left / Top Panel or Right / Bottom Panel,
+initially selecting the active pane. It reads the live headings when opened,
+retains pending edits while switching its selector, applies both pane choices
+immediately on OK, and discards edits on Cancel. Heading-menu choices and
+heading dragging affect the same pane-wide settings. Changing visibility in
+Preferences preserves the relative order of columns that remain visible.
+
+Each pane stores its stable column IDs under its own `column_layout` setting,
+independently of tab restoration. Older Beta 1 settings migrate from that
+pane's previously active tab. Tab changes and rollback/session restoration
+no longer override pane column choices. Hidden column widths remain in tab
+state and are restored from saved width entries. Sorting refreshes its field
+indices from the pane being sorted, preventing the other pane's different
+layout from changing the meaning of a field.
+
+The native build and focused GUI suite pass, including actual Preferences
+Cancel/OK, independent layouts/sorting, and real shutdown plus fresh-process
+session restoration. The device/folder suite passed on retry without changing
+assertions; its first run missed an expected simulated-unmount error message.
+Build and test scratch remain on /tmp, not the workspace filesystem. Manual,
+portable notes and changelog describe the new scope. No replacement portable
+archive, commit, push or release has been made.
+
+### 3.28 Test 2 delivered and confirmed working: 29 October
+
+Built a replacement local portable test with the shutdown/session-saving fix
+and independent per-pane column preferences. Build scratch and staging used
+/tmp; the portable baseline remains Debian 10 / glibc 2.28. Actual portable
+first-run welcome, resize, graceful shutdown, saved settings and reopening
+without another welcome passed. Removed the smoke-test profile before packing.
+
+Retained downloads in `build/beta1-test2-download/`:
+
+- `Swordfish-Portable-0.0.3-beta1-test2.tar.gz` (80,179,793 bytes).
+- `Swordfish-FM-0.0.3-beta1-test2-source.tar.gz`, matching current working-tree
+  source rather than committed HEAD.
+- `Swordfish-0.0.3-beta1-test2-SHA256SUMS`, verified against both archives.
+
+Portable SHA256:
+`6f03db4ee336ed2ee35fd184a836905e1e0ad46f3a107ade4f173afdb9776f09`.
+Source SHA256:
+`c175b136e48089dc709c92ac5557444b72c1aaa16f9d4878afc39ef918ba9e27`.
+
+Served on port 8765 through the existing authenticated Codespaces endpoint.
+The user downloaded it and reported **"tested, working"**, with further testing
+to follow. At the user's request the download server was stopped; verified no
+listener remains on port 8765. Temporary expanded bundles, native validation
+build and smoke profile were cleaned. Retained downloadable archives,
+checksums, diagnostic screenshots/logs, source and existing recovery backups.
+The stable published release is unchanged; nothing was committed or pushed.
+
+### 3.29 Cleanup and custom-action design approved: 6 November
+
+At the user's low-disk-space request, removed three obsolete Copilot package
+versions (retaining the two newest) and specifically identified obsolete
+Swordfish Docker images/build-cache records. Kept the current portable builder,
+all project downloads, source, notes, backups and chat history. Free workspace
+space rose from 3.2 GB to 5.9 GB; the worktree status was unchanged.
+
+The user approved implementing custom actions before the main toolbar editor:
+
+- Thunar-style custom actions, with name, description, icon, command and
+  selection/file-type conditions.
+- Add Action, Add Folder and Add Separator. Folders support nested cascading
+  groups rather than a flat list of actions.
+- A Show on custom toolbar checkbox for actions and folders. Toolbar folders
+  open dropdown menus; separators organize the toolbar.
+- Keep the custom-actions toolbar separate from all existing main toolbars.
+- Design shared toolbar-editing mechanisms where useful, but implement the
+  main toolbar's built-in-command editor in a separate later step. Built-in
+  commands must use their native handlers, not shell-command imitations.
+
+Implementation was authorized with "agreed, go ahead". This does not authorize
+a commit, push, release, or replacement of the user's downloaded Test 2.
+Implemented locally: Tools → Custom Actions… opens the hierarchy editor;
+Tools → Show Custom Toolbar toggles a separate toolbar with its own Edit
+button. Actions support file/folder/count/glob conditions, automatically quoted
+path/name/URI/current/other-pane placeholders, confirmation and terminal
+execution. Context menus hide unavailable actions; toolbar buttons disable
+them. Folder dropdowns expose descendants without duplicate top-level buttons.
+Editor Apply changes its working copy; Save persists and Cancel discards.
+Configuration uses Swordfish's own registry, with schema/hierarchy validation.
+Limits are 256 entries and 16 nesting levels. PNG icons currently retain their
+intrinsic dimensions; use small images. Complex shell syntax should be placed
+in external scripts. Action shortcuts and main-toolbar editing are not shipped.
+
+Full native build and install dry-run passed, as did five core and nine GUI
+custom-action regression groups. Existing Beta 1 GUI regressions also passed,
+including real shutdown and fresh-process tab/layout restoration. Core tests
+execute hostile filenames through /bin/sh and verify quoting, conditions,
+hierarchy operations and file-backed persistence. Terminal behavior was tested
+with a fixture, not every terminal emulator. Existing global-window teardown
+is excluded by the widget fixture; custom-controller teardown was verified.
+Validation scratch/logs were moved out of the workspace to
+`/tmp/swordfish-custom-actions-validation-20261106`. Manual, portable notes and
+changelog updated. No new portable package or real-machine acceptance yet.
+
+### 3.30 Custom-actions Test 3 delivery: 6 November
+
+At the user's request, built `Swordfish-Portable-0.0.3-beta1-test3.tar.gz`
+from an isolated snapshot of current uncommitted sources. Debian 10/glibc 2.28
+baseline; packaged application reports 0.0.3-beta1. Actual portable first-run,
+resize, graceful shutdown, settings persistence and reopening checks pass.
+The new custom-action core/GUI and existing Beta 1 regression results are
+recorded in section 3.29. Real-machine custom-action acceptance remains pending.
+
+Final downloads are in `build/beta1-test3-download/`, with matching source
+and verified SHA256SUMS. Portable archive: 80,353,352 bytes, SHA256
+`03ea494c1294b16339efe42b1ea2576ebf4dfbcd15732837924f706a5686043d`.
+Source SHA256:
+`1dbcc47077ff44c3c3315fc3efa3c7b8a46111e0bf1377520c395d5caa7171b5`.
+Smoke-profile data was removed before packing. Previous Test 2 is preserved.
+
+Served only this download directory on port 8765 through the authenticated
+Codespaces endpoint. Local HTTP archive response verified as 200; forwarded
+endpoint responds with the sign-in redirect. Server handle:
+`beta1-test3-download-server`. Stop it after download confirmation.
+Temporary expanded portable/source staging and smoke profile were cleaned;
+build logs retained on /tmp. No commit, push or release was made.
+
+### 3.31 Test 3 feedback: custom icons and successful-launch output
+
+The user's screenshots showed action/folder PNG icons expanding the toolbar
+to the image's original dimensions, and a successful Firefox launch leaving
+a command-output dialog. User confirmed the desired behavior: successful
+normal launches without a window, failures with captured output, plus optional
+Show output and Run in terminal controls.
+
+Custom icons now fit the standard small toolbar icon height, preserving aspect
+ratio. Added a persisted Show command output option, unchecked by default and
+backward-compatible with existing action settings. Hidden command windows
+collect output, delete themselves on successful completion, and show on failure.
+Command child status is forwarded by the application harvester so consuming
+SIGCHLD first does not misclassify success. Companion command-window consumers
+retain their normal visible behavior and forward child status too.
+
+Native clean rebuild and custom-action core/GUI tests pass, including a
+2048-by-1024 action/folder PNG, silent success, explicit successful output,
+visible failure and settings compatibility. Existing Beta 1 GUI regression
+also passes, including shutdown and fresh-process session restore. Source and
+manual changes are local; the already-downloaded Test 3 remains unchanged.
+No replacement package, commit or release yet.
+
+### 3.32 Custom-action navigation and Thunar-style layout agreement
+
+The user supplied `build/thunar-custom-1.png`, `thunar-custom-2.png` and
+`thunar-custom-3.png` as arrangement/workflow references and approved:
+
+- A top-level Custom Actions menu listing configured actions/groups and Edit.
+- Custom toolbar Edit separately at the far right; right-click toolbar offers
+  editing. File/background Custom Actions submenus also include Edit.
+- A Preferences Custom Actions tab, using the same editor/model.
+- A large action/group list with compact side controls and action properties
+  split into Basic and Appearance Conditions pages. Preserve nested folders,
+  separators, icon selection and Show on custom toolbar for actions/folders.
+- Make Show without selection prominent. Folders also enables actions on the
+  current folder when no selection exists.
+- One File Pattern field, no separate extensions field. `.jpg;.png;.tar.gz`
+  means `*.jpg;*.png;*.tar.gz`. Explicit wildcard patterns remain supported.
+  Range stays `*` (unrestricted); retain Show without selection.
+
+Parent implemented and verified core shorthand matching, independent folder
+eligibility and safely quoted current-folder placeholder expansion. Explicit
+dotfile globs such as `.*` retain their meaning. Custom-action UI/navigation
+integration is complete locally: top-level menu retains all configured actions,
+disabling unavailable ones; context submenus always include Edit, including an
+empty configuration. The separate toolbar anchors Edit at its far-right edge
+and offers a right-click editing menu. Preferences opens the same editor.
+Properties use Basic/Appearance Conditions tabs with command browsing, bounded
+icon preview, placeholder help, prominent Show without selection, and preserved
+Show on custom toolbar/output controls. Main editor retains the nested tree
+with icon/name/description rows and compact side controls.
+
+Clean native build and existing Beta 1 GUI suite passed. Six core regression
+groups and thirteen custom-action GUI groups passed, including measured
+far-right Edit geometry, menu availability, empty-configuration editing,
+Preferences access, tabs, icon bounds, silent success and visible failure.
+An initial toolbar alignment assertion caught a real positioning error; fixed
+layout rather than weakening the assertion. Validation remains under /tmp.
+Manual, portable notes and changelog updated. Downloaded Test 3 is unchanged.
+No new package, commit, push or release is authorized by the design agreement.
+
+### 3.33 Program/parameters and parameter legend agreement
+
+The user supplied `build/caja-command.png` and `build/caja-legend.png` and
+approved borrowing their command-entry features without replacing the agreed
+Thunar-style arrangement:
+
+- Separate Program and Parameters. Program accepts one executable name found
+  on host PATH (`bash`, `thunar`, `mono`, `wine`) or a full executable path,
+  typed or selected with Browse. Arguments go in Parameters.
+- Working directory with Browse, defaulting to the active folder.
+- Live command preview, without executing anything.
+- Scrollable Parameter Legend.
+- Additional placeholders for selection count, basename without extension,
+  and extension, while retaining existing Swordfish placeholder meanings.
+
+Existing full-command actions must remain compatible rather than being
+silently split or reinterpreted. Paths with spaces must work safely.
+Implemented locally. New actions use Program mode; existing commands retain
+their original full-command mode without eager splitting. Optional fields
+persist compatibly with older settings. Working directory accepts %p/%o/%d/%f
+and %% as literal-path substitutions, defaults to the active directory, and
+rejects missing/inaccessible directories. Programs resolve against host PATH
+or a literal executable path. Preview never executes.
+
+Added %c (actual selection count), %w/%W (basename without last extension),
+%x/%X (last extension without dot). archive.tar.gz becomes archive.tar / gz;
+.hidden has no extension. Empty extensions remain empty arguments; background
+count remains zero even with current-folder fallback. Legend explains these.
+
+User additionally approved Test Action: it shares preparation validation and
+runs /bin/sh -n for syntax only, never executing the action. Reports Checks
+Passed or clear errors; checks executable lookup in Program mode, placeholders
+and directory validity. Explicitly does not promise application-option validity
+or runtime success; legacy commands receive syntax checking, not arbitrary
+shell-program resolution.
+
+Native build, nine core regression groups, fourteen GUI groups and existing
+Beta 1 session/UI regressions passed. Coverage includes legacy persistence,
+hostile executable/cwd filenames, new placeholder quoting/edge cases, real
+Program/Parameters/Browse fields, preview, scrollable legend and Test Action
+success/failure dialogs. Side-effect marker tests prove checks do not run the
+action. Validation remains under /tmp. Manual/portable notes/changelog updated.
+No replacement package, commit, push or release requested.
+
+### 3.34 System icons for custom actions: approved
+
+The user supplied `build/icon choice.png` and `build/icon choice-2.png`:
+custom-action icons should be selectable from installed system icons as well
+as image files. Agreed implementation adds a searchable visual chooser with
+system icons, Image Files and No Icon routes, preserving bounded toolbar
+sizes. Portable resolution must use host icon data rather than only bundled
+Swordfish assets.
+
+Implemented locally. The chooser loads forty previews per page and supports
+search, paging, Cancel, image selection and resetting to the default icon.
+System selections persist `theme:NAME` and resolve host XDG themes, inheritance
+and hicolor fallback; image selections persist absolute paths. PNG/JPEG/XPM
+load natively; SVG uses the existing converter and cache. All sizes preserve
+aspect ratio. Missing selected icons report an error.
+
+Native build, sixteen custom-action GUI groups, nine core groups and existing
+Beta 1 GUI/session regressions passed. Coverage includes synthetic host themes,
+inherited/fallback names, portable host-vs-bundle lookup, image formats/bounds,
+search/paging, cancellation and reset. Initial search-fixture failure targeted
+the category combo's internal field rather than Search; corrected fixture
+target selection while retaining the zero-results assertion. Manual, portable
+notes and changelog updated. No replacement package or release yet.
+
+### 3.35 Small editor improvements approved
+
+The user approved prioritizing Duplicate Action, suggesting an installed
+application's icon, and unsaved-change protection before another test build.
+Implemented locally. Duplicate Action clones every field, assigns a new ID,
+retains the parent, inserts beside its source and selects the copy.
+Use Program Icon explicitly suggests an installed application's icon rather
+than silently overwriting the user's choice. Editor and properties compare
+meaningful fields and protect dirty Cancel/Escape/window-close routes with
+Discard / Keep editing; unchanged dialogs close without a warning.
+Native build, ten core and seventeen custom-action GUI regression groups,
+and existing Beta 1 GUI/session regressions passed. Covers duplicate
+selection/persistence, suggestion/overrides and dirty-close routes. Manual,
+portable notes and changelog updated. No replacement package yet.
+Import/export, action keyboard shortcuts and toolbar
+icon-size/text options are deferred, not part of this implementation.
+
+### 3.36 Custom-actions Test 4 delivery: 6 November
+
+User requested a test build and download port. Built from an isolated snapshot
+of current sources on /tmp, including sections 3.31-3.35. Debian 10/glibc 2.28
+baseline; version remains 0.0.3-beta1. Actual packaged first-run welcome,
+resize, graceful exit, settings persistence and restart smoke passed.
+Removed portable-data before final packaging; archive exclusion verified.
+
+Retained downloads: `build/beta1-test4-download/`, with matching source and
+verified SHA256SUMS. Portable:
+`Swordfish-Portable-0.0.3-beta1-test4.tar.gz`, 80,388,098 bytes.
+SHA256 `11476c00223d9ed13cd6db41c12765434c35f00a90cfc1886077e174fd1c1d40`.
+Matching source:
+`Swordfish-FM-0.0.3-beta1-test4-source.tar.gz`.
+SHA256 `31b3d9b1dcc2d2a7a376d57f4f9d470e4a65181a120ad465beed0abad4cc01d9`.
+
+Stopped the Test 3 server and served only the Test 4 directory on port 8765,
+handle `beta1-test4-download-server`. Local archive returned HTTP 200; forwarded
+Codespaces endpoint responded with its sign-in redirect. Stop the server after
+download confirmation. Previous test archives are preserved; temporary expanded
+Test 4 source/bundle and smoke profile cleaned, build log retained on /tmp.
+Real-machine testing remains pending. No commit, push or release.
+
+### 3.37 Test 4 command-entry feedback and simplified modes
+
+The user reported disabled/uneditable command fields and too many competing
+entry boxes in `build/custom-action-config.png`. Cause: a legacy action showed
+its editable full command alongside disabled Program/Parameters fields.
+Agreed Caja-style simplification: show only Program/Parameters normally;
+Advanced: full shell command replaces them with one editable Command field.
+Working directory and preview stay visible. Preserve saved legacy command
+bytes and mode; do not silently split shell commands.
+
+Implemented locally, with reduced field minimum widths. Native build and all
+seventeen action GUI groups pass; added explicit visibility assertions for
+both modes alongside existing compatibility/editability checks. Manual and
+portable notes updated. Downloaded Test 4 remains unchanged; no new archive.
+
+### 3.38 Built-in toolbar editor and image-file previews
+
+The user selected the previously agreed main-toolbar editor as the next item,
+then requested previews for images in the custom-action icon chooser.
+
+Added **View → Customize Main Toolbars…** for the General, Tools and Panel
+toolbars. Each editor keeps its built-in commands on their original native
+FOX targets/selectors and supports add/remove, reordering, separators and
+restoring defaults. Configuration is stored separately from Custom Actions;
+address, tab and custom-action toolbars are not included. Saved entries are
+validated against the available command catalog before use.
+
+The custom-action **Image Files** route now browses a selected folder, shows
+image thumbnails and a larger preview for the selected image, and retains the
+existing image validation and aspect-ratio handling.
+
+Native build and all eighteen custom-action GUI regression groups passed.
+Coverage includes a preconfigured startup toolbar, native target preservation,
+editing/persistence, canceled and applied Restore Defaults, image thumbnails,
+large preview and cancellation. Manual, portable notes and changelog updated.
+No replacement package, commit or push requested.
+
+### 3.39 Test 8 acceptance, toolbar rollback and 0.0.3 beta 1: 6 November
+
+Tests 5-7 exposed toolbar regressions on the user's machine despite local
+regressions passing: missing right-click menus, excess separators, ineffective
+overflow controls and missing zoom access. Attempts to repair the presentation
+layer were rejected in favor of restoring the working built-in toolbars.
+Section 3.38 is historical: its built-in toolbar editor is no longer present.
+
+The final rollback removes the toolbar editor, right-click presentation menus,
+icon-size/display preferences, overflow controls, separator parking and special
+toolbar mouse routing/application-dispatch workaround. Native General, Tools and
+Panel toolbar commands and separators were compared directly with the original
+source and match. Old customization registry entries are ignored, not migrated
+into the retained interface. File-panel zoom remains; no toolbar icon-size
+preference remains.
+
+Retained and validated:
+
+- Custom Actions creation/editing/duplication, folders/separators, conditions,
+  placeholders, save/reload, confirmation, terminal and host-safe execution.
+- Top-level Custom Actions, file/background contextual actions, Tools and
+  Preferences access, plus the separate labeled custom toolbar and rightmost
+  main Settings icon with the "Edit Custom Actions" tooltip.
+- Maximizable system-icon chooser with a responsive labeled grid, categories
+  from freedesktop Context metadata or standard directory names, and search.
+- Image Files opens the normal file chooser with a bounded live preview below
+  the left sidebar. Accept closes both choosers and applies the icon directly
+  to Properties; cancel preserves the previous choice. No extra preview window.
+- The manual, integration options, column preferences and other Beta 1 fixes
+  documented in the changelog.
+
+Test 8 was built on Debian 10/glibc 2.28. Model regressions, full local build,
+GUI regressions with/without Fluxbox, real pointer image selection, actual
+maximization, invalid-image errors, settings persistence and clean teardown
+passed. The GUI suite also passed against Debian-built objects and packaged
+theme icons. The actual portable launcher passed first-run, resize, clean exit
+and restart checks. On 6 November the user reported "seems OK" and authorized
+publication, then requested documentation first, commit/push/release second,
+and safe disk cleanup last.
+
+Release tag: `swordfish-0.0.3-beta1`; title: **Swordfish 0.0.3 beta 1**.
+The user explicitly chose GitHub's Latest badge while retaining beta labeling;
+GitHub cannot mark a prerelease as Latest, so this release is not marked with
+the platform's prerelease flag. This is not a claim of final 0.0.3 stability.
+The stable 0.0.2 release/tag/assets must remain unchanged.
+
+Publish matching portable ZIP/tar.gz, source archive, offline-manual ZIP and
+SHA256SUMS. Exclude portable-data, test profiles and build logs. Preserve manual
+illustrations in source and packages; only obsolete test screenshots/downloads
+and known temporary build products are cleanup candidates. Never use a broad
+git reset/clean to perform this cleanup.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -1574,7 +2183,8 @@ Do not amend published commits/tags as an automatic workaround.
 
 ### Durable starting point
 
-RC4 is the last frozen application release in this document. It contains the
-tested remote-loading improvements and archive child-handler fix, with unfinished
-Network discovery hidden. Start the next stage from that understanding, not
-from an old experimental ZIP, an obsolete roadmap or an incomplete chat summary.
+0.0.2 is the current frozen stable release. Sections 3.21-3.23 record the local
+test-build changes and their validation/acceptance boundaries, with section
+3.24 recording the latest PATH/column changes. Start there,
+not from an old experimental ZIP, an obsolete roadmap or an incomplete chat
+summary. Do not publish local work without the user's permission.

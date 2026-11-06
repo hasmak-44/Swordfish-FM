@@ -1351,6 +1351,7 @@ long XFileArchive::onSigHarvest(FXObject*, FXSelector, void*)
     pid_t child;
     while ((child = waitpid(-1, &status, WNOHANG)) > 0)
     {
+        if (CommandWindow::harvest(child, status)) continue;
         if (Preview::harvest(child, status)) continue;
         if (RemoteDirectory::harvest(child, status)) continue;
         handleCommandExit(this, child, status);

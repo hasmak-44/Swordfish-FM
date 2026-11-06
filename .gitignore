@@ -15,6 +15,12 @@ src/swfa
 src/swfi
 src/swfp
 src/swfw
+src/swordfish-command-link
+src/swordfish-network
+src/swordfish-preview
+automount/swf-automount
+tests/.custom-actions-run-*/
+tests/.custom-actions-ui-run-*/
 swordfishrc
 *.desktop
 *.desktop.in

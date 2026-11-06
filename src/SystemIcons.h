@@ -24,6 +24,26 @@ const char* systemThemeSuffix();
 // Path of the bundled SVG converter, or an empty string if none is available
 FXString findIconConverter();
 
+// Named icons are resolved against the host, never the portable bundle.
+// The catalog indexes filenames only; images are decoded on demand.
+struct SystemActionIcon
+{
+    enum Category
+    {
+        ACTIONS, ANIMATIONS, APPLICATIONS, CATEGORIES, DEVICES, EMBLEMS,
+        EMOTIONS, MIMETYPES, PLACES, STATUS, STOCK, UNCATEGORIZED
+    };
+    FXString name;
+    FXString path;
+    Category category = UNCATEGORIZED;
+};
+const std::vector<SystemActionIcon>& systemActionIcons(FXApp* app);
+FXString resolveSystemActionIcon(FXApp* app, const FXString& name);
+
+// Accepts theme:NAME or an image filename. SVG requires rsvg-convert.
+// Returned icons belong to the caller and fit inside side x side.
+FXIcon* loadCustomActionIcon(FXApp* app, const FXString& value, FXint side);
+
 // Progress callback: done, total
 typedef void (*SystemIconProgress)(int, int, void*);
 

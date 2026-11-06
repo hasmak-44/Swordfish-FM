@@ -10,24 +10,36 @@ if os.path.basename(sys.argv[0]) == "udisksctl":
     assert not os.environ.get("LD_LIBRARY_PATH")
     assert not os.environ.get("GIO_MODULE_DIR")
     action = sys.argv[1]
-    assert sys.argv[2:] == ["-b", "/dev/test-usb1"]
+    assert sys.argv[2:] in (["-b", "/dev/test-usb1"], ["-b", "/dev/test-usb"],
+                            ["-b", "/dev/test-usb2"])
     with open(os.environ["SWORDFISH_TEST_MOUNT_LOG"], "a") as log:
         log.write("disk " + action + "\n")
     if action == "unmount" and os.environ.get("SWORDFISH_TEST_DISK_BUSY"):
         print("org.freedesktop.UDisks2.Error.DeviceBusy: target is busy")
         sys.exit(1)
+    if action == "unmount" and os.environ.get("SWORDFISH_TEST_DISK_STILL_MOUNTED"):
+        sys.exit(0)
     busy_once = os.environ.get("SWORDFISH_TEST_DISK_BUSY_ONCE")
     if action == "unmount" and busy_once and os.path.exists(busy_once):
         os.unlink(busy_once)
         print("org.freedesktop.UDisks2.Error.DeviceBusy: target is busy")
         sys.exit(1)
     if action in ("mount", "unmount"):
+        previous = []
+        if os.path.exists(os.environ["SWORDFISH_TEST_DISK_MTAB"]):
+            with open(os.environ["SWORDFISH_TEST_DISK_MTAB"]) as table:
+                previous = [line for line in table if line.startswith("/dev/test-usb") and
+                            not line.startswith(sys.argv[-1] + " ")]
         with open(os.environ["SWORDFISH_TEST_DISK_MTAB"], "w") as table:
             table.write("/dev/root / ext4 rw 0 0\n")
+            table.writelines(previous)
             if action == "mount":
                 table.write("/dev/test-usb1 " + os.environ["SWORDFISH_TEST_DISK_PATH"] + " ext4 rw 0 0\n")
     else:
         assert action == "power-off"
+        if os.environ.get("SWORDFISH_TEST_POWER_OFF_FAIL"):
+            print("Power-off failed")
+            sys.exit(1)
     sys.exit(0)
 
 if os.path.basename(sys.argv[0]) == "lsblk":
@@ -36,6 +48,10 @@ if os.path.basename(sys.argv[0]) == "lsblk":
     assert not os.environ.get("GIO_MODULE_DIR")
     if "HOTPLUG" in sys.argv:
         print("1" if sys.argv[-1] == "/dev/test-usb1" else "0")
+    elif "NAME,TYPE" in sys.argv:
+        print("/dev/test-usb1 part\n/dev/test-usb disk")
+    elif "NAME" in sys.argv:
+        print("/dev/test-usb\n/dev/test-usb1\n/dev/test-usb2")
     elif os.environ.get("SWORDFISH_TEST_VOLUMES"):
         with open(os.environ["SWORDFISH_TEST_VOLUMES"]) as volumes:
             print(volumes.read(), end="")
@@ -54,6 +70,13 @@ if os.path.basename(sys.argv[0]) == "gio":
     assert not os.environ.get("GIO_MODULE_DIR")
     state = os.environ["SWORDFISH_TEST_MOUNT_LOG"]
     gvfs = os.environ.get("SWORDFISH_TEST_GVFS_ROOT")
+    remount = os.environ.get("SWORDFISH_TEST_REMOUNT_DIR")
+    if remount and sys.argv[1] == "info":
+        if os.path.isdir(remount):
+            print("local path: " + os.environ["SWORDFISH_TEST_MOUNT_PATH"])
+            sys.exit(0)
+        print("gio: location is not mounted")
+        sys.exit(1)
     if gvfs and sys.argv[1] == "info":
         # A mount registered under a different login URI isn't resolved by gio info.
         print("gio: location is not mounted")
@@ -64,6 +87,8 @@ if os.path.basename(sys.argv[0]) == "gio":
         if os.environ.get("SWORDFISH_TEST_UNMOUNT_FAIL"):
             print("gio: share is busy")
             sys.exit(1)
+        if os.environ.get("SWORDFISH_TEST_GVFS_UNMOUNT_DIR"):
+            os.rmdir(os.environ["SWORDFISH_TEST_GVFS_UNMOUNT_DIR"])
         sys.exit(0)
     if urlsplit(sys.argv[-1]).hostname == "hang.test":
         # Mimic gio asking for credentials again and again on a closed stdin
@@ -74,6 +99,8 @@ if os.path.basename(sys.argv[0]) == "gio":
     if sys.argv[1] == "mount":
         with open(state, "a") as log:
             log.write(sys.argv[-1] + "\n")
+        if remount:
+            os.mkdir(remount)
         if gvfs:
             login = unquote(urlsplit(sys.argv[-1]).username or "guest")
             domain, user = login.split(";", 1) if ";" in login else ("", login)

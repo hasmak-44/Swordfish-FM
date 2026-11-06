@@ -298,6 +298,8 @@ private:
 
 public:
     void setViewMetrics(int iconSize, int detailSize, FXbool thumbnails);
+    virtual long showColumnMenu(FXEvent*) { return 0; }
+    virtual void moveColumn(FXint, FXint) {}
     int getViewIconSize() const { return viewIconSize; }
     int getDetailIconSize() const { return detailIconSize; }
     FXbool hasThumbnailTiles() const { return thumbnailTiles; }
@@ -698,7 +700,7 @@ public:
     }
 
     // Sort items
-    void sortItems();
+    virtual void sortItems();
 
     // Return sort function
     IconListSortFunc getSortFunc() const

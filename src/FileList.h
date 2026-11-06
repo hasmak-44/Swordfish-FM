@@ -178,10 +178,6 @@ protected:
     int renameClickIndex = -1;                          // Item clicked again while selected (slow click rename)
     FXbool panelActive = true;                          // The panel showing the list is the active one
     FXString renameClickLabel;
-    FXuint idCol[NMAX_COLS + 1] = { 0 };
-    FXuint nbCols = 0;
-    FXuint idColTrash[NMAX_COLS + 2] = { 0 };
-    FXuint nbColsTrash = 0;
 
     // Folder sizes and item counts, computed in the background
     struct FolderSizeInfo
@@ -222,7 +218,7 @@ public:
     ViewMode getViewMode() const;
     void setViewMode(ViewMode mode);
     void setListStyle(FXuint style);
-    void sortItems();
+    virtual void sortItems();
     int getZoomStep() const;
     long onCmdView(FXObject*, FXSelector, void*);
     long onUpdView(FXObject*, FXSelector, void*);
@@ -483,6 +479,8 @@ public:
         ID_FOLDERSIZE_BOTH,
         ID_RENAME_TIMER,
         ID_DROP_SCROLL_TIMER,
+        ID_COLUMN_TOGGLE,
+        ID_COLUMN_TOGGLE_LAST = ID_COLUMN_TOGGLE + 11,
         ID_LAST
     };
 public:
@@ -497,6 +495,13 @@ public:
 
     // Scan the current directory and update the items if needed, or if force is true
     void scan(FXbool force = true);
+    std::vector<FXuint> getColumnLayout() const;
+    void setColumnLayout(const std::vector<FXuint>&);
+    void bindColumnSettings(const char* section, const char* legacyTabs);
+    FXString columnSettingsSection;
+    virtual long showColumnMenu(FXEvent*);
+    virtual void moveColumn(FXint, FXint);
+    long onToggleColumn(FXObject*, FXSelector, void*);
 
     // Set current file
     void setCurrentFile(const FXString& file);

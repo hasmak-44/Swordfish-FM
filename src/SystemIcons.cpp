@@ -2,6 +2,9 @@
 #include "i18n.h"
 #include <fx.h>
 #include <FXPNGIcon.h>
+#include <FXIconSource.h>
+#include <sys/stat.h>
+#include <stdint.h>
 #include <string>
 #include <dirent.h>
 #include <spawn.h>
@@ -31,6 +34,55 @@ namespace
 
     typedef std::map<std::string, std::vector<IconFile> > ThemeIndex;
 
+    typedef std::map<std::string, FXString> IconContexts;
+
+    IconContexts iconContexts(const FXString& directory)
+    {
+        IconContexts contexts;
+        FILE* file = fopen((directory + "/index.theme").text(), "r");
+        if (!file) { return contexts; }
+        FXString section;
+        char buffer[4096];
+        while (fgets(buffer, sizeof(buffer), file))
+        {
+            FXString line = FXString(buffer).trim();
+            if (line.empty() || line[0] == '#') { continue; }
+            if (line[0] == '[' && line[line.length() - 1] == ']')
+                section = line.mid(1, line.length() - 2);
+            else if (!section.empty() && line.before('=').trim() == "Context")
+                contexts[section.text()] = line.after('=').trim().lower();
+        }
+        fclose(file);
+        return contexts;
+    }
+
+    SystemActionIcon::Category iconCategory(const FXString& directory, const FXString& path,
+                                            const IconContexts& contexts)
+    {
+        FXString parent = FXPath::directory(path);
+        FXString relative = parent.mid(directory.length() + 1, parent.length() - directory.length() - 1);
+        IconContexts::const_iterator context = contexts.find(relative.text());
+        const char* names[] = {"actions", "animations", "applications", "categories", "devices",
+                               "emblems", "emotes", "mimetypes", "places", "status", "stock"};
+        const char* folders[] = {"actions", "animations", "apps", "categories", "devices",
+                                 "emblems", "emotes", "mimetypes", "places", "status", "stock"};
+        for (unsigned i = 0; i < ARRAYNUMBER(names); ++i)
+        {
+            if (context != contexts.end())
+            {
+                if (context->second == names[i])
+                    return static_cast<SystemActionIcon::Category>(i);
+            }
+            else
+            {
+                for (int component = 0; component <= relative.contains('/'); ++component)
+                    if (relative.section('/', component).lower() == folders[i])
+                        return static_cast<SystemActionIcon::Category>(i);
+            }
+        }
+        return SystemActionIcon::UNCATEGORIZED;
+    }
+
     const char* const SUFFIX = "-system";
 
     void addRoot(std::vector<FXString>& roots, const FXString& dir)
@@ -53,7 +105,7 @@ namespace
         FXString home = FXSystem::getHomeDirectory();
 
         const char* hostdata = getenv("SWORDFISH_HOST_XDG_DATA_HOME");
-        if (!hostdata || !*hostdata)
+        if (!hostdata)
         {
             hostdata = getenv("XDG_DATA_HOME");
         }
@@ -65,7 +117,7 @@ namespace
         addRoot(roots, home + "/.icons");
 
         const char* dirs = getenv("SWORDFISH_HOST_XDG_DATA_DIRS");
-        if (!dirs || !*dirs)
+        if (!dirs)
         {
             dirs = getenv("XDG_DATA_DIRS");
         }
@@ -132,7 +184,7 @@ namespace
     }
 
     // Walk a theme and record the wanted icon names
-    void indexTheme(const FXString& dir, int size, bool insize, const std::set<std::string>& wanted, ThemeIndex& index, int depth)
+    void indexTheme(const FXString& dir, int size, bool insize, const std::set<std::string>& wanted, ThemeIndex& index, int depth, bool all = false)
     {
         if (depth > 4)
         {
@@ -164,36 +216,37 @@ namespace
                     continue;
                 }
                 int s = sizeFromComponent(name);
-                if (s == -2 || s > 128)
+                if (s == -2 || (!all && s > 128))
                 {
                     continue;
                 }
                 if (s >= 0)
                 {
-                    indexTheme(path, s, true, wanted, index, depth + 1);
+                    indexTheme(path, s, true, wanted, index, depth + 1, all);
                 }
                 else
                 {
-                    indexTheme(path, size, insize, wanted, index, depth + 1);
+                    indexTheme(path, size, insize, wanted, index, depth + 1, all);
                 }
                 continue;
             }
-            if (!insize)
+            if (!insize && !all)
             {
                 continue;
             }
             const char* dot = strrchr(name, '.');
-            if (!dot || (strcmp(dot, ".png") != 0 && strcmp(dot, ".svg") != 0))
+            if (!dot || (strcmp(dot, ".png") != 0 && strcmp(dot, ".svg") != 0 &&
+                         !(all && strcmp(dot, ".xpm") == 0)))
             {
                 continue;
             }
             std::string base(name, dot - name);
-            if (wanted.find(base) == wanted.end())
+            if (!all && wanted.find(base) == wanted.end())
             {
                 continue;
             }
             IconFile file;
-            file.size = size;
+            file.size = all && size < 0 ? 48 : size;
             file.svg = (strcmp(dot, ".svg") == 0);
             if (file.svg)
             {
@@ -222,7 +275,7 @@ namespace
     // The theme followed by everything it inherits
     void inheritanceChain(const std::vector<FXString>& roots, const FXString& id, std::vector<FXString>& chain)
     {
-        if (std::find(chain.begin(), chain.end(), id) != chain.end() || chain.size() > 12)
+        if (std::find(chain.begin(), chain.end(), id) != chain.end() || chain.size() > 256)
         {
             return;
         }
@@ -307,11 +360,11 @@ namespace
         return w > 0 && h > 0;
     }
 
-    bool runConverter(const FXString& converter, const FXString& svg, const FXString& out, int side)
+    bool runConverter(const FXString& converter, const FXString& svg, const FXString& out, int side, bool aspect = false)
     {
         FXString size = FXStringVal(side);
         char* argv[] = {(char*)converter.text(), (char*)"-w", (char*)size.text(), (char*)"-h", (char*)size.text(),
-                        (char*)"-o", (char*)out.text(), (char*)svg.text(), NULL};
+                        (char*)"-o", (char*)out.text(), (char*)svg.text(), aspect ? (char*)"-a" : NULL, NULL};
         pid_t pid;
         if (posix_spawn(&pid, converter.text(), NULL, NULL, argv, environ) != 0)
         {
@@ -446,6 +499,175 @@ FXString findIconConverter()
         }
     }
     return FXString();
+}
+
+const std::vector<SystemActionIcon>& systemActionIcons(FXApp* app)
+{
+    static std::vector<SystemActionIcon> catalog;
+    static FXString previous;
+    std::vector<FXString> roots = themeRoots();
+    FXString preferred = FXPath::name(app->reg().readStringEntry("SETTINGS", "iconpath", ""));
+    if (preferred.right(strlen(SUFFIX)) == SUFFIX)
+        preferred = preferred.left(preferred.length() - strlen(SUFFIX));
+    else
+    {
+        preferred.clear();
+        const char* config = getenv("SWORDFISH_HOST_XDG_CONFIG_HOME");
+        if (!config) { config = getenv("XDG_CONFIG_HOME"); }
+        FXString base = config && *config ? FXString(config) : FXSystem::getHomeDirectory() + "/.config";
+        const FXString files[] = {base + "/gtk-3.0/settings.ini", base + "/gtk-4.0/settings.ini",
+                                  FXSystem::getHomeDirectory() + "/.gtkrc-2.0"};
+        for (unsigned f = 0; f < sizeof(files) / sizeof(files[0]) && preferred.empty(); ++f)
+        {
+            FILE* input = fopen(files[f].text(), "r");
+            if (!input) { continue; }
+            char line[4096];
+            while (fgets(line, sizeof(line), input))
+            {
+                FXString text = FXString(line).trim();
+                if (text.before('=').trim() == "gtk-icon-theme-name")
+                {
+                    preferred = text.after('=').trim();
+                    if (preferred.length() >= 2 && preferred[0] == '"' && preferred[preferred.length() - 1] == '"')
+                        preferred = preferred.mid(1, preferred.length() - 2);
+                    break;
+                }
+            }
+            fclose(input);
+        }
+    }
+    FXString key = preferred;
+    for (size_t r = 0; r < roots.size(); ++r) { key += "\n" + roots[r]; }
+    if (key == previous && !catalog.empty()) { return catalog; }
+    previous = key;
+    catalog.clear();
+
+    std::vector<FXString> chain;
+    inheritanceChain(roots, preferred, chain);
+    inheritanceChain(roots, "Adwaita", chain);
+    inheritanceChain(roots, "hicolor", chain);
+    // Include applications installed in other themes, without replacing an
+    // icon already found in the selected theme or its inheritance chain.
+    std::set<std::string> available;
+    for (size_t r = 0; r < roots.size(); ++r)
+    {
+        DIR* dir = opendir(roots[r].text());
+        if (!dir) { continue; }
+        struct dirent* entry;
+        while ((entry = readdir(dir)))
+        {
+            if (entry->d_name[0] != '.' && xf_existfile(roots[r] + "/" + entry->d_name + "/index.theme"))
+                available.insert(entry->d_name);
+        }
+        closedir(dir);
+    }
+    for (std::set<std::string>::const_iterator it = available.begin(); it != available.end(); ++it)
+        inheritanceChain(roots, it->c_str(), chain);
+    std::map<std::string, FXString> chosen;
+    std::map<std::string, SystemActionIcon::Category> categories;
+    const std::set<std::string> wanted;
+    for (size_t t = 0; t < chain.size(); ++t)
+    {
+        // A theme may be split across ~/.icons and several XDG roots.
+        for (size_t r = 0; r < roots.size(); ++r)
+        {
+            ThemeIndex index;
+            FXString directory = roots[r] + "/" + chain[t];
+            IconContexts contexts = iconContexts(directory);
+            indexTheme(directory, -1, false, wanted, index, 0, true);
+            for (ThemeIndex::const_iterator it = index.begin(); it != index.end(); ++it)
+            {
+                if (chosen.count(it->first)) { continue; }
+                // Prefer a bitmap for the grid; no converter is started while indexing.
+                std::vector<IconFile> raster;
+                for (size_t f = 0; f < it->second.size(); ++f)
+                    if (!it->second[f].svg) { raster.push_back(it->second[f]); }
+                const IconFile* file = pickFile(raster.empty() ? it->second : raster, 48);
+                if (file)
+                {
+                    chosen[it->first] = file->path;
+                    categories[it->first] = iconCategory(directory, file->path, contexts);
+                }
+            }
+        }
+    }
+    for (size_t r = 0; r < roots.size(); ++r)
+    {
+        ThemeIndex index;
+        indexTheme(FXPath::directory(roots[r]) + "/pixmaps", 48, true, wanted, index, 0, true);
+        for (ThemeIndex::const_iterator it = index.begin(); it != index.end(); ++it)
+            if (!chosen.count(it->first) && !it->second.empty()) { chosen[it->first] = it->second[0].path; }
+    }
+    for (std::map<std::string, FXString>::const_iterator it = chosen.begin(); it != chosen.end(); ++it)
+    {
+        SystemActionIcon item; item.name = it->first.c_str(); item.path = it->second;
+        std::map<std::string, SystemActionIcon::Category>::const_iterator category = categories.find(it->first);
+        if (category != categories.end()) { item.category = category->second; }
+        catalog.push_back(item);
+    }
+    return catalog;
+}
+
+FXString resolveSystemActionIcon(FXApp* app, const FXString& name)
+{
+    if (name.empty() || name.contains('/') || name.contains('\\')) { return FXString::null; }
+    const std::vector<SystemActionIcon>& catalog = systemActionIcons(app);
+    size_t first = 0, last = catalog.size();
+    while (first < last)
+    {
+        size_t mid = first + (last - first) / 2;
+        if (catalog[mid].name < name) { first = mid + 1; }
+        else { last = mid; }
+    }
+    return first < catalog.size() && catalog[first].name == name ? catalog[first].path : FXString::null;
+}
+
+FXIcon* loadCustomActionIcon(FXApp* app, const FXString& value, FXint side)
+{
+    if (value.empty() || side < 1) { return NULL; }
+    FXString path = value.left(6) == "theme:" ? resolveSystemActionIcon(app, value.mid(6, value.length() - 6)) : value;
+    if (path.empty() || !xf_existfile(path)) { return NULL; }
+    FXString extension = FXPath::extension(path).lower();
+    if (extension == "svg")
+    {
+        FXString converter = findIconConverter();
+        if (converter.empty()) { return NULL; }
+        const char* cache = getenv("XDG_CACHE_HOME");
+        FXString directory = (cache && *cache ? FXString(cache) : FXSystem::getHomeDirectory() + "/.cache") +
+                             "/swordfish/action-icons";
+        if (!xf_isdirectory(directory) && xf_mkpath(directory.text(), 0700) != 0) { return NULL; }
+        struct stat info;
+        if (stat(path.text(), &info) != 0) { return NULL; }
+        FXString signature = path + ":" + FXStringVal((FXlong)info.st_mtime) + ":" +
+                             FXStringVal((FXlong)info.st_size) + ":" + FXStringVal(side);
+        uint64_t hash = 1469598103934665603ULL;
+        for (int i = 0; i < signature.length(); ++i) { hash = (hash ^ (unsigned char)signature[i]) * 1099511628211ULL; }
+        char filename[32]; snprintf(filename, sizeof(filename), "%016llx.png", (unsigned long long)hash);
+        FXString output = directory + "/" + filename;
+        if (!xf_existfile(output))
+        {
+            FXString pending = output + "." + FXStringVal((FXint)getpid()) + ".png";
+            if (!runConverter(converter, path, pending, side, true))
+            { FXFile::remove(pending); return NULL; }
+            if (!FXFile::rename(pending, output)) { FXFile::remove(pending); return NULL; }
+        }
+        path = output;
+    }
+    else if (extension != "png" && extension != "jpg" && extension != "jpeg" && extension != "xpm")
+    { return NULL; }
+    FXIconSource source(app);
+    FXIcon* image = source.loadScaledIconFile(path, side, 1);
+    if (!image) { return NULL; }
+    FXint width = image->getWidth(), height = image->getHeight();
+    if (width < 1 || height < 1) { delete image; return NULL; }
+    if (width > side || height > side)
+    {
+        if (width >= height) { height = FXMAX(1, (FXlong)height * side / width); width = side; }
+        else { width = FXMAX(1, (FXlong)width * side / height); height = side; }
+        image->scale(width, height);
+    }
+    image->create();
+    return image;
 }
 
 

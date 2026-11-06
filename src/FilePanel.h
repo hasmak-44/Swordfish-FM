@@ -123,6 +123,8 @@ public:
         ID_FILE_COPYTO,
         ID_FILE_MOVETO,
         ID_FILE_RENAME,
+        ID_CONTEXT_RENAME,
+        ID_CONTEXT_BULK_RENAME,
         ID_FILE_SYMLINK,
         ID_FILE_DELETE,
         ID_FILE_TRASH,
@@ -157,6 +159,8 @@ public:
         ID_PANE_HISTORY_FIRST,
         ID_PANE_HISTORY_LAST = ID_PANE_HISTORY_FIRST + 63,
         ID_NEW_TAB,
+        ID_OPEN_NEW_TAB,
+        ID_LINK_OTHER_PANE,
         ID_REMOVE_ALL_TABS,
         ID_CLOSE_TAB,
         ID_COPY_CLIPBOARD,
@@ -229,6 +233,10 @@ public:
     long onPathPopup(FXObject*, FXSelector, void*);
     long onCmdPathPasteGo(FXObject*, FXSelector, void*);
     long onCmdTabs(FXObject*, FXSelector, void*);
+    long onCmdOpenNewTab(FXObject*, FXSelector, void*);
+    long onUpdOpenNewTab(FXObject*, FXSelector, void*);
+    long onCmdOtherPane(FXObject*, FXSelector, void*);
+    long onUpdOtherPane(FXObject*, FXSelector, void*);
     TabButtons* getTabButtons() const
     {
         return tabbuttons;
@@ -256,6 +264,8 @@ public:
     long onCmdCompare(FXObject*, FXSelector, void*);
     long onCmdProperties(FXObject*, FXSelector, void*);
     long onCmdFileMan(FXObject*, FXSelector, void*);
+    long onCmdContextRename(FXObject*, FXSelector, void*);
+    long onUpdContextRename(FXObject*, FXSelector, void*);
     long onCmdFileTrash(FXObject*, FXSelector, void*);
     long onCmdFileRestore(FXObject*, FXSelector, void*);
     long onCmdFileDelete(FXObject*, FXSelector, void*);

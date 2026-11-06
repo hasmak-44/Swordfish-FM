@@ -39,6 +39,7 @@
 #include "DirHistBox.h"
 #include "SearchWindow.h"
 #include "XFileExplorer.h"
+#include "CustomActionsUI.h"
 
 
 // Number of toolbars
@@ -189,6 +190,9 @@ FXDEFMAP(XFileExplorer) XFileExplorerMap[] =
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_XTERM, XFileExplorer::onCmdXTerm),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_EDIT_ADDRESS, XFileExplorer::onCmdEditAddress),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_PREFS, XFileExplorer::onCmdPrefs),
+    FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_USER_MANUAL, XFileExplorer::onCmdUserManual),
+    FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_INTEGRATION, XFileExplorer::onCmdIntegration),
+    FXMAPFUNC(SEL_TIMEOUT, XFileExplorer::ID_WELCOME, XFileExplorer::onWelcome),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_HORZ_PANELS, XFileExplorer::onCmdHorzVertPanels),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_VERT_PANELS, XFileExplorer::onCmdHorzVertPanels),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_SHOW_ONE_PANEL, XFileExplorer::onCmdShowPanels),
@@ -218,6 +222,7 @@ FXDEFMAP(XFileExplorer) XFileExplorerMap[] =
     FXMAPFUNC(SEL_KEYRELEASE, 0, XFileExplorer::onKeyRelease),
     FXMAPFUNC(SEL_SIGNAL, XFileExplorer::ID_HARVEST, XFileExplorer::onSigHarvest),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_NETWORK_UNMOUNTED, XFileExplorer::onNetworkUnmounted),
+    FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_PREPARE_UNMOUNT, XFileExplorer::onPrepareUnmount),
     FXMAPFUNC(SEL_SIGNAL, XFileExplorer::ID_QUIT, XFileExplorer::onQuit),
     FXMAPFUNC(SEL_CLOSE, 0, XFileExplorer::onQuit),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_FILE_SEARCH, XFileExplorer::onCmdFileSearch),
@@ -269,6 +274,8 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
 
     // Menu bar
     menubar = new FXMenuBar(this, LAYOUT_SIDE_TOP | LAYOUT_FILL_X | FRAME_NONE);
+    new FXButton(menubar, "\tPreferences\tChange SwordFish settings", miniprefsicon, this, ID_PREFS,
+                 BUTTON_TOOLBAR | LAYOUT_RIGHT | LAYOUT_CENTER_Y);
     
     // Position toolbars
     
@@ -1490,7 +1497,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     hotkey = xf_parseaccel(key);
     getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));
 
-    copynamesmc = new FXMenuCommand(filemenu, _("Cop&y Names"), minicopyicon, this, XFileExplorer::ID_FILE_COPYNAME);
+    copynamesmc = new FXMenuCommand(filemenu, _("Copy &Path"), minicopyicon, this, XFileExplorer::ID_FILE_COPYNAME);
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "copy_names", "Ctrl-Shift-N");
     copynamesmc->setAccelText(key);
     hotkey = xf_parseaccel(key);
@@ -1749,6 +1756,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     mc->setAccelText(key);
 
 #endif
+    customactions = new CustomActionsUI(this, topdock, toolsmenu, menubar);
     toolsmenutitle = new FXMenuTitle(menubar, _("&Tools"), NULL, toolsmenu);
 
     // Trash menu
@@ -1772,6 +1780,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
 
     // Help menu
     helpmenu = new FXMenuPane(this);
+    new FXMenuCommand(helpmenu, _("&User Manual"), minihelpicon, this, ID_USER_MANUAL);
 
     mc = new FXMenuCommand(helpmenu, _("&Help"), minihelpicon, this, ID_HELP);
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "help", "F1");
@@ -1882,6 +1891,19 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
 }
 
 
+template<typename Panel>
+static void saveColumnWidths(FXRegistry& registry, Panel* panel, const char* section)
+{
+    const char* keys[] = {"name_size", "size_size", "type_size", "ext_size", "date_size",
+                          "user_size", "group_size", "perms_size", "link_size"};
+    for (FXuint column = 0; column < ARRAYNUMBER(keys); ++column)
+    {
+        FXint index = panel->getHeaderIndex(FileList::ID_COL_NAME + column);
+        if (index >= 0)
+            registry.writeUnsignedEntry(section, keys[column], panel->getHeaderSize(index));
+    }
+}
+
 // Save configuration when quitting
 void XFileExplorer::saveConfig(FXbool restarting)
 {
@@ -1957,54 +1979,12 @@ void XFileExplorer::saveConfig(FXbool restarting)
             // Search panel options
             if (!restarted)
             {
-                FXuint i = FileList::ID_COL_NAME;
-                if (colShown[i++])
-                {
-                    getApp()->reg().writeUnsignedEntry("SEARCH PANEL", "name_size",
-                    (FXuint)searchwindow->getHeaderSize(searchwindow->getHeaderIndex(FileList::ID_COL_NAME)));
-                }
-                if (colShown[i++])
-                {
-                    getApp()->reg().writeUnsignedEntry("SEARCH PANEL", "size_size",
-                    (FXuint)searchwindow->getHeaderSize(searchwindow->getHeaderIndex(FileList::ID_COL_SIZE)));
-                }
-                if (colShown[i++])
-                {
-                    getApp()->reg().writeUnsignedEntry("SEARCH PANEL", "type_size",
-                    (FXuint)searchwindow->getHeaderSize(searchwindow->getHeaderIndex(FileList::ID_COL_TYPE)));
-                }
-                if (colShown[i++])
-                {
-                    getApp()->reg().writeUnsignedEntry("SEARCH PANEL", "ext_size",
-                    (FXuint)searchwindow->getHeaderSize(searchwindow->getHeaderIndex(FileList::ID_COL_EXT)));
-                }
-                if (colShown[i++])
-                {
-                    getApp()->reg().writeUnsignedEntry("SEARCH PANEL", "date_size",
-                    (FXuint)searchwindow->getHeaderSize(searchwindow->getHeaderIndex(FileList::ID_COL_DATE)));
-                }
-                if (colShown[i++])
-                {
-                    getApp()->reg().writeUnsignedEntry("SEARCH PANEL", "user_size",
-                    (FXuint)searchwindow->getHeaderSize(searchwindow->getHeaderIndex(FileList::ID_COL_USER)));
-                }
-                if (colShown[i++])
-                {
-                    getApp()->reg().writeUnsignedEntry("SEARCH PANEL", "group_size",
-                    (FXuint)searchwindow->getHeaderSize(searchwindow->getHeaderIndex(FileList::ID_COL_GROUP)));
-                }
-                if (colShown[i++])
-                {
-                    getApp()->reg().writeUnsignedEntry("SEARCH PANEL", "perms_size",
-                    (FXuint)searchwindow->getHeaderSize(searchwindow->getHeaderIndex(FileList::ID_COL_PERMS)));
-                }
-                if (colShown[i++])
-                {
-                    getApp()->reg().writeUnsignedEntry("SEARCH PANEL", "link_size",
-                    (FXuint)searchwindow->getHeaderSize(searchwindow->getHeaderIndex(FileList::ID_COL_LINK)));
-                }
+                saveColumnWidths(getApp()->reg(), searchwindow, "SEARCH PANEL");
             }
-            getApp()->reg().writeUnsignedEntry("SEARCH PANEL", "dir_size", (FXuint)searchwindow->getHeaderSize(1)); // Directory is at position 1
+            FXint directoryColumn = searchwindow->getHeaderIndex(FileList::ID_COL_DIRNAME);
+            if (directoryColumn >= 0)
+                getApp()->reg().writeUnsignedEntry("SEARCH PANEL", "dir_size",
+                                                   searchwindow->getHeaderSize(directoryColumn));
             getApp()->reg().writeUnsignedEntry("SEARCH PANEL", "showthumbnails",
                                                (FXuint)searchwindow->shownThumbnails());
             getApp()->reg().writeUnsignedEntry("SEARCH PANEL", "find_ignorecase",
@@ -2220,52 +2200,7 @@ void XFileExplorer::saveConfig(FXbool restarting)
         // Left panel options
         if (!restarted)
         {
-            FXuint i = FileList::ID_COL_NAME;
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("LEFT PANEL", "name_size",
-                (FXuint)lpanel->getHeaderSize((FXuint)lpanel->getHeaderIndex(FileList::ID_COL_NAME)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("LEFT PANEL", "size_size",
-                (FXuint)lpanel->getHeaderSize((FXuint)lpanel->getHeaderIndex(FileList::ID_COL_SIZE)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("LEFT PANEL", "type_size",
-                (FXuint)lpanel->getHeaderSize((FXuint)lpanel->getHeaderIndex(FileList::ID_COL_TYPE)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("LEFT PANEL", "ext_size",
-                (FXuint)lpanel->getHeaderSize((FXuint)lpanel->getHeaderIndex(FileList::ID_COL_EXT)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("LEFT PANEL", "date_size",
-                (FXuint)lpanel->getHeaderSize((FXuint)lpanel->getHeaderIndex(FileList::ID_COL_DATE)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("LEFT PANEL", "user_size",
-                (FXuint)lpanel->getHeaderSize((FXuint)lpanel->getHeaderIndex(FileList::ID_COL_USER)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("LEFT PANEL", "group_size",
-                (FXuint)lpanel->getHeaderSize((FXuint)lpanel->getHeaderIndex(FileList::ID_COL_GROUP)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("LEFT PANEL", "perms_size",
-                (FXuint)lpanel->getHeaderSize((FXuint)lpanel->getHeaderIndex(FileList::ID_COL_PERMS)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("LEFT PANEL", "link_size",
-                (FXuint)lpanel->getHeaderSize((FXuint)lpanel->getHeaderIndex(FileList::ID_COL_LINK)));
-            }
+            saveColumnWidths(getApp()->reg(), lpanel, "LEFT PANEL");
         }
 
         getApp()->reg().writeUnsignedEntry("LEFT PANEL", "deldate_size", lpanel->getDeldateSize());
@@ -2446,52 +2381,7 @@ void XFileExplorer::saveConfig(FXbool restarting)
         // Right panel options
         if (!restarted)
         {
-            FXuint i = FileList::ID_COL_NAME;
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("RIGHT PANEL", "name_size",
-                rpanel->getHeaderSize(rpanel->getHeaderIndex(FileList::ID_COL_NAME)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("RIGHT PANEL", "size_size",
-                rpanel->getHeaderSize(rpanel->getHeaderIndex(FileList::ID_COL_SIZE)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("RIGHT PANEL", "type_size",
-                rpanel->getHeaderSize(rpanel->getHeaderIndex(FileList::ID_COL_TYPE)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("RIGHT PANEL", "ext_size",
-                rpanel->getHeaderSize(rpanel->getHeaderIndex(FileList::ID_COL_EXT)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("RIGHT PANEL", "date_size",
-                rpanel->getHeaderSize(rpanel->getHeaderIndex(FileList::ID_COL_DATE)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("RIGHT PANEL", "user_size",
-                rpanel->getHeaderSize(rpanel->getHeaderIndex(FileList::ID_COL_USER)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("RIGHT PANEL", "group_size",
-                rpanel->getHeaderSize(rpanel->getHeaderIndex(FileList::ID_COL_GROUP)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("RIGHT PANEL", "perms_size",
-                rpanel->getHeaderSize(rpanel->getHeaderIndex(FileList::ID_COL_PERMS)));
-            }
-            if (colShown[i++])
-            {
-                getApp()->reg().writeUnsignedEntry("RIGHT PANEL", "link_size",
-                rpanel->getHeaderSize(rpanel->getHeaderIndex(FileList::ID_COL_LINK)));
-            }
+            saveColumnWidths(getApp()->reg(), rpanel, "RIGHT PANEL");
         }
 
         getApp()->reg().writeUnsignedEntry("RIGHT PANEL", "deldate_size", rpanel->getDeldateSize());
@@ -3318,6 +3208,8 @@ void XFileExplorer::create()
     rpanel->setPathLink(startdir2);
     rpanel->setPathText(startdir2);
     dirpanel->setDirectory(startdir1, true);
+    lpanel->getList()->bindColumnSettings("LEFT PANEL", "LEFT TABS");
+    rpanel->getList()->bindColumnSettings("RIGHT PANEL", "RIGHT TABS");
 
     // Open file on startup, if any
     if (nbstartfiles > 0)
@@ -3813,6 +3705,7 @@ void XFileExplorer::create()
 // Destructor
 XFileExplorer::~XFileExplorer()
 {
+    delete customactions;
     delete menubar;
     delete addresstoolbar;
     delete filemenu;
@@ -4034,6 +3927,13 @@ long XFileExplorer::onKeyRelease(FXObject* sender, FXSelector sel, void* ptr)
 }
 
 
+long XFileExplorer::onPrepareUnmount(FXObject*, FXSelector, void* data)
+{
+    UnmountTabRequest* request = static_cast<UnmountTabRequest*>(data);
+    request->guard = new UnmountTabGuard(this, request->path);
+    return 1;
+}
+
 long XFileExplorer::onNetworkUnmounted(FXObject*, FXSelector, void* data)
 {
     const FXString& mountpoint = *(const FXString*)data;
@@ -4058,6 +3958,7 @@ long XFileExplorer::onSigHarvest(FXObject*, FXSelector, void*)
     pid_t child;
     while ((child = waitpid(-1, &status, WNOHANG)) > 0)
     {
+        if (CommandWindow::harvest(child, status)) continue;
         if (Preview::harvest(child, status)) continue;
         if (RemoteDirectory::harvest(child, status)) continue;
         if (dirpanel && dirpanel->handleNetworkExit(child, status))
@@ -4750,7 +4651,6 @@ void addProjectLink(FXComposite* parent, XFileExplorer* owner)
 }
 }
 
-
 long XFileExplorer::onCmdProjectWebsite(FXObject*, FXSelector, void*)
 {
     const char* hostPath = getenv("SWORDFISH_HOST_PATH");
@@ -4773,6 +4673,82 @@ long XFileExplorer::onCmdProjectWebsite(FXObject*, FXSelector, void*)
     return 1;
 }
 
+
+long XFileExplorer::onCmdUserManual(FXObject*, FXSelector, void*)
+{
+    char executable[MAXPATHLEN];
+    ssize_t size = readlink("/proc/self/exe", executable, sizeof(executable) - 1);
+    FXString manual;
+    if (size > 0)
+    {
+        FXString prefix = FXPath::directory(FXString(executable, size));
+        manual = FXPath::simplify(prefix + "/../share/swordfish/manual/index.html");
+        if (!FXStat::isFile(manual)) manual = prefix + "/../docs/manual/index.html";
+    }
+    if (manual.empty() || !FXStat::isFile(manual))
+    {
+        MessageBox::error(this, BOX_OK, _("User Manual"),
+                          _("The local User Manual could not be found. Please check your SwordFish installation."));
+        return 0;
+    }
+    const char* hostPath = getenv("SWORDFISH_HOST_PATH");
+    FXString opener = FXPath::search(hostPath ? FXString(hostPath) : FXSystem::getExecPath(), "xdg-open");
+    if (opener.empty() || !FXStat::isExecutable(opener))
+    {
+        MessageBox::error(this, BOX_OK, _("User Manual"),
+                          _("A browser launcher (xdg-open) was not found. Open this file in your browser:\n%s"),
+                          manual.text());
+        return 0;
+    }
+    FXString command = xf_hostcommand(xf_quote(opener) + " " + xf_quote("file://" + xf_encodeuripath(manual)));
+#ifdef STARTUP_NOTIFICATION
+    int result = runcmd(command, "xdg-open", ROOTDIR, startlocation, false, "");
+#else
+    int result = runcmd(command, ROOTDIR, startlocation);
+#endif
+    if (result < 0)
+    {
+        MessageBox::error(this, BOX_OK, _("User Manual"), _("Unable to open the User Manual:\n%s"), manual.text());
+        return 0;
+    }
+    return 1;
+}
+
+long XFileExplorer::onWelcome(FXObject*, FXSelector, void*)
+{
+    DialogBox welcome(this, _("Welcome to SwordFish"), DECOR_TITLE | DECOR_BORDER | DECOR_CLOSE);
+    FXVerticalFrame* body = new FXVerticalFrame(&welcome, LAYOUT_FILL_X | LAYOUT_FILL_Y, 0, 0, 0, 0, 16, 16, 16, 16);
+    new FXLabel(body, _("Thank you for choosing SwordFish!"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    new FXLabel(body, _("SwordFish helps you organise files and folders.\n"
+                       "Please take some time to read the User Manual and get to know SwordFish.\n"
+                       "It explains each step, even if you have never used a computer before."),
+                NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    FXHorizontalFrame* buttons = new FXHorizontalFrame(body, LAYOUT_FILL_X);
+    new FXButton(buttons, _("Read User Manual"), minihelpicon, this, ID_USER_MANUAL, BUTTON_NORMAL);
+    new FXButton(buttons, _("Start Using SwordFish"), NULL, &welcome, FXDialogBox::ID_CANCEL, BUTTON_NORMAL);
+    new FXButton(buttons, _("Next"), NULL, &welcome, FXDialogBox::ID_ACCEPT, BUTTON_NORMAL | BUTTON_DEFAULT);
+    if (welcome.execute(PLACEMENT_OWNER))
+    {
+        DialogBox customize(this, _("Make SwordFish comfortable for you"), DECOR_TITLE | DECOR_BORDER | DECOR_CLOSE);
+        FXVerticalFrame* contents = new FXVerticalFrame(&customize, LAYOUT_FILL_X | LAYOUT_FILL_Y,
+                                                       0, 0, 0, 0, 16, 16, 16, 16);
+        new FXLabel(contents, _("Change how SwordFish looks and works, or keep the default settings.\n"
+                               "System Integration can add optional shortcuts to your account.\n"
+                               "All three integration choices start unchecked.\n"
+                               "You can change these choices later in Preferences."),
+                    NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        FXHorizontalFrame* row = new FXHorizontalFrame(contents, LAYOUT_FILL_X);
+        new FXButton(row, _("Customize..."), miniprefsicon, this, ID_PREFS, BUTTON_NORMAL);
+        new FXButton(row, _("System Integration..."), NULL, this, ID_INTEGRATION, BUTTON_NORMAL);
+        new FXButton(row, _("Start Using SwordFish"), NULL, &customize, FXDialogBox::ID_ACCEPT,
+                     BUTTON_NORMAL | BUTTON_DEFAULT);
+        customize.execute(PLACEMENT_OWNER);
+    }
+    getApp()->reg().writeBoolEntry("OPTIONS", "welcome_completed", true);
+    if (!getApp()->reg().write())
+        MessageBox::error(this, BOX_OK, _("Settings"), _("Your settings could not be saved. Check the settings folder permissions."));
+    return 1;
+}
 
 long XFileExplorer::onCmdHelp(FXObject*, FXSelector, void*)
 {
@@ -5379,6 +5355,16 @@ long XFileExplorer::onUpdSwitchPanels(FXObject* sender, FXSelector, void*)
 
 
 // Preferences
+long XFileExplorer::onCmdIntegration(FXObject*, FXSelector, void*)
+{
+    if (prefsdialog == NULL)
+        prefsdialog = new PreferencesBox(this, listbackcolor, listforecolor, highlightcolor, pbarcolor, attentioncolor,
+                                         scrollbarcolor);
+    prefsdialog->selectIntegrationPage();
+    prefsdialog->execute(PLACEMENT_OWNER);
+    return 1;
+}
+
 long XFileExplorer::onCmdPrefs(FXObject*, FXSelector, void*)
 {
     if (prefsdialog == NULL)
@@ -6285,12 +6271,12 @@ long XFileExplorer::onUpdFileMan(FXObject* sender, FXSelector, void*)
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
 
         // Update copy names menu label when a directory is selected
-        copynamesmc->setText(_("Cop&y Name"));
+        copynamesmc->setText(_("Copy &Path"));
     }
     else
     {
         // Set default copy names menu label
-        copynamesmc->setText(_("Cop&y Names"));
+        copynamesmc->setText(_("Copy &Path"));
 
         int num = lpanel->getCurrent()->getNumSelectedItems();
         if (num == 0)
@@ -6308,7 +6294,7 @@ long XFileExplorer::onUpdFileMan(FXObject* sender, FXSelector, void*)
                 sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
 
                 // Update copy names menu label when only one file is selected
-                copynamesmc->setText(_("Cop&y Name"));
+                copynamesmc->setText(_("Copy &Path"));
             }
         }
         else

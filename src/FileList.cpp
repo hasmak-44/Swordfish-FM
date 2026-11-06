@@ -381,6 +381,7 @@ struct ExpandJob
 // Map
 FXDEFMAP(FileList) FileListMap[] =
 {
+    FXMAPFUNCS(SEL_COMMAND, FileList::ID_COLUMN_TOGGLE, FileList::ID_COLUMN_TOGGLE_LAST, FileList::onToggleColumn),
     FXMAPFUNC(SEL_COMMAND, FileList::ID_REMOTE_CHANGED, FileList::onRemoteChanged),
     FXMAPFUNC(SEL_TIMEOUT, FileList::ID_FOLDERSIZE_TIMER, FileList::onFolderSizeTimer),
     FXMAPFUNCS(SEL_COMMAND, FileList::ID_FOLDERSIZE_NONE, FileList::ID_FOLDERSIZE_BOTH, FileList::onCmdFolderSizeMode),
@@ -685,6 +686,156 @@ FileList::FileList(FXWindow* focuswin, FXComposite* p, FXuint* ic, FXuint nc,
     trashinfolocation = xdgdatahome + PATHSEPSTRING TRASHINFOPATH;
 }
 
+
+std::vector<FXuint> FileList::getColumnLayout() const
+{
+    return std::vector<FXuint>(idCol, idCol + nbCols);
+}
+
+void FileList::setColumnLayout(const std::vector<FXuint>& columns)
+{
+    if (columns == getColumnLayout()) return;
+    if (columns.empty() || columns[0] != ID_COL_NAME || columns.size() > NMAX_COLS + 1)
+    {
+        appLog(APP_LOG_ERRORS, "column-layout-invalid", "Name must be first");
+        return;
+    }
+    std::set<FXuint> seen;
+    for (FXuint id : columns)
+    {
+        if (id < ID_COL_NAME || id > ID_COL_DIRNAME ||
+            id == ID_COL_ORIGPATH || id == ID_COL_DELDATE ||
+            (!(options & FILELIST_SEARCH) && id == ID_COL_DIRNAME) || !seen.insert(id).second)
+        {
+            appLog(APP_LOG_ERRORS, "column-layout-invalid", "Invalid or duplicate column");
+            return;
+        }
+    }
+    if ((options & FILELIST_SEARCH) && !seen.count(ID_COL_DIRNAME))
+    {
+        appLog(APP_LOG_ERRORS, "column-layout-invalid", "Search folder column is required");
+        return;
+    }
+    endInlineEdit(false);
+    FXuint sortedColumn = getHeaderId(getSortHeader());
+    std::map<FXuint, FXint> widths;
+    for (FXint i = 0; i < getNumHeaders(); ++i) widths[getHeaderId(i)] = getHeaderSize(i);
+    nbCols = columns.size();
+    for (FXuint i = 0; i < nbCols; ++i) idCol[i] = columns[i];
+    nbColsTrash = nbCols + 2;
+    idColTrash[0] = ID_COL_NAME;
+    idColTrash[1] = ID_COL_ORIGPATH;
+    idColTrash[2] = ID_COL_DELDATE;
+    for (FXuint i = 1; i < nbCols; ++i) idColTrash[i + 2] = idCol[i];
+    header->clearItems();
+    FXuint* ids = inTrash ? idColTrash : idCol;
+    FXuint count = inTrash ? nbColsTrash : nbCols;
+    for (FXuint i = 0; i < count; ++i)
+        appendHeader(getHeaderName(ids[i]), NULL, widths.count(ids[i]) ? widths[ids[i]] : 120);
+    name_index = 0;
+    size_index = getHeaderIndex(ID_COL_SIZE);
+    type_index = getHeaderIndex(ID_COL_TYPE);
+    ext_index = getHeaderIndex(ID_COL_EXT);
+    date_index = getHeaderIndex(ID_COL_DATE);
+    user_index = getHeaderIndex(ID_COL_USER);
+    group_index = getHeaderIndex(ID_COL_GROUP);
+    perms_index = getHeaderIndex(ID_COL_PERMS);
+    link_index = getHeaderIndex(ID_COL_LINK);
+    dirname_index = getHeaderIndex(ID_COL_DIRNAME);
+    origpath_index = getHeaderIndex(ID_COL_ORIGPATH);
+    deldate_index = getHeaderIndex(ID_COL_DELDATE);
+    if (getHeaderIndex(sortedColumn) < 0)
+        sortfunc = dirsfirst ? ascendingCase : ascendingCaseMix;
+    initheaderpct = true;
+    scan(true);
+    onHeaderChanged(NULL, 0, NULL);
+    onUpdHeader(NULL, 0, NULL);
+    recalc();
+    update();
+    if (!columnSettingsSection.empty())
+    {
+        FXString saved;
+        for (FXuint id : columns)
+        {
+            if (!saved.empty()) saved += ",";
+            saved += FXStringVal(id - ID_COL_NAME);
+        }
+        getApp()->reg().writeStringEntry(columnSettingsSection.text(), "column_layout", saved.text());
+    }
+}
+
+void FileList::bindColumnSettings(const char* section, const char* legacyTabs)
+{
+    columnSettingsSection = section;
+    FXString saved = getApp()->reg().readStringEntry(section, "column_layout", "");
+    if (saved.empty())
+    {
+        FXuint selected = getApp()->reg().readUnsignedEntry(legacyTabs, "current_tab", 0);
+        if (selected < NMAX_TABS)
+        {
+            FXString key = "columns" + FXStringVal(selected);
+            saved = getApp()->reg().readStringEntry(legacyTabs, key.text(), "");
+        }
+    }
+    if (saved.empty()) return;
+    std::vector<FXuint> columns;
+    for (FXint i = 0; i <= saved.contains(','); ++i)
+    {
+        FXString value = saved.section(',', i);
+        if (value.length() != 1 || value[0] < '0' || value[0] > '8')
+        {
+            appLog(APP_LOG_ERRORS, "pane-column-layout-invalid", section);
+            return;
+        }
+        columns.push_back(ID_COL_NAME + value[0] - '0');
+    }
+    setColumnLayout(columns);
+}
+
+void FileList::moveColumn(FXint from, FXint to)
+{
+    if (from <= 0 || to <= 0 || from >= getNumHeaders() || to >= getNumHeaders()) return;
+    FXuint source = getHeaderId(from), destination = getHeaderId(to);
+    if (source == ID_COL_ORIGPATH || source == ID_COL_DELDATE ||
+        destination == ID_COL_ORIGPATH || destination == ID_COL_DELDATE) return;
+    std::vector<FXuint> columns = getColumnLayout();
+    auto first = std::find(columns.begin(), columns.end(), source);
+    auto last = std::find(columns.begin(), columns.end(), destination);
+    FXint index = last - columns.begin();
+    columns.erase(first);
+    columns.insert(columns.begin() + index, source);
+    setColumnLayout(columns);
+}
+
+long FileList::onToggleColumn(FXObject*, FXSelector selector, void*)
+{
+    FXuint id = ID_COL_NAME + FXSELID(selector) - ID_COLUMN_TOGGLE;
+    if (id == ID_COL_NAME || id == ID_COL_ORIGPATH || id == ID_COL_DELDATE ||
+        (id == ID_COL_DIRNAME && (options & FILELIST_SEARCH))) return 1;
+    std::vector<FXuint> columns = getColumnLayout();
+    auto column = std::find(columns.begin(), columns.end(), id);
+    if (column == columns.end()) columns.push_back(id);
+    else columns.erase(column);
+    setColumnLayout(columns);
+    return 1;
+}
+
+long FileList::showColumnMenu(FXEvent* event)
+{
+    FXMenuPane menu(this);
+    for (FXuint id = ID_COL_NAME; id <= ID_COL_DIRNAME; ++id)
+    {
+        if (id == ID_COL_ORIGPATH || id == ID_COL_DELDATE ||
+            (id == ID_COL_DIRNAME && !(options & FILELIST_SEARCH))) continue;
+        FXMenuCheck* item = new FXMenuCheck(&menu, getHeaderName(id), this, ID_COLUMN_TOGGLE + id - ID_COL_NAME);
+        item->setCheck(getHeaderIndex(id) >= 0);
+        if (id == ID_COL_NAME || id == ID_COL_DIRNAME) item->disable();
+    }
+    menu.create();
+    menu.popup(NULL, event->root_x, event->root_y);
+    getApp()->runModalWhileShown(&menu);
+    return 1;
+}
 
 // Get header position from column id
 // Return -1 if column id was not found
@@ -5725,6 +5876,18 @@ long FileList::onUpdZoom(FXObject* sender, FXSelector sel, void*)
 
 void FileList::sortItems()
 {
+    name_index = getHeaderIndex(ID_COL_NAME);
+    size_index = getHeaderIndex(ID_COL_SIZE);
+    type_index = getHeaderIndex(ID_COL_TYPE);
+    ext_index = getHeaderIndex(ID_COL_EXT);
+    date_index = getHeaderIndex(ID_COL_DATE);
+    user_index = getHeaderIndex(ID_COL_USER);
+    group_index = getHeaderIndex(ID_COL_GROUP);
+    perms_index = getHeaderIndex(ID_COL_PERMS);
+    link_index = getHeaderIndex(ID_COL_LINK);
+    dirname_index = getHeaderIndex(ID_COL_DIRNAME);
+    origpath_index = getHeaderIndex(ID_COL_ORIGPATH);
+    deldate_index = getHeaderIndex(ID_COL_DELDATE);
     IconList::sortItems();
     if (!displaythumbnails || (options & FILELIST_SEARCH))
     {

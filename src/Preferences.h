@@ -129,6 +129,7 @@ private:
     FXbool querySystemDefaultApplication(const FXString&, FXString&, FXString&);
     void populateProgramChoices();
     friend class ProgramSettingsSmokeTest;
+    friend class PaneColumnsRegression;
 #if defined(linux) && defined(XFE_AUTOMOUNTER)
     FXGroupBox* automountgroup = NULL;
 #endif
@@ -142,6 +143,15 @@ private:
     FXListBox* foldersizelist = NULL;
     FXListBox* loglevellist = NULL;
     FXCheckButton* iconthumbnails = NULL;
+    FXCheckButton* integrationDesktop = NULL;
+    FXCheckButton* integrationMenu = NULL;
+    FXCheckButton* integrationCommand = NULL;
+    ComboBox* integrationDestination = NULL;
+    std::vector<std::string> integrationCommandPaths;
+    std::string integrationPreviousCommand;
+    FXLabel* integrationStatus = NULL;
+    FXTabBook* preferencesTabs = NULL;
+    FXint integrationTabIndex = -1;
     std::vector<FXString> languagecodes;
     FXString oldlanguage;
     FXString oldtxtviewer;
@@ -224,6 +234,12 @@ private:
     FXCheckButton* permscol = NULL;
     FXCheckButton* linkcol = NULL;
     FXList* listcol = NULL;
+    FXListBox* columnPane = NULL;
+    FXint selectedColumnPane = 0;
+    std::vector<FXuint> paneColumns[2];
+    void loadPaneColumns();
+    void storePaneColumns();
+    void resetPaneColumns();
     FXButton* listcol_up = NULL;
     FXButton* listcol_down = NULL;
     FXbool sizecol_prev = false;
@@ -369,6 +385,7 @@ public:
         ID_DIRPANEL_TREE_STARTUP,
         ID_DIRPANEL_PLACES_STARTUP,
         ID_VIEW_COL,
+        ID_COLUMN_PANE,
         ID_LISTCOL,
         ID_LISTCOL_UP,
         ID_LISTCOL_DOWN,
@@ -376,17 +393,21 @@ public:
         ID_ASSOCIATION_APPLY,
         ID_ASSOCIATION_RESET,
         ID_RESTORE_PROGRAM_DEFAULTS,
+        ID_CUSTOM_ACTIONS,
         ID_LAST,
     };
 
 public:
+    long onCmdCustomActions(FXObject*, FXSelector, void*);
     PreferencesBox(FXWindow* win, FXColor listbackcolor = FXRGB(255, 255, 255), FXColor listforecolor = FXRGB(0, 0, 0),
                    FXColor highlightcolor = FXRGB(238, 238, 238), FXColor pbarcolor = FXRGB(10, 36, 106),
                    FXColor attentioncolor = FXRGB(255, 0, 0), FXColor scrollbackcolor = FXRGB(237, 236, 235));
 
     FXuint execute(FXuint);
+    void selectIntegrationPage();
 
     long onCmdAccept(FXObject*, FXSelector, void*);
+    long onCmdColumnPane(FXObject*, FXSelector, void*);
     long onCmdBrowse(FXObject*, FXSelector, void*);
     long onCmdAssociationSelected(FXObject*, FXSelector, void*);
     long onCmdAssociationApply(FXObject*, FXSelector, void*);

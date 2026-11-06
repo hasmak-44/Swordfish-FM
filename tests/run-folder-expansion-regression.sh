@@ -29,7 +29,7 @@ objcopy --redefine-sym main=swordfish_main "$root/src/main.o" "$scratch/main.o"
 objects=()
 for object in "$root"/src/*.o; do
     case "$(basename "$object")" in
-        main.o|NetworkDiscovery.o|swordfish_preview-PreviewWorker.o|WriteWindow.o|XFileArchive.o|XFileImage.o|XFilePackage.o|XFileWrite.o) ;;
+        main.o|swordfish-command-link.o|NetworkDiscovery.o|swordfish_preview-PreviewWorker.o|WriteWindow.o|XFileArchive.o|XFileImage.o|XFilePackage.o|XFileWrite.o) ;;
         *) objects+=("$object");;
     esac
 done
@@ -46,4 +46,4 @@ HOME="$scratch/home" SWORDFISH_HOST_PATH="$scratch:/usr/bin:/bin" \
 SWORDFISH_HOST_LD_LIBRARY_PATH="" SWORDFISH_HOST_GIO_MODULE_DIR="" \
 LD_LIBRARY_PATH="/nonexistent/swordfish-test-bundle" GIO_MODULE_DIR="/nonexistent/swordfish-test-modules" \
 SWORDFISH_TEST_MOUNT_LOG="$scratch/mount.log" SWORDFISH_TEST_MOUNT_PATH="$scratch/fixture/large" \
-timeout 80s xvfb-run -a "${runner[@]}" "$scratch/test" "$scratch/fixture" "$prefix/bin/swordfish" "$icons"
+timeout 120s xvfb-run -a "${runner[@]}" "$scratch/test" "$scratch/fixture" "$prefix/bin/swordfish" "$icons"

@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A complete, absolute-beginner guide to Swordfish FM, the desktop file manager.">
+  <title>Swordfish FM — Beginner's Manual</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #202a35;
+      --muted: #526170;
+      --paper: #fff;
+      --ground: #f2f5f8;
+      --line: #d7e0e8;
+      --link: #075c9f;
+      --accent: #0c6b65;
+      --note: #eaf5f3;
+      --caution: #fff4dc;
+      --danger: #fff0ef;
+      font: 18px/1.72 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 1.5rem; }
+    body { margin: 0; color: var(--ink); background: var(--ground); }
+    a { color: var(--link); text-underline-offset: .15em; }
+    a:focus-visible { outline: 3px solid #e29b1f; outline-offset: 3px; }
+    .page { max-width: 1160px; margin: 0 auto; padding: 2rem clamp(1rem, 4vw, 3.5rem) 5rem; background: var(--paper); }
+    header { border-bottom: 4px solid var(--accent); padding-bottom: 1.5rem; }
+    h1 { margin: 0; font-size: clamp(2.4rem, 6vw, 4.2rem); line-height: 1.08; letter-spacing: -.035em; }
+    h2 { margin: 3.4rem 0 1rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: clamp(1.7rem, 3.5vw, 2.4rem); line-height: 1.2; }
+    h3 { margin: 1.6rem 0 .45rem; font-size: 1.25rem; line-height: 1.3; }
+    p, ul, ol { max-width: 78ch; }
+    li { margin: .35rem 0; }
+    .eyebrow { color: var(--accent); font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .subtitle { max-width: 65ch; color: var(--muted); font-size: 1.2rem; }
+    .version { display: inline-block; padding: .2rem .65rem; border-radius: 999px; background: #e5eef5; font-size: .9rem; font-weight: 700; }
+    .intro, .callout, .warning, .danger, .practice { margin: 1.1rem 0; padding: .85rem 1.1rem; border-left: 5px solid var(--accent); border-radius: .2rem .6rem .6rem .2rem; background: var(--note); }
+    .warning { border-color: #b57a00; background: var(--caution); }
+    .danger { border-color: #a73128; background: var(--danger); }
+    .practice { border-color: #49759b; background: #edf4fb; }
+    .callout p, .warning p, .danger p, .practice p { margin: .2rem 0; }
+    .toc { margin: 2rem 0; padding: 1.25rem; border: 1px solid var(--line); border-radius: .7rem; background: #f9fbfc; }
+    .toc h2 { margin: 0 0 .7rem; padding: 0; border: 0; font-size: 1.55rem; }
+    .toc ol { columns: 2; column-gap: 2rem; margin: 0; padding-left: 1.65rem; }
+    .toc li { break-inside: avoid; margin: .18rem 0; }
+    figure { margin: 1.5rem 0; padding: .8rem; border: 1px solid var(--line); border-radius: .65rem; background: #f9fbfc; }
+    figure img { display: block; width: 100%; height: auto; }
+    figcaption { margin-top: .65rem; color: var(--muted); font-size: .92rem; }
+    .steps { padding-left: 1.6rem; }
+    .steps > li { margin: .8rem 0; padding-left: .2rem; }
+    .result, .recover { display: block; margin-top: .2rem; }
+    .result strong { color: #155d39; }
+    .recover strong { color: #805800; }
+    .menu { font-weight: 700; }
+    kbd { padding: .08rem .36rem; border: 1px solid #bcc8d2; border-bottom-width: 2px; border-radius: .3rem; background: #f5f7f9; font: .9em ui-monospace, monospace; white-space: nowrap; }
+    table { width: 100%; max-width: 900px; border-collapse: collapse; margin: 1rem 0; font-size: .96rem; }
+    th, td { padding: .55rem .65rem; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #eef3f6; }
+    .glossary dt { margin-top: 1rem; font-weight: 750; }
+    .glossary dd { margin-left: 0; color: var(--muted); }
+    footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .92rem; }
+    @media (max-width: 700px) {
+      .page { padding-top: 1.2rem; }
+      .toc ol { columns: 1; }
+      table { display: block; overflow-x: auto; }
+    }
+    @media print {
+      body { background: white; }
+      .page { max-width: none; padding: 0; }
+      .toc ol { columns: 2; }
+      a { color: inherit; }
+      h2 { break-before: page; }
+      figure { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <header id="top">
+    <p class="eyebrow">The complete beginner's guide</p>
+    <h1>Swordfish FM</h1>
+    <p class="subtitle">A calm, practical guide to finding, understanding, and safely managing your files. No computer experience is assumed.</p>
+    <p><span class="version">Swordfish FM 0.0.3-beta1</span></p>
+    <p>This is the latest <strong>beta</strong> release, not final 0.0.3. Extract into a new folder and keep your working copy as a fallback. Back up <code>portable-data</code> before transferring settings. Stable 0.0.2 remains available unchanged.</p>
+    <p>This manual is one HTML page with its CSS inside the page. It refers to illustrations and screenshots in the nearby <code>images/</code> folder, so keep that folder beside <code>index.html</code> when making an offline copy. Save the manual folder and open <code>index.html</code> in a web browser to read without a network connection. The application installs it at <code>share/swordfish/manual/index.html</code>; the same page can also be published online. Use the contents links, your browser's Find command, or scroll at your own pace.</p>
+  </header>
+
+  <aside class="intro">
+    <strong>A note about this version.</strong> This manual is for Swordfish FM 0.0.3-beta1. Menu wording and available devices can vary by desktop, language, and build. Keep the companion <code>images/</code> folder with this HTML file for the screenshots and illustrations.
+  </aside>
+
+  <nav class="toc" aria-label="Contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#before">Before you begin</a></li>
+      <li><a href="#mouse-keyboard">Mouse and keyboard</a></li>
+      <li><a href="#files-folders">Files and folders</a></li>
+      <li><a href="#starting-closing">Starting and closing Swordfish</a></li>
+      <li><a href="#workspace">Your workspace</a></li>
+      <li><a href="#navigation">Moving through folders</a></li>
+      <li><a href="#selection">Selecting items</a></li>
+      <li><a href="#practice-folders">Safe practice folders</a></li>
+      <li><a href="#copying">Copying files</a></li>
+      <li><a href="#moving">Moving files</a></li>
+      <li><a href="#renaming">Renaming and file extensions</a></li>
+      <li><a href="#trash">Trash, restore, and permanent deletion</a></li>
+      <li><a href="#panes">Two panes: source and destination</a></li>
+      <li><a href="#tabs">Tabs</a></li>
+      <li><a href="#search">Searching</a></li>
+      <li><a href="#devices">USB devices, mount, unmount, and eject</a></li>
+      <li><a href="#opening">Opening files and applications</a></li>
+      <li><a href="#views">Views, sorting, columns, and previews</a></li>
+      <li><a href="#bookmarks">Bookmarks</a></li>
+      <li><a href="#archives">Archives as folders</a></li>
+      <li><a href="#remote">Remote shares and passwords</a></li>
+      <li><a href="#bulk-rename">Bulk rename</a></li>
+      <li><a href="#symlinks">Symbolic links and copies</a></li>
+      <li><a href="#preferences">Preferences</a></li>
+      <li><a href="#menus">Menus and buttons reference</a></li>
+      <li><a href="#shortcuts">Keyboard shortcuts</a></li>
+      <li><a href="#troubleshooting">Troubleshooting and privacy</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <section id="before">
+      <h2>1. Before you begin</h2>
+      <p>Swordfish FM is a file manager: it gives you a visual way to browse folders, open files, and organize the information stored on your computer or on connected devices. It does not replace your operating system, and it does not automatically make a backup.</p>
+      <p>Think of a computer as a large filing cabinet. A <strong>file</strong> is like one paper document, photograph, or song stored in that cabinet. A <strong>folder</strong> is like a labelled paper folder that can hold many files and smaller folders. Swordfish shows these as names and icons on the screen. An <strong>item</strong> is a general word meaning either one file or one folder.</p>
+      <p>Your personal files are usually inside your <strong>home folder</strong>, a private starting area for your computer account. It may be named after you or shown with a home-shaped icon. A <strong>desktop</strong> is the background and panels you see after signing in; an <strong>application</strong> is a program, such as Swordfish or a web browser.</p>
+      <p>These instructions use three labels:</p>
+      <ul>
+        <li><strong>Result:</strong> what you should see after the single action in that step.</li>
+        <li><strong>Recover:</strong> a safe way to return or try again if the result differs.</li>
+        <li><strong>Warning:</strong> a risk worth understanding before continuing.</li>
+      </ul>
+      <p>Take extra care with permanent deletion, removable drives, and any prompt asking to replace files. If you are unsure, choose <strong>Cancel</strong> and ask the person who manages your computer.</p>
+      <div class="callout"><p><strong>First-run welcome:</strong> on a fresh setup, Swordfish introduces itself. Choose <strong>Read User Manual</strong> to open this guide, <strong>Next</strong> to continue through the welcome, or <strong>Start Using SwordFish</strong> to finish. The next welcome page offers <strong>Customize…</strong> to open Preferences and <strong>System Integration…</strong> to open the System Integration tab directly. These are optional routes into Preferences; integration choices remain off unless you select them.</p></div>
+      <figure>
+        <img src="images/welcome.png" alt="Swordfish FM first-run welcome dialog, showing the Read User Manual, Start Using SwordFish, and Next buttons." loading="lazy">
+        <figcaption>The first welcome page offers this manual before you begin. The welcome can be completed without changing any files.</figcaption>
+      </figure>
+      <div class="practice"><p><strong>Harmless practice:</strong> read the names of the buttons and panels before clicking anything. Looking at a file does not change it.</p></div>
+    </section>
+
+    <section id="mouse-keyboard">
+      <h2>2. Mouse and keyboard</h2>
+      <p>The <strong>pointer</strong> is the arrow that moves when you move the mouse or trackpad. Move the pointer onto a button or item before clicking it. The mouse button is the physical button you press; “click” means press and release it once.</p>
+      <figure>
+        <img src="images/mouse-and-keyboard.svg" alt="Diagram labeling the mouse's left button, right button, and scroll wheel, plus the keyboard keys Enter, Esc, Space, Shift, and Ctrl." loading="lazy">
+        <figcaption>Left and right buttons have different uses. The wheel scrolls; Shift and Ctrl are modifier keys held while clicking.</figcaption>
+      </figure>
+      <ul>
+        <li><strong>Left-click:</strong> press and release the left button once. This usually selects a file, folder, menu, or button.</li>
+        <li><strong>Double-click:</strong> click the left button twice quickly on the same item. It usually opens a folder or file. If it only highlights, pause briefly and try two quicker clicks; a desktop setting can instead make one click open.</li>
+        <li><strong>Right-click:</strong> press and release the right button once. A small context menu usually appears with actions for the item under the pointer. Choose one menu line with a left-click.</li>
+        <li><strong>Scroll:</strong> roll the wheel away from you to move down, and toward you to move up. On a touchpad, use its normal two-finger scroll gesture.</li>
+        <li><strong>Drag:</strong> hold the left button down while moving the pointer, then release. Dragging can move files; beginners should not drag files until they understand which pane or folder is the destination.</li>
+      </ul>
+      <p>A <strong>keyboard</strong> has letter and number keys, a long Space bar, and special keys. <kbd>Enter</kbd> often confirms a dialog or opens a selected item. <kbd>Esc</kbd> often closes a menu or cancels a dialog. <kbd>Shift</kbd> and <kbd>Ctrl</kbd> (Control) are usually held down while pressing another key or clicking; they are not typed as letters. A blinking vertical line in a text box is the <strong>text cursor</strong>, showing where typed characters will appear.</p>
+      <p>When an instruction says “choose <span class="menu">File → Open</span>,” click <span class="menu">File</span> in the top menu, then click <span class="menu">Open</span>. The arrow means “then”; it is not a special key. A keyboard shortcut is a combination of keys that performs a command. Shortcuts are optional; use the named menu command if you prefer.</p>
+      <div class="practice"><strong>Harmless practice:</strong>
+        <ol>
+          <li>Move the pointer over an item without clicking.</li>
+          <li>Click a blank area of the file list.</li>
+          <li>Scroll down a little.</li>
+          <li>Scroll back to the starting position.</li>
+        </ol>
+        These actions only change what is pointed to, selected, or visible.
+      </div>
+    </section>
+
+    <section id="files-folders">
+      <h2>3. Files and folders</h2>
+      <p>A <strong>file</strong> is one piece of stored information: for example, a letter you wrote, a picture, or a song. A <strong>folder</strong> is a container that groups related files—like a paper folder labelled “Recipes” holding recipe pages. A folder can also contain another folder. You can open a folder to look inside it; that does not alter its contents.</p>
+      <p>Every item has a <strong>name</strong>. A file name may include an <strong>extension</strong>, a short ending after a dot that gives a clue about its type: <code>letter.txt</code> often means a plain text letter, while <code>photo.jpg</code> often means a picture. The extension is only a clue, not a guarantee, and changing the ending does not change the file's contents. A folder name usually has no extension.</p>
+      <p>A <strong>path</strong> is the item's address, much like a postal address tells you which building and room to look in. For example, <code>/home/ava/Documents/letter.txt</code> means: start at the computer's top-level location <code>/</code>, go into <code>home</code>, then <code>ava</code>, then <code>Documents</code>, and find <code>letter.txt</code>. The slash character <code>/</code> separates folder names. In Swordfish, a breadcrumb path shows each folder as a clickable segment; it is not always an editable text box.</p>
+      <p>Names beginning with a dot, such as <code>.settings</code>, are commonly hidden settings files and folders in Linux. They are still present even when not shown.</p>
+      <div class="warning"><p><strong>Warning:</strong> don't edit or remove unfamiliar hidden files or folders. Programs and the desktop may need them to remember settings or start correctly.</p></div>
+      <div class="practice"><strong>Harmless practice:</strong>
+        <ol>
+          <li>Look at the names and icons in your home folder.</li>
+          <li>Point to one item that you recognize as a folder.</li>
+          <li>Point to one item that you recognize as a file.</li>
+        </ol>
+        Do not open or change either item.
+      </div>
+    </section>
+
+    <section id="starting-closing">
+      <h2>4. Starting and closing Swordfish</h2>
+      <p>Swordfish is available as an installed application or as a portable folder. Both open the same kind of file manager window; the portable edition runs from its own folder and is not installed system-wide.</p>
+      <h3>Starting an installed copy</h3>
+      <ol class="steps">
+        <li>Open the desktop's applications menu. This is usually a button labelled <strong>Applications</strong> or a grid of dots/squares.<span class="result"><strong>Result:</strong> a list of programs appears.</span><span class="recover"><strong>Recover:</strong> close the menu and ask the person who installed Swordfish if you cannot find the applications menu.</span></li>
+        <li>Find and click <strong>Swordfish</strong> in that list.<span class="result"><strong>Result:</strong> the main file manager window appears.</span><span class="recover"><strong>Recover:</strong> if no Swordfish entry appears, check whether it was installed or ask your administrator for the correct launch method.</span></li>
+      </ol>
+      <h3>Starting a portable copy</h3>
+      <p>A portable download normally arrives as an <strong>archive</strong>—a package of files compressed into one download. The release page provides a ZIP package; some systems or distributors may instead provide a <code>.tar.gz</code> archive. You need to extract the archive before you can start the app. “Extract” means unpack the enclosed files into a regular folder.</p>
+      <p>If you do not already have the portable package, use these download steps first:</p>
+      <ol class="steps">
+        <li>Open your web browser, such as Firefox or another browser you already use.<span class="result"><strong>Result:</strong> a browser window appears.</span><span class="recover"><strong>Recover:</strong> ask your administrator for the release package if you do not have internet access.</span></li>
+        <li>Open the <a href="https://github.com/hasmak-44/Swordfish-FM/releases">Swordfish FM release page</a>.<span class="result"><strong>Result:</strong> the page lists Swordfish releases.</span><span class="recover"><strong>Recover:</strong> check that the web address is exactly the link in this manual before downloading.</span></li>
+        <li>Find the release's portable archive asset (not an asset marked <strong>source code</strong>).<span class="result"><strong>Result:</strong> you have identified a ready-to-run portable package, usually a ZIP or tar.gz file.</span><span class="recover"><strong>Recover:</strong> if the asset names are unclear, ask the person who shared this manual.</span></li>
+        <li>Click the portable archive's download link once.<span class="result"><strong>Result:</strong> the browser begins downloading the archive.</span><span class="recover"><strong>Recover:</strong> do not open or run the archive directly from an untrusted source.</span></li>
+        <li>Wait until the browser reports that the download is complete.<span class="result"><strong>Result:</strong> the archive is available in the browser's Downloads list or your Downloads folder.</span><span class="recover"><strong>Recover:</strong> if the download failed, read the browser's message or ask for help.</span></li>
+      </ol>
+      <ol class="steps">
+        <li>Open your desktop's file-browsing application, often shown with a folder icon.<span class="result"><strong>Result:</strong> a window showing folders and files appears.</span><span class="recover"><strong>Recover:</strong> if you do not know which application opens the file browser, ask for help; do not enter commands in a terminal.</span></li>
+        <li>Open the <strong>Downloads</strong> folder in the file browser.<span class="result"><strong>Result:</strong> the folder shows files downloaded to your account.</span><span class="recover"><strong>Recover:</strong> if the archive is not here, look in the browser's Downloads list or ask the person who provided the file.</span></li>
+        <li>Find the Swordfish portable archive in the Downloads folder.<span class="result"><strong>Result:</strong> you can see a package name ending in <code>.zip</code> or <code>.tar.gz</code>.</span><span class="recover"><strong>Recover:</strong> if the downloaded file has a different name, verify that it came from the release page or from your administrator.</span></li>
+        <li>Right-click the Swordfish archive and look for an option such as <strong>Extract Here</strong>, <strong>Extract To…</strong>, or <strong>Extract Archive</strong>.<span class="result"><strong>Result:</strong> a context menu or archive window shows extraction choices.</span><span class="recover"><strong>Recover:</strong> if no extraction choice appears, use the desktop's archive/Archive Manager application or ask your system administrator which built-in tool to use.</span></li>
+        <li>Choose an extraction option that creates a new Swordfish folder in Downloads or another folder you own.<span class="result"><strong>Result:</strong> an extracted folder appears and contains the portable app files.</span><span class="recover"><strong>Recover:</strong> if you cannot tell where the files went, check the archive manager's extraction location and do not extract over an unrelated folder.</span></li>
+        <li>Double-click the newly extracted Swordfish folder.<span class="result"><strong>Result:</strong> you can see the files and folders that make up the portable application.</span><span class="recover"><strong>Recover:</strong> if you see only another archive, open the folder created by extraction or repeat extraction into a new folder.</span></li>
+        <li>Find the file named <code>AppRun</code> in that extracted folder and double-click it only if the package came from a source you trust.<span class="result"><strong>Result:</strong> Swordfish starts if your desktop permits the file to run.</span><span class="recover"><strong>Recover:</strong> if the desktop asks whether to Run or Display the file, choose Run only for this verified Swordfish package. If it says the file is not executable, stop and see the permission note below; do not apply that permission change to other files.</span></li>
+      </ol>
+      <p>Desktop archive tools have different names and button wording. A <code>.tar.gz</code> filename means one archive has been compressed; some desktop tools unpack both layers at once, while others leave a second <code>.tar</code> archive for you to unpack. Keep all extracted Swordfish files together and do not move <code>AppRun</code> by itself.</p>
+      <ol class="steps">
+        <li>If extracting a <code>.tar.gz</code> produced a second <code>.tar</code> file, right-click that new <code>.tar</code> file.<span class="result"><strong>Result:</strong> its context menu appears.</span><span class="recover"><strong>Recover:</strong> if the first extraction already produced the Swordfish folder, do not extract anything else.</span></li>
+        <li>Choose the desktop archive tool's extraction option for the <code>.tar</code> file.<span class="result"><strong>Result:</strong> the remaining layer is unpacked, usually into a Swordfish folder.</span><span class="recover"><strong>Recover:</strong> if you do not see an extraction choice, ask your administrator which built-in archive tool to use.</span></li>
+      </ol>
+      <p><strong>If AppRun is not executable:</strong> only change permissions after verifying that this is the trusted Swordfish package you meant to download. A permission allows the operating system to start a file as a program.</p>
+      <ol class="steps">
+        <li>In the extracted Swordfish folder, right-click the file named <code>AppRun</code>.<span class="result"><strong>Result:</strong> its context menu appears.</span><span class="recover"><strong>Recover:</strong> do not change permissions on any file unless you have verified its source.</span></li>
+        <li>Choose <strong>Properties</strong> from that context menu.<span class="result"><strong>Result:</strong> a properties window opens for AppRun.</span><span class="recover"><strong>Recover:</strong> close it without changes if it is not the AppRun file inside the extracted Swordfish folder.</span></li>
+        <li>Open the Properties window's <strong>Permissions</strong> page or section, if present.<span class="result"><strong>Result:</strong> file permission controls become visible.</span><span class="recover"><strong>Recover:</strong> if the window has no Permissions section, stop and ask your administrator.</span></li>
+        <li>Look for a checkbox such as <strong>Allow executing file as program</strong>.<span class="result"><strong>Result:</strong> you can tell whether this AppRun file is allowed to start.</span><span class="recover"><strong>Recover:</strong> if the label or file identity is unclear, do not change anything.</span></li>
+        <li>Enable that checkbox only for this trusted AppRun file, if it is currently unchecked.<span class="result"><strong>Result:</strong> the permission control shows that AppRun may run.</span><span class="recover"><strong>Recover:</strong> if the desktop asks about another file or a whole folder, cancel.</span></li>
+        <li>Close the Properties window using its normal close button.<span class="result"><strong>Result:</strong> you return to the extracted Swordfish folder.</span><span class="recover"><strong>Recover:</strong> if you cannot tell whether the setting was applied, ask your administrator instead of changing other permissions.</span></li>
+        <li>Double-click <code>AppRun</code> in the extracted Swordfish folder.<span class="result"><strong>Result:</strong> Swordfish opens if the trusted file is now permitted to run.</span><span class="recover"><strong>Recover:</strong> if it still does not start, leave permissions as they are and ask your administrator.</span></li>
+      </ol>
+      <figure>
+        <img src="images/welcome.png" alt="Swordfish's welcome dialog after the portable application starts, including its Read User Manual, Next, and Start Using SwordFish choices." loading="lazy">
+        <figcaption>After startup, the welcome page can open this manual or take you through optional setup.</figcaption>
+      </figure>
+      <p>In Preferences, optional System Integration can add a desktop launcher, an applications-menu entry, or a command link. All choices start unchecked. Desktop and menu shortcuts are personal. A command link can be personal or shared, depending on the location you choose. Portable shortcuts point to the folder's current <code>AppRun</code>. Moving that folder later breaks the shortcuts.</p>
+      <h3>Closing</h3>
+      <ol class="steps">
+        <li>Choose <span class="menu">File → Quit</span> or click the window's close button.<span class="result"><strong>Result:</strong> the Swordfish window closes; ordinary files and folders are unchanged.</span><span class="recover"><strong>Recover:</strong> start Swordfish again using the same installed or portable method.</span></li>
+      </ol>
+      <p>Closing Swordfish is not the same as ejecting a USB device. Finish the device steps in chapter 16 before unplugging a drive.</p>
+    </section>
+
+    <section id="workspace">
+      <h2>5. Your workspace</h2>
+      <p>The illustration names the main areas you will use. The precise arrangement can differ if you choose a one-panel layout, hide a side panel, or resize the window. Screenshot examples use Swordfish's bundled default theme; fonts, colours, and overall system appearance can differ on your computer.</p>
+      <figure>
+        <img src="images/annotated-workspace.png" alt="Annotated Swordfish FM workspace. Callouts identify the top menu and toolbar, address bar, left navigation and Devices sidebar, file lists in the left and right panes, tab strips, active pane, and bottom status area." loading="lazy">
+        <figcaption>Annotated workspace: use the labelled areas as a map; the active pane is the one that receives file actions.</figcaption>
+      </figure>
+      <figure>
+        <img src="images/workspace.png" alt="Swordfish FM open in its normal two-pane layout, showing a navigation sidebar, address bars, tabs, file and folder lists, and the window toolbar." loading="lazy">
+        <figcaption>Example of the regular workspace. Your folder names and visible items will be different.</figcaption>
+      </figure>
+      <ul>
+        <li><strong>Menu bar:</strong> named menus for file actions, editing, views, bookmarks, tools, trash, and help.</li>
+        <li><strong>Toolbar:</strong> buttons for common actions; some device controls depend on what is selected.</li>
+        <li><strong>Address bar:</strong> the current folder's path for that pane.</li>
+        <li><strong>Sidebar:</strong> places, folders, devices, and sometimes network locations.</li>
+        <li><strong>File list:</strong> files and folders in the current location.</li>
+        <li><strong>Tabs:</strong> saved browsing locations within each pane.</li>
+        <li><strong>Status area:</strong> context such as item counts or selection information.</li>
+      </ul>
+      <p>A selected item is highlighted. The active pane is the pane with keyboard focus; its active tab is the location a command will usually use. A destination dialog or explicit “Other Pane” command may use a different place.</p>
+      <div class="practice"><p><strong>Harmless practice:</strong> find the address breadcrumb in the screenshot, then find the corresponding address area in your Swordfish window. Do not click a file action.</p></div>
+    </section>
+
+    <section id="navigation">
+      <h2>6. Moving through folders</h2>
+      <p>Each panel's address area shows the current folder. In the normal display, it is a <strong>breadcrumb</strong>: separate clickable folder names with separators between them. Click a name in the breadcrumb to go directly to that parent location. The address area is not an always-editable text field.</p>
+      <ol class="steps">
+        <li>Click the <strong>Edit Path</strong> button next to the address/breadcrumb when you need to type an address.<span class="result"><strong>Result:</strong> the breadcrumb changes into a text box containing the current path.</span><span class="recover"><strong>Recover:</strong> press <kbd>Esc</kbd> or click elsewhere if you did not mean to edit the path.</span></li>
+        <li>Click inside the path text box.<span class="result"><strong>Result:</strong> a text cursor appears in the path.</span><span class="recover"><strong>Recover:</strong> if the file list is focused instead, click inside the path box again.</span></li>
+        <li>Press <kbd>Ctrl</kbd>+<kbd>A</kbd> while the path box is active.<span class="result"><strong>Result:</strong> the existing path is highlighted for replacement.</span><span class="recover"><strong>Recover:</strong> if something else becomes selected, press <kbd>Esc</kbd> and click the path box again.</span></li>
+        <li>Type the full path you intend to visit into the path text box.<span class="result"><strong>Result:</strong> the new address appears in the box.</span><span class="recover"><strong>Recover:</strong> if you are unsure about the address, press <kbd>Esc</kbd> before continuing.</span></li>
+        <li>Press <kbd>Enter</kbd> while the path box is active.<span class="result"><strong>Result:</strong> Swordfish attempts to open that location.</span><span class="recover"><strong>Recover:</strong> if the path is not found, return Home and browse using folder names instead.</span></li>
+      </ol>
+      <p>You do not need to type a path for ordinary browsing:</p>
+      <ol class="steps">
+        <li>Double-click a familiar folder in the file list, such as <strong>Documents</strong> if it is present.<span class="result"><strong>Result:</strong> the address breadcrumb changes and the list shows the folder's contents.</span><span class="recover"><strong>Recover:</strong> use the Go to Parent Folder button to return. If Documents is not present, choose another familiar folder.</span></li>
+        <li>Click the <strong>Go to Parent Folder</strong> button once.<span class="result"><strong>Result:</strong> the panel moves up one level.</span><span class="recover"><strong>Recover:</strong> use the Go to Next Folder button to return to the location you just left.</span></li>
+        <li>Click <strong>Go to Home Folder</strong> once.<span class="result"><strong>Result:</strong> the panel opens your personal home folder.</span><span class="recover"><strong>Recover:</strong> use the Back button or select the tab/location you were using before.</span></li>
+      </ol>
+      <p>At the root path <code>/</code>, there is no parent folder. A location may also be inaccessible because of permissions, a disconnected device, or a spelling error. In those cases, do not try to bypass the restriction.</p>
+      <div class="practice"><p><strong>Harmless practice:</strong> follow the three folder-navigation examples above using a familiar folder. Browsing does not move or alter its contents.</p></div>
+    </section>
+
+    <section id="selection">
+      <h2>7. Selecting items</h2>
+      <p>To select an item means to highlight it so Swordfish knows which item a command should affect. Click one file or folder once; it is selected but not opened. To select several separate items, hold <kbd>Ctrl</kbd> (Control) down while clicking each item. To select a continuous range, click the first item, hold <kbd>Shift</kbd>, then click the last item. Release the key after clicking. The mouse key diagram in chapter 2 shows these keys.</p>
+      <p><strong>Select All</strong> selects every item in the current list, not every item on the computer. Deselect before taking a destructive action if you are uncertain about the selection.</p>
+      <ol class="steps">
+        <li>Click one unimportant item once.<span class="result"><strong>Result:</strong> the item becomes highlighted but is not opened.</span><span class="recover"><strong>Recover:</strong> click empty space to clear the selection.</span></li>
+        <li>Click a blank area in the list.<span class="result"><strong>Result:</strong> the highlight disappears and no item is selected.</span><span class="recover"><strong>Recover:</strong> click the item again if you meant to select it.</span></li>
+      </ol>
+      <div class="warning"><p><strong>Warning:</strong> always read the number and names of selected items before copying, moving, renaming, or deleting them.</p></div>
+      <div class="practice"><strong>Harmless practice:</strong>
+        <ol>
+          <li>Open your practice folder.</li>
+          <li>Click one disposable file once.</li>
+          <li>Hold <kbd>Ctrl</kbd> and click a second disposable file once.</li>
+          <li>Release <kbd>Ctrl</kbd>, then click empty space to clear the selection.</li>
+        </ol>
+        Do not practice with system or hidden items.
+      </div>
+    </section>
+
+    <section id="practice-folders">
+      <h2>8. Safe practice folders</h2>
+      <p>Practice in a folder that belongs to you. Do not use the system folders <code>/</code>, <code>/etc</code>, <code>/usr</code>, <code>/bin</code>, or another person's home folder.</p>
+      <ol class="steps">
+        <li>Click the <strong>Go to Home Folder</strong> button in the pane where you want the practice folder.<span class="result"><strong>Result:</strong> the file list shows your home folder.</span><span class="recover"><strong>Recover:</strong> check the address breadcrumb; if it does not show your home location, do not create the folder yet.</span></li>
+        <li>Choose <span class="menu">File → New Folder</span>.<span class="result"><strong>Result:</strong> a name field or dialog appears for a folder in the current location.</span><span class="recover"><strong>Recover:</strong> press <kbd>Esc</kbd> or click Cancel if the address is not your home folder.</span></li>
+        <li>Type <code>Swordfish-Practice</code> into the folder name field.<span class="result"><strong>Result:</strong> the requested name appears in the field.</span><span class="recover"><strong>Recover:</strong> if the name is already present, cancel and choose another distinct practice name.</span></li>
+        <li>Confirm the new name using the dialog's confirmation button or <kbd>Enter</kbd>.<span class="result"><strong>Result:</strong> the new practice folder appears in your home folder.</span><span class="recover"><strong>Recover:</strong> if you see an unexpected replace/overwrite prompt, choose Cancel.</span></li>
+      </ol>
+      <p>Use this folder for the harmless examples in this manual. If you make a practice file, use a plain text editor and type only a sentence you can discard. You may remove your practice folder later after checking that it contains nothing you need.</p>
+      <div class="warning"><p><strong>Warning:</strong> a practice folder is not a backup. Never put the only copy of an important file there for an experiment.</p></div>
+    </section>
+
+    <section id="copying">
+      <h2>9. Copying files</h2>
+      <p>Copying creates another version and leaves the original in place. If two files have the same name in the destination, Swordfish may ask whether to replace, skip, or rename. Stop and inspect that prompt; replacing can overwrite existing contents.</p>
+      <figure>
+        <img src="images/copy-vs-move.svg" alt="Two folder diagrams compare copy and move. Copy shows the item in both source and destination; move shows it only in the destination." loading="lazy">
+        <figcaption>Copy means “keep the original and make another.” Move means “put the item elsewhere”; after success it is no longer listed in the old folder.</figcaption>
+      </figure>
+      <figure>
+        <img src="images/context-menu.png" alt="Swordfish's file context menu opened on the selected Practice folder. It shows Copy Path and the grouped Copy, Cut, Paste, Rename, Copy to, Move to, Link to, and Other Pane actions." loading="lazy">
+        <figcaption>This example has the Practice folder selected and its context menu open. Menu contents vary with the selection.</figcaption>
+      </figure>
+      <ol class="steps">
+        <li>Open the folder containing a disposable practice file.<span class="result"><strong>Result:</strong> the file appears in the list.</span><span class="recover"><strong>Recover:</strong> check the address breadcrumb to confirm you are in your practice folder.</span></li>
+        <li>Click the practice file once to select it.<span class="result"><strong>Result:</strong> the filename is highlighted.</span><span class="recover"><strong>Recover:</strong> if a different item is highlighted, click empty space and select the intended file.</span></li>
+        <li>Choose <span class="menu">File → Copy to…</span>.<span class="result"><strong>Result:</strong> a Copy dialog opens with a destination field and a small folder/browse button beside it.</span><span class="recover"><strong>Recover:</strong> choose Cancel if the selected source is not the file you intended.</span></li>
+        <li>Move the pointer over the small folder/browse button beside the destination field.<span class="result"><strong>Result:</strong> its tooltip appears and says <strong>Select Destination…</strong>.</span><span class="recover"><strong>Recover:</strong> if the tooltip does not match, do not click; choose Cancel instead.</span></li>
+        <li>Click the folder/browse button beside the destination field.<span class="result"><strong>Result:</strong> a file-and-folder chooser opens.</span><span class="recover"><strong>Recover:</strong> close the chooser if you do not recognize its current location.</span></li>
+        <li>Navigate in the chooser to the practice folder where you want the copy to go.<span class="result"><strong>Result:</strong> the destination folder is visible.</span><span class="recover"><strong>Recover:</strong> do not choose a folder outside the practice area.</span></li>
+        <li>Select the destination folder in the chooser.<span class="result"><strong>Result:</strong> the folder becomes selected.</span><span class="recover"><strong>Recover:</strong> select a different practice folder if the wrong one is highlighted.</span></li>
+        <li>Confirm that folder in the chooser using its selection/accept button.<span class="result"><strong>Result:</strong> the Copy dialog's destination field now shows the selected path.</span><span class="recover"><strong>Recover:</strong> if the path is unfamiliar, choose Cancel in the Copy dialog.</span></li>
+        <li>Check that the destination field contains the practice folder's path.<span class="result"><strong>Result:</strong> you have verified where the copy will go.</span><span class="recover"><strong>Recover:</strong> do not continue if the destination path is not clear.</span></li>
+        <li>Click <strong>Accept</strong> in the Copy dialog.<span class="result"><strong>Result:</strong> a copy appears in the destination; the source remains where it was.</span><span class="recover"><strong>Recover:</strong> if the copy went somewhere unexpected, search for its name and ask for help before removing anything.</span></li>
+      </ol>
+      <p>You can also copy with <span class="menu">Edit → Copy</span> and <span class="menu">Edit → Paste</span>, or with the shortcuts in chapter 26. The context menu has a grouped set of Copy, Cut, Paste, and Copy Path actions, followed by Copy to…, Move to…, Link to…, and Copy/Move/Link in Other Pane. In a two-pane layout, an Other Pane action targets the opposite pane's active tab. Check both paths before confirming.</p>
+      <div class="warning"><p><strong>Warning:</strong> copying onto an existing same-named file is not a harmless practice. Do not approve replacement unless you have checked which copy you want to keep.</p></div>
+      <div class="practice"><p><strong>Harmless practice:</strong> use the numbered copy instructions above with one disposable practice file. Verify that the source remains and one copy appears in the destination.</p></div>
+    </section>
+
+    <section id="moving">
+      <h2>10. Moving files</h2>
+      <p>Moving changes an item's location. The item is removed from its old folder after it reaches the destination. Moving between folders on the same disk is usually quick; moving between devices can take longer and may behave like copy-then-remove.</p>
+      <ol class="steps">
+        <li>Open the practice folder containing a disposable file.<span class="result"><strong>Result:</strong> the file appears in the list.</span><span class="recover"><strong>Recover:</strong> check the address breadcrumb before continuing.</span></li>
+        <li>Click the disposable file once to select it.<span class="result"><strong>Result:</strong> the filename is highlighted.</span><span class="recover"><strong>Recover:</strong> click empty space if you selected the wrong file.</span></li>
+        <li>Choose <span class="menu">File → Move to…</span>.<span class="result"><strong>Result:</strong> a Move dialog opens with a destination field and a small folder/browse button beside it.</span><span class="recover"><strong>Recover:</strong> choose Cancel if the selected item or source path is not correct.</span></li>
+        <li>Move the pointer over the small folder/browse button beside the destination field.<span class="result"><strong>Result:</strong> its tooltip appears and says <strong>Select Destination…</strong>.</span><span class="recover"><strong>Recover:</strong> if the tooltip does not match, do not click; choose Cancel instead.</span></li>
+        <li>Click the folder/browse button beside the destination field.<span class="result"><strong>Result:</strong> a folder chooser opens.</span><span class="recover"><strong>Recover:</strong> close it if you do not recognize its current location.</span></li>
+        <li>Navigate to a different folder inside your practice area.<span class="result"><strong>Result:</strong> the intended destination folder is visible.</span><span class="recover"><strong>Recover:</strong> do not choose a destination outside the practice area.</span></li>
+        <li>Select the destination folder in the chooser.<span class="result"><strong>Result:</strong> the folder becomes selected.</span><span class="recover"><strong>Recover:</strong> select another folder if the wrong one is highlighted.</span></li>
+        <li>Confirm that folder in the chooser using its selection/accept button.<span class="result"><strong>Result:</strong> the Move dialog's destination field shows the selected path.</span><span class="recover"><strong>Recover:</strong> cancel if the path is unfamiliar.</span></li>
+        <li>Check the destination field to verify the folder path.<span class="result"><strong>Result:</strong> you have confirmed the intended destination.</span><span class="recover"><strong>Recover:</strong> do not continue unless you can identify the destination.</span></li>
+        <li>Click <strong>Accept</strong> in the Move dialog.<span class="result"><strong>Result:</strong> the file appears in the destination and is no longer listed in the source folder.</span><span class="recover"><strong>Recover:</strong> search for the filename or inspect the destination path. If you cannot find it, stop and ask for help before repeating the move.</span></li>
+      </ol>
+      <p>For a move between panes, check the source selection and other pane's address first. Use Move to Other Pane only when that destination is clearly correct. Never disconnect a drive while a move is in progress.</p>
+      <div class="warning"><p><strong>Warning:</strong> the word “move” can remove the source after copying. For important files, make a verified backup before moving between disks.</p></div>
+    </section>
+
+    <section id="renaming">
+      <h2>11. Renaming and file extensions</h2>
+      <p>Renaming changes the item's name, not necessarily its contents. A filename extension is often the last part after a dot (for example, <code>.jpg</code> or <code>.txt</code>).</p>
+      <ol class="steps">
+        <li>Click a disposable practice file once to select it.<span class="result"><strong>Result:</strong> its filename is highlighted.</span><span class="recover"><strong>Recover:</strong> click empty space if the wrong file is highlighted.</span></li>
+        <li>Choose <span class="menu">File → Rename…</span> or the context-menu <strong>Rename</strong> command.<span class="result"><strong>Result:</strong> a Rename dialog appears with the current name in a text field.</span><span class="recover"><strong>Recover:</strong> press <kbd>Esc</kbd> or choose Cancel if you selected the wrong file.</span></li>
+        <li>Type a new name, keeping the existing ending after the last dot unchanged.<span class="result"><strong>Result:</strong> the new name appears in the text field.</span><span class="recover"><strong>Recover:</strong> before confirming, restore the original ending if you changed it accidentally.</span></li>
+        <li>Choose <strong>Accept</strong> in the Rename dialog.<span class="result"><strong>Result:</strong> the same file appears under its new name.</span><span class="recover"><strong>Recover:</strong> if you changed the extension, rename it back to the original full name if known. Do not guess an extension for an unfamiliar file.</span></li>
+      </ol>
+      <p>Changing <code>notes.txt</code> to <code>notes.jpg</code> does not turn text into a picture. Some systems hide known extensions; use Properties or the file list's extension/type details if you need to identify a file.</p>
+      <div class="warning"><p><strong>Warning:</strong> an application may stop recognizing a file if its extension changes. Preserve the existing extension unless you know why it must change.</p></div>
+    </section>
+
+    <section id="trash">
+      <h2>12. Trash, restore, and permanent deletion</h2>
+      <p><strong>Move to Trash</strong> is the reversible choice for ordinary local files. It places an item in the Trash rather than immediately destroying it. <strong>Restore from Trash</strong> returns it to its original location when possible. A device or filesystem may not support Trash; in that case, the application may warn you or deletion may not be recoverable.</p>
+      <ol class="steps">
+        <li>Open your practice folder.<span class="result"><strong>Result:</strong> its contents appear in the file list.</span><span class="recover"><strong>Recover:</strong> check the breadcrumb before continuing.</span></li>
+        <li>Click one disposable practice file once.<span class="result"><strong>Result:</strong> that filename is highlighted.</span><span class="recover"><strong>Recover:</strong> click empty space if a different item is selected.</span></li>
+        <li>Choose <span class="menu">Move to Trash</span> from File or the item's context menu.<span class="result"><strong>Result:</strong> the file disappears from its original folder and is placed in Trash.</span><span class="recover"><strong>Recover:</strong> open Trash, select the item, and choose Restore From Trash.</span></li>
+        <li>Choose <span class="menu">Trash → Go to Trash</span>.<span class="result"><strong>Result:</strong> you can see trashed items and their names.</span><span class="recover"><strong>Recover:</strong> if it is not shown, check whether the item was on a removable or unsupported filesystem.</span></li>
+        <li>Click the trashed practice item once.<span class="result"><strong>Result:</strong> the item is highlighted in Trash.</span><span class="recover"><strong>Recover:</strong> do not select an item unless its name is the one you just moved there.</span></li>
+        <li>Choose <span class="menu">File → Restore From Trash</span>.<span class="result"><strong>Result:</strong> Swordfish returns the item to its original location when possible.</span><span class="recover"><strong>Recover:</strong> if the original location no longer exists, follow the prompt and choose a destination only if you recognize it.</span></li>
+      </ol>
+      <p><strong>Delete</strong> and <strong>Empty Trash</strong> are permanent-deletion actions. They may not offer recovery. Do not use them to “clean up” files you might need. A backup is the only dependable protection against accidental loss.</p>
+      <div class="danger"><p><strong>High-risk action:</strong> never practice with permanent Delete or Empty Trash. Before emptying Trash, review its contents and confirm you have no reason to keep them.</p></div>
+    </section>
+
+    <section id="panes">
+      <h2>13. Two panes: source and destination</h2>
+      <p>In a two-pane layout, each pane has its own address and tabs. A pane can be positioned side by side or one above the other. The active pane is the one you most recently clicked or focused. A selected item in one pane is the source; the other pane's active tab can be the destination.</p>
+      <ol class="steps">
+        <li>Click an empty area in the left pane's file list.<span class="result"><strong>Result:</strong> the left pane becomes active; its folder path is shown in that pane's breadcrumb.</span><span class="recover"><strong>Recover:</strong> if the left pane does not show its active indicator, click inside its file list again.</span></li>
+        <li>Read the folder path shown in the left pane's breadcrumb.<span class="result"><strong>Result:</strong> you know the left pane's current location.</span><span class="recover"><strong>Recover:</strong> if the path is unfamiliar, do not start a file operation.</span></li>
+        <li>Click an empty area in the right pane's file list.<span class="result"><strong>Result:</strong> the right pane becomes active; its folder path is shown in that pane's breadcrumb.</span><span class="recover"><strong>Recover:</strong> if the right pane does not show its active indicator, click inside its file list again.</span></li>
+        <li>Read the folder path shown in the right pane's breadcrumb.<span class="result"><strong>Result:</strong> you know the right pane's current location.</span><span class="recover"><strong>Recover:</strong> if the path is unfamiliar, do not start a file operation.</span></li>
+      </ol>
+      <p>“Other Pane” means the pane opposite the one containing the selected item. Its actions target the other pane's currently active tab. Verify the destination path before confirming. You can still use the standard Copy to… or Move to… chooser if you prefer to select the destination explicitly.</p>
+      <p>When there is only one pane, the other-pane actions are unavailable or have no destination. The source pane's selected files are not changed just by switching panes.</p>
+      <div class="warning"><p><strong>Warning:</strong> before a cross-pane move, read both paths aloud or carefully compare them. Do not assume left always means source or right always means destination.</p></div>
+      <div class="practice"><strong>Harmless practice: copy one disposable file to the other pane.</strong>
+        <ol>
+          <li>Click inside the left pane.</li>
+          <li>Open your practice folder in the left pane.</li>
+          <li>Click inside the right pane.</li>
+          <li>Open a different practice folder in the right pane.</li>
+          <li>Read the left pane's breadcrumb to check the source location.</li>
+          <li>Read the right pane's breadcrumb to check the destination location.</li>
+          <li>Click one disposable file in the left pane once.</li>
+          <li>Right-click the selected file.</li>
+          <li>Choose <strong>Copy to Other Pane…</strong>.</li>
+          <li>If a Copy dialog appears, check that its destination is the right pane's active tab.</li>
+          <li>If the destination is correct and a dialog is open, choose <strong>Accept</strong>.</li>
+          <li>Look in the right pane for the copied file.</li>
+        </ol>
+        If the Copy dialog names any other destination, choose Cancel. Use Move to Other Pane only after you are confident with the destination; moving removes the source after a successful operation.
+      </div>
+    </section>
+
+    <section id="tabs">
+      <h2>14. Tabs</h2>
+      <p>Tabs let one pane remember several folder locations. Each pane has its own tab strip. Selecting a tab changes that pane's location without changing the other pane.</p>
+      <ol class="steps">
+        <li>Choose <span class="menu">File → New Tab</span> while the intended pane is active.<span class="result"><strong>Result:</strong> a new tab appears in that pane and opens its configured starting location.</span><span class="recover"><strong>Recover:</strong> choose another tab to return to the previous location.</span></li>
+        <li>Click a different tab in the same pane.<span class="result"><strong>Result:</strong> the pane switches to that tab's folder.</span><span class="recover"><strong>Recover:</strong> click the first tab again if you switched to the wrong one.</span></li>
+        <li>Choose <span class="menu">File → Close Tab</span> only when the tab you want to close is active.<span class="result"><strong>Result:</strong> that tab closes; its files are not deleted.</span><span class="recover"><strong>Recover:</strong> open a new tab and navigate back to the folder if needed.</span></li>
+      </ol>
+      <p>Closing a tab is not the same as deleting a folder. Swordfish remembers useful browsing state; if an item is on a removable device that cannot be safely unmounted, the device warning takes priority.</p>
+      <div class="practice"><strong>Harmless practice:</strong>
+        <ol>
+          <li>Click the pane you want to practice with.</li>
+          <li>Choose <span class="menu">File → New Tab</span>.</li>
+          <li>Click the first tab to return to its saved folder.</li>
+          <li>Click the second tab to return to its folder.</li>
+        </ol>
+        Switching tabs does not change file contents.
+      </div>
+    </section>
+
+    <section id="search">
+      <h2>15. Searching</h2>
+      <p>Search helps locate files by name and, depending on options, file type and other criteria. In the search window, <strong>Find files</strong> is the name/pattern field, <strong>In folder</strong> is the starting location, and the optional <strong>Text contains</strong> field searches inside text files. <strong>More options</strong> reveals additional filters. “Recursive” means search inside subfolders too; the option <strong>Don't search folders recursively</strong> switches that behavior off.</p>
+      <ol class="steps">
+        <li>Choose <span class="menu">Tools → Search Files…</span> or click the Search Files and Folders toolbar button.<span class="result"><strong>Result:</strong> a search window opens.</span><span class="recover"><strong>Recover:</strong> close the search window if it is not what you expected.</span></li>
+        <li>Click the <strong>Find files</strong> field.<span class="result"><strong>Result:</strong> a text cursor appears in the field.</span><span class="recover"><strong>Recover:</strong> click the field again if you do not see the cursor.</span></li>
+        <li>Type a distinctive part of a filename you already know.<span class="result"><strong>Result:</strong> the search words appear in the field; a partial name is enough.</span><span class="recover"><strong>Recover:</strong> correct spelling before starting if needed.</span></li>
+        <li>Move the pointer over the small folder/browse button beside <strong>In folder</strong>.<span class="result"><strong>Result:</strong> its tooltip identifies it as <strong>In folder…</strong>.</span><span class="recover"><strong>Recover:</strong> if the tooltip does not match, do not click; ask for help.</span></li>
+        <li>Click the folder/browse button beside <strong>In folder</strong>.<span class="result"><strong>Result:</strong> a folder chooser opens.</span><span class="recover"><strong>Recover:</strong> cancel if you do not know which folder to choose.</span></li>
+        <li>Select a familiar starting folder in the chooser.<span class="result"><strong>Result:</strong> the folder is selected as the search location.</span><span class="recover"><strong>Recover:</strong> choose your home folder if you are unsure.</span></li>
+        <li>Confirm the chosen folder in the chooser.<span class="result"><strong>Result:</strong> its path appears beside <strong>In folder</strong>.</span><span class="recover"><strong>Recover:</strong> reopen the chooser if the path is unfamiliar.</span></li>
+        <li>Click <strong>Start</strong> in the search window.<span class="result"><strong>Result:</strong> matching results appear when the search completes.</span><span class="recover"><strong>Recover:</strong> if there are no results, check spelling, location, hidden-file settings, and whether subfolders are included.</span></li>
+        <li>Read the name and path of a result before opening it.<span class="result"><strong>Result:</strong> you can identify the folder that contains the result.</span><span class="recover"><strong>Recover:</strong> if you cannot identify it, leave the result unopened and ask for help.</span></li>
+        <li>Double-click only a result whose name and path identify the item you want.<span class="result"><strong>Result:</strong> the file opens or its location is reached, depending on the action.</span><span class="recover"><strong>Recover:</strong> close the opened file or return to the search window; avoid edits until you have confirmed it is the right file.</span></li>
+      </ol>
+      <p>Search results include the containing folder path. Right-clicking a result can offer <strong>Open with Default App</strong>, <strong>Open With…</strong>, <strong>View</strong>, <strong>Edit</strong>, <strong>Rename…</strong>, <strong>Bulk Rename…</strong>, <strong>Copy to…</strong>, <strong>Move to…</strong>, <strong>Link to…</strong>, <strong>Move to Trash</strong>, <strong>Delete</strong>, <strong>Copy Path</strong>, and <strong>Properties</strong>. The exact commands depend on the result and file type. A result is the real file, not a separate search copy.</p>
+      <p>A search result is a reference to a file, not a separate copy. Deleting or renaming it changes the actual item. Searching a whole system can take time and may show files you do not have permission to open.</p>
+      <div class="warning"><p><strong>Warning:</strong> do not select all search results and delete them. Results may include items outside your personal folders.</p></div>
+    </section>
+
+    <section id="devices">
+      <h2>16. USB devices, mount, unmount, and eject</h2>
+      <p>Linux must <strong>mount</strong> a storage device before applications can browse its files. The Devices area shows available and mounted devices. Unmounted entries may appear muted; a readable mounted label distinguishes connected storage that is not currently open from a device that is ready to browse.</p>
+      <p><strong>Unmount</strong> closes the filesystem connection but leaves the drive physically connected and available for mounting again. <strong>Eject (Safely Remove)</strong> also asks the system to power off a supported removable drive so it can be unplugged safely. Not every device can be ejected through software.</p>
+      <ol class="steps">
+        <li>Insert the USB drive into a USB socket.<span class="result"><strong>Result:</strong> the desktop may show a notification or add its name to Devices.</span><span class="recover"><strong>Recover:</strong> wait a few seconds; if it is still missing, check the connection or ask your administrator.</span></li>
+        <li>Wait until the device name appears in Swordfish's Devices area.<span class="result"><strong>Result:</strong> Swordfish shows an entry for the detected drive.</span><span class="recover"><strong>Recover:</strong> if the entry never appears, do not unplug another active device; ask for help.</span></li>
+        <li>Click the drive's Mount control or its unmounted Devices entry.<span class="result"><strong>Result:</strong> the drive mounts and its files become available; a system authorization prompt may appear.</span><span class="recover"><strong>Recover:</strong> if mounting fails, read the message. Do not run random terminal commands or repeatedly approve prompts.</span></li>
+        <li>Wait for any copy or write activity to finish.<span class="result"><strong>Result:</strong> no progress dialog or active transfer remains.</span><span class="recover"><strong>Recover:</strong> if a progress dialog remains, let it finish before continuing.</span></li>
+        <li>Close each file on the drive that you opened in another application.<span class="result"><strong>Result:</strong> those applications no longer have your open documents from that drive.</span><span class="recover"><strong>Recover:</strong> save any changes before closing the application.</span></li>
+        <li>If you want to leave the drive connected for later use, choose its <strong>Unmount</strong> action.<span class="result"><strong>Result:</strong> the system attempts to disconnect the filesystem.</span><span class="recover"><strong>Recover:</strong> if unmount fails or reports “busy,” keep the drive plugged in and follow the message below.</span></li>
+        <li>If you chose Unmount, wait for confirmation that it has finished.<span class="result"><strong>Result:</strong> the filesystem is disconnected but the device remains available for remounting.</span><span class="recover"><strong>Recover:</strong> if no confirmation appears, check whether the entry is still shown as mounted. Do not unplug it.</span></li>
+        <li>If you want to unplug the drive, choose <strong>Eject (Safely Remove)</strong> instead of choosing Unmount.<span class="result"><strong>Result:</strong> Swordfish asks the system to unmount and power off supported removable hardware.</span><span class="recover"><strong>Recover:</strong> if no eject control is offered, use the desktop's safe-removal control or leave the drive connected.</span></li>
+        <li>If you chose Eject, wait for the desktop or Swordfish to indicate that safe removal is complete.<span class="result"><strong>Result:</strong> the drive is ready to unplug.</span><span class="recover"><strong>Recover:</strong> if you do not see a clear completion indication, leave the drive connected.</span></li>
+      </ol>
+      <div class="warning"><p><strong>Busy device:</strong> “busy” means something may still be using the drive—perhaps an open file, terminal, music player, or another window browsing it. Close the listed applications and windows, then try Unmount or Eject again. Swordfish does not force-unmount or terminate other applications. Never pull the plug while mounted or while files are being written.</p></div>
+      <p>Mount and unmount may require the host's UDisks2 service and <code>udisksctl</code>; your system policy may request administrator authorization. Swordfish should not ask you to type a password into an unfamiliar command window. If unmount fails, leave the device connected. A grey label by itself is not proof that the device is safe to unplug—wait for Eject or your desktop's explicit safe-removal confirmation.</p>
+      <div class="practice"><p><strong>Harmless practice:</strong> if you have a spare USB drive and permission to use it, follow the numbered mount and unmount instructions above. Do not practice ejecting a drive that contains unsaved or important work.</p></div>
+    </section>
+
+    <section id="opening">
+      <h2>17. Opening files and applications</h2>
+      <p>Double-clicking a file usually opens it with the desktop's default application for that file type. A context menu can offer <strong>Open with Default App</strong>, <strong>Open With…</strong>, View, Edit, or Run in Terminal when appropriate. Available commands depend on the kind of item and installed applications.</p>
+      <ol class="steps">
+        <li>Click a familiar document or picture once to select it.<span class="result"><strong>Result:</strong> its name is highlighted.</span><span class="recover"><strong>Recover:</strong> click empty space if a different item is selected.</span></li>
+        <li>Right-click the selected item.<span class="result"><strong>Result:</strong> its context menu appears.</span><span class="recover"><strong>Recover:</strong> click outside the menu to close it if you do not recognize the choices.</span></li>
+        <li>Click <strong>Open with Default App</strong> in the context menu.<span class="result"><strong>Result:</strong> the associated application opens the file.</span><span class="recover"><strong>Recover:</strong> close the application if it is not the one you wanted; use Open With… to choose another installed app.</span></li>
+      </ol>
+      <p>Opening an executable, script, or unknown download can run code. A document can also contain active content. Do not open files from untrusted sources just because they have a familiar icon or name.</p>
+      <p>If no suitable app is installed, Swordfish may show an error or offer a chooser. Ask your system administrator about installing software. Swordfish does not silently install missing apps. Portable edition choices may be restricted to applications bundled with it or available on the host.</p>
+      <div class="warning"><p><strong>Warning:</strong> use <strong>Run</strong> only for software you trust and intended to execute. The command <strong>Run as Administrator</strong> can affect the whole computer; beginners should not use it without explicit guidance.</p></div>
+    </section>
+
+    <section id="views">
+      <h2>18. Views, sorting, columns, and previews</h2>
+      <p>Views change how items are displayed; they do not change the files. <strong>Icons</strong> shows larger icons, <strong>Thumbnails</strong> shows small previews for supported image types, and <strong>Details</strong> shows a list with columns such as Name, Size, or Date. Hidden files are a visibility setting, not a separate folder.</p>
+      <ol class="steps">
+        <li>Choose a view from the View menu or a view button.<span class="result"><strong>Result:</strong> the same folder contents are shown in a different layout.</span><span class="recover"><strong>Recover:</strong> choose the previous view from the same menu.</span></li>
+        <li>Click a column heading such as Name, Size, or Date once.<span class="result"><strong>Result:</strong> the list reorders according to that column.</span><span class="recover"><strong>Recover:</strong> click Name to return to a familiar alphabetical order.</span></li>
+        <li>Click that same column heading again.<span class="result"><strong>Result:</strong> the sort order may reverse.</span><span class="recover"><strong>Recover:</strong> click the heading once more or select a different sort column.</span></li>
+        <li>Use the header divider to resize a column, if the current view has columns.<span class="result"><strong>Result:</strong> text in that column has more or less room.</span><span class="recover"><strong>Recover:</strong> drag the divider back or choose Autosize where available.</span></li>
+        <li>Turn on hidden files only when you have a reason to inspect them.<span class="result"><strong>Result:</strong> dot-prefixed items become visible in the list.</span><span class="recover"><strong>Recover:</strong> turn Hidden Files off again after inspection.</span></li>
+      </ol>
+      <h3>Show or hide a column</h3>
+      <ol class="steps">
+        <li>Choose <strong>Details</strong> so the list has headings above it, such as Name and Size.</li>
+        <li>Right-click a heading. A small menu opens with check marks beside the visible columns.</li>
+        <li>Click a column's name to show it or hide it. This changes only the display, not your files.</li>
+      </ol>
+      <p>Name always stays visible. Search results also keep Folder Name visible so you can identify where a result belongs. Trash keeps Original Path and Deletion Date in their fixed positions to help with recovery.</p>
+      <h3>Move a column</h3>
+      <ol class="steps">
+        <li>Point at the middle of the heading you want to move, not the thin dividing line at its edge.</li>
+        <li>Press and hold the left mouse button.</li>
+        <li>Move the pointer onto another heading.</li>
+        <li>Release the mouse button. The column moves there, keeping its width. Name always stays first.</li>
+      </ol>
+      <p>To undo the move, drag the heading back. Visible columns and their order belong to the pane: every tab in that pane uses the same choices, while the other pane is independent. Each tab still remembers its own column widths.</p>
+      <h3>Choose columns in Preferences</h3>
+      <ol class="steps">
+        <li>Open <span class="menu">Edit → Preferences</span>.</li>
+        <li>Click the <strong>File List</strong> tab.</li>
+        <li>Choose <strong>Left / Top Panel</strong> or <strong>Right / Bottom Panel</strong> from the list above the column choices.</li>
+        <li>Check or uncheck the columns you want. To change their order, select a column in the order list and use the up or down button. Name stays first.</li>
+        <li>You may select the other panel and choose different columns for it.</li>
+        <li>Click <strong>OK</strong> to apply the choices immediately. No restart is needed for column changes. <strong>Cancel</strong> discards your changes.</li>
+      </ol>
+      <p>These are the same choices used by the heading menu and heading dragging, not a separate set of defaults. They are remembered when you reopen Swordfish. The panel menu's Name/Size/Type/Extension/Date choices sort the list; they do not show or hide columns. Previews can take time and may not be supported for every format; an empty preview does not mean the file is empty.</p>
+      <div class="warning"><p><strong>Warning:</strong> revealing hidden items is safe, but changing or deleting hidden configuration files may disrupt applications or your desktop.</p></div>
+    </section>
+
+    <section id="bookmarks">
+      <h2>19. Bookmarks</h2>
+      <p>A bookmark saves a convenient path, not a copy of the folder. It lets you return to a location without browsing there each time.</p>
+      <ol class="steps">
+        <li>Navigate to a familiar folder you own.<span class="result"><strong>Result:</strong> the folder's path appears in the address breadcrumb.</span><span class="recover"><strong>Recover:</strong> use Home if you are in an unfamiliar location.</span></li>
+        <li>Choose <span class="menu">Bookmarks → Bookmark Current Tab…</span>.<span class="result"><strong>Result:</strong> Swordfish asks for or saves a bookmark for the current tab's location.</span><span class="recover"><strong>Recover:</strong> cancel if the address shown is not the folder you meant to save.</span></li>
+        <li>Open the Bookmarks menu.<span class="result"><strong>Result:</strong> saved places and bookmark-management choices appear.</span><span class="recover"><strong>Recover:</strong> close the menu by clicking outside it.</span></li>
+        <li>Choose the bookmark you just saved.<span class="result"><strong>Result:</strong> the active pane navigates to the saved location.</span><span class="recover"><strong>Recover:</strong> use Back or Home if the bookmark points to a location that has moved or is unavailable.</span></li>
+      </ol>
+      <p>A bookmark to a USB or network location cannot make that device connected. Mount or reconnect it first. Bookmark labels may contain private folder names, so be mindful when sharing screenshots or settings files.</p>
+      <div class="practice"><p><strong>Harmless practice:</strong> follow the numbered bookmark instructions above to save and revisit your practice folder.</p></div>
+    </section>
+
+    <section id="archives">
+      <h2>20. Archives as folders</h2>
+      <p>An <strong>archive</strong> is a file that packages other files together, often to make them easier to store or download. A ZIP archive may contain many documents and folders. <strong>Extract</strong> means unpack the enclosed files into a normal folder. <strong>Mount as a folder</strong> means temporarily show the contents as a browsable location without first extracting everything.</p>
+      <p>Swordfish's optional “open as folder” feature uses the host program <code>archivemount</code> and working <strong>FUSE</strong> support. “Host” means the Linux system running Swordfish. FUSE is a system facility that lets a program present archive contents like a folder; Swordfish cannot install or enable it by itself.</p>
+      <ol class="steps">
+        <li>Click a supported archive from a trusted source once.<span class="result"><strong>Result:</strong> the archive is highlighted.</span><span class="recover"><strong>Recover:</strong> do not open archives whose source you do not trust.</span></li>
+        <li>Right-click the highlighted archive.<span class="result"><strong>Result:</strong> the context menu appears.</span><span class="recover"><strong>Recover:</strong> click outside the menu to close it.</span></li>
+        <li>Choose <strong>Open Archive as Folder</strong> if that command appears.<span class="result"><strong>Result:</strong> Swordfish opens the archive's contents as a browsable location when the host tools are available.</span><span class="recover"><strong>Recover:</strong> close the archive folder and use the ordinary Extract command if browsing as a folder is unavailable.</span></li>
+        <li>If Swordfish reports that <code>archivemount</code> is missing, read the full message.<span class="result"><strong>Result:</strong> the message explains the host-tool requirement and offers the installation page.</span><span class="recover"><strong>Recover:</strong> choose Cancel if you are not sure what to do.</span></li>
+        <li>Choose to open the installation page only if you want to read the upstream guidance.<span class="result"><strong>Result:</strong> after confirmation, your browser may open the archivemount installation page; Swordfish does not download packages or install software for you.</span><span class="recover"><strong>Recover:</strong> close the browser page and use the archive manager's extraction option instead. Ask your distribution's support channel if you need help installing host software.</span></li>
+      </ol>
+      <p>To extract without mounting, use the desktop archive manager's ordinary <strong>Extract</strong> option and choose a new folder you own. The menu names and location chooser differ among desktop systems. A portable Swordfish bundle does not automatically include or install <code>archivemount</code>. Normal extraction does not require archivemount. If Swordfish offers <strong>Close Archive Folder (save changes)</strong>, understand that saving may modify the archive; save deliberately before closing.</p>
+      <div class="warning"><p><strong>Warning:</strong> archives can contain unsafe or misleading files. Do not run extracted programs or scripts from an untrusted archive.</p></div>
+    </section>
+
+    <section id="remote">
+      <h2>21. Remote shares and passwords</h2>
+      <p>A remote share is a folder hosted on another computer or storage device. The Connect to Server workflow may support network protocols such as SMB or SFTP, depending on your desktop's installed services. You need permission from the share's owner and the correct server address.</p>
+      <ol class="steps">
+        <li>Choose <span class="menu">File → Connect to Server…</span>.<span class="result"><strong>Result:</strong> the connection dialog opens.</span><span class="recover"><strong>Recover:</strong> close it if you did not intend to connect to a server.</span></li>
+        <li>Enter only a server address supplied by its owner or administrator.<span class="result"><strong>Result:</strong> the address appears in the dialog.</span><span class="recover"><strong>Recover:</strong> cancel if you do not recognize the server or cannot verify the address.</span></li>
+        <li>Choose the connection type requested by the server owner, if the dialog asks for one.<span class="result"><strong>Result:</strong> the matching connection fields appear.</span><span class="recover"><strong>Recover:</strong> ask the owner if you do not know which type to choose.</span></li>
+        <li>Start the connection using the dialog's Connect/Accept button.<span class="result"><strong>Result:</strong> Swordfish attempts to contact the server or asks for authentication.</span><span class="recover"><strong>Recover:</strong> cancel if the server identity shown does not match your intended destination.</span></li>
+        <li>Enter credentials only in the trusted desktop or Swordfish authentication prompt for the server you intended to contact.<span class="result"><strong>Result:</strong> if access is granted, the share appears and can be browsed.</span><span class="recover"><strong>Recover:</strong> cancel if the prompt is unexpected, the server identity is uncertain, or the password is requested in an unrelated dialog.</span></li>
+      </ol>
+      <p>Closing a network tab does not necessarily disconnect the share. Use its Unmount/disconnect control when finished. Remounting may request your password again unless your desktop has a reusable credential saved.</p>
+      <div class="danger"><p><strong>Protect passwords:</strong> never put a password into a server URL, filename, screenshot, support post, or shell command. Avoid saving credentials on a shared computer. Swordfish does not promise to manage or erase credentials saved by the desktop's keyring.</p></div>
+      <p>Only connect to shares you are authorized to use. Do not test random addresses or try to bypass authentication.</p>
+    </section>
+
+    <section id="bulk-rename">
+      <h2>22. Bulk rename</h2>
+      <p>Bulk Rename applies a naming pattern to multiple selected files. It can save time, but a mistake can affect every selected name at once.</p>
+      <ol class="steps">
+        <li>Open the practice folder that contains disposable files.<span class="result"><strong>Result:</strong> the folder's contents appear.</span><span class="recover"><strong>Recover:</strong> verify the address before continuing.</span></li>
+        <li>Click the first disposable file once.<span class="result"><strong>Result:</strong> it is highlighted.</span><span class="recover"><strong>Recover:</strong> click empty space if the item is important.</span></li>
+        <li>Hold <kbd>Ctrl</kbd> and click the second disposable file once.<span class="result"><strong>Result:</strong> both files are highlighted.</span><span class="recover"><strong>Recover:</strong> click empty space and start over if the selection is not exactly the files you intend to practice with.</span></li>
+        <li>Repeat the Ctrl-click only for a third disposable file if desired.<span class="result"><strong>Result:</strong> each chosen practice file is highlighted.</span><span class="recover"><strong>Recover:</strong> do not select a file outside the practice folder.</span></li>
+        <li>Right-click one of the highlighted files.<span class="result"><strong>Result:</strong> the context menu appears for the selection.</span><span class="recover"><strong>Recover:</strong> click outside the menu to close it if any important file is selected.</span></li>
+        <li>Choose <strong>Bulk Rename…</strong> from the context menu.<span class="result"><strong>Result:</strong> the bulk-rename dialog shows options or a preview for the selected items.</span><span class="recover"><strong>Recover:</strong> cancel immediately if any selected item is important or outside the practice folder.</span></li>
+        <li>Enter a simple pattern in the rename dialog.<span class="result"><strong>Result:</strong> the preview updates to show the proposed names.</span><span class="recover"><strong>Recover:</strong> change the pattern or cancel if the names are duplicated, unclear, or unexpected.</span></li>
+        <li>Read every proposed new name in the preview.<span class="result"><strong>Result:</strong> you can verify the exact names before applying them.</span><span class="recover"><strong>Recover:</strong> cancel if you cannot see or understand the full list.</span></li>
+        <li>Confirm only after verifying the preview and selected count.<span class="result"><strong>Result:</strong> the selected files receive their new names.</span><span class="recover"><strong>Recover:</strong> if the result is wrong, stop editing and restore names only when the originals are known; ask for help rather than guessing.</span></li>
+      </ol>
+      <div class="warning"><p><strong>Warning:</strong> do not bulk-rename your home folder, application files, or a large set of important files as a first experiment. Never confirm without reviewing the full preview.</p></div>
+    </section>
+
+    <section id="symlinks">
+      <h2>23. Symbolic links and copies</h2>
+      <p>A <strong>symbolic link</strong> (symlink) is a pointer to another path. It looks like an item in a folder but usually does not contain a second copy of the target's data. If the target is moved or removed, the link may stop working. A copy is a separate file with its own data.</p>
+      <ol class="steps">
+        <li>Right-click a disposable practice file.<span class="result"><strong>Result:</strong> its context menu appears.</span><span class="recover"><strong>Recover:</strong> click outside the menu if the wrong file was selected.</span></li>
+        <li>Choose <strong>Symlink to…</strong> from the context menu.<span class="result"><strong>Result:</strong> a destination dialog appears; no link exists until you confirm.</span><span class="recover"><strong>Recover:</strong> choose Cancel if you meant to make a copy rather than a pointer.</span></li>
+        <li>Move the pointer over the small folder/browse button next to the destination field.<span class="result"><strong>Result:</strong> its tooltip identifies it as <strong>Select Destination…</strong>.</span><span class="recover"><strong>Recover:</strong> cancel if the tooltip does not match.</span></li>
+        <li>Click the folder/browse button.<span class="result"><strong>Result:</strong> a file-and-folder chooser opens.</span><span class="recover"><strong>Recover:</strong> close it if you do not recognize the current location.</span></li>
+        <li>Navigate the chooser to the <code>Swordfish-Practice</code> folder.<span class="result"><strong>Result:</strong> the practice folder is visible.</span><span class="recover"><strong>Recover:</strong> do not select a location outside the practice area.</span></li>
+        <li>Select the practice folder in the chooser.<span class="result"><strong>Result:</strong> the practice folder is highlighted.</span><span class="recover"><strong>Recover:</strong> select the correct folder if a different item is highlighted.</span></li>
+        <li>Confirm the selection in the chooser.<span class="result"><strong>Result:</strong> the destination dialog shows the selected path.</span><span class="recover"><strong>Recover:</strong> cancel if the path is unfamiliar.</span></li>
+        <li>Check the destination path in the dialog.<span class="result"><strong>Result:</strong> you have verified where the link will be created.</span><span class="recover"><strong>Recover:</strong> do not continue if you cannot identify the destination.</span></li>
+        <li>Choose <strong>Accept</strong> in the destination dialog.<span class="result"><strong>Result:</strong> a link appears in the chosen location and refers to the original target.</span><span class="recover"><strong>Recover:</strong> if you no longer want the link, move the link itself to Trash; do not delete the target by following it.</span></li>
+      </ol>
+      <p>Some operations or systems follow links differently. Inspect the item type or Properties before removing anything that looks like a link. Use a copy when you need an independent second version.</p>
+      <div class="warning"><p><strong>Warning:</strong> deleting a symlink and deleting its target are different operations. Be sure you have selected the link itself before removing it.</p></div>
+    </section>
+
+    <section id="preferences">
+      <h2>24. Preferences</h2>
+      <p><strong>Preferences</strong> are settings that change how Swordfish looks or behaves for your account. The <strong>Preferences</strong> button at the far right of the menu bar opens Preferences. Pause the pointer over it to see the <strong>Preferences</strong> tooltip. You can also choose <span class="menu">Edit → Preferences</span>.</p>
+      <figure>
+        <img src="images/preferences.png" alt="Swordfish FM Preferences window showing its category tabs and setting controls." loading="lazy">
+        <figcaption>Preferences are grouped into tabs. Your selected tab and values may differ from this example.</figcaption>
+      </figure>
+      <p>The dialog includes <strong>General</strong>, <strong>Dialogs</strong>, <strong>Settings</strong>, <strong>File List</strong>, <strong>Programs</strong>, <strong>Appearance</strong>, <strong>Fonts</strong>, <strong>Key Bindings</strong>, <strong>System Integration</strong>, and <strong>Custom Actions</strong>. A tab is a labelled page; click its label to see those settings.</p>
+      <ol class="steps">
+        <li>Click the Preferences button at the far right of the menu bar, or choose <span class="menu">Edit → Preferences</span>.<span class="result"><strong>Result:</strong> the Preferences dialog opens with selectable category tabs.</span><span class="recover"><strong>Recover:</strong> choose Cancel to close without accepting changes.</span></li>
+        <li>Click a category tab whose name matches the setting you want to inspect.<span class="result"><strong>Result:</strong> that category's controls appear; you can review values without changing them.</span><span class="recover"><strong>Recover:</strong> return to the previous category if you opened the wrong one.</span></li>
+        <li>Change one setting only if you understand what it controls.<span class="result"><strong>Result:</strong> the new value appears in the control but has not yet been accepted.</span><span class="recover"><strong>Recover:</strong> choose Cancel if you are unsure; the pending change is discarded.</span></li>
+        <li>Choose <strong>Accept</strong> to save the settings you changed.<span class="result"><strong>Result:</strong> Swordfish saves and applies accepted settings; a restart may be needed for some changes.</span><span class="recover"><strong>Recover:</strong> reopen Preferences and restore the previous value if needed.</span></li>
+      </ol>
+      <p>In <strong>System Integration</strong>, the choices are <strong>Create a desktop shortcut</strong>, <strong>Add Swordfish to the applications menu</strong>, and <strong>Create a swordfish command symlink</strong>. All three start unchecked. The first two affect only your account. The command link lets you start Swordfish by typing <code>swordfish</code> in a command window. It does not install another copy of the program.</p>
+      <ol class="steps">
+        <li>If you want the command link, check its box.</li>
+        <li>Open the <strong>Command destination</strong> list. It shows full locations that your computer already searches for commands. This search list is called <strong>PATH</strong>. Swordfish does not change it.</li>
+        <li>Choose a location. Prefer one marked as your account and requiring no administrator authorization. If your personal <code>.local/bin</code> folder is missing, Swordfish offers to create it only when that location is already in PATH.</li>
+        <li>Click <strong>OK</strong>. Read the confirmation: it shows exactly where the link will be created or removed.</li>
+        <li>If the location is marked shared, remember that other people using the computer can also use this command. A protected location requires permission from the person who administers the computer.</li>
+        <li>Continue only if you agree. When permission is needed, the system's authorization window asks for it. Swordfish does not collect your password. Cancelling leaves the protected change unapplied.</li>
+      </ol>
+      <p>Unrelated or installed Swordfish files are never replaced. To remove a link, uncheck its box and confirm; a protected link needs authorization again. Portable launchers point to the current <code>AppRun</code>. Moving the portable folder later breaks its shortcuts; open Preferences from the new location to repair them. If a location or helper cannot be used safely, an error explains the problem and Preferences stays open. Do not expect a general-purpose customization engine: this tab concerns these specific integration options only.</p>
+      <p>The Key Bindings category lists the available shortcut names and values. Do not assume every preference applies immediately or to every window. If you are uncertain, note the original value before changing it.</p>
+      <div class="practice"><strong>Harmless practice:</strong>
+        <ol>
+          <li>Open Preferences.</li>
+          <li>Click the Appearance tab or another tab you want to inspect.</li>
+          <li>Choose Cancel without changing a value.</li>
+        </ol>
+        No preference is changed when you cancel.
+      </div>
+    </section>
+
+    <section id="menus">
+      <h2>25. Menus and buttons reference</h2>
+      <p>To open a menu, click its name on the top menu bar. A <strong>context menu</strong> is a smaller menu that appears after you right-click a file, folder, device, or blank space. Menu entries may be grey (disabled) if they cannot apply to the current selection. The following reference uses the application's English labels; translations and a few operating-system-dependent items may differ.</p>
+      <figure>
+        <img src="images/context-menu.png" alt="Swordfish's file context menu opened on the selected Practice folder, showing Copy Path and grouped file-operation choices, including commands for the Other Pane." loading="lazy">
+        <figcaption>The Practice folder is selected in this example. Check your own selection before choosing an action.</figcaption>
+      </figure>
+      <table>
+        <thead><tr><th>Menu</th><th>What you can find there</th></tr></thead>
+        <tbody>
+          <tr><th>File</th><td><strong>New Tab</strong>, <strong>Close Tab</strong>, <strong>Close All Tabs in This Pane</strong>; <strong>New Window</strong>; Linux-only <strong>New Root Window</strong> and <strong>Connect to Server…</strong>; <strong>New File…</strong>, <strong>New Folder…</strong>, <strong>New Symlink…</strong>, <strong>Go Home</strong>, <strong>Refresh</strong>, <strong>Open</strong>, <strong>Rename…</strong>, <strong>Copy to…</strong>, <strong>Move to…</strong>, <strong>Symlink to…</strong>, <strong>Move to Trash</strong>, <strong>Restore From Trash</strong>, <strong>Delete</strong>, <strong>Copy Path</strong>, <strong>Properties</strong>, and <strong>Quit</strong>.</td></tr>
+          <tr><th>Edit</th><td><strong>Copy</strong>, <strong>Cut</strong>, <strong>Paste</strong>, <strong>Select All</strong>, <strong>Deselect All</strong>, <strong>Invert Selection</strong>, and <strong>Preferences</strong>. Copy/Cut/Paste here are clipboard operations, not the destination chooser.</td></tr>
+          <tr><th>View</th><td>Show or hide <strong>General Toolbar</strong>, <strong>Tools Toolbar</strong>, <strong>Panel Toolbar</strong>, and <strong>Status Bar</strong>; choose <strong>One Panel</strong>, <strong>Folders and Panel</strong>, <strong>Two Panels</strong>, <strong>Folders and Two Panels</strong>, <strong>Vertical Panels</strong>, or <strong>Horizontal Panels</strong>; switch between <strong>Details</strong>, <strong>Icons</strong>, and <strong>Thumbnails</strong>; use <strong>Zoom Out</strong>, <strong>Zoom In</strong>, or <strong>Reset Zoom</strong>.</td></tr>
+          <tr><th>Bookmarks</th><td><strong>Bookmark Current Tab…</strong>, <strong>Bookmark Selected Folders</strong>, <strong>Bookmark All Tabs as Group…</strong>, <strong>Tab Groups</strong>, and <strong>Manage Bookmarks…</strong>, followed by saved bookmark names.</td></tr>
+          <tr><th>Left/Top Panel and Right/Bottom Panel</th><td>For each pane: <strong>Filter</strong>, <strong>Hidden Files</strong>, <strong>Details</strong>, <strong>Icons</strong>, <strong>Thumbnails</strong>, zoom choices, columns <strong>Name</strong>, <strong>Size</strong>, <strong>Type</strong>, <strong>Extension</strong>, <strong>Date</strong>, <strong>User</strong>, <strong>Group</strong>, <strong>Permissions</strong>, <strong>Link</strong>, <strong>Deletion Date</strong>, and <strong>Original Path</strong>, plus <strong>Ignore Case</strong>, <strong>Folders First</strong>, <strong>Reverse Order</strong>, and folder-size options. Some columns only apply in relevant views.</td></tr>
+          <tr><th>Scripts</th><td><strong>Go to Script Folder</strong> and available scripts. Scripts may run commands; only run one you trust and understand.</td></tr>
+          <tr><th>Tools</th><td><strong>Execute Command…</strong>, <strong>Terminal</strong>, <strong>Synchronize Panels</strong>, <strong>Switch Panels</strong>, <strong>Go to Script Folder</strong>, <strong>Search Files…</strong>, and (on Linux) <strong>Mount</strong> and <strong>Unmount</strong>.</td></tr>
+          <tr><th>Trash</th><td><strong>Go to Trash</strong>, <strong>Trash Size</strong>, and <strong>Empty Trash</strong>. Emptying is permanent.</td></tr>
+          <tr><th>Help</th><td><strong>User Manual</strong> opens this guide, <strong>Help</strong> opens help, and <strong>About SwordFish</strong> shows application information.</td></tr>
+          <tr><th>Preferences button</th><td>The button at the far right of the menu bar opens Preferences. Its tooltip says “Preferences”; it opens the same dialog as Edit → Preferences.</td></tr>
+        </tbody>
+      </table>
+      <h3>Custom actions and their toolbar</h3>
+      <p>A custom action runs a command you supply. Only use commands you understand and trust: an action can change or delete files just like a command typed in a terminal. No action automatically gains administrator permissions.</p>
+      <ol class="steps">
+        <li>Open <span class="menu">Custom Actions → Edit Custom Actions…</span> or <span class="menu">Tools → Custom Actions…</span>. The Custom Actions page in Preferences opens the same editor. The editor shows actions and nested groups with their icons and descriptions, with editing controls at the side.</li>
+        <li>Choose <strong>Add Action…</strong>. On <strong>Basic</strong>, give it a name and description. In <strong>Program</strong>, type an executable name such as <code>bash</code>, <code>thunar</code>, <code>mono</code> or <code>wine</code>, or browse for an executable. Put its arguments in <strong>Parameters</strong>. Do not add quotes around the Program path, even if it contains spaces; Swordfish handles that. An optional PNG image supplies its icon; the preview and toolbar keep it small.</li>
+        <li>Use the placeholder chooser and <strong>Insert</strong> to add selected paths or pane directories. For example, <code>%F</code> supplies all selected paths, <code>%p</code> the current directory and <code>%o</code> the opposite pane's directory. Swordfish quotes paths automatically; put a list placeholder such as <code>%F</code> on its own, without quotes.</li>
+        <li>On <strong>Appearance Conditions</strong>, choose whether the action applies to files or folders. Use <code>*</code> for every filename, or <code>.png;.jpg;.tar.gz</code> for those file endings; <code>*.png;*.jpg;*.tar.gz</code> also works. Matching is case-sensitive and every selected file must match. Folders are not restricted by file extensions when <strong>Folders</strong> is checked. The range stays <code>*</code> (unrestricted).</li>
+        <li>The prominent <strong>Show without selection</strong> checkbox allows the action on blank folder space without applying selection conditions. Checking <strong>Folders</strong> also allows it for the current folder when nothing is selected; selected-path placeholders then use that folder.</li>
+        <li>Optionally enable confirmation, running in a terminal, <strong>Show command output</strong>, or <strong>Show on custom toolbar</strong>. Normal launches do not open an output window on success; failures show captured output. Enable Show command output to inspect successful output as well. Large PNG icons are reduced to fit the toolbar while preserving proportions.</li>
+        <li>Click <strong>Apply</strong> to update the editor's working copy, then <strong>Save</strong> in the main editor to keep your changes. <strong>Cancel</strong> in the editor discards unsaved edits.</li>
+      </ol>
+      <p>Leave <strong>Working directory</strong> empty to run in the active folder, or browse for another directory. Directory codes <code>%p</code>, <code>%o</code>, <code>%d</code>, <code>%f</code> and <code>%%</code> are accepted; this field is a path, not shell code. Normally only Program and Parameters are shown. <strong>Advanced: full shell command</strong> replaces them with one editable Full command field. Existing full-command actions open in advanced mode so their original commands keep working. Switching modes does not split a saved command automatically; enter the separate values explicitly when changing to Program mode.</p>
+      <p>The live command preview does not execute anything. Click <strong>Parameter Legend…</strong> for scrollable help. Extra codes include <code>%c</code> for the actual selection count, <code>%w</code>/<code>%W</code> for names without the last extension, and <code>%x</code>/<code>%X</code> for extensions without dots. For <code>archive.tar.gz</code>, the name is <code>archive.tar</code> and extension is <code>gz</code>. A leading dot alone, as in <code>.hidden</code>, is not an extension.</p>
+      <p><strong>Test Action</strong> checks syntax, placeholders, the working directory and (in Program mode) executable availability. It shows <strong>Checks Passed</strong> or an explanatory error without running the action. Passing does not guarantee that an application accepts its parameters or will run successfully; legacy full commands receive syntax checking, not lookup of every program they mention.</p>
+      <p>Use <strong>Add Folder…</strong> to group related actions. Folders may contain other folders, making cascading menus. <strong>Move to Folder…</strong> changes an item's group; <strong>Move Up</strong> and <strong>Move Down</strong> change its order. Removing a folder also removes its children after confirmation.</p>
+      <p><strong>Duplicate Action</strong> creates a copy beside the selected action, keeping its settings and group so you can modify the copy. <strong>Use Program Icon</strong> offers the installed application's icon without automatically replacing your choice. If you close changed properties or the editor using Cancel, Escape or the window close button, choose <strong>Keep editing</strong> to retain pending edits or <strong>Discard</strong> to abandon them. Unchanged dialogs close without this warning.</p>
+      <p>To choose an icon, click its preview or Browse control. <strong>Choose an Icon</strong> shows installed system icons in a labeled grid. Maximize or resize the window to see more columns. Use the category dropdown to browse actions, applications, devices, file types, locations and other groups, or choose <strong>All Icons</strong>; search narrows the current category. Use Previous and Next for more icons. Categories come from the installed theme, with uncategorized icons listed separately. <strong>Image Files</strong> opens the normal file chooser directly, with folder navigation, a filename field, image/all-files filters, and a live image preview below the left sidebar. Select <strong>No Icon</strong> to use the default. Cancelling leaves your previous icon unchanged. System icons are saved by name and looked up on the computer running Swordfish. Image files are saved by their full path, so keep them in place. PNG, JPEG and XPM images are supported; SVG needs the existing SVG converter. Large images are fitted proportionally, never stretched across the toolbar.</p>
+      <p>Right-click selected files or blank folder space and look for <strong>Custom Actions</strong>. Applicable actions appear along with an editing entry, even when no actions are available. The top-level <strong>Custom Actions</strong> menu lists all configured groups/actions, disabling those that cannot apply, and also offers editing. A folder checked <strong>Show on custom toolbar</strong> becomes a dropdown button containing its descendants. Use <strong>Add Separator</strong> to divide groups. Toolbar actions that cannot apply are disabled rather than hidden.</p>
+      <p><span class="menu">Tools → Show Custom Toolbar</span> shows or hides this separate toolbar. Its far-right <strong>Settings</strong> button, with the tooltip <strong>Edit Custom Actions</strong>, reopens the editor. Custom-action toolbar contents are separate from built-in main-toolbar contents. Custom actions use Swordfish's own settings, including portable settings; action keyboard shortcuts are not included in this version.</p>
+      <p>The built-in toolbars retain their original commands, order and theme icon sizes, including zoom controls. Experimental toolbar editors, right-click presentation menus, size/display preferences and overflow controls have been removed. Older customization settings are ignored without deleting saved Custom Actions. Use the Custom Actions editor to manage the separate custom toolbar.</p>
+      <h3>Common toolbar buttons</h3>
+      <p>A <strong>toolbar</strong> is a row of picture buttons. Pause the pointer over a button to read its tooltip; the tooltip names the action. Swordfish toolbars can include:</p>
+      <ul>
+        <li><strong>Go to Previous Folder</strong>, <strong>Go to Next Folder</strong>, <strong>Go to Parent Folder</strong>, and <strong>Go to Home Folder</strong> for navigation. The address row also has Folder History, Edit Path, Root Folder, and Desktop controls.</li>
+        <li><strong>Refresh Panels</strong>, <strong>Create New File</strong>, <strong>Create New Folder</strong>, and <strong>Create New Symlink</strong>.</li>
+        <li><strong>Copy Selected Files to Clipboard</strong>, <strong>Cut Selected Files to Clipboard</strong>, and <strong>Paste From Clipboard</strong>. Clipboard actions need a selected source and a chosen destination.</li>
+        <li><strong>Show Properties of Selected Files</strong>, <strong>Move Selected Files to Trash Can</strong>, <strong>Restore Selected Files From Trash Can</strong>, and <strong>Delete Selected Files</strong>. Delete is permanent.</li>
+        <li>Tool buttons can include <strong>Execute Command</strong>, <strong>Launch Terminal</strong>, <strong>Search Files and Folders…</strong>, <strong>Mount</strong>, <strong>Unmount</strong>, and <strong>Connect to Server…</strong>.</li>
+        <li>Panel buttons can switch panel layouts, choose <strong>Icons</strong>, <strong>Thumbnails</strong>, or <strong>Details</strong>, and adjust zoom.</li>
+      </ul>
+      <p>Right-clicking a selected file can show a grouped set of <strong>Copy</strong>, <strong>Cut</strong>, <strong>Paste</strong>, and <strong>Copy Path</strong> actions, followed by <strong>Rename</strong>, <strong>Bulk Rename…</strong>, <strong>Copy to…</strong>, <strong>Move to…</strong>, <strong>Link to…</strong>, <strong>Copy to Other Pane…</strong>, <strong>Move to Other Pane…</strong>, and <strong>Link in Other Pane…</strong>. <strong>Copy Path</strong> copies the selected item's full path as text; it does not copy file contents or just the short name. “Other Pane” actions use the opposite pane's active tab as destination. Check the selection and destination path before confirming.</p>
+      <p>On removable devices, <strong>Mount</strong> makes a filesystem available, <strong>Unmount</strong> disconnects it while leaving it attached, and <strong>Eject (Safely Remove)</strong> prepares supported hardware for unplugging. A busy message means stop and resolve use before trying again.</p>
+    </section>
+
+    <section id="shortcuts">
+      <h2>26. Keyboard shortcuts</h2>
+      <p>The shortcuts below are the application's documented default bindings in the source inspected for this manual. They may differ in other builds, languages, or if someone has changed the Key Bindings preferences. The menu may display an assigned shortcut beside its command. If a shortcut does not work, use the menu rather than guessing.</p>
+      <table>
+        <thead><tr><th>Action</th><th>Default</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Copy, Cut, Paste</td><td><kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Ctrl</kbd>+<kbd>X</kbd>, <kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Acts on the current selection or clipboard context.</td></tr>
+          <tr><td>Search</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Opens the search workflow.</td></tr>
+          <tr><td>Home, parent folder</td><td><kbd>Ctrl</kbd>+<kbd>H</kbd>, <kbd>Backspace</kbd></td><td>Backspace goes up one folder in the file panel.</td></tr>
+          <tr><td>Back, forward</td><td><kbd>Ctrl</kbd>+<kbd>Backspace</kbd>, <kbd>Shift</kbd>+<kbd>Backspace</kbd></td><td>Navigation history.</td></tr>
+          <tr><td>Edit current path</td><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>Turns the breadcrumb into a path text field.</td></tr>
+          <tr><td>Refresh</td><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Refreshes the current listing.</td></tr>
+          <tr><td>New tab, new window</td><td><kbd>Shift</kbd>+<kbd>F1</kbd>, <kbd>F3</kbd></td><td>Opens a tab in the current pane or another Swordfish window.</td></tr>
+          <tr><td>New root window</td><td><kbd>Shift</kbd>+<kbd>F3</kbd></td><td>Opens an administrator/root window only when supported. Beginners should not use it without guidance.</td></tr>
+          <tr><td>New folder</td><td><kbd>F7</kbd></td><td>Creates a folder in the active location.</td></tr>
+          <tr><td>New file, new symlink</td><td><kbd>Ctrl</kbd>+<kbd>N</kbd>, <kbd>Ctrl</kbd>+<kbd>J</kbd></td><td>Opens the relevant creation action.</td></tr>
+          <tr><td>Rename, copy to, move to, symlink to</td><td><kbd>F2</kbd>, <kbd>F5</kbd>, <kbd>F6</kbd>, <kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Acts on the current selection; check the selected item before using.</td></tr>
+          <tr><td>Copy Path</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></td><td>Copies the selected item's full path as text.</td></tr>
+          <tr><td>Select all, deselect all, invert selection</td><td><kbd>Ctrl</kbd>+<kbd>A</kbd>, <kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>I</kbd></td><td>Selection changes only; verify before a file operation.</td></tr>
+          <tr><td>Execute command, terminal</td><td><kbd>Ctrl</kbd>+<kbd>E</kbd>, <kbd>Ctrl</kbd>+<kbd>T</kbd></td><td>Command and terminal use requires care; do not run unfamiliar commands.</td></tr>
+          <tr><td>Connect to Server</td><td><kbd>Shift</kbd>+<kbd>F5</kbd></td><td>Linux builds; connect only to servers you are authorized to use.</td></tr>
+          <tr><td>Add bookmark</td><td><kbd>Ctrl</kbd>+<kbd>B</kbd></td><td>Saves the current location.</td></tr>
+          <tr><td>Synchronize panels, switch panels</td><td><kbd>Ctrl</kbd>+<kbd>Y</kbd>, <kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Synchronize changes a pane location to match the other; switch changes which pane is active.</td></tr>
+          <tr><td>Mount, unmount</td><td><kbd>Ctrl</kbd>+<kbd>M</kbd>, <kbd>Ctrl</kbd>+<kbd>U</kbd></td><td>Requires an appropriate selected device or mount point.</td></tr>
+          <tr><td>Go to Trash, restore from Trash, empty Trash</td><td><kbd>Ctrl</kbd>+<kbd>F8</kbd>, <kbd>Alt</kbd>+<kbd>Delete</kbd>, <kbd>Ctrl</kbd>+<kbd>Delete</kbd></td><td>Empty Trash is permanent.</td></tr>
+          <tr><td>Hidden files; thumbnails</td><td><kbd>Ctrl</kbd>+<kbd>F6</kbd>, <kbd>Ctrl</kbd>+<kbd>F7</kbd></td><td>Visibility and preview settings.</td></tr>
+          <tr><td>Show one/two panels</td><td><kbd>Ctrl</kbd>+<kbd>F1</kbd> through <kbd>Ctrl</kbd>+<kbd>F4</kbd></td><td>Different panel and folder-tree layouts.</td></tr>
+          <tr><td>Vertical/horizontal panels</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F1</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F2</kbd></td><td>Changes the arrangement of visible panels.</td></tr>
+          <tr><td>Icons, thumbnails, details</td><td><kbd>F10</kbd>, <kbd>F11</kbd>, <kbd>F12</kbd></td><td>Changes how the active panel lists items.</td></tr>
+          <tr><td>Open, compare, properties</td><td><kbd>Ctrl</kbd>+<kbd>O</kbd>, <kbd>F8</kbd>, <kbd>F9</kbd></td><td>Properties and some actions vary by focused panel.</td></tr>
+          <tr><td>Edit selected item</td><td><kbd>F4</kbd></td><td>Opens the selected file for editing when an editor is available.</td></tr>
+          <tr><td>Move to Trash; permanent Delete</td><td><kbd>Delete</kbd>; <kbd>Shift</kbd>+<kbd>Delete</kbd></td><td>Permanent Delete is high-risk. Prefer Trash.</td></tr>
+          <tr><td>Help</td><td><kbd>F1</kbd></td><td>Opens application help; User Manual is available from the Help menu.</td></tr>
+          <tr><td>Quit</td><td><kbd>Ctrl</kbd>+<kbd>W</kbd> or <kbd>Ctrl</kbd>+<kbd>Q</kbd></td><td>Either may close the application depending on focus/context.</td></tr>
+        </tbody>
+      </table>
+      <p>These are defaults, not promises: shortcut settings can be changed, and some work only when a file panel or search results have focus. For example, in the Search window <kbd>F3</kbd> starts a search; in the main window it opens a new window. Click the intended panel first and use its menu or Preferences → Key Bindings to check the current assignment. Do not experiment with Delete shortcuts on important files.</p>
+    </section>
+
+    <section id="troubleshooting">
+      <h2>27. Troubleshooting and privacy</h2>
+      <h3>A folder or file will not open</h3>
+      <p>Check that the path is correct, the device is mounted, and you have permission to use it. If an error appears, read it fully. Do not change permissions on system folders to force access.</p>
+      <h3>A file seems missing</h3>
+      <p>Check the active pane's address, select the correct tab, look in Trash, and consider whether hidden files are turned off. Search within the likely parent folder. A disconnected device or changed filename can also explain the absence.</p>
+      <h3>A copy or move appears stuck</h3>
+      <p>Wait for the operation to finish. Do not unplug the destination or close the computer. For a network share or USB device, interruption may leave an incomplete copy. Check source and destination after the operation has ended.</p>
+      <h3>A device says “busy”</h3>
+      <p>Close files and windows using it, stop playback or transfers, then retry Unmount or Eject. Keep the device connected if it still fails. Swordfish may list applications and process IDs it could detect, but not every use can be identified; do not terminate a process you do not understand.</p>
+      <h3>A shortcut or menu option is missing</h3>
+      <p>Make sure the correct pane has focus and the item type supports the action. Shortcuts may have been changed in Preferences. Use the menu or ask the person who installed Swordfish.</p>
+      <h3>Privacy when asking for help</h3>
+      <p>A screenshot or diagnostic message may reveal your login name, folder names, device labels, server names, network addresses, or process names. Review it and remove private information before sharing. Never share passwords, authentication tokens, or the contents of private documents. Only send diagnostics to a support person you trust.</p>
+      <div class="callout"><p><strong>Safe rule:</strong> when an unexpected prompt appears, cancel it, leave important data unchanged, and ask for help using the exact message with private details removed.</p></div>
+    </section>
+
+    <section id="glossary">
+      <h2>28. Glossary</h2>
+      <dl class="glossary">
+        <dt>Active pane</dt><dd>The file panel currently receiving keyboard input and ordinary panel commands.</dd>
+        <dt>Archive</dt><dd>A file that packages one or more files together, often with compression, such as a ZIP archive.</dd>
+        <dt>Bookmark</dt><dd>A saved location that helps you return to a folder; it is not a copy of that folder.</dd>
+        <dt>Column</dt><dd>A vertical part of a detailed file list, such as Name, Size, Type, or Date.</dd>
+        <dt>Copy</dt><dd>Make a separate version while leaving the original in its location.</dd>
+        <dt>Destination</dt><dd>The place where a copy, move, or link is to be created.</dd>
+        <dt>Extension</dt><dd>The part of a filename after a dot that commonly indicates a file type, such as <code>.txt</code>.</dd>
+        <dt>File</dt><dd>A named item that contains data, such as a document, image, or audio recording.</dd>
+        <dt>Folder / directory</dt><dd>A container that can hold files and other folders.</dd>
+        <dt>FUSE</dt><dd>A Linux facility that lets a program present a filesystem, such as an archive, as a browsable folder.</dd>
+        <dt>Home folder</dt><dd>Your personal account's main folder, usually containing Documents, Downloads, Pictures, and personal settings.</dd>
+        <dt>Mount</dt><dd>Make a device or filesystem available at a location so its contents can be browsed.</dd>
+        <dt>Path</dt><dd>The address that identifies a file or folder in the filesystem.</dd>
+        <dt>Pane</dt><dd>One file-browsing area in Swordfish. Two panes can show two locations at once.</dd>
+        <dt>Recursive search</dt><dd>A search that checks folders inside the starting folder as well as that folder itself.</dd>
+        <dt>Selection</dt><dd>The highlighted item or items that a file command will act on.</dd>
+        <dt>Source</dt><dd>The selected item or location an operation starts from.</dd>
+        <dt>Symbolic link / symlink</dt><dd>A filesystem pointer to another path, rather than a second independent copy of the target's data.</dd>
+        <dt>Tab</dt><dd>A saved browsing location within one pane.</dd>
+        <dt>Trash</dt><dd>A holding place for items removed with Move to Trash; recovery depends on filesystem support and the Trash not being emptied.</dd>
+        <dt>Unmount</dt><dd>Disconnect a mounted filesystem safely while leaving the physical device available for later use.</dd>
+        <dt>Eject</dt><dd>Safely remove supported hardware, generally by unmounting its filesystems and powering it off.</dd>
+      </dl>
+    </section>
+  </main>
+
+  <footer>
+    <p><a href="#top">Back to the beginning</a></p>
+    <p>Swordfish FM Beginner's Manual · Written for version 0.0.3-beta1. Names and availability can differ by host system and build.</p>
+  </footer>
+</div>
+</body>
+</html>

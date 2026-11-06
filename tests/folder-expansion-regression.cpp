@@ -723,6 +723,27 @@ int main(int argc, char** argv)
     mainWindow = window;
     window->create();
     window->show();
+    {
+        FilePanel* panel = window->getCurrentPanel();
+        FileList* files = panel->getList();
+        assert(files->getNumItems() >= 3);
+        FXMenuPane menu(panel);
+        FXMenuCommand* single = new FXMenuCommand(&menu, "Rename", NULL, panel, FilePanel::ID_CONTEXT_RENAME);
+        FXMenuCommand* bulk = new FXMenuCommand(&menu, "Bulk Rename...", NULL, panel, FilePanel::ID_CONTEXT_BULK_RENAME);
+        for (int count = 0; count <= 2; ++count)
+        {
+            files->killSelection();
+            for (int i = 0; i < count; ++i) files->selectItem(i + 1);
+            panel->handle(single, FXSEL(SEL_UPDATE, FilePanel::ID_CONTEXT_RENAME), NULL);
+            panel->handle(bulk, FXSEL(SEL_UPDATE, FilePanel::ID_CONTEXT_BULK_RENAME), NULL);
+            assert(single->isEnabled() == (count == 1));
+            assert(bulk->isEnabled() == (count > 1));
+            const FXuint disabled = count == 1 ? FilePanel::ID_CONTEXT_BULK_RENAME : FilePanel::ID_CONTEXT_RENAME;
+            panel->handle(single, FXSEL(SEL_COMMAND, disabled), NULL);
+        }
+        files->killSelection();
+        puts("PASS: file-panel Rename and Bulk Rename are enabled only for their intended selection counts");
+    }
     observedWindow = window->getCurrentPanel()->getList()->id();
     SidebarTree* navigation = findSidebar(window->getDirPanel());
     assert(navigation);
@@ -1049,18 +1070,21 @@ int main(int argc, char** argv)
     sharePanel->getTabButtons()->addTab(simulatedMount);
     FXuint activeMountTab = sharePanel->getTabButtons()->getCurrentTab();
     setenv("SWORDFISH_TEST_UNMOUNT_FAIL", "1", 1);
+    simulateStillMounted = true;
     navigation->setFocus();
     app.addTimeout(&mountMessagesResponder, 1, 20);
     assert(sharePanel->onCmdMount(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_UMOUNT), NULL) == 0);
     assert(mountMessagesResponder.errors == 4 && mountMessagesResponder.successes == 0);
-    assert(sharePanel->getDirectory() != simulatedMount);
+    assert(sharePanel->getDirectory() == simulatedMount);
+    assert(sharePanel->getTabButtons()->getPath(inactiveMountTab) == simulatedMount + "/nested");
+    assert(sharePanel->getTabButtons()->getPath(activeMountTab) == simulatedMount);
+    assert(mountMessagesResponder.message.contains("Please close all applications using the device and try again."));
+    simulateStillMounted = false;
+    const FXTime restoredLoadDeadline = FXThread::time() + 3000000000LL;
+    while (busyCursor && FXThread::time() < restoredLoadDeadline) pump(app, 20);
     assert(!busyCursor);
     unsetenv("SWORDFISH_TEST_UNMOUNT_FAIL");
-    // Tabs were left before the failed attempt; reopen them for the successful case.
-    sharePanel->getTabButtons()->addTab(simulatedMount + "/nested");
-    inactiveMountTab = sharePanel->getTabButtons()->getCurrentTab();
-    sharePanel->getTabButtons()->addTab(simulatedMount);
-    activeMountTab = sharePanel->getTabButtons()->getCurrentTab();
+    // The failed attempt restored both active and inactive tabs in their original positions.
     app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", true);
     navigation->setFocus();
     app.addTimeout(&mountMessagesResponder, 1, 20);
@@ -1102,7 +1126,7 @@ int main(int argc, char** argv)
     auto deviceCount = [&devices](const FXString& name) {
         int count = 0;
         for (FXTreeItem* item = devices->getFirst(); item; item = item->getNext())
-            if (item->getText() == name) ++count;
+            if (static_cast<SidebarItem*>(item)->key == name) ++count;
         return count;
     };
     const FXString label4 = "4tb@" + RemoteDirectory::hostName("mx-hp.local");
@@ -1112,7 +1136,7 @@ int main(int argc, char** argv)
     {
         SidebarItem* device = static_cast<SidebarItem*>(entry);
         if (device->path == ROOTDIR) assert(device->deviceAction == SidebarItem::NO_ACTION);
-        if (device->getText() == label4 || device->getText() == label5)
+        if (device->key == label4 || device->key == label5)
             assert(device->deviceAction == SidebarItem::UNMOUNT_DEVICE);
     }
     FXString mount5 = gvfsBase + FXPath::name(disk5);
@@ -1121,7 +1145,18 @@ int main(int argc, char** argv)
     sharePanel->getTabButtons()->addTab(mount5);
     assert(rmdir(disk5.text()) == 0);
     pump(app, 1500);
-    assert(deviceCount(label5) == 0 && deviceCount(label4) == 1);
+    assert(deviceCount(label5) == 1 && deviceCount(label4) == 1);
+    for (FXTreeItem* entry = devices->getFirst(); entry; entry = entry->getNext())
+    {
+        SidebarItem* device = static_cast<SidebarItem*>(entry);
+        if (device->key == label5)
+        {
+            assert(device->getText() == label5 + " (unmounted)");
+            assert(device->isEnabled());
+            assert(device->deviceAction == SidebarItem::MOUNT_DEVICE && device->canEject);
+            assert(panel->disconnectedDevice(device->path));
+        }
+    }
     assert(sharePanel->getTabButtons()->getNumActiveTabs() == beforeExternal);
     assert(sharePanel->getDirectory() == fixture + "/folder");
     for (int cycle = 0; cycle < 2; ++cycle)
@@ -1131,8 +1166,61 @@ int main(int argc, char** argv)
         assert(deviceCount(label5) == 1);
         assert(rmdir(disk5.text()) == 0);
         pump(app, 1500);
-        assert(deviceCount(label5) == 0);
+        assert(deviceCount(label5) == 1);
     }
+    for (FXTreeItem* entry = devices->getFirst(); entry; entry = entry->getNext())
+    {
+        SidebarItem* device = static_cast<SidebarItem*>(entry);
+        if (device->key != label5) continue;
+        setenv("SWORDFISH_TEST_REMOUNT_DIR", disk5.text(), 1);
+        app.addTimeout(&mountMessagesResponder, 1, 20);
+        SidebarDeviceRequest remountShare = {device, SidebarItem::MOUNT_DEVICE};
+        panel->onSidebarDeviceAction(NULL, 0, &remountShare);
+        app.removeTimeout(&mountMessagesResponder, 1);
+        unsetenv("SWORDFISH_TEST_REMOUNT_DIR");
+        break;
+    }
+    pump(app, 1500);
+    assert(access(disk5.text(), F_OK) == 0 && deviceCount(label5) == 1);
+    for (FXTreeItem* entry = devices->getFirst(); entry; entry = entry->getNext())
+        if (static_cast<SidebarItem*>(entry)->key == label5)
+            assert(static_cast<SidebarItem*>(entry)->deviceAction == SidebarItem::UNMOUNT_DEVICE);
+    assert(rmdir(disk5.text()) == 0);
+    pump(app, 1500);
+    puts("PASS: the share go button remounts through the existing connection flow and returns to stop state");
+    SidebarItem* retainedShare = NULL;
+    SidebarItem* connectedShare = NULL;
+    for (FXTreeItem* entry = devices->getFirst(); entry; entry = entry->getNext())
+    {
+        SidebarItem* device = static_cast<SidebarItem*>(entry);
+        if (device->key == label5) retainedShare = device;
+        if (device->key == label4) connectedShare = device;
+    }
+    assert(retainedShare && connectedShare && connectedShare->canEject);
+    setenv("SWORDFISH_TEST_UNMOUNT_FAIL", "1", 1);
+    app.addTimeout(&mountMessagesResponder, 1, 20);
+    const int errorsBeforeEject = mountMessagesResponder.errors;
+    SidebarDeviceRequest failedEject = {connectedShare, SidebarItem::EJECT_DEVICE};
+    panel->onSidebarDeviceAction(NULL, 0, &failedEject);
+    assert(mountMessagesResponder.errors == errorsBeforeEject + 1);
+    unsetenv("SWORDFISH_TEST_UNMOUNT_FAIL");
+    pump(app, 1500);
+    assert(deviceCount(label4) == 1);
+    SidebarDeviceRequest forgetShare = {retainedShare, SidebarItem::EJECT_DEVICE};
+    panel->onSidebarDeviceAction(NULL, 0, &forgetShare);
+    pump(app, 1500);
+    assert(deviceCount(label5) == 0 && deviceCount(label4) == 1);
+    for (FXTreeItem* entry = devices->getFirst(); entry; entry = entry->getNext())
+        if (static_cast<SidebarItem*>(entry)->key == label4) connectedShare = static_cast<SidebarItem*>(entry);
+    app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", false);
+    setenv("SWORDFISH_TEST_GVFS_UNMOUNT_DIR", disk4.text(), 1);
+    SidebarDeviceRequest disconnectAndForget = {connectedShare, SidebarItem::EJECT_DEVICE};
+    panel->onSidebarDeviceAction(NULL, 0, &disconnectAndForget);
+    unsetenv("SWORDFISH_TEST_GVFS_UNMOUNT_DIR");
+    app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", mountMessages);
+    pump(app, 1500);
+    assert(deviceCount(label4) == 0 && deviceCount(label5) == 0);
+    puts("PASS: failed share eject keeps its entry; ejecting a disconnected share forgets only that entry");
     FilePanel* otherPanel = window->getRightPanel();
     assert(otherPanel != sharePanel);
     otherPanel->getTabButtons()->clearTabs();
@@ -1142,10 +1230,9 @@ int main(int argc, char** argv)
     assert(otherPanel->getTabButtons()->getNumActiveTabs() == 1);
     assert(otherPanel->getDirectory() == FXSystem::getHomeDirectory());
     assert(otherPanel->getTabButtons()->getPath(0) == FXSystem::getHomeDirectory());
-    assert(rmdir(disk4.text()) == 0);
     assert(rmdir(simulatedGvfsDirectory.text()) == 0);
     simulatedGvfsDirectory.clear();
-    puts("PASS: external unmount removes Devices entry and share tabs, repeated cycles leave no duplicates, last tab becomes Home");
+    puts("PASS: external unmount retains a remountable share, closes tabs, repeated cycles leave no duplicates");
 
     simulatedMountTable = fixture + "/disk-commands-mtab";
     {
@@ -1163,12 +1250,51 @@ int main(int argc, char** argv)
     assert(sharePanel->onCmdMount(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_MOUNT), NULL) == 1);
     navigation->removeItem(mountableUsb);
     assert(xf_mountpointof("/dev/test-usb1") == fixture + "/folder");
+    TabButtons* leftTabs = window->getLeftPanel()->getTabButtons();
+    TabButtons* rightTabs = window->getRightPanel()->getTabButtons();
+    leftTabs->addTab(fixture + "/folder");
+    rightTabs->addTab(fixture + "/folder", false);
+    window->getLeftPanel()->getList()->setHeaderSize(0, 417);
+    window->getRightPanel()->getList()->setHeaderSize(0, 619);
+    TabButtons::State leftBeforeBusy = leftTabs->saveState();
+    TabButtons::State rightBeforeBusy = rightTabs->saveState();
+    int busyPipe[2];
+    assert(pipe(busyPipe) == 0);
+    pid_t busyProcess = fork();
+    assert(busyProcess >= 0);
+    if (busyProcess == 0)
+    {
+        close(busyPipe[0]);
+        if (chdir((fixture + "/folder").text()) != 0) _exit(1);
+        assert(write(busyPipe[1], "x", 1) == 1);
+        for (;;) pause();
+    }
+    close(busyPipe[1]);
+    char ready;
+    assert(read(busyPipe[0], &ready, 1) == 1);
+    close(busyPipe[0]);
     setenv("SWORDFISH_TEST_DISK_BUSY", "1", 1);
     const int previousErrors = mountMessagesResponder.errors;
     app.addTimeout(&mountMessagesResponder, 1, 20);
     assert(!panel->unmountRemovable(fixture + "/folder", false));
     assert(mountMessagesResponder.errors == previousErrors + 1);
-    assert(mountMessagesResponder.message.contains("still in use"));
+    assert(mountMessagesResponder.message.contains("currently in use"));
+    assert(mountMessagesResponder.message.contains(("PID " + FXStringVal(busyProcess)).text()));
+    assert(mountMessagesResponder.message.contains("Please close all applications using the device and try again."));
+    assert(leftTabs->saveState().paths == leftBeforeBusy.paths);
+    assert(rightTabs->saveState().paths == rightBeforeBusy.paths);
+    assert(leftTabs->getCurrentTab() == leftBeforeBusy.selected);
+    assert(rightTabs->getCurrentTab() == rightBeforeBusy.selected);
+    assert(leftTabs->saveState().views == leftBeforeBusy.views);
+    assert(rightTabs->saveState().views == rightBeforeBusy.views);
+    assert(leftTabs->saveState().columns == leftBeforeBusy.columns);
+    assert(rightTabs->saveState().columns == rightBeforeBusy.columns);
+    assert(leftTabs->saveState().columnOrder == leftBeforeBusy.columnOrder);
+    assert(rightTabs->saveState().columnOrder == rightBeforeBusy.columnOrder);
+    assert(kill(busyProcess, SIGTERM) == 0);
+    int busyStatus;
+    assert(waitpid(busyProcess, &busyStatus, 0) == busyProcess);
+    puts("PASS: busy error identifies a real blocking process and failure restores both panels' tab order, selection, views and column widths");
     assert(!xf_mountpointof("/dev/test-usb1").empty());
     unsetenv("SWORDFISH_TEST_DISK_BUSY");
     const FXString busyOnce = fixture + "/disk-busy-once";
@@ -1180,10 +1306,12 @@ int main(int argc, char** argv)
     unsetenv("SWORDFISH_TEST_DISK_BUSY_ONCE");
     assert(xf_mountpointof("/dev/test-usb1").empty());
     assert(panel->openDevice("/dev/test-usb1"));
+    puts("PASS: busy USB unmount is rejected and transient busy unmount retries safely");
     // Exercise the visible device-row button, not only the command handler.
     SidebarItem* rowButton = new SidebarItem("USB action test", miniremovabledeviceicon,
                                              SidebarItem::DEVICE, fixture + "/folder");
-    rowButton->deviceAction = SidebarItem::EJECT_DEVICE;
+    rowButton->deviceAction = SidebarItem::UNMOUNT_DEVICE;
+    rowButton->canEject = true;
     navigation->appendItem(navigation->getFirstItem(), rowButton);
     navigation->expandTree(navigation->getFirstItem());
     navigation->makeItemVisible(rowButton);
@@ -1195,14 +1323,27 @@ int main(int argc, char** argv)
     for (int y = 0; y < navigation->getHeight(); ++y)
         if (navigation->deviceButtonAt(buttonX, y) == rowButton) { buttonY = y; break; }
     assert(buttonY >= 0);
-    assert(navigation->deviceButtonAt(buttonX - 30, buttonY) == NULL);
+    assert(navigation->deviceButtonAt(buttonX - 54, buttonY) == NULL);
     FXEvent buttonEvent = {};
     buttonEvent.win_x = buttonX;
     buttonEvent.win_y = buttonY;
     navigation->onDevicePress(NULL, 0, &buttonEvent);
-    buttonEvent.win_x = buttonX - 30;
+    buttonEvent.win_x = buttonX - 24;
     navigation->onDeviceRelease(NULL, 0, &buttonEvent);
     assert(!navigation->grabbed() && !xf_mountpointof("/dev/test-usb1").empty());
+    buttonEvent.win_x = navigation->deviceButtonLeft(false) + 12;
+    assert(navigation->deviceActionAt(buttonEvent.win_x, buttonY) == SidebarItem::UNMOUNT_DEVICE);
+    navigation->onDevicePress(NULL, 0, &buttonEvent);
+    navigation->onDeviceRelease(NULL, 0, &buttonEvent);
+    assert(xf_mountpointof("/dev/test-usb1").empty());
+    rowButton->path = "/dev/test-usb1";
+    rowButton->deviceAction = SidebarItem::MOUNT_DEVICE;
+    assert(navigation->deviceActionAt(buttonEvent.win_x, buttonY) == SidebarItem::MOUNT_DEVICE);
+    navigation->onDevicePress(NULL, 0, &buttonEvent);
+    navigation->onDeviceRelease(NULL, 0, &buttonEvent);
+    assert(xf_mountpointof("/dev/test-usb1") == fixture + "/folder");
+    rowButton->path = fixture + "/folder";
+    rowButton->deviceAction = SidebarItem::UNMOUNT_DEVICE;
     buttonEvent.win_x = buttonX;
     navigation->onDevicePress(NULL, 0, &buttonEvent);
     assert(navigation->grabbed());
@@ -1217,14 +1358,54 @@ int main(int argc, char** argv)
         if (mountedUri.find("disk ") == 0) diskCommands.push_back(mountedUri);
     assert((diskCommands == std::vector<std::string>{
         "disk mount", "disk unmount", "disk unmount", "disk unmount", "disk unmount",
-        "disk mount", "disk unmount", "disk power-off"}));
+        "disk mount", "disk unmount", "disk mount", "disk unmount", "disk power-off"}));
+    {
+        std::ofstream output(simulatedMountTable.text());
+        output << "/dev/root / ext4 rw 0 0\n"
+               << "/dev/test-usb1 " << fixture.text() << "/folder ext4 rw 0 0\n"
+               << "/dev/test-usb2 " << fixture.text() << "/empty ext4 rw 0 0\n";
+    }
+    setenv("SWORDFISH_TEST_DISK_BUSY", "1", 1);
+    app.addTimeout(&mountMessagesResponder, 1, 20);
+    assert(!panel->unmountRemovable("/dev/test-usb1", true));
+    assert(!xf_mountpointof("/dev/test-usb1").empty() && !xf_mountpointof("/dev/test-usb2").empty());
+    unsetenv("SWORDFISH_TEST_DISK_BUSY");
+    setenv("SWORDFISH_TEST_DISK_STILL_MOUNTED", "1", 1);
+    app.addTimeout(&mountMessagesResponder, 1, 20);
+    assert(!panel->unmountRemovable("/dev/test-usb1", true));
+    assert(mountMessagesResponder.message.contains("still mounted"));
+    unsetenv("SWORDFISH_TEST_DISK_STILL_MOUNTED");
+    assert(panel->unmountRemovable("/dev/test-usb1", true));
+    assert(xf_mountpointof("/dev/test-usb1").empty() && xf_mountpointof("/dev/test-usb2").empty());
+    std::ifstream allDiskLog(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+    int powerOffs = 0;
+    while (std::getline(allDiskLog, mountedUri))
+        if (mountedUri == "disk power-off") ++powerOffs;
+    assert(powerOffs == 2);
+    {
+        std::ofstream output(simulatedMountTable.text());
+        output << "/dev/test-usb2 / ext4 rw 0 0\n"
+               << "/dev/test-usb1 " << fixture.text() << "/folder ext4 rw 0 0\n";
+    }
+    app.addTimeout(&mountMessagesResponder, 1, 20);
+    assert(!panel->unmountRemovable("/dev/test-usb1", true));
+    assert(xf_mountpointof("/dev/test-usb1") == fixture + "/folder");
+    {
+        std::ofstream output(simulatedMountTable.text());
+        output << "/dev/root / ext4 rw 0 0\n";
+    }
+    setenv("SWORDFISH_TEST_POWER_OFF_FAIL", "1", 1);
+    app.addTimeout(&mountMessagesResponder, 1, 20);
+    assert(!panel->unmountRemovable("/dev/test-usb1", true));
+    unsetenv("SWORDFISH_TEST_POWER_OFF_FAIL");
+    puts("PASS: whole-device eject releases all partitions, aborts on busy mounts, and reports power-off failure");
     unsetenv("SWORDFISH_TEST_DISK_MTAB");
     unsetenv("SWORDFISH_TEST_DISK_PATH");
     app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", mountMessages);
     assert(unlink(simulatedMountTable.text()) == 0);
     simulatedMountTable.clear();
     puts("PASS: desktop-service mount, busy-unmount failure after one retry, transient busy retried successfully, remount and safe eject execute the expected commands");
-    puts("PASS: visible device action button ejects on release; releasing outside cancels without unmounting");
+    puts("PASS: distinct stop/go/eject buttons perform their own actions; releasing over another button cancels");
 
     window->onCmdHelp(NULL, 0, NULL);
     FXButton* helpLink = projectLink(app.getRootWindow());

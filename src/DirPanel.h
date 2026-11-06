@@ -294,6 +294,7 @@ public:
     // Drives handled through the desktop disk service (udisks)
     void unmountedDevices(std::vector<FXString>& labels, std::vector<FXString>& devices);
     FXString focusedDevice() const;
+    FXbool disconnectedDevice(const FXString& path) const;
     FXbool openDevice(const FXString& device);
     FXbool unmountRemovable(const FXString& mountpoint, FXbool eject);
 #endif

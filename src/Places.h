@@ -4,6 +4,8 @@
 #include "xfeutils.h"
 #include "icons.h"
 #include "FileDict.h"
+#include <map>
+#include <set>
 
 class SidebarItem : public FXTreeItem
 {
@@ -15,12 +17,19 @@ public:
     FXString tip;
     FXbool loaded = false;
     FXTime modified = 0;
-    enum DeviceAction { NO_ACTION, UNMOUNT_DEVICE, EJECT_DEVICE };
+    enum DeviceAction { NO_ACTION, UNMOUNT_DEVICE, MOUNT_DEVICE, EJECT_DEVICE };
     DeviceAction deviceAction = NO_ACTION;
+    FXbool canEject = false;
     virtual void draw(const FXTreeList* list, FXDC& dc, FXint x, FXint y, FXint w, FXint h) const;
     SidebarItem(const FXString& text, FXIcon* icon, Kind type, const FXString& location = "",
                 const FXString& name = "") :
         FXTreeItem(text, icon, icon), kind(type), path(location), key(name) {}
+};
+
+struct SidebarDeviceRequest
+{
+    SidebarItem* item;
+    SidebarItem::DeviceAction action;
 };
 
 class SidebarTree : public FXTreeList
@@ -34,6 +43,7 @@ protected:
     FXbool remoteBusy = false;
     FXString remoteError;
     FXString pressedDevice;
+    SidebarItem::DeviceAction pressedAction = SidebarItem::NO_ACTION;
 public:
     SidebarTree(FXComposite* parent, FXObject* target, FXSelector selector, FXuint opts);
     virtual FXint getContentHeight();
@@ -44,8 +54,9 @@ public:
     long onQueryTip(FXObject*, FXSelector, void*);
     long onDevicePress(FXObject*, FXSelector, void*);
     long onDeviceRelease(FXObject*, FXSelector, void*);
-    FXint deviceButtonLeft() const;
+    FXint deviceButtonLeft(FXbool eject = true) const;
     SidebarItem* deviceButtonAt(FXint x, FXint y) const;
+    SidebarItem::DeviceAction deviceActionAt(FXint x, FXint y) const;
     FXSelector deviceActionSelector = 0;
     enum { ID_REMOTE_CHANGED = FXTreeList::ID_LAST };
     ~SidebarTree();
@@ -133,6 +144,8 @@ protected:
     FXString gvfsmounts_prev = "";
     FXString blocks_prev = "";
     FXStringDict knownDevices;            // Block devices seen mounted on /media in this session
+    std::map<FXString, FXString> knownRemotes;
+    std::set<FXString> mountedRemotes;
 
     void scan();
     void addMount(FXString, const FXString&, FXIcon*);
@@ -177,6 +190,8 @@ public:
 
     // Rescan on the next refresh
     void invalidate();
+    FXbool disconnected(const FXString& path) const;
+    void forgetRemote(const FXString& path);
 
     // Refresh mount points
     long onMountsRefresh(FXObject*, FXSelector, void*);

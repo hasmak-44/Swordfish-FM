@@ -24,6 +24,8 @@
 #include "KeyBindings.h"
 #include "Preferences.h"
 #include "HistInputDialog.h"
+#include "SystemIntegration.h"
+#include "CustomActionsUI.h"
 
 ProgramChoice::ProgramChoice(FXComposite* parent) :
     ComboBox(parent, 30, false, false, NULL, 0, COMBOBOX_NORMAL |
@@ -193,6 +195,8 @@ public:
         maxHeight(maxheight),
         minHeight(minheight)
     {
+        verticalScrollBar()->setLine(getApp()->getNormalFont()->getFontHeight());
+        horizontalScrollBar()->setLine(getApp()->getNormalFont()->getFontWidth());
     }
 
     FXint getDefaultHeight() override
@@ -299,6 +303,7 @@ FXDEFMAP(PreferencesBox) PreferencesMap[] =
 {
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_ACCEPT, PreferencesBox::onCmdAccept),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_CANCEL, PreferencesBox::onCmdCancel),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_CUSTOM_ACTIONS, PreferencesBox::onCmdCustomActions),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_ASSOCIATION_LIST, PreferencesBox::onCmdAssociationSelected),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_ASSOCIATION_APPLY, PreferencesBox::onCmdAssociationApply),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_ASSOCIATION_RESET, PreferencesBox::onCmdAssociationReset),
@@ -350,6 +355,7 @@ FXDEFMAP(PreferencesBox) PreferencesMap[] =
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_LISTCOL_UP, PreferencesBox::onCmdColUp),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_LISTCOL_DOWN, PreferencesBox::onCmdColDown),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_VIEW_COL, PreferencesBox::onCmdViewCol),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_COLUMN_PANE, PreferencesBox::onCmdColumnPane),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_DIRPANEL_PLACES_STARTUP, PreferencesBox::onCmdDirPanelStartup),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_DIRPANEL_TREE_STARTUP, PreferencesBox::onCmdDirPanelStartup),
     FXMAPFUNC(SEL_UPDATE, PreferencesBox::ID_LISTCOL_UP, PreferencesBox::onUpdListColUpDown),
@@ -557,6 +563,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
 
     // Switcher
     FXTabBook* tabbook = new FXTabBook(contents, NULL, 0, LAYOUT_FILL_X | LAYOUT_FILL_Y | LAYOUT_RIGHT | FRAME_NONE);
+    preferencesTabs = tabbook;
 
     // First tab - General options
     new FXTabItem(tabbook, _("&General"), NULL);
@@ -959,6 +966,12 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     // Fourth tab - Columns order
     new FXTabItem(tabbook, _("File &List"), NULL);
     FXVerticalFrame* columns = createPreferencesPage(tabbook);
+    new FXLabel(columns, _("Column visibility and order apply to every tab in the selected panel."),
+                NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    columnPane = new FXListBox(columns, this, ID_COLUMN_PANE, FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X);
+    columnPane->appendItem(_("Left / Top Panel"));
+    columnPane->appendItem(_("Right / Bottom Panel"));
+    columnPane->setNumVisible(2);
     group = new FXGroupBox(columns, _("Displayed Columns"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     FXVerticalFrame* frame = new FXVerticalFrame(group, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X);
@@ -1329,8 +1342,59 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
     new FXButton(kbpack, _("&Restore default key bindings..."), minireloadicon, this, ID_RESTORE_KEYBINDINGS,
                  FRAME_GROOVE | ICON_BEFORE_TEXT | LAYOUT_SIDE_TOP | LAYOUT_FILL_X);    //,0,0,0,0,20,20);
 
+    // System integration
+    integrationTabIndex = 8;
+    new FXTabItem(tabbook, _("System &Integration"), NULL);
+    FXVerticalFrame* integration = createPreferencesPage(tabbook);
+    FXGroupBox* integrationGroup = new FXGroupBox(integration, _("Optional System Integration"),
+                                                   GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    integrationDesktop = new FXCheckButton(integrationGroup, _("Create a desktop shortcut") + FXString(" "));
+    integrationMenu = new FXCheckButton(integrationGroup,
+                                        _("Add Swordfish to the applications menu") + FXString(" "));
+    integrationCommand = new FXCheckButton(integrationGroup,
+                                           _("Create a swordfish command symlink") + FXString(" "));
+    new FXLabel(integrationGroup, _("Command destination (existing host PATH; PATH is never changed):"),
+                NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    integrationDestination = new ComboBox(integrationGroup, 65, false, false, NULL, 0,
+                                          COMBOBOX_STATIC | LAYOUT_FILL_X);
+    integrationDestination->setNumVisible(8);
+    new FXLabel(integrationGroup,
+                _("Desktop/menu shortcuts affect only your account. Shared command locations affect other users;\n"
+                  "protected locations require system administrator authorization. Unrelated files are never replaced."),
+                NULL, JUSTIFY_LEFT | LAYOUT_FILL_X | LAYOUT_TOP);
+    new FXLabel(integrationGroup,
+                _("If your desktop marks the shortcut untrusted, right-click it and choose “Allow Launching”."),
+                NULL, JUSTIFY_LEFT | LAYOUT_FILL_X | LAYOUT_TOP);
+    new FXLabel(integrationGroup,
+                _("Portable launchers use the current AppRun path. Moving the portable folder will break them."),
+                NULL, JUSTIFY_LEFT | LAYOUT_FILL_X | LAYOUT_TOP);
+    integrationStatus = new FXLabel(integrationGroup, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X | LAYOUT_TOP);
+    new FXTabItem(tabbook, _("Custom Actions"), NULL);
+    FXVerticalFrame* custom = createPreferencesPage(tabbook);
+    FXGroupBox* customGroup = new FXGroupBox(custom, _("Custom Actions"),
+                                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    new FXLabel(customGroup, _("Configure commands for the Custom Actions menu, file and background menus,\n"
+                              "and the independent custom toolbar. Organize actions in cascading folders."),
+                NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    new FXButton(customGroup, _("Edit Custom Actions..."), minirunicon, this, ID_CUSTOM_ACTIONS,
+                 BUTTON_NORMAL | ICON_BEFORE_TEXT | LAYOUT_LEFT);
+    new FXLabel(customGroup, _("This opens the same editor as the Custom Actions menu.\n"
+                              "Its Save button applies changes immediately, independently of Preferences."),
+                NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    resetPaneColumns();
+
     // Reset restarted flag
     getApp()->reg().writeUnsignedEntry("SETTINGS", "restarted", false);
+}
+
+long PreferencesBox::onCmdCustomActions(FXObject*, FXSelector, void*)
+{
+    XFileExplorer* window = dynamic_cast<XFileExplorer*>(getOwner());
+    if (window && window->getCustomActions())
+    {
+        return window->getCustomActions()->handle(this, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
+    }
+    return 0;
 }
 
 
@@ -3155,6 +3219,47 @@ long PreferencesBox::onCmdRestoreKeyBindings(FXObject*, FXSelector, void*)
 
 
 // Accept button pressed
+void PreferencesBox::storePaneColumns()
+{
+    paneColumns[selectedColumnPane].assign(idCol, idCol + nbCols);
+}
+
+void PreferencesBox::loadPaneColumns()
+{
+    nbCols = paneColumns[selectedColumnPane].size();
+    for (FXuint i = 0; i < nbCols; ++i) idCol[i] = paneColumns[selectedColumnPane][i];
+    FXCheckButton* checks[] = {sizecol, typecol, extcol, datecol, usercol, groupcol, permscol, linkcol};
+    for (FXuint i = 0; i < ARRAYNUMBER(checks); ++i)
+    {
+        FXbool visible = false;
+        for (FXuint id : paneColumns[selectedColumnPane])
+            if (id == FileList::ID_COL_SIZE + i) visible = true;
+        checks[i]->setCheck(visible);
+    }
+    listcol->clearItems();
+    for (FXuint id : paneColumns[selectedColumnPane]) listcol->appendItem(getHeaderName(id));
+    listcol->disableItem(0);
+    if (nbCols > 1) listcol->selectItem(1);
+}
+
+void PreferencesBox::resetPaneColumns()
+{
+    XFileExplorer* explorer = static_cast<XFileExplorer*>(mainWindow);
+    paneColumns[0] = explorer->getLeftPanel()->getList()->getColumnLayout();
+    paneColumns[1] = explorer->getRightPanel()->getList()->getColumnLayout();
+    selectedColumnPane = explorer->getCurrentPanel() == explorer->getRightPanel() ? 1 : 0;
+    columnPane->setCurrentItem(selectedColumnPane);
+    loadPaneColumns();
+}
+
+long PreferencesBox::onCmdColumnPane(FXObject*, FXSelector, void*)
+{
+    storePaneColumns();
+    selectedColumnPane = columnPane->getCurrentItem();
+    loadPaneColumns();
+    return 1;
+}
+
 long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
 {
     FXbool restart_theme = false;
@@ -3165,13 +3270,67 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     FXbool restart_textfont = false;
     FXbool restart_uidpi = false;
     FXbool restart_dirpanel_mode = false;
-    FXbool restart_columns = false;
     FXbool restart_diropen = false;
     FXbool restart_fileopen = false;
     FXbool restart_relativeresize = false;
     FXbool restart_alwaysshowtabbar = false;
     FXbool restart_filetooltips = false;
     FXbool restart_automount = false;
+
+    SystemIntegration::Selection integrationSelection;
+    integrationSelection.desktopShortcut = integrationDesktop->getCheck();
+    integrationSelection.applicationsMenu = integrationMenu->getCheck();
+    integrationSelection.commandSymlink = integrationCommand->getCheck();
+    const FXint destinationIndex = integrationDestination->getCurrentItem();
+    if (destinationIndex >= 0 && (size_t)destinationIndex < integrationCommandPaths.size())
+    {
+        integrationSelection.commandPath = integrationCommandPaths[destinationIndex];
+    }
+    if (integrationSelection.commandSymlink && integrationSelection.commandPath.empty())
+    {
+        MessageBox::error(this, BOX_OK, _("System Integration Error"),
+                          _("No usable command destination is available in the host PATH. PATH will not be modified."));
+        return 0;
+    }
+    if (integrationSelection.commandSymlink || !integrationPreviousCommand.empty())
+    {
+        FXString details;
+        if (!integrationPreviousCommand.empty() &&
+            (!integrationSelection.commandSymlink ||
+             integrationSelection.commandPath != integrationPreviousCommand))
+        {
+            const SystemIntegration::CommandDestination previous =
+                SystemIntegration::commandDestinationInfo(integrationPreviousCommand);
+            details += FXString(_("Remove managed command link:\n")) + integrationPreviousCommand.c_str();
+            details += previous.shared ? _(" — shared") : _(" — your account");
+            details += previous.requiresAuthorization ? _("; administrator authorization required\n\n") :
+                                                         _("; no administrator authorization\n\n");
+        }
+        if (integrationSelection.commandSymlink)
+        {
+            details += FXString(_("Create/keep command link:\n")) + integrationDestination->getText() + "\n\n";
+        }
+        details += _("Shared locations make this command available to other users. Protected link creation/removal\n"
+                     "requires explicit system authorization to run the bundled/installed command-link helper;\n"
+                     "no password is collected by Swordfish.\n"
+                     "PATH is never changed. Continue?");
+        if (BOX_CLICKED_YES != MessageBox::question(this, BOX_YES_NO, _("Confirm Command Integration"),
+                                                    "%s", details.text()))
+        {
+            return 0;
+        }
+    }
+    std::string integrationError;
+    std::string integrationWarning;
+    if (!SystemIntegration::applySelection(integrationSelection, integrationError, integrationWarning))
+    {
+        MessageBox::error(this, BOX_OK, _("System Integration Error"), "%s", integrationError.c_str());
+        return 0;
+    }
+    if (!integrationWarning.empty())
+    {
+        MessageBox::warning(this, BOX_OK, _("System Integration"), "%s", integrationWarning.c_str());
+    }
 
     oldtimeformat = timeformat->getText();
     oldcopysuffix = copysuffix->getText();
@@ -3492,74 +3651,10 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
         restart_dirpanel_mode = true;
     }
 
-    // Columns shown status
-    getApp()->reg().writeUnsignedEntry("SETTINGS", "view_col_name", 1); // Name is always shown
-    getApp()->reg().writeUnsignedEntry("SETTINGS", "view_col_size", sizecol->getCheck());
-    getApp()->reg().writeUnsignedEntry("SETTINGS", "view_col_type", typecol->getCheck());
-    getApp()->reg().writeUnsignedEntry("SETTINGS", "view_col_ext", extcol->getCheck());
-    getApp()->reg().writeUnsignedEntry("SETTINGS", "view_col_date", datecol->getCheck());
-    getApp()->reg().writeUnsignedEntry("SETTINGS", "view_col_user", usercol->getCheck());
-    getApp()->reg().writeUnsignedEntry("SETTINGS", "view_col_group", groupcol->getCheck());
-    getApp()->reg().writeUnsignedEntry("SETTINGS", "view_col_perms", permscol->getCheck());
-    getApp()->reg().writeUnsignedEntry("SETTINGS", "view_col_link", linkcol->getCheck());
-
-    // Columns order
-    for (FXuint i = 0; i < NMAX_COLS; i++)
-    {
-        FXString strid = "id_col_" + FXStringVal(i);
-        if (i < nbCols)
-        {
-            getApp()->reg().writeUnsignedEntry("SETTINGS", strid.text(), idCol[i]);
-        }
-        else
-        {
-            getApp()->reg().writeUnsignedEntry("SETTINGS", strid.text(), 0);
-        }
-    }
-
-    // Columns view have changed
-    if (sizecol->getCheck() != sizecol_prev || typecol->getCheck() != typecol_prev ||
-        extcol->getCheck() != extcol_prev || datecol->getCheck() != datecol_prev ||
-        usercol->getCheck() != usercol_prev || groupcol->getCheck() != groupcol_prev ||
-        permscol->getCheck() != permscol_prev || linkcol->getCheck() != linkcol_prev)
-    {
-        ((XFileExplorer*)mainWindow)->getLeftPanel()->setSortFunc(FileList::ascendingCase);
-        ((XFileExplorer*)mainWindow)->getRightPanel()->setSortFunc(FileList::ascendingCase);
-
-        if (((XFileExplorer*)mainWindow)->getSearchWindow() != NULL)
-        {
-            ((XFileExplorer*)mainWindow)->getSearchWindow()->setSortFunc(FileList::ascendingCase);
-        }
-        else
-        {
-            getApp()->reg().writeStringEntry("SEARCH PANEL", "sort_func", "ascendingCase");
-        }
-
-        restart_columns = true;
-    }
-
-    // Columns number has changed
-    if (nbCols != nbCols_prev)
-    {
-        restart_columns = true;
-    }
-    // Columns order have changed
-    else
-    {
-        FXbool changed = false;
-        for (FXuint i = 0; i < nbCols; i++)
-        {
-            if (idCol[i] != idCol_prev[i])
-            {
-                changed = true;
-                break;
-            }
-        }
-        if (changed)
-        {
-            restart_columns = true;
-        }
-    }
+    storePaneColumns();
+    XFileExplorer* explorer = static_cast<XFileExplorer*>(mainWindow);
+    explorer->getLeftPanel()->getList()->setColumnLayout(paneColumns[0]);
+    explorer->getRightPanel()->getList()->setColumnLayout(paneColumns[1]);
 
 #if defined(linux) && defined(XFE_AUTOMOUNTER)
     if (automountbutton->getCheck() != automount_prev || autoopenbutton->getCheck() != autoopen_prev)
@@ -3572,7 +3667,7 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     // Restart application if necessary
     if (restart_smoothscroll | restart_scrollbarsize | restart_theme | restart_showpathlink |
         restart_normalfont | restart_textfont | restart_uidpi | restart_dirpanel_mode |
-        restart_columns | restart_filetooltips | restart_relativeresize | restart_alwaysshowtabbar |
+        restart_filetooltips | restart_relativeresize | restart_alwaysshowtabbar |
         restart_diropen | restart_fileopen | restart_automount)
     {
         if (BOX_CLICKED_CANCEL != MessageBox::question(this, BOX_OK_CANCEL, _("Restart"),
@@ -3736,6 +3831,57 @@ long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
 // Execute dialog box modally
 FXuint PreferencesBox::execute(FXuint placement)
 {
+    SystemIntegration::Selection integrationSelection;
+    std::string integrationError;
+    integrationPreviousCommand.clear();
+    integrationDestination->clearItems();
+    integrationCommandPaths.clear();
+    const std::vector<SystemIntegration::CommandDestination> destinations = SystemIntegration::commandDestinations();
+    for (size_t i = 0; i < destinations.size(); ++i)
+    {
+        const SystemIntegration::CommandDestination& destination = destinations[i];
+        FXString label = destination.path.c_str();
+        label += destination.shared ? _(" — shared") : _(" — your account");
+        label += destination.requiresAuthorization ? _("; administrator authorization required") :
+                                                     _("; writable, no administrator authorization");
+        integrationDestination->appendItem(label);
+        integrationCommandPaths.push_back(destination.path);
+    }
+    if (!destinations.empty())
+    {
+        integrationDestination->setCurrentItem(0);
+    }
+    if (SystemIntegration::readSelection(integrationSelection, integrationError))
+    {
+        integrationDesktop->setCheck(integrationSelection.desktopShortcut);
+        integrationMenu->setCheck(integrationSelection.applicationsMenu);
+        integrationCommand->setCheck(integrationSelection.commandSymlink);
+        integrationPreviousCommand = integrationSelection.commandPath;
+        bool found = integrationPreviousCommand.empty();
+        for (size_t i = 0; i < integrationCommandPaths.size(); ++i)
+        {
+            if (integrationCommandPaths[i] == integrationPreviousCommand)
+            {
+                integrationDestination->setCurrentItem((FXint)i);
+                found = true;
+            }
+        }
+        integrationStatus->setText("");
+        if (!found)
+        {
+            integrationStatus->setText(FXString(_("Previously managed command (no longer a usable host PATH destination):\n")) +
+                                        integrationPreviousCommand.c_str());
+        }
+    }
+    else
+    {
+        integrationDesktop->setCheck(false);
+        integrationMenu->setCheck(false);
+        integrationCommand->setCheck(false);
+        integrationStatus->setText(FXString(_("Unable to read integration ownership state: ")) +
+                                   integrationError.c_str());
+    }
+
     // Save current preferences to restore them if cancel is pressed
     associationoverrides.clear();
     restoreprogramsettings = false;
@@ -3796,6 +3942,7 @@ FXuint PreferencesBox::execute(FXuint placement)
     root_warning_prev = root_warning->getCheck();
 
     // Fourth tab - Columns
+    resetPaneColumns();
     sizecol_prev = sizecol->getCheck();
     typecol_prev = typecol->getCheck();
     extcol_prev = extcol->getCheck();
@@ -3843,6 +3990,14 @@ FXuint PreferencesBox::execute(FXuint placement)
     show(placement);
     getApp()->refresh();
     return getApp()->runModalFor(this);
+}
+
+void PreferencesBox::selectIntegrationPage()
+{
+    if (preferencesTabs && integrationTabIndex >= 0)
+    {
+        preferencesTabs->setCurrent(integrationTabIndex);
+    }
 }
 
 
@@ -4378,6 +4533,7 @@ long PreferencesBox::onCmdColDown(FXObject*, FXSelector sel, void*)
 // Update columns list
 long PreferencesBox::onCmdViewCol(FXObject* sender, FXSelector sel, void*)
 {
+    std::vector<FXuint> previous(idCol, idCol + nbCols);
     idCol[0] = FileList::ID_COL_NAME;
 
     FXuint i = 1;
@@ -4424,6 +4580,12 @@ long PreferencesBox::onCmdViewCol(FXObject* sender, FXSelector sel, void*)
 
     // Update number of columns
     nbCols = i;
+    std::vector<FXuint> visible(idCol, idCol + nbCols);
+    FXuint next = 0;
+    for (FXuint id : previous)
+        if (std::find(visible.begin(), visible.end(), id) != visible.end()) idCol[next++] = id;
+    for (FXuint id : visible)
+        if (std::find(previous.begin(), previous.end(), id) == previous.end()) idCol[next++] = id;
 
     // Update columns list
     listcol->clearItems();

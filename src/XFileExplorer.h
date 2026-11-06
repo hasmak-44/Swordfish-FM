@@ -32,6 +32,7 @@
 // Typedef for the map between program string identifiers and integer indexes
 typedef std::map<FXString, int> progsmap;
 
+class CustomActionsUI;
 
 // Custom MenuPane class that can detect if a menu is open
 class MenuPane : public FXMenuPane
@@ -103,6 +104,7 @@ protected:
     FXToolBar* paneltoolbar = NULL;
     FXToolBar* addresstoolbar = NULL;
     FXToolBar* tabtoolbar = NULL;
+    CustomActionsUI* customactions = NULL;
     DirPanel* dirpanel = NULL;
     FilePanel* lpanel = NULL;
     FilePanel* rpanel = NULL;
@@ -205,6 +207,9 @@ public:
         ID_RUN,
         ID_SU,
         ID_PREFS,
+        ID_USER_MANUAL,
+        ID_WELCOME,
+        ID_INTEGRATION,
         ID_DIR_BOX,
         ID_TOGGLE_STATUS,
         ID_SHOW_ONE_PANEL,
@@ -225,6 +230,7 @@ public:
         ID_REBUILD_BOOKMARKS_MENU,
         ID_HARVEST,
         ID_NETWORK_UNMOUNTED,
+        ID_PREPARE_UNMOUNT,
         ID_QUIT,
         ID_FILE_ADDCOPY,
         ID_FILE_ADDCUT,
@@ -252,6 +258,7 @@ public:
     void openFiles(vector_FXString);
     long onSigHarvest(FXObject*, FXSelector, void*);
     long onNetworkUnmounted(FXObject*, FXSelector, void*);
+    long onPrepareUnmount(FXObject*, FXSelector, void*);
     long onQuit(FXObject*, FXSelector, void*);
     long onKeyPress(FXObject*, FXSelector, void*);
     long onKeyRelease(FXObject*, FXSelector, void*);
@@ -263,6 +270,9 @@ public:
     long onCmdToggleStatus(FXObject*, FXSelector, void*);
     long onCmdPopupMenu(FXObject*, FXSelector, void*);
     long onCmdPrefs(FXObject*, FXSelector, void*);
+    long onCmdUserManual(FXObject*, FXSelector, void*);
+    long onWelcome(FXObject*, FXSelector, void*);
+    long onCmdIntegration(FXObject*, FXSelector, void*);
     long onCmdRun(FXObject*, FXSelector, void*);
     long onCmdSu(FXObject*, FXSelector, void*);
     long onCmdConnectToServer(FXObject*, FXSelector, void*);
@@ -382,6 +392,8 @@ public:
     {
         return lpanel->getCurrent();
     }
+
+    CustomActionsUI* getCustomActions() const { return customactions; }
 
     // Return a pointer on the next file panel
     FilePanel* getNextPanel(void)

@@ -1,5 +1,10 @@
 # Portable Linux build
 
+Current latest release: **0.0.3 beta 1** (`swordfish-0.0.3-beta1`).
+This is beta software; stable 0.0.2 remains available unchanged. Extract into a
+new folder for testing and back up existing `portable-data` before migrating it.
+Release archives do not include a settings profile or test data.
+
 The portable build produces a relocatable AppDir-style directory for Linux
 x86_64. It includes the Swordfish programs, installed resources, and shared
 libraries collected by `linuxdeploy`. Run `AppRun` from the generated folder;
@@ -26,20 +31,201 @@ The bundle also provides the original Xfe executable names (`xfa`, `xfi`,
 `xfp`, and `xfw`) as compatibility aliases for saved settings and file
 associations.
 
+## User Manual, welcome and optional shortcuts
+
+Choose **Help > User Manual** for the bundled, illustrated beginner guide.
+It opens in your browser and works offline; the HTML file is
+`usr/share/swordfish/manual/index.html`. Its screenshots describe the matching
+0.0.3-beta1 interface. The same HTML and images can be hosted online without
+maintaining a separate manual.
+
+A new personal settings profile shows a welcome with manual access, then
+optional customization. Existing settings are not treated as a first run.
+The Preferences button at the right of the menu bar opens the same settings
+dialog as **Edit > Preferences**.
+
+The **System Integration** tab offers a desktop shortcut, applications-menu
+entry and an optional `swordfish` command link. All start unchecked. Accept applies
+the choices; Cancel does not. Launchers for this portable build use `AppRun`,
+not the bare binary. Only unchanged integration items created by Swordfish
+are removed when unchecked; unrelated existing items are never overwritten.
+Moving the portable folder breaks its shortcuts; reapply integration from the
+new location to repair them. Desktop environments may additionally require
+**Allow Launching**. The command destination is selected from the existing host
+PATH, with writable locations preferred. The full destination and whether it is
+shared or requires administrator authorization are shown before applying.
+Swordfish never modifies PATH. A missing `~/.local/bin` is offered for creation
+only if already listed in PATH. Protected standard system destinations require
+explicit system authorization through `pkexec` to run the bundled or installed
+non-setuid `swordfish-command-link` helper. Shared command links are available
+to other users; desktop/menu shortcuts remain personal. Unchecking a protected
+link also requires authorization. Cancellation or an unsafe helper/destination
+reports an error and leaves Preferences open.
+
+In Details view, right-click a column heading to show/hide columns, or drag a
+heading onto another heading to change their order. Name remains first and
+visible. Search results retain their Folder Name column, and Trash keeps its
+recovery columns fixed. Existing Preferences column controls remain available
+with a Left / Top Panel or Right / Bottom Panel selector. Visibility and order
+are shared by every tab in that panel; the other panel is independent.
+Preferences and the heading menu edit the same choices immediately, without
+a restart; Cancel discards pending Preferences edits. Column widths remain
+per-tab, including when saved tabs are restored. Existing Beta 1 per-tab
+layouts migrate using each panel's previously active tab.
+**Copy Path** copies full paths as text. The context menu groups
+editing/rename separately from copy/move/link actions; Other Pane commands
+use the other pane's active tab.
+
+## Custom actions and the separate custom toolbar
+
+Open **Custom Actions → Edit Custom Actions…** or **Tools → Custom Actions…**
+to create commands of your own. Preferences also has a **Custom Actions** page
+opening the same editor. The top-level Custom Actions menu lists configured
+actions and groups; unavailable entries are disabled. The editor
+offers **Add Action…**, **Add Folder…**, **Add Separator**, **Edit…**, **Remove**,
+**Move Up**, **Move Down**, and **Move to Folder…**. Folders can contain folders
+and actions, producing cascading **Custom Actions** context menus. Removing a
+folder also removes its children after confirmation.
+
+The editor uses an icon/name/description tree with compact side controls.
+Action properties have **Basic** and **Appearance Conditions** tabs, command
+browsing, an icon preview, and placeholder help.
+New actions separate **Program** (one executable name on the host PATH or a
+literal executable path, without shell quotes) from **Parameters**. For example,
+Program `wine`, Parameters `"/path/to/application.exe"`. Browse selects a program
+or script. **Working directory** defaults to the active folder when empty;
+Browse selects another folder. It accepts `%p`, `%o`, `%d`, `%f`, and `%%`
+without shell evaluation. Relative paths resolve from the active folder.
+Existing actions retain **Full command (legacy/shell syntax)** mode and their
+original command text; switching modes does not silently split that text.
+Only the selected mode's fields are shown. Normally Program and Parameters
+are editable; selecting **Advanced: full shell command** replaces them with
+one editable Full command field. Existing full-command actions open with that
+advanced switch selected. Unchecking it shows the separate fields; enter their
+values explicitly rather than expecting automatic command splitting.
+
+The live preview never runs a command. **Parameter Legend…** opens scrollable
+help. **Test Action** checks placeholder expansion, working directory,
+executable availability in Program mode, and shell syntax without running the
+action. It shows Checks Passed or an explanatory error. It cannot verify an
+application's supported options or guarantee runtime success; a legacy shell
+command's executable names are not resolved by the syntax checker.
+Actions have a name, description, optional PNG icon, command, file/folder and
+selection conditions, and semicolon-separated filename patterns. Use `*` for
+all files, or `.jpg;.png;.tar.gz` as shorthand for `*.jpg;*.png;*.tar.gz`.
+Explicit wildcard patterns remain supported; matching is case-sensitive and
+every selected file must match. Folders are eligible independently of file
+extensions when **Folders** is checked; this also makes the current folder
+eligible with no selection. The prominent **Show without selection** option
+separately allows background actions without applying selection conditions.
+Selection range remains unrestricted (`*`).
+Optional confirmation, **Show command output**, and terminal execution are
+available. Normal actions run without an output window on success; a failure
+opens the captured output. Enable **Show command output** when you want to
+inspect successful output too. Only run commands
+you understand and trust; actions do not automatically request root access.
+
+Use the **Insert** chooser for placeholders: `%f`/`%F` first/all selected paths,
+`%n`/`%N` basenames, `%d`/`%D` parent directories, `%u`/`%U` local file URIs,
+`%p` current pane directory, `%o` opposite pane directory, and `%%` literal `%`.
+Additional codes: `%c` actual selected-item count, `%w`/`%W` first/all basenames
+without the last extension, `%x`/`%X` first/all last extensions without dots.
+For `archive.tar.gz`, these are `archive.tar` and `gz`; `.hidden` has no
+extension. Empty extensions remain empty arguments. `%c` is zero on the
+background even when Folders supplies the current folder.
+Paths are quoted automatically. List placeholders must be separate, unquoted
+arguments. With no selection, `%d`/`%D` mean the current directory. For an action
+with **Folders** enabled, selected-path/name/URI placeholders use the current
+folder too; otherwise they report that a selection is required. For complex
+shell logic use a script.
+
+Check **Show on custom toolbar** for individual actions or folders. A checked
+folder exposes its descendants as a dropdown; checked descendants are not
+duplicated outside it. Separators divide toolbar groups. Unavailable context
+actions are hidden; toolbar actions are disabled. Context submenus always
+include an editing entry, even with no configured/applicable actions.
+**Tools → Show Custom Toolbar** toggles this independent toolbar; its far-right
+**Settings** button opens the editor with an **Edit Custom Actions** tooltip.
+Custom-action toolbar contents remain separate from the built-in toolbars.
+Custom PNG icons are reduced to fit the toolbar's standard small-icon size
+while preserving their proportions.
+Click the icon preview or its Browse control to open **Choose an Icon**.
+The maximizable chooser displays installed system icons in a labeled grid
+that reflows when resized. Select a category (actions, applications, devices,
+file types, locations, and others) or **All Icons**, then search within it.
+Categories follow the installed theme's directory context, with standard
+directory names as a fallback and **Uncategorized Icons** for other icons.
+The grid loads previews in pages instead of decoding every system icon at once.
+**Image Files** opens the normal file chooser, with folder navigation, a filename
+field, image/all-files filters, and a live preview below the left sidebar.
+There is no intermediate image-browser dialog. **No Icon** uses the default.
+System selections store an
+icon name and resolve it against host themes, inherited themes and hicolor;
+portable mode does not restrict this to bundled icons. Image selections store
+an absolute filename. PNG, JPEG and XPM are supported; SVG uses the existing
+`rsvg-convert` tool and a converted-image cache. Image files have thumbnails
+and a larger selected-image preview. Moving an external image can break that
+selection; a named system icon depends on the target host's icons.
+
+The built-in **General**, **Tools** and **Panel** toolbars use their original
+commands, order and theme icon sizes. Experimental toolbar customization,
+right-click presentation menus, size/display preferences and overflow controls
+have been removed. Older toolbar-customization settings are ignored; saved
+Custom Actions are preserved. Manage custom toolbar contents through the
+Custom Actions editor, not the built-in toolbars.
+
+Properties **Apply** changes the editor's working copy; **Save** persists it.
+Editor **Cancel** discards unsaved edits. Settings belong to Swordfish's own
+personal or portable profile. Action-specific shortcuts are not included in
+this stage.
+
+**Duplicate Action** copies the selected action beside its source with a new
+identity, preserving its settings and group. **Use Program Icon** suggests the
+matching installed application's icon; it is an explicit choice and does not
+silently replace a custom icon. Unsaved changes in properties or the main editor
+are protected on Cancel, Escape and window close: choose **Keep editing** or
+**Discard**. Unchanged dialogs close without that prompt. Import/export and
+action shortcuts remain planned for later.
+
 ## Local devices and automount
+
+### Opening archives as folders
+
+For a single supported archive, the file-panel context menu offers **Open
+Archive as Folder**, even when the optional host tool `archivemount` is missing.
+If it is missing, Swordfish explains how to install it using your distribution's
+software manager and offers to open the
+[upstream installation page](https://github.com/cybernoid/archivemount#installation).
+The browser opens only after confirmation; Swordfish does not download packages
+or run privileged installation commands. Working host FUSE support is required.
+Normal archive extraction does not require `archivemount`.
+
+### Device controls
 
 Mounted disks under `/media/` and `/run/media/` appear in Devices.
 Connected, unmounted filesystems reported by the host `lsblk` also appear,
-including internal partitions. These entries are grey but remain clickable
+including internal partitions. Their names use normal readable theme text,
+with an **(unmounted)** suffix, and remain clickable
 to mount and open them. Mount-table changes are polled, including disks
 unmounted by another application. Unknown filesystems, locked encrypted
 volumes and swap are not offered as new mountable volumes.
 
-An action button at the right of a USB/hotplug device row safely removes it
-(unmount, then power off). Mounted internal partitions and network shares
-have an Unmount button instead. Root and unmounted internal partitions have
-no action button. To unmount a USB drive without powering it off, use Unmount
-in the toolbar or the device's right-click menu.
+Device rows have separate controls at the right:
+
+- The red stop-shaped button unmounts the selected filesystem. When it is
+  unmounted but still available, this becomes a green play/go-shaped Mount button.
+- The red eject symbol safely removes a supported USB/hotplug drive. It unmounts
+  all filesystems on the physical drive before powering it off, not just
+  the selected partition. Internal partitions do not have an eject button.
+- Root and other protected mounts have neither action.
+
+Supported GVFS network shares (SMB and SFTP) stay in Devices after unmounting,
+labelled **(unmounted)** and remountable through the Mount button or by opening the entry.
+These disconnected entries are remembered for the current Swordfish session.
+Eject disconnects the share and removes its retained entry, without deleting
+or changing saved credentials. Connect to Server can add the share again.
+Remount uses the existing connection/authentication flow; a password prompt
+is still possible if the desktop has no reusable credentials.
 
 Toolbar Mount/Unmount requires an explicitly selected device or exact mount
 point. With no selection (or only `..` selected), both buttons are disabled;
@@ -49,9 +235,18 @@ filesystem containing Home are protected from unmounting.
 Mounting and unmounting desktop-managed disks requires the host UDisks2
 service and `udisksctl`; system policy may ask for an administrator password.
 Unmount leaves the connected drive available for remounting. Eject (Safely
-Remove) additionally powers off supported hotplug drives; it is not enabled
-for internal drives or network shares. The root filesystem cannot be unmounted
-from Swordfish. A busy-drive error must be resolved before safe removal.
+Remove) additionally powers off supported hotplug drives. A busy-drive error
+must be resolved before safe removal: Swordfish does not force-unmount or
+terminate other applications. Failed unmounts keep the mount visible.
+Tabs closed by a failed unmount are restored in both panels, with their original
+order, selected tab and view modes, if that filesystem is still mounted.
+Busy errors list applications and process IDs detectable through Linux `/proc`
+(open files, working directories and executables), and ask you to close all
+applications using the device and try again. Permissions or other types of
+usage can prevent identification; the message says so if no application is
+found. Swordfish does not request administrator access for this check.
+If some partitions have already unmounted before another fails, their
+individual states are updated, but the drive is not powered off.
 
 The optional automounter requires the host UDisks2 service and `udisksctl`.
 Portable bundles include `swf-automount` and its runtime libraries. It is

@@ -12,6 +12,9 @@
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <algorithm>
+#if defined(linux)
+#include <mntent.h>
+#endif
 
 #include <fx.h>
 #include <fxkeys.h>
@@ -30,6 +33,7 @@
 #include "XFileExplorer.h"
 #include "MessageBox.h"
 #include "DirPanel.h"
+#include "TabButtons.h"
 
 
 
@@ -623,6 +627,7 @@ void DirPanel::syncSidebar()
                             group == 1 ? bookmarkslist->getItemPathname(name) :
                             group == 2 ? mountslist->getItemPathname(name) : name;
             signature += "\n" + name + "\t" + path;
+            if (group == 2) signature += mountslist->disconnected(path) ? "\tdisconnected" : "\tmounted";
             if (group == 1)
             {
                 signature += "\t" + bookmarkslist->getItemIconPathname(name);
@@ -648,10 +653,12 @@ void DirPanel::syncSidebar()
             for (FXTreeItem* child = root->getFirst(); child; child = child->getNext())
             {
                 FXString oldPath = static_cast<SidebarItem*>(child)->path;
-                if (xf_gvfsmount(oldPath).empty()) continue;
+                if (xf_gvfsmount(oldPath).empty() ||
+                    static_cast<SidebarItem*>(child)->deviceAction == SidebarItem::MOUNT_DEVICE) continue;
                 FXbool present = false;
                 for (FXint i = 0; i < mountslist->getNumItems(); ++i)
-                    if (mountslist->getItemPathname(mountslist->getItemText(i)) == oldPath) present = true;
+                    if (mountslist->getItemPathname(mountslist->getItemText(i)) == oldPath &&
+                        !mountslist->disconnected(oldPath)) present = true;
                 if (!present) removedMounts.push_back(oldPath);
             }
         }
@@ -704,10 +711,12 @@ void DirPanel::syncSidebar()
             if (kind == SidebarItem::DEVICE && !xf_protectedmount(path))
             {
                 FXString device = path.left(5) == "/dev/" ? path : xf_mountsource(path);
-                if (xf_hotplugdevice(device))
-                    item->deviceAction = SidebarItem::EJECT_DEVICE;
-                else if (path.left(5) != "/dev/")
-                    item->deviceAction = SidebarItem::UNMOUNT_DEVICE;
+                item->deviceAction = path.left(5) == "/dev/" || mountslist->disconnected(path) ?
+                                     SidebarItem::MOUNT_DEVICE : SidebarItem::UNMOUNT_DEVICE;
+                item->canEject = xf_hotplugdevice(device) ||
+                                (!xf_gvfsmounturi(path).empty() && FXPath::name(path).before(':') != "mtp");
+                if (item->deviceAction == SidebarItem::MOUNT_DEVICE)
+                    item->setText(name + _(" (unmounted)"));
             }
 #endif
             if (group == 1)
@@ -883,7 +892,8 @@ long DirPanel::onSidebarExpand(FXObject*, FXSelector sel, void* ptr)
 long DirPanel::onSidebarDeviceAction(FXObject*, FXSelector, void* ptr)
 {
 #if defined(linux)
-    SidebarItem* item = static_cast<SidebarItem*>(ptr);
+    SidebarDeviceRequest* request = static_cast<SidebarDeviceRequest*>(ptr);
+    SidebarItem* item = request ? request->item : NULL;
     if (!item || item->kind != SidebarItem::DEVICE) return 1;
     if (xf_protectedmount(item->path))
     {
@@ -892,19 +902,13 @@ long DirPanel::onSidebarDeviceAction(FXObject*, FXSelector, void* ptr)
     }
     const FXbool popupWasOpen = sidebarPopupOpen;
     sidebarPopupOpen = true;
-    FXString path = item->path;
-    if (item->deviceAction == SidebarItem::EJECT_DEVICE)
-    {
-        FXString device = path.left(5) == "/dev/" ? path : xf_mountsource(path);
-        if (xf_hotplugdevice(device)) unmountRemovable(path, true);
-    }
-    else if (item->deviceAction == SidebarItem::UNMOUNT_DEVICE)
-    {
-        SidebarItem* previous = sidebarContext;
-        sidebarContext = item;
-        onCmdMount(NULL, FXSEL(SEL_COMMAND, ID_UMOUNT), NULL);
-        sidebarContext = previous;
-    }
+    SidebarItem* previous = sidebarContext;
+    sidebarContext = item;
+    if (request->action == SidebarItem::EJECT_DEVICE)
+        onCmdEject(NULL, 0, NULL);
+    else
+        onCmdMount(NULL, FXSEL(SEL_COMMAND, request->action == SidebarItem::MOUNT_DEVICE ? ID_MOUNT : ID_UMOUNT), NULL);
+    sidebarContext = previous;
     if (mountslist) mountslist->invalidate();
     sidebarPopupOpen = popupWasOpen;
 #endif
@@ -954,7 +958,8 @@ long DirPanel::onSidebarActivate(FXObject*, FXSelector sel, void* ptr)
         window->getCurrentPanel()->openServerShares(host);
     }
 #if defined(linux)
-    else if (item->kind == SidebarItem::DEVICE && item->path.left(5) == "/dev/")
+    else if (item->kind == SidebarItem::DEVICE &&
+             (item->path.left(5) == "/dev/" || mountslist->disconnected(item->path)))
     {
         if (sidebar->grabbed())
         {
@@ -998,7 +1003,8 @@ long DirPanel::onSidebarPopup(FXObject*, FXSelector, void* ptr)
         mountslist->setMount(sidebarContext->key);
     }
     FXMenuPane menu(this);
-    const FXbool unmountedDrive = sidebarContext->kind == SidebarItem::DEVICE && sidebarContext->path.left(5) == "/dev/";
+    const FXbool unmountedDrive = sidebarContext->kind == SidebarItem::DEVICE &&
+                                  (sidebarContext->path.left(5) == "/dev/" || mountslist->disconnected(sidebarContext->path));
     if (!sidebarContext->path.empty() && sidebarContext->kind != SidebarItem::SERVER && !unmountedDrive)
     {
         new FXMenuCommand(&menu, _("New &Tab"), mininewtabicon, this, ID_SIDEBAR_OPEN_TAB);
@@ -2545,7 +2551,7 @@ long DirPanel::onCmdPopupMenuDirList(FXObject* sender, FXSelector sel, void* ptr
         new FXMenuCommand(menu, _("&Copy"), minicopyicon, this, DirPanel::ID_COPY_CLIPBOARD);
         new FXMenuCommand(menu, _("C&ut"), minicuticon, this, DirPanel::ID_CUT_CLIPBOARD);
         new FXMenuCommand(menu, _("&Paste"), minipasteicon, this, DirPanel::ID_PASTE_CLIPBOARD);
-        new FXMenuCommand(menu, _("Cop&y Name"), minicopyicon, this, DirPanel::ID_COPYNAME_CLIPBOARD);
+        new FXMenuCommand(menu, _("Copy &Path"), minicopyicon, this, DirPanel::ID_COPYNAME_CLIPBOARD);
         new FXMenuSeparator(menu);
         new FXMenuCommand(menu, _("Re&name..."), minirenameicon, this, DirPanel::ID_DIR_RENAME);
         new FXMenuCommand(menu, _("Cop&y to..."), minicopyicon, this, DirPanel::ID_DIR_COPYTO);
@@ -3090,6 +3096,14 @@ long DirPanel::onClipboardRequest(FXObject* sender, FXSelector sel, void* ptr)
     {
         return 1;
     }
+    if (clipboard_type == COPYNAME_CLIPBOARD)
+    {
+        if (event->target != utf8Type) return 0;
+        len = clipboard.length();
+        FXMEMDUP(&data, clipboard.text(), FXuchar, len);
+        setDNDData(FROM_CLIPBOARD, event->target, data, len);
+        return 1;
+    }
 
     // Clipboard target is xfelistType (Xfe, Gnome or XFCE)
     if (event->target == xfelistType)
@@ -3281,7 +3295,7 @@ long DirPanel::onCmdCopyCut(FXObject*, FXSelector sel, void*)
 }
 
 
-// Copy directory name (without path) to clipboard
+// Copy the selected directory's full path as text.
 long DirPanel::onCmdCopyName(FXObject*, FXSelector sel, void*)
 {
     // Clear clipboard and set clipboard type
@@ -3291,15 +3305,11 @@ long DirPanel::onCmdCopyName(FXObject*, FXSelector sel, void*)
     // Current item
     DirItem* item = (DirItem*)dirlist->getCurrentItem();
     FXString pathname = dirlist->getItemPathname((TreeItem*)item);
-    clipboard += FXURL::encode(::xf_filetouri(FXPath::name(pathname)));
+    clipboard = pathname;
 
     // Acquire the clipboard
-    FXDragType types[4];
-    types[0] = xfelistType;
-    types[1] = kdelistType;
-    types[2] = urilistType;
-    types[3] = utf8Type;
-    if (acquireClipboard(types, 4))
+    FXDragType types[] = {utf8Type};
+    if (acquireClipboard(types, 1))
     {
         return 0;
     }
@@ -4774,6 +4784,11 @@ long DirPanel::onCmdMount(FXObject*, FXSelector sel, void*)
         dir = sidebarContext->path;
     }
 
+    if (FXSELID(sel) == ID_MOUNT && mountslist && mountslist->disconnected(dir))
+    {
+        return openDevice(dir);
+    }
+
     if (FXSELID(sel) == ID_UMOUNT && xf_protectedmount(dir))
     {
         MessageBox::warning(this, BOX_OK, _("Unmount"), _("Root and Home cannot be unmounted."));
@@ -4785,7 +4800,7 @@ long DirPanel::onCmdMount(FXObject*, FXSelector sel, void*)
     {
         return FXSELID(sel) == ID_MOUNT ? openDevice(dir) : 1;
     }
-    if (FXSELID(sel) == ID_UMOUNT && !xf_removablemount(dir).empty() && xf_removablemount(dir) == dir)
+    if (FXSELID(sel) == ID_UMOUNT && xf_mountsource(dir).left(5) == "/dev/")
     {
         return unmountRemovable(dir, false);
     }
@@ -5117,7 +5132,8 @@ long DirPanel::onUpdMount(FXObject* sender, FXSelector sel, void*)
         dir = sidebarContext->path;
     }
 
-    if ((fsdevices->find(dir.text()) && !mtdevices->find(dir.text())) || dir.left(5) == "/dev/")
+    if ((fsdevices->find(dir.text()) && !mtdevices->find(dir.text())) || dir.left(5) == "/dev/" ||
+        (mountslist && mountslist->disconnected(dir)))
     {
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
     }
@@ -5144,7 +5160,8 @@ long DirPanel::onUpdUnmount(FXObject* sender, FXSelector sel, void*)
     // GVFS directory
     FXString gvfsdir = "/run/user/" + FXStringVal(FXSystem::user()) + "/gvfs";
 
-    if (!xf_protectedmount(dir) && ((FXPath::directory(dir) == gvfsdir) || mtdevices->find(dir.text())))
+    if (!xf_protectedmount(dir) && !(mountslist && mountslist->disconnected(dir)) &&
+        ((FXPath::directory(dir) == gvfsdir) || mtdevices->find(dir.text())))
     {
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
     }
@@ -5162,6 +5179,11 @@ FXString DirPanel::focusedDevice() const
 {
     SidebarItem* item = static_cast<SidebarItem*>(sidebar->getCurrentItem());
     return sidebar->hasFocus() && item && item->kind == SidebarItem::DEVICE ? item->path : FXString::null;
+}
+
+FXbool DirPanel::disconnectedDevice(const FXString& path) const
+{
+    return mountslist && mountslist->disconnected(path);
 }
 
 void DirPanel::unmountedDevices(std::vector<FXString>& labels, std::vector<FXString>& devices)
@@ -5205,9 +5227,17 @@ static int runDiskCommand(FXWindow* owner, FXuint op, const FXString& title, con
 }
 
 
-// Mount a plugged-in drive and open it in the current panel
+// Mount a plugged-in drive or reconnect a remembered share, then open it.
 FXbool DirPanel::openDevice(const FXString& device)
 {
+    if (disconnectedDevice(device))
+    {
+        FilePanel* panel = static_cast<XFileExplorer*>(mainWindow)->getCurrentPanel();
+        FXString localpath;
+        if (panel->resolveNetworkPath(xf_gvfsmounturi(device), localpath) != 1) return false;
+        mountslist->invalidate();
+        return panel->navigatePane(localpath);
+    }
     FXString mountpoint = xf_mountpointof(device);
     if (mountpoint.empty())
     {
@@ -5249,7 +5279,91 @@ FXbool DirPanel::unmountRemovable(const FXString& location, FXbool eject)
         MessageBox::error(this, BOX_OK, _("Error"), _("Can't find the drive mounted at %s"), location.text());
         return false;
     }
+    if (eject)
+    {
+        FXString ancestry;
+        if (!xf_hotplugdevice(device) ||
+            !xf_hostcommandoutput("timeout -k 1 5 lsblk -s -n -r -p -o NAME,TYPE " +
+                                  xf_quote(device) + " </dev/null", ancestry))
+        {
+            MessageBox::error(this, BOX_OK, _("Error"), _("Can't identify a removable drive for %s"), device.text());
+            return false;
+        }
+        FXString drive;
+        for (FXint line = 0; line < ancestry.contains('\n') + 1; ++line)
+        {
+            FXString record = ancestry.section('\n', line).simplify();
+            if (record.section(' ', 1) == "disk")
+            {
+                if (!drive.empty() && drive != record.section(' ', 0))
+                {
+                    MessageBox::error(this, BOX_OK, _("Error"), _("More than one physical drive backs %s"), device.text());
+                    return false;
+                }
+                drive = record.section(' ', 0);
+            }
+        }
+        FXString members;
+        if (drive.left(5) != "/dev/" ||
+            !xf_hostcommandoutput("timeout -k 1 5 lsblk -n -r -p -o NAME " + xf_quote(drive) + " </dev/null", members))
+        {
+            MessageBox::error(this, BOX_OK, _("Error"), _("Can't list the filesystems on %s"), device.text());
+            return false;
+        }
+        std::set<FXString> nodes;
+        for (FXint line = 0; line < members.contains('\n') + 1; ++line)
+        {
+            FXString node = members.section('\n', line).trim();
+            if (node.left(5) == "/dev/") nodes.insert(node);
+        }
+        if (nodes.find(xf_realpath(device)) == nodes.end())
+        {
+            MessageBox::error(this, BOX_OK, _("Error"), _("The drive inventory changed; try again."));
+            return false;
+        }
+        std::vector<FXString> mountpoints;
+        FILE* table = setmntent(MTAB_PATH, "r");
+        if (!table)
+        {
+            MessageBox::error(this, BOX_OK, _("Error"), _("Can't read the mount table: %s"), strerror(errno));
+            return false;
+        }
+        struct mntent* entry;
+        while ((entry = getmntent(table)))
+        {
+            if (nodes.find(xf_realpath(entry->mnt_fsname)) != nodes.end()) mountpoints.push_back(entry->mnt_dir);
+        }
+        endmntent(table);
+        for (const FXString& path : mountpoints)
+        {
+            if (xf_protectedmount(path))
+            {
+                MessageBox::error(this, BOX_OK, _("Error"), _("Root and Home cannot be unmounted."));
+                return false;
+            }
+        }
+        // Nested mounts must be released before their parents.
+        std::sort(mountpoints.begin(), mountpoints.end(),
+                  [](const FXString& a, const FXString& b) { return a.length() > b.length(); });
+        for (const FXString& path : mountpoints)
+        {
+            if (!unmountRemovable(path, false)) return false;
+        }
+        FXString output;
+        int status = runDiskCommand(this, UNMOUNT, _("Eject drive..."), drive,
+                                    "power-off -b " + xf_quote(drive), output);
+        if (mountslist) mountslist->invalidate();
+        if (status != 0)
+        {
+            if (output.empty()) output.format(_("Command failed (exit status %d)."), status);
+            MessageBox::error(this, BOX_OK, _("Error"),
+                              _("%s could not be powered off:\n\n%s"), drive.text(), output.text());
+            return false;
+        }
+        return true;
+    }
     FXString output;
+    UnmountTabGuard tabs(mainWindow, mountpoint);
     if (!mountpoint.empty())
     {
         // Swordfish's own tabs and working folder would keep the drive busy
@@ -5273,49 +5387,32 @@ FXbool DirPanel::unmountRemovable(const FXString& location, FXbool eject)
             status = runDiskCommand(this, UNMOUNT, _("Unmount file system..."), mountpoint,
                                     "unmount -b " + xf_quote(device), output);
         }
-        if (status != 0 && !xf_mountpointof(device).empty())
+        if (status != 0 || !xf_mountpointof(device).empty())
         {
             if (output.find("DeviceBusy") >= 0 || output.find("target is busy") >= 0)
             {
-                MessageBox::error(this, BOX_OK, _("Error"),
-                                  _("%s is still in use by another program,\n"
-                                    "for example a terminal or another file manager window.\n"
-                                    "Close it and try again.\n\n%s"), mountpoint.text(), output.text());
+                FXString message = xf_devicebusy(mountpoint) + "\n\n" + output;
+                MessageBox::error(this, BOX_OK, _("Error"), "%s", message.text());
             }
             else
             {
                 if (output.empty())
                 {
-                    output.format(_("Command failed (exit status %d)."), status);
+                    if (status == 0) output = _("The device is still mounted.");
+                    else output.format(_("Command failed (exit status %d)."), status);
                 }
                 MessageBox::error(this, BOX_OK, _("Error"), _("Can't unmount %s:\n\n%s"), mountpoint.text(),
                                   output.text());
             }
-            if (mountslist)
-        {
-            mountslist->invalidate();
-        }
+            if (mountslist) mountslist->invalidate();
             return false;
-        }
-    }
-    if (eject)
-    {
-        int status = runDiskCommand(this, UNMOUNT, _("Eject drive..."), device, "power-off -b " + xf_quote(device),
-                                    output);
-        if (status != 0)
-        {
-            if (output.empty())
-            {
-                output.format(_("Command failed (exit status %d)."), status);
-            }
-            MessageBox::error(this, BOX_OK, _("Error"),
-                              _("%s was unmounted but could not be powered off:\n\n%s"), device.text(), output.text());
         }
     }
     if (mountslist)
     {
         mountslist->invalidate();
     }
+    tabs.commit();
     return true;
 }
 
@@ -5326,6 +5423,19 @@ long DirPanel::onCmdEject(FXObject*, FXSelector, void*)
     FXString path = sidebarContext && sidebarContext->kind == SidebarItem::DEVICE ?
                     sidebarContext->path : focusedDevice();
     if (path.empty()) path = dirlist->getItemPathname(static_cast<TreeItem*>(dirlist->getCurrentItem()));
+    if (!xf_gvfsmounturi(path).empty() && FXPath::name(path).before(':') != "mtp")
+    {
+        if (!mountslist->disconnected(path))
+        {
+            File operation(this, _("Unmount file system..."), UNMOUNT);
+            operation.create();
+            if (operation.mount(path, _("Please wait..."), "") != 1) return 0;
+        }
+        // Forget only the sidebar connection, never credentials in the desktop keyring.
+        sidebarContext = NULL;
+        mountslist->forgetRemote(path);
+        return 1;
+    }
     FXString device = path.left(5) == "/dev/" ? path : xf_mountsource(path);
     if (!xf_hotplugdevice(device))
     {
@@ -5344,7 +5454,11 @@ long DirPanel::onUpdEject(FXObject* sender, FXSelector, void*)
     if (path.empty()) path = dirlist->getItemPathname(static_cast<TreeItem*>(dirlist->getCurrentItem()));
     if (!xf_protectedmount(path))
     {
-        if (path.left(5) == "/dev/")
+        if (!xf_gvfsmounturi(path).empty() && FXPath::name(path).before(':') != "mtp")
+        {
+            enable = true;
+        }
+        else if (path.left(5) == "/dev/")
         {
             enable = xf_hotplugdevice(path);
         }

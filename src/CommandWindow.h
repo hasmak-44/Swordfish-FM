@@ -16,6 +16,9 @@ protected:
     FXString command;                                   // Command string
     FXbool killed = false;                              // True if the cancel button was pressed
     FXbool closed = false;                              // True if the closed button was pressed
+    FXbool quietSuccess = false;
+    FXbool childFinished = false;
+    int childStatus = 0;
 
 private:
     CommandWindow()
@@ -40,7 +43,9 @@ public:
 
     virtual ~CommandWindow();
     int execCmd(FXString);
-    CommandWindow(FXWindow* owner, const FXString& name, FXString strcmd, int nblines, int nbcols);
+    static FXbool harvest(int child, int status);
+    CommandWindow(FXWindow* owner, const FXString& name, FXString strcmd, int nblines, int nbcols,
+                  FXbool quiet = false);
     CommandWindow(FXApp* a, const FXString& name, FXString strcmd, int nblines, int nbcols);
     long onCmdClose(FXObject*, FXSelector, void*);
     void setText(const char*);

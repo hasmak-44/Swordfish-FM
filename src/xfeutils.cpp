@@ -34,6 +34,63 @@
 
 
 // Get available space on the file system where the file is located
+FXString xf_devicebusy(const FXString& mountpoint)
+{
+    FXString users;
+#if defined(linux)
+    auto usesMount = [&](const FXString& link)
+    {
+        char buffer[MAXPATHLEN];
+        ssize_t size = readlink(link.text(), buffer, sizeof(buffer) - 1);
+        if (size < 0) return false;
+        FXString path(buffer, size);
+        return path == mountpoint || path.left(mountpoint.length() + 1) == mountpoint + "/";
+    };
+    FXDir processes;
+    if (processes.open("/proc"))
+    {
+        while (processes.next())
+        {
+            FXString pid = processes.name();
+            if (pid.empty() || strspn(pid.text(), "0123456789") != static_cast<size_t>(pid.length()) ||
+                pid == FXStringVal(getpid())) continue;
+            FXString base = "/proc/" + pid;
+            FXbool inUse = usesMount(base + "/cwd") || usesMount(base + "/exe");
+            FXDir descriptors;
+            if (!inUse && descriptors.open(base + "/fd"))
+            {
+                while (descriptors.next())
+                {
+                    if (usesMount(base + "/fd/" + descriptors.name())) { inUse = true; break; }
+                }
+                descriptors.close();
+            }
+            if (!inUse) continue;
+            char name[256] = {0};
+            FILE* comm = fopen((base + "/comm").text(), "r");
+            if (comm)
+            {
+                if (!fgets(name, sizeof(name), comm)) name[0] = '\0';
+                fclose(comm);
+            }
+            FXString label(name);
+            label.trim();
+            if (label.empty()) label = _("Unknown application");
+            users += "\n  " + label + " (PID " + pid + ")";
+        }
+        processes.close();
+    }
+#endif
+    FXString message;
+    if (users.empty())
+        message = _("Device is currently in use. Swordfish could not identify the application.");
+    else
+        message = _("Device is currently in use by:") + users;
+    message += "\n\n";
+    message += _("Please close all applications using the device and try again.");
+    return mountpoint + "\n\n" + message;
+}
+
 FXlong xf_getavailablespace(const FXString& filepath)
 {
     struct statvfs stat;
@@ -1477,7 +1534,7 @@ FXDragType xf_xdsdragtype(FXApp* app)
 
 
 // Percent-encode a local path for a file:// URI
-static FXString xf_encodeuripath(const FXString& path)
+FXString xf_encodeuripath(const FXString& path)
 {
     static const char hex[] = "0123456789ABCDEF";
     FXString uri;

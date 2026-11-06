@@ -29,6 +29,7 @@
 #include "Places.h"
 #include "Properties.h"
 #include "XFileExplorer.h"
+#include "CustomActionsUI.h"
 #include "InputDialog.h"
 #include "BrowseInputDialog.h"
 #include "ArchInputDialog.h"
@@ -107,6 +108,10 @@ FXDEFMAP(FilePanel) FilePanelMap[] =
     FXMAPFUNC(SEL_RIGHTBUTTONRELEASE, FilePanel::ID_ENTER_PATH, FilePanel::onPathPopup),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_PATH_PASTE_GO, FilePanel::onCmdPathPasteGo),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_NEW_TAB, FilePanel::onCmdTabs),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_OPEN_NEW_TAB, FilePanel::onCmdOpenNewTab),
+    FXMAPFUNC(SEL_UPDATE, FilePanel::ID_OPEN_NEW_TAB, FilePanel::onUpdOpenNewTab),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_LINK_OTHER_PANE, FilePanel::onCmdOtherPane),
+    FXMAPFUNC(SEL_UPDATE, FilePanel::ID_LINK_OTHER_PANE, FilePanel::onUpdOtherPane),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_REMOVE_ALL_TABS, FilePanel::onCmdTabs),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_CLOSE_TAB, FilePanel::onCmdTabs),
     FXMAPFUNC(SEL_CLIPBOARD_LOST, 0, FilePanel::onClipboardLost),
@@ -133,6 +138,8 @@ FXDEFMAP(FilePanel) FilePanelMap[] =
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_FILE_COPYTO, FilePanel::onCmdFileMan),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_FILE_MOVETO, FilePanel::onCmdFileMan),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_FILE_RENAME, FilePanel::onCmdFileMan),
+    FXMAPFUNCS(SEL_COMMAND, FilePanel::ID_CONTEXT_RENAME, FilePanel::ID_CONTEXT_BULK_RENAME, FilePanel::onCmdContextRename),
+    FXMAPFUNCS(SEL_UPDATE, FilePanel::ID_CONTEXT_RENAME, FilePanel::ID_CONTEXT_BULK_RENAME, FilePanel::onUpdContextRename),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_FILE_SYMLINK, FilePanel::onCmdFileMan),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_COPY_CLIPBOARD, FilePanel::onCmdCopyCut),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_COPYNAME_CLIPBOARD, FilePanel::onCmdCopyName),
@@ -1218,6 +1225,14 @@ long FilePanel::onClipboardRequest(FXObject* sender, FXSelector sel, void* ptr)
     {
         return 1;
     }
+    if (clipboard_type == COPYNAME_CLIPBOARD)
+    {
+        if (event->target != utf8Type) return 0;
+        len = clipboard.length();
+        FXMEMDUP(&data, clipboard.text(), FXuchar, len);
+        setDNDData(FROM_CLIPBOARD, event->target, data, len);
+        return 1;
+    }
 
     // Clipboard target is xfelistType (Xfe, Gnome or XFCE)
     if (event->target == xfelistType)
@@ -1445,7 +1460,7 @@ long FilePanel::onCmdCopyCut(FXObject*, FXSelector sel, void*)
 }
 
 
-// Copy file names (without path) to clipboard
+// Copy full paths as text, not file-transfer clipboard data.
 long FilePanel::onCmdCopyName(FXObject*, FXSelector sel, void*)
 {
     // Clear clipboard and set clipboard type
@@ -1473,23 +1488,18 @@ long FilePanel::onCmdCopyName(FXObject*, FXSelector sel, void*)
         {
             if (current->list->isItemSelected(u))
             {
-                FXString name = current->list->getItemText(u).text();
-                name = name.section('\t', 0);
-                clipboard += FXURL::encode(::xf_filetouri(name)) + "\n";
+                clipboard += current->list->getItemPathname(u) + "\n";
             }
         }
     }
 
     // Remove the last \n of the list
+    if (clipboard.empty()) return 0;
     clipboard.erase(clipboard.length() - 1);
 
     // Acquire the clipboard
-    FXDragType types[4];
-    types[0] = xfelistType;
-    types[1] = kdelistType;
-    types[2] = urilistType;
-    types[3] = utf8Type;
-    if (acquireClipboard(types, 4))
+    FXDragType types[] = {utf8Type};
+    if (acquireClipboard(types, 1))
     {
         return 0;
     }
@@ -2399,6 +2409,42 @@ long FilePanel::onCmdDirectoryUp(FXObject* sender, FXSelector sel, void* ptr)
 
 
 // Go to home directory
+long FilePanel::onUpdOpenNewTab(FXObject* sender, FXSelector, void*)
+{
+    const FXint index = current->list->getCurrentItem();
+    const FXbool enabled = index >= 0 && current->list->getNumSelectedItems() == 1 &&
+                          current->list->isItemSelected(index) && current->list->isItemDirectory(index) &&
+                          current->list->getItemFilename(index) != ".." &&
+                          current->tabbuttons->getNumActiveTabs() < NMAX_TABS;
+    sender->handle(this, FXSEL(SEL_COMMAND, enabled ? ID_ENABLE : ID_DISABLE), NULL);
+    return 1;
+}
+
+long FilePanel::onCmdOpenNewTab(FXObject*, FXSelector, void*)
+{
+    const FXint index = current->list->getCurrentItem();
+    if (index < 0 || current->list->getNumSelectedItems() != 1 ||
+        !current->list->isItemSelected(index) || !current->list->isItemDirectory(index) ||
+        current->list->getItemFilename(index) == ".." ||
+        current->tabbuttons->getNumActiveTabs() >= NMAX_TABS)
+        return 0;
+    current->tabbuttons->addTab(current->list->getItemPathname(index));
+    return 1;
+}
+
+long FilePanel::onUpdOtherPane(FXObject* sender, FXSelector, void*)
+{
+    const FXbool enabled = current->next->shown() && current->list->getNumSelectedItems() > 0;
+    sender->handle(this, FXSEL(SEL_COMMAND, enabled ? ID_ENABLE : ID_DISABLE), NULL);
+    return 1;
+}
+
+long FilePanel::onCmdOtherPane(FXObject* sender, FXSelector sel, void* ptr)
+{
+    if (!current->next->shown() || current->list->getNumSelectedItems() == 0) return 0;
+    return onCmdFileMan(sender, sel, ptr);
+}
+
 long FilePanel::onCmdTabs(FXObject* sender, FXSelector sel, void* ptr)
 {
     TabButtons* tabs = current->getTabButtons();
@@ -2731,6 +2777,24 @@ long FilePanel::onCmdStopListRefreshTimer(FXObject*, FXSelector, void*)
 }
 
 
+long FilePanel::onCmdContextRename(FXObject* sender, FXSelector sel, void* ptr)
+{
+    const int count = current->list->getNumSelectedItems();
+    if ((FXSELID(sel) == ID_CONTEXT_RENAME) ? count == 1 : count > 1)
+    {
+        return onCmdFileMan(sender, FXSEL(SEL_COMMAND, ID_FILE_RENAME), ptr);
+    }
+    return 1;
+}
+
+long FilePanel::onUpdContextRename(FXObject* sender, FXSelector sel, void*)
+{
+    const int count = current->list->getNumSelectedItems();
+    const FXbool enabled = (FXSELID(sel) == ID_CONTEXT_RENAME) ? count == 1 : count > 1;
+    sender->handle(this, FXSEL(SEL_COMMAND, enabled ? ID_ENABLE : ID_DISABLE), NULL);
+    return 1;
+}
+
 // Copy/Move/Rename/Symlink file(s)
 long FilePanel::onCmdFileMan(FXObject* sender, FXSelector sel, void* ptr)
 {
@@ -2952,7 +3016,7 @@ long FilePanel::onCmdFileMan(FXObject* sender, FXSelector sel, void* ptr)
             message.format(_("Move %s items from: %s"), FXStringVal(num).text(), dir.text());
         }
     }
-    if (FXSELID(sel) == ID_FILE_SYMLINK)
+    if (FXSELID(sel) == ID_FILE_SYMLINK || FXSELID(sel) == ID_LINK_OTHER_PANE)
     {
         command = "symlink";
         title = _("Symlink");
@@ -5954,8 +6018,28 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         getApp()->runModalWhileShown(&menu);
         return 1;
     }
+    // Activating an inactive pane can refresh its list through directory-tree synchronization.
+    // Keep an existing multi-selection intact for the context menu.
+    std::set<FXString> popupSelection;
+    FXString popupDirectory = list->getDirectory();
+    if (list->getNumSelectedItems() > 1)
+    {
+        for (int i = 0; i < list->getNumItems(); ++i)
+        {
+            if (list->isItemSelected(i)) { popupSelection.insert(list->getItemPathname(i)); }
+        }
+    }
+
     // Make panel active
     setActive();
+    if (!popupSelection.empty() && list->getDirectory() == popupDirectory)
+    {
+        list->killSelection();
+        for (int i = 0; i < list->getNumItems(); ++i)
+        {
+            if (popupSelection.count(list->getItemPathname(i))) { list->selectItem(i); }
+        }
+    }
 
     // Check if control key or Shift-F10 or menu was pressed
     if (ptr != NULL)
@@ -6141,6 +6225,11 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         }
 #endif
 
+        if (num == 1 && current->list->isItemDirectory(itm))
+        {
+            new FXMenuCommand(menu, _("Open in New &Tab"), minifolderopenicon, current,
+                              FilePanel::ID_OPEN_NEW_TAB);
+        }
         FXbool ar = false;
         if (current->list->getItem(itm) && current->list->isItemFile(itm))
         {
@@ -6208,7 +6297,7 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
 #endif
 #if defined(linux)
             // Open the archive as a folder, or close it if it is already open
-            if (ar && (num == 1) && archiveMountable(name) && !archiveFindProgram("archivemount").empty())
+            if ((num == 1) && archiveMountable(name))
             {
                 if (archiveMountedAt(current->list->getItemPathname(itm)).empty())
                 {
@@ -6266,25 +6355,30 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuCommand(menu, _("&Copy"), minicopyicon, current, FilePanel::ID_COPY_CLIPBOARD);
         new FXMenuCommand(menu, _("C&ut"), minicuticon, current, FilePanel::ID_CUT_CLIPBOARD);
         new FXMenuCommand(menu, _("&Paste"), minipasteicon, current, FilePanel::ID_PASTE_CLIPBOARD);
-        if (num == 1)
-        {
-            new FXMenuCommand(menu, _("Cop&y Name"), minicopyicon, current, FilePanel::ID_COPYNAME_CLIPBOARD);
-        }
-        else
-        {
-            new FXMenuCommand(menu, _("Cop&y Names"), minicopyicon, current, FilePanel::ID_COPYNAME_CLIPBOARD);
-        }
+        new FXMenuCommand(menu, _("Copy &Path"), minicopyicon, current, FilePanel::ID_COPYNAME_CLIPBOARD);
+        new FXMenuCommand(menu, _("Re&name"), minirenameicon, current, FilePanel::ID_CONTEXT_RENAME);
+        new FXMenuCommand(menu, _("&Bulk Rename..."), minirenameicon, current, FilePanel::ID_CONTEXT_BULK_RENAME);
         new FXMenuSeparator(menu);
-        new FXMenuCommand(menu, _("Re&name..."), minirenameicon, current, FilePanel::ID_FILE_RENAME);
         new FXMenuCommand(menu, _("Copy &to..."), minicopyicon, current, FilePanel::ID_FILE_COPYTO);
         new FXMenuCommand(menu, _("&Move to..."), minimoveicon, current, FilePanel::ID_FILE_MOVETO);
-        new FXMenuCommand(menu, _("Symlin&k to..."), minilinktoicon, current, FilePanel::ID_FILE_SYMLINK);
+        new FXMenuCommand(menu, _("Link to..."), minilinktoicon, current, FilePanel::ID_FILE_SYMLINK);
+        FXMenuCommand* copyOther = new FXMenuCommand(menu, _("Copy to Other Pane..."), minicopyicon, current, ID_FILE_COPY);
+        FXMenuCommand* moveOther = new FXMenuCommand(menu, _("Move to Other Pane..."), minimoveicon, current, ID_FILE_CUT);
+        if (!current->next->shown()) { copyOther->disable(); moveOther->disable(); }
+        new FXMenuCommand(menu, _("Link in Other Pane..."), minilinktoicon, current, ID_LINK_OTHER_PANE);
+        new FXMenuSeparator(menu);
         new FXMenuCommand(menu, _("M&ove to Trash"), minideleteicon, current, FilePanel::ID_FILE_TRASH);
         new FXMenuCommand(menu, _("Restore &From Trash"), minirestoreicon, current, FilePanel::ID_FILE_RESTORE);
         new FXMenuCommand(menu, _("&Delete"), minideletepermicon, current, FilePanel::ID_FILE_DELETE);
         new FXMenuSeparator(menu);
         new FXMenuCommand(menu, _("Compare &Sizes"), minicharticon, current, FilePanel::ID_DIR_USAGE);
         new FXMenuCommand(menu, _("P&roperties"), miniattribicon, current, FilePanel::ID_PROPERTIES);
+    }
+    CustomActionMenu* customMenu = NULL;
+    XFileExplorer* explorer = dynamic_cast<XFileExplorer*>(mainWindow);
+    if (explorer && explorer->getCustomActions())
+    {
+        customMenu = explorer->getCustomActions()->appendContextMenu(menu, this);
     }
     menu->create();
 
@@ -6294,6 +6388,8 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
 
     menu->popup(NULL, x, y);
     getApp()->runModalWhileShown(menu);
+    delete menu;
+    delete customMenu;
 
     return 1;
 }
@@ -7420,6 +7516,10 @@ long FilePanel::onCmdMount(FXObject*, FXSelector sel, void*)
     // Do not follow a selected symlink into an unrelated mount.
 
 #if defined(linux)
+    if (dirpanel && dirpanel->disconnectedDevice(dir))
+    {
+        return FXSELID(sel) == ID_MOUNT ? dirpanel->openDevice(dir) : 1;
+    }
     if (dir.left(5) == "/dev/" && FXSELID(sel) == ID_MOUNT)
     {
         return dirpanel->openDevice(dir);
@@ -7542,7 +7642,29 @@ long FilePanel::onCmdArchiveOpen(FXObject*, FXSelector, void*)
     FXString program = archiveFindProgram("archivemount");
     if (program.empty())
     {
-        MessageBox::error(this, BOX_OK, _("Error"), _("The archivemount program is not installed"));
+        FXuint answer = MessageBox::question(this, BOX_YES_NO, _("Archive folder support"),
+            _("Opening an archive as a folder requires archivemount, which was not found on your system.\n\n"
+              "Install archivemount using your distribution's software manager, then try again.\n"
+              "Working FUSE support is also required. You can still extract the archive without archivemount.\n\n"
+              "Open the archivemount installation page in your browser?\n"
+              "Swordfish will not download packages or install software."));
+        if (answer != BOX_CLICKED_YES) return 0;
+        const char* url = "https://github.com/cybernoid/archivemount#installation";
+        FXString opener = archiveFindProgram("xdg-open");
+        if (opener.empty())
+        {
+            MessageBox::error(this, BOX_OK, _("Error"),
+                              _("The browser launcher xdg-open was not found.\nOpen this address manually:\n%s"), url);
+            return 0;
+        }
+        FXString command = xf_hostcommand(xf_quote(opener) + " " + xf_quote(url));
+#ifdef STARTUP_NOTIFICATION
+        int result = runcmd(command, "xdg-open", ROOTDIR, startlocation, false, "");
+#else
+        int result = runcmd(command, ROOTDIR, startlocation);
+#endif
+        if (result < 0)
+            MessageBox::error(this, BOX_OK, _("Error"), _("Unable to launch the browser for %s"), url);
         return 0;
     }
 
@@ -7729,7 +7851,8 @@ long FilePanel::onUpdMount(FXObject* sender, FXSelector sel, void*)
     FXString dir = mountTarget();
 
     FXbool enable = !dir.empty() && !xf_protectedmount(dir) &&
-                    ((fsdevices->find(dir.text()) && !mtdevices->find(dir.text())) || dir.left(5) == "/dev/");
+                    ((fsdevices->find(dir.text()) && !mtdevices->find(dir.text())) || dir.left(5) == "/dev/" ||
+                     (dirpanel && dirpanel->disconnectedDevice(dir)));
     if (enable)
     {
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
@@ -7749,6 +7872,7 @@ long FilePanel::onUpdUnmount(FXObject* sender, FXSelector sel, void*)
     FXString dir = mountTarget();
 
     FXbool enable = !dir.empty() && !xf_protectedmount(dir) &&
+                    !(dirpanel && dirpanel->disconnectedDevice(dir)) &&
                     (mtdevices->find(dir.text()) || xf_gvfsmount(dir) == dir);
     if (enable)
     {

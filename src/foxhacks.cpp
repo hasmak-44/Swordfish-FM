@@ -4,6 +4,7 @@
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
 #include <stdlib.h>
+#include <vector>
 
 #ifdef HAVE_XFT_H
 #include <X11/Xft/Xft.h>
@@ -2630,11 +2631,49 @@ long FXButton::onHotKeyPress(FXObject*, FXSelector, void* ptr)
 // Hack of FXTopWindow
 //
 
+static void setNetWmIcon(FXTopWindow* window, FXIcon* icon)
+{
+    if (!window || !icon || !icon->getData())
+    {
+        fprintf(stderr, "Cannot set _NET_WM_ICON: window icon is unavailable\n");
+        return;
+    }
+
+    const FXint width = icon->getWidth();
+    const FXint height = icon->getHeight();
+    const FXColor* pixels = icon->getData();
+    const size_t pixel_count = static_cast<size_t>(width) * height;
+    std::vector<unsigned long> property(2 + pixel_count);
+    property[0] = width;
+    property[1] = height;
+
+    for (size_t i = 0; i < pixel_count; ++i)
+    {
+        property[i + 2] = (static_cast<unsigned long>(FXALPHAVAL(pixels[i])) << 24) |
+                          (static_cast<unsigned long>(FXREDVAL(pixels[i])) << 16) |
+                          (static_cast<unsigned long>(FXGREENVAL(pixels[i])) << 8) |
+                          FXBLUEVAL(pixels[i]);
+    }
+
+    Display* display = static_cast<Display*>(window->getApp()->getDisplay());
+    XChangeProperty(display, static_cast<Window>(window->id()), XInternAtom(display, "_NET_WM_ICON", False),
+                    XA_CARDINAL, 32, PropModeReplace, reinterpret_cast<const unsigned char*>(property.data()),
+                    static_cast<int>(property.size()));
+    XFlush(display);
+}
+
 // Hack for placement
 
 // Position the window based on placement
 void FXTopWindow::place(FXuint placement)
 {
+    if (id() && xfedockicon)
+    {
+        setIcon(xfedockicon);
+        setMiniIcon(minixfeicon);
+        setNetWmIcon(this, xfedockicon);
+    }
+
     int rx, ry, rw, rh, ox, oy, ow, oh, wx, wy, ww, wh, x, y;
     FXuint state;
     FXWindow* over;

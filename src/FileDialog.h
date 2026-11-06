@@ -121,6 +121,8 @@ public:
     // Remember the current folder in the Recent sidebar section
     void rememberRecentDirectory();
 
+    FXComposite* getSidebarFrame() const { return sideframe; }
+
     // Constructor
     FileSelector(FXComposite* p, FXObject* tgt = NULL, FXSelector sel = 0,
                  FXuint opts = 0, int x = 0, int y = 0, int w = 0, int h = 0);

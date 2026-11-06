@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <map>
 
 #include <fx.h>
 #include <fxkeys.h>
@@ -31,6 +32,16 @@
 // Main window
 extern FXMainWindow* mainWindow;
 
+static std::map<int, CommandWindow*> commandChildren;
+
+FXbool CommandWindow::harvest(int child, int status)
+{
+    auto found = commandChildren.find(child);
+    if (found == commandChildren.end()) return false;
+    found->second->childFinished = true;
+    found->second->childStatus = status;
+    return true;
+}
 
 // Map
 FXDEFMAP(CommandWindow) CommandWindowMap[] =
@@ -49,11 +60,13 @@ FXIMPLEMENT(CommandWindow, DialogBox, CommandWindowMap, ARRAYNUMBER(CommandWindo
 
 
 // Construct window which will always float over the owner window
-CommandWindow::CommandWindow(FXWindow* owner, const FXString& name, FXString strcmd, int nblines, int nbcols) :
+CommandWindow::CommandWindow(FXWindow* owner, const FXString& name, FXString strcmd, int nblines, int nbcols,
+                             FXbool quiet) :
     DialogBox(owner, name,
               DECOR_TITLE | DECOR_MINIMIZE | DECOR_MAXIMIZE | DECOR_CLOSE | DECOR_BORDER | DECOR_STRETCHABLE,
               0, 0, 0, 0, 6, 6, 6, 6, 4, 4)
 {
+    quietSuccess = quiet;
     // Get command to execute
     command = strcmd;
 
@@ -133,10 +146,16 @@ void CommandWindow::create()
     }
 
     DialogBox::create();
-    show(PLACEMENT_OWNER);
+    if (!quietSuccess) show(PLACEMENT_OWNER);
 
     // Execute command
-    execCmd(command.text());
+    if (execCmd(command.text()) < 0)
+    {
+        FXString error;
+        error.format(_("\nUnable to start command: %s\n"), strerror(errno));
+        appendText(error.text());
+        show(PLACEMENT_OWNER);
+    }
 }
 
 
@@ -219,6 +238,10 @@ int CommandWindow::execCmd(FXString command)
     pid = fork();
     if (pid == -1)
     {
+        int error = errno;
+        ::close(pipes[0]);
+        ::close(pipes[1]);
+        errno = error;
         fprintf(stderr, _("Error: Fork failed: %s\n"), strerror(errno));
         return -1;
     }
@@ -231,18 +254,11 @@ int CommandWindow::execCmd(FXString command)
 
         if ((ret1 < 0) || (ret2 < 0) || (ret3 < 0))
         {
-            int errcode = errno;
-            if (errcode)
-            {
-                MessageBox::error(this, BOX_OK, _("Error"), _("Can't duplicate pipes: %s"), strerror(errcode));
-            }
-            else
-            {
-                MessageBox::error(this, BOX_OK, _("Error"), _("Can't duplicate pipes"));
-            }
-
-            return -1;
+            dprintf(STDERR_FILENO, _("Can't duplicate pipes: %s\n"), strerror(errno));
+            _exit(EXIT_FAILURE);
         }
+        ::close(pipes[0]);
+        ::close(pipes[1]);
 
         args[0] = (char*)"sh";                  // Setup arguments
         args[1] = (char*)"-vc";                 // to run command (option -v to display the command to execute)
@@ -253,10 +269,14 @@ int CommandWindow::execCmd(FXString command)
         xf_restorehostenv();
 
         execvp(args[0], args);                  // Start a new process which will execute the command.
+        dprintf(STDERR_FILENO, _("Unable to execute shell: %s\n"), strerror(errno));
         _exit(EXIT_FAILURE);                    // We'll get here only if an error occurred.
     }
     else // Parent
     {
+        ::close(pipes[1]);
+        pipes[1] = -1;
+        commandChildren[pid] = this;
         // Make sure we get called so we can check when child has finished
         getApp()->addChore(this, ID_WATCHPROCESS);
     }
@@ -269,6 +289,24 @@ long CommandWindow::onWatchProcess(FXObject*, FXSelector, void*)
 {
     char buf[32768];
     int nread;
+    if (!childFinished)
+    {
+        int status;
+        int result = waitpid(pid, &status, WNOHANG);
+        if (result == pid)
+        {
+            childFinished = true;
+            childStatus = status;
+        }
+        else if (result < 0 && errno != EINTR)
+        {
+            childFinished = true;
+            childStatus = EXIT_FAILURE << 8;
+            FXString error;
+            error.format(_("\nUnable to obtain command status: %s\n"), strerror(errno));
+            appendText(error.text());
+        }
+    }
 
     if (closed)
     {
@@ -282,7 +320,7 @@ long CommandWindow::onWatchProcess(FXObject*, FXSelector, void*)
         // Object deletes itself!
         delete this;
     }
-    else if ((waitpid(pid, NULL, WNOHANG) == 0))
+    else if (!childFinished)
     {
         // Child is still running, just wait
         getApp()->addChore(this, ID_WATCHPROCESS);
@@ -349,6 +387,17 @@ long CommandWindow::onWatchProcess(FXObject*, FXSelector, void*)
         // Close pipes
         ::close(pipes[0]);
         ::close(pipes[1]);
+        pipes[0] = pipes[1] = -1;
+        commandChildren.erase(pid);
+        if (quietSuccess)
+        {
+            if (!killed && WIFEXITED(childStatus) && WEXITSTATUS(childStatus) == 0)
+            {
+                delete this;
+                return 1;
+            }
+            show(PLACEMENT_OWNER);
+        }
     }
 
 
@@ -411,6 +460,7 @@ int CommandWindow::getLength(void)
 CommandWindow::~CommandWindow()
 {
     getApp()->removeChore(this, ID_WATCHPROCESS);
+    commandChildren.erase(pid);
 
     text = (FXText*)-1;
 }

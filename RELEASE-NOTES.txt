@@ -1,3 +1,28 @@
+Swordfish Portable 0.0.3 beta 1 — 6 November 2026
+================================================
+Latest release, explicitly beta; stable 0.0.2 remains available unchanged.
+Extract into a new folder and launch AppRun. Back up existing portable-data
+before transferring settings. Release archives contain no test settings.
+
+- Custom Actions creation, editing, duplication, nested folders, conditions,
+  safe file placeholders, command checks, confirmation and terminal execution.
+- Easy access through the Custom Actions menu, file/background context menus,
+  Tools, Preferences and a separate custom toolbar with a Settings edit button.
+- Maximizable categorized system-icon grid, with search. Image Files opens
+  the normal file chooser with a live preview below the left sidebar; accepting
+  returns directly to action properties, without another preview window.
+- Original built-in toolbar order, icons and zoom restored. Experimental toolbar
+  customization, presentation menus, size/display preferences and overflow
+  controls are removed; stale overrides are ignored, saved actions preserved.
+- Illustrated offline User Manual, first-run welcome and optional desktop/menu
+  shortcuts and command link. No automatic system-wide installation.
+- Independent per-pane column visibility/order and per-tab widths.
+- Device/unmount safeguards, host-safe search and clearer archive-tool guidance.
+
+Validated with local model/GUI tests, Debian 10/glibc 2.28 portable builds and
+portable startup/persistence checks. The user accepted Test 8 before release.
+See CHANGELOG.md, PROJECT-HISTORY.md and Help > User Manual for details.
+
 Swordfish Portable 0.0.1 RC4
 ==========================
 - Temporarily hide the unfinished Network discovery section from the sidebar.

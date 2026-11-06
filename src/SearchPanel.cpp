@@ -91,6 +91,8 @@ FXDEFMAP(SearchPanel) SearchPanelMap[] =
     FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_FILE_COPYTO, SearchPanel::onCmdFileMan),
     FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_FILE_MOVETO, SearchPanel::onCmdFileMan),
     FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_FILE_RENAME, SearchPanel::onCmdFileMan),
+    FXMAPFUNCS(SEL_COMMAND, SearchPanel::ID_CONTEXT_RENAME, SearchPanel::ID_CONTEXT_BULK_RENAME, SearchPanel::onCmdContextRename),
+    FXMAPFUNCS(SEL_UPDATE, SearchPanel::ID_CONTEXT_RENAME, SearchPanel::ID_CONTEXT_BULK_RENAME, SearchPanel::onUpdContextRename),
     FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_FILE_SYMLINK, SearchPanel::onCmdFileMan),
     FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_ADD_TO_ARCH, SearchPanel::onCmdAddToArch),
     FXMAPFUNC(SEL_COMMAND, SearchPanel::ID_EXTRACT, SearchPanel::onCmdExtract),
@@ -261,7 +263,7 @@ SearchPanel::SearchPanel(FXComposite* p, FXuint* ic, FXuint nc, FXuint name_size
 
     // This button is not shown, but necessary to get the shortcut work
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "copy_names", "Ctrl-Shift-N");
-    copynamebtn = new FXButton(toolbar, TAB + _("Cop&y Names") + PARS(key), minicopyicon, this,
+    copynamebtn = new FXButton(toolbar, TAB + _("Copy &Path") + PARS(key), minicopyicon, this,
                                SearchPanel::ID_COPYNAME_CLIPBOARD,
                                BUTTON_TOOLBAR | FRAME_GROOVE | LAYOUT_CENTER_Y | LAYOUT_LEFT | ICON_BEFORE_TEXT);
     hotkey = xf_parseaccel(key);
@@ -2286,9 +2288,10 @@ long SearchPanel::appendItem(FXString& pathname)
 #endif
 
         FXString str;
-        for (FXuint i = 0; i < nbCols; i++)
+        const std::vector<FXuint> columns = list->getColumnLayout();
+        for (FXuint i = 0; i < columns.size(); i++)
         {
-            switch (idCol[i])
+            switch (columns[i])
             {
             case FileList::ID_COL_NAME:
                 str += filename + "\t";
@@ -2332,7 +2335,7 @@ long SearchPanel::appendItem(FXString& pathname)
             }
         }
 
-        for (FXuint i = 0; i < NMAX_COLS + 1 - nbCols; i++)
+        for (FXuint i = 0; i < NMAX_COLS + 1 - columns.size(); i++)
         {
             str += "\t";
         }
@@ -2666,23 +2669,18 @@ long SearchPanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuCommand(menu, _("&Go to Parent Folder"), minigotodiricon, this, SearchPanel::ID_GOTO_PARENTDIR);
         new FXMenuCommand(menu, _("&Copy"), minicopyicon, this, SearchPanel::ID_COPY_CLIPBOARD);
         new FXMenuCommand(menu, _("C&ut"), minicuticon, this, SearchPanel::ID_CUT_CLIPBOARD);
+        new FXMenuCommand(menu, _("Copy &Path"), minicopyicon, this, SearchPanel::ID_COPYNAME_CLIPBOARD);
+        new FXMenuCommand(menu, _("Re&name..."), minirenameicon, this, SearchPanel::ID_CONTEXT_RENAME);
+        new FXMenuCommand(menu, _("&Bulk Rename..."), minirenameicon, this, SearchPanel::ID_CONTEXT_BULK_RENAME);
         new FXMenuSeparator(menu);
-        new FXMenuCommand(menu, _("Re&name..."), minirenameicon, this, SearchPanel::ID_FILE_RENAME);
         new FXMenuCommand(menu, _("Copy &to..."), minicopyicon, this, SearchPanel::ID_FILE_COPYTO);
         new FXMenuCommand(menu, _("&Move to..."), minimoveicon, this, SearchPanel::ID_FILE_MOVETO);
-        new FXMenuCommand(menu, _("Symlin&k to..."), minilinktoicon, this, SearchPanel::ID_FILE_SYMLINK);
+        new FXMenuCommand(menu, _("Link to..."), minilinktoicon, this, SearchPanel::ID_FILE_SYMLINK);
+        new FXMenuSeparator(menu);
         new FXMenuCommand(menu, _("M&ove to Trash"), minideleteicon, this, SearchPanel::ID_FILE_TRASH);
         new FXMenuCommand(menu, _("&Delete"), minideletepermicon, this, SearchPanel::ID_FILE_DELETE);
         new FXMenuSeparator(menu);
         new FXMenuCommand(menu, _("Compare &Sizes"), minicharticon, this, SearchPanel::ID_DIR_USAGE);
-        if (num == 1)
-        {
-            new FXMenuCommand(menu, _("Cop&y Name"), minicopyicon, this, SearchPanel::ID_COPYNAME_CLIPBOARD);
-        }
-        else
-        {
-            new FXMenuCommand(menu, _("Cop&y Names"), minicopyicon, this, SearchPanel::ID_COPYNAME_CLIPBOARD);
-        }
         new FXMenuCommand(menu, _("P&roperties"), miniattribicon, this, SearchPanel::ID_PROPERTIES);
     }
     menu->create();
@@ -3545,6 +3543,14 @@ long SearchPanel::onClipboardRequest(FXObject* sender, FXSelector sel, void* ptr
     {
         return 1;
     }
+    if (clipboard_type == COPYNAME_CLIPBOARD)
+    {
+        if (event->target != utf8Type) return 0;
+        len = clipboard.length();
+        FXMEMDUP(&data, clipboard.text(), FXuchar, len);
+        setDNDData(FROM_CLIPBOARD, event->target, data, len);
+        return 1;
+    }
 
     // Clipboard target is xfelistType (Xfe, Gnome or XFCE)
     if (event->target == xfelistType)
@@ -3724,6 +3730,7 @@ long SearchPanel::onCmdCopyCut(FXObject*, FXSelector sel, void*)
     }
 
     // Remove the last \n of the list, for compatibility with some file managers (e.g. nautilus 2.30.1)
+    if (clipboard.empty()) return 0;
     clipboard.erase(clipboard.length() - 1);
 
     // Acquire the clipboard
@@ -3742,7 +3749,7 @@ long SearchPanel::onCmdCopyCut(FXObject*, FXSelector sel, void*)
 }
 
 
-// Copy file names (without path) to clipboard
+// Copy full paths as text, not file-transfer clipboard data.
 long SearchPanel::onCmdCopyName(FXObject*, FXSelector sel, void*)
 {
     // Clear clipboard and set clipboard type
@@ -3764,23 +3771,18 @@ long SearchPanel::onCmdCopyName(FXObject*, FXSelector sel, void*)
         {
             if (list->isItemSelected(u))
             {
-                FXString name = list->getItemText(u).text();
-                name = name.section('\t', 0);
-                clipboard += FXURL::encode(::xf_filetouri(name)) + "\n";
+                clipboard += list->getItemPathname(u) + "\n";
             }
         }
     }
 
     // Remove the last \n of the list
+    if (clipboard.empty()) return 0;
     clipboard.erase(clipboard.length() - 1);
 
     // Acquire the clipboard
-    FXDragType types[4];
-    types[0] = xfelistType;
-    types[1] = kdelistType;
-    types[2] = urilistType;
-    types[3] = utf8Type;
-    if (acquireClipboard(types, 4))
+    FXDragType types[] = {utf8Type};
+    if (acquireClipboard(types, 1))
     {
         return 0;
     }
@@ -3788,6 +3790,24 @@ long SearchPanel::onCmdCopyName(FXObject*, FXSelector sel, void*)
     return 1;
 }
 
+
+long SearchPanel::onCmdContextRename(FXObject* sender, FXSelector sel, void* ptr)
+{
+    const int count = list->getNumSelectedItems();
+    if ((FXSELID(sel) == ID_CONTEXT_RENAME) ? count == 1 : count > 1)
+    {
+        return onCmdFileMan(sender, FXSEL(SEL_COMMAND, ID_FILE_RENAME), ptr);
+    }
+    return 1;
+}
+
+long SearchPanel::onUpdContextRename(FXObject* sender, FXSelector sel, void*)
+{
+    const int count = list->getNumSelectedItems();
+    const FXbool enabled = (FXSELID(sel) == ID_CONTEXT_RENAME) ? count == 1 : count > 1;
+    sender->handle(this, FXSEL(SEL_COMMAND, enabled ? ID_ENABLE : ID_DISABLE), NULL);
+    return 1;
+}
 
 // Copy/Move/Rename/Symlink file(s)
 long SearchPanel::onCmdFileMan(FXObject* sender, FXSelector sel, void*)
@@ -4800,15 +4820,17 @@ long SearchPanel::onUpdStatus(FXObject* sender, FXSelector, void*)
             FXString str = list->getItemText(item);
 
             // Status text
-            for (FXuint i = 2; i < nbCols - 1; i++)  // Skip name and directory
+            FXuint count = list->getColumnLayout().size();
+            for (FXuint i = 1; i < count; i++)
             {
+                if (list->getHeaderId(i) == FileList::ID_COL_DIRNAME) continue;
                 FXString txt = str.section('\t', i);
                 if (txt.length() != 0)
                 {
-                    status += txt + " | ";
+                    if (!status.empty()) status += " | ";
+                    status += txt;
                 }
             }
-            status += str.section('\t', nbCols - 1);
         }
     }
 

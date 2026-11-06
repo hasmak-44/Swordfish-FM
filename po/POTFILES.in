@@ -4,6 +4,7 @@ src/BrowseInputDialog.cpp
 src/ColorSelector.cpp
 src/ComboBox.cpp
 src/CommandWindow.cpp
+src/CustomActionsUI.cpp
 src/ConnectDialog.cpp
 src/DirList.cpp
 src/DirPanel.cpp

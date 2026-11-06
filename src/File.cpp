@@ -30,6 +30,7 @@
 #include "MessageBox.h"
 #include "CommandWindow.h"
 #include "File.h"
+#include "TabButtons.h"
 
 
 // Delay before the progress bar should be shown (ms)
@@ -2457,6 +2458,20 @@ int File::mount(const FXString dir, const FXString msg, const FXString cmd, FXSt
     FXbool mount_messages = getApp()->reg().readUnsignedEntry("OPTIONS", "mount_messages", true);
     FXString command = cmd;
     FXString gvfs = xf_gvfsmount(dir);
+    // Companion utilities also use File, but only the file manager owns tabs.
+    struct TabRollback
+    {
+        FXObject* guard = NULL;
+        void commit() { if (guard) guard->handle(NULL, 0, NULL); }
+        ~TabRollback() { delete guard; }
+    } tabs;
+    if (op == UNMOUNT && !output)
+    {
+        UnmountTabRequest request;
+        request.path = gvfs.empty() ? dir : gvfs;
+        mainWindow->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_PREPARE_UNMOUNT), &request);
+        tabs.guard = request.guard;
+    }
     if (op == UNMOUNT && !output)
     {
         // Leave the mount first so no tab or tree refresh touches it while it disappears
@@ -2598,6 +2613,8 @@ int File::mount(const FXString dir, const FXString msg, const FXString cmd, FXSt
         {
             buf.format(_("Command failed (exit status %d)."), code);
         }
+        if (op == UNMOUNT && (buf.find("busy") >= 0 || buf.find("in use") >= 0))
+            buf = xf_devicebusy(gvfs.empty() ? dir : gvfs) + "\n\n" + buf;
         MessageBox::error(this, BOX_OK, _("Error"), "%s", buf.text());
         return -1;
     }
@@ -2606,6 +2623,8 @@ int File::mount(const FXString dir, const FXString msg, const FXString cmd, FXSt
     {
         mainWindow->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_NETWORK_UNMOUNTED), &gvfs);
     }
+
+    tabs.commit();
 
     // Success message
     if (mount_messages)

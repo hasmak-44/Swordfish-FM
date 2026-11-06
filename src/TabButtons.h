@@ -2,6 +2,7 @@
 #define TABBUTTONS_H
 
 #include <vector>
+#include <map>
 
 #include "xfedefs.h"
 #include "xfeutils.h"
@@ -19,6 +20,10 @@ protected:
     
     FXString* tabPaths = NULL;                          // Vector of tab paths
     FXuint tabViews[NMAX_TABS] = { 0 };
+    typedef std::map<FXuint, FXuint> ColumnWidths;
+    ColumnWidths tabColumns[NMAX_TABS];
+    ColumnWidths captureColumns() const;
+    void applyColumns(FXuint);
     
     FXuint nbActiveTabs = 0;                            // Number of active tabs
     FXuint currentTab = 0;                              // Index of current tab
@@ -45,6 +50,16 @@ private:
 
 
 public:
+    struct State
+    {
+        std::vector<FXString> paths;
+        std::vector<FXuint> views;
+        std::vector<ColumnWidths> columns;
+        std::vector<FXuint> columnOrder;
+        FXuint selected = 0;
+    };
+    State saveState();
+    void restoreState(const State&);
     enum
     {
         ID_NEW_TAB = FXHorizontalFrame::ID_LAST,
@@ -144,6 +159,26 @@ public:
     void saveTabs(const char* section);
     FXbool restoreTabs(const char* section, FXuint selected);
 
+};
+
+// Restore tabs only when an unsuccessful removal leaves the filesystem mounted.
+struct UnmountTabRequest
+{
+    FXString path;
+    FXObject* guard = NULL;
+};
+
+class UnmountTabGuard : public FXObject
+{
+    TabButtons* tabs[2] = {NULL, NULL};
+    TabButtons::State states[2];
+    FXString mountpoint;
+    FXbool completed = false;
+public:
+    UnmountTabGuard(FXMainWindow* window, const FXString& path);
+    void commit() { completed = true; }
+    long handle(FXObject*, FXSelector, void*) override { commit(); return 1; }
+    ~UnmountTabGuard();
 };
 
 #endif
