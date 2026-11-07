@@ -666,12 +666,17 @@ int main(int argc, char** argv)
         assert(large.savePixels(stream));
         stream.close();
         model.items[0].icon = fixture + "/large.png";
-        model.items[2].icon = fixture + "/large.png";
+        model.items[2].icon = "theme:swordfish-fixture-application";
     }
-    FXString host = fixture + "/host-data", bundle = fixture + "/bundle-data";
+    FXString host = fixture + "/host-data", extraHost = fixture + "/host-extra", bundle = fixture + "/bundle-data";
     assert(xf_mkpath((host + "/icons/Fixture/48x48/apps").text(), 0700) == 0);
+    assert(xf_mkpath((host + "/icons/Fixture/16x16/apps").text(), 0700) == 0);
+    assert(xf_mkpath((host + "/icons/Fixture/scalable/apps").text(), 0700) == 0);
     assert(xf_mkpath((host + "/icons/FixtureParent/48x48/apps").text(), 0700) == 0);
+    assert(xf_mkpath((host + "/icons/FixtureOther/48x48/apps").text(), 0700) == 0);
     assert(xf_mkpath((host + "/icons/hicolor/48x48/apps").text(), 0700) == 0);
+    assert(xf_mkpath((extraHost + "/icons/Fixture/48x48/apps").text(), 0700) == 0);
+    assert(xf_mkpath((host + "/pixmaps").text(), 0700) == 0);
     assert(xf_mkpath((bundle + "/icons/Fixture/48x48/apps").text(), 0700) == 0);
     assert(xf_mkpath((host + "/applications").text(), 0700) == 0);
     {
@@ -679,17 +684,23 @@ int main(int argc, char** argv)
         desktop << "[Desktop Entry]\nType=Application\nName=Fixture printf\nExec=/usr/bin/printf %F\n"
                    "Icon=swordfish-fixture-application\n";
     }
-    for (const char* theme : {"Fixture", "FixtureParent", "hicolor"})
+    for (const char* theme : {"Fixture", "FixtureParent", "FixtureOther", "hicolor"})
     {
         std::ofstream index((host + "/icons/" + theme + "/index.theme").text());
         index << "[Icon Theme]\nName=" << theme << "\nDirectories=48x48/apps\n";
         if (FXString(theme) == "Fixture") { index << "Inherits=FixtureParent\n"; }
     }
     assert(FXFile::copy(fixture + "/large.png", host + "/icons/Fixture/48x48/apps/swordfish-fixture-application.png"));
+    assert(FXFile::copy(fixture + "/large.png", host + "/icons/FixtureParent/48x48/apps/swordfish-fixture-application.png"));
+    assert(FXFile::copy(fixture + "/large.png", extraHost + "/icons/Fixture/48x48/apps/swordfish-fixture-application.png"));
+    assert(FXFile::copy(fixture + "/large.png", extraHost + "/icons/Fixture/48x48/apps/swordfish-fixture-split.png"));
     assert(FXFile::copy(fixture + "/large.png", bundle + "/icons/Fixture/48x48/apps/swordfish-fixture-application.png"));
     assert(FXFile::copy(fixture + "/large.png", bundle + "/icons/Fixture/48x48/apps/swordfish-fixture-bundle-only.png"));
     assert(FXFile::copy(fixture + "/large.png", host + "/icons/FixtureParent/48x48/apps/swordfish-fixture-inherited.png"));
+    assert(FXFile::copy(fixture + "/large.png", host + "/icons/FixtureOther/48x48/apps/swordfish-fixture-other.png"));
     assert(FXFile::copy(fixture + "/large.png", host + "/icons/hicolor/48x48/apps/swordfish-fixture-fallback.png"));
+    assert(FXFile::copy(fixture + "/large.png", host + "/icons/Fixture/16x16/apps/swordfish-fixture-choice.png"));
+    assert(FXFile::copy(fixture + "/large.png", host + "/icons/Fixture/48x48/apps/swordfish-fixture-choice.png"));
     for (int n = 0; n < 45; ++n)
     {
         FXString path = host + "/icons/Fixture/48x48/apps/swordfish-fixture-extra-" + FXStringVal(n) + ".png";
@@ -721,20 +732,87 @@ int main(int argc, char** argv)
         FXFileStream stream; assert(stream.open(fixture + "/wide.jpg", FXStreamSave));
         assert(jpeg.savePixels(stream)); stream.close();
     }
+    assert(FXFile::copy(fixture + "/wide.svg", host + "/icons/Fixture/scalable/apps/swordfish-fixture-choice.svg"));
+    assert(FXFile::copy(fixture + "/wide.svg", host + "/icons/Fixture/scalable/apps/swordfish-fixture-svg.svg"));
+    assert(FXFile::copy(fixture + "/small.xpm", host + "/pixmaps/swordfish-fixture-pixmap.xpm"));
     setenv("SWORDFISH_HOST_XDG_DATA_HOME", host.text(), 1);
-    setenv("SWORDFISH_HOST_XDG_DATA_DIRS", "/nonexistent/swordfish-host-icons", 1);
+    setenv("SWORDFISH_HOST_XDG_DATA_DIRS", extraHost.text(), 1);
     setenv("XDG_DATA_HOME", bundle.text(), 1);
     setenv("XDG_DATA_DIRS", bundle.text(), 1);
     setenv("XDG_CACHE_HOME", (fixture + "/cache").text(), 1);
     // Force the host theme preference while retaining the application's own resources.
     app.reg().writeStringEntry("SETTINGS", "iconpath", "/unused/Fixture-system");
-    assert(resolveSystemActionIcon(&app, "swordfish-fixture-application").left(host.length()) == host);
-    assert(resolveSystemActionIcon(&app, "swordfish-fixture-inherited").contains("FixtureParent"));
-    assert(resolveSystemActionIcon(&app, "swordfish-fixture-fallback").contains("hicolor"));
-    assert(resolveSystemActionIcon(&app, "swordfish-fixture-bundle-only").empty());
-    assert(resolveSystemActionIcon(&app, "not-installed-anywhere-729103").empty());
+    std::vector<FXString> names = {
+        "swordfish-fixture-application", "swordfish-fixture-inherited", "swordfish-fixture-fallback",
+        "swordfish-fixture-other", "swordfish-fixture-split", "swordfish-fixture-choice",
+        "swordfish-fixture-svg", "swordfish-fixture-pixmap", "swordfish-fixture-misc",
+        "swordfish-fixture-missing", "swordfish-fixture-bundle-only", "not-installed-anywhere-729103"
+    };
+    for (int n = 0; n < 45; ++n)
+        names.push_back("swordfish-fixture-extra-" + FXStringVal(n));
+    names.push_back(names[0]);
+    prefetchSystemActionIcons(&app, names);
+    assert(resolveSystemActionIcon(&app, names[0]) == host + "/icons/Fixture/48x48/apps/swordfish-fixture-application.png");
+    assert(resolveSystemActionIcon(&app, names[1]).contains("FixtureParent"));
+    assert(resolveSystemActionIcon(&app, names[2]).contains("hicolor"));
+    assert(resolveSystemActionIcon(&app, names[3]).contains("FixtureOther"));
+    assert(resolveSystemActionIcon(&app, names[4]).left(extraHost.length()) == extraHost);
+    assert(resolveSystemActionIcon(&app, names[5]) == host + "/icons/Fixture/48x48/apps/swordfish-fixture-choice.png");
+    assert(resolveSystemActionIcon(&app, names[6]).right(4) == ".svg");
+    assert(resolveSystemActionIcon(&app, names[7]) == host + "/pixmaps/swordfish-fixture-pixmap.xpm");
+    assert(resolveSystemActionIcon(&app, names[8]).contains("/misc/"));
+    assert(resolveSystemActionIcon(&app, names[9]).contains("/swordfish-fixture-missing.png"));
+    assert(resolveSystemActionIcon(&app, names[10]).empty());
+    assert(resolveSystemActionIcon(&app, names[11]).empty());
+    app.reg().writeStringEntry("SETTINGS", "iconpath", "/unused/FixtureParent-system");
+    assert(resolveSystemActionIcon(&app, names[0]).contains("FixtureParent"));
+    app.reg().writeStringEntry("SETTINGS", "iconpath", "/unused/Fixture-system");
+    setenv("SWORDFISH_HOST_XDG_DATA_HOME", extraHost.text(), 1);
+    setenv("SWORDFISH_HOST_XDG_DATA_DIRS", host.text(), 1);
+    assert(resolveSystemActionIcon(&app, names[0]).left(extraHost.length()) == extraHost);
+    setenv("SWORDFISH_HOST_XDG_DATA_HOME", host.text(), 1);
+    setenv("SWORDFISH_HOST_XDG_DATA_DIRS", extraHost.text(), 1);
+    FXString gtkConfig = fixture + "/host-config/gtk-3.0";
+    assert(xf_mkpath(gtkConfig.text(), 0700) == 0);
+    setenv("SWORDFISH_HOST_XDG_CONFIG_HOME", (fixture + "/host-config").text(), 1);
+    app.reg().writeStringEntry("SETTINGS", "iconpath", "/unused/default-theme");
+    {
+        std::ofstream settings((gtkConfig + "/settings.ini").text());
+        settings << "[Settings]\ngtk-icon-theme-name=FixtureParent\n";
+    }
+    assert(resolveSystemActionIcon(&app, names[0]).contains("FixtureParent"));
+    {
+        std::ofstream settings((gtkConfig + "/settings.ini").text());
+        settings << "[Settings]\ngtk-icon-theme-name=Fixture\n";
+    }
+    assert(resolveSystemActionIcon(&app, names[0]) == host + "/icons/Fixture/48x48/apps/swordfish-fixture-application.png");
+    app.reg().writeStringEntry("SETTINGS", "iconpath", "/unused/Fixture-system");
+    prefetchSystemActionIcons(&app, names);
+    std::vector<FXString> resolved;
+    for (const FXString& name : names) { resolved.push_back(resolveSystemActionIcon(&app, name)); }
+    const FXString added = "swordfish-fixture-added-after-lookup";
+    assert(resolveSystemActionIcon(&app, added).empty());
+    assert(FXFile::copy(fixture + "/large.png", host + "/icons/Fixture/48x48/apps/" + added + ".png"));
+    assert(resolveSystemActionIcon(&app, added).empty());
+    const std::vector<SystemActionIcon>& catalog = systemActionIcons(&app);
+    bool foundAdded = false;
+    for (const SystemActionIcon& item : catalog)
+    {
+        if (item.name == added) { foundAdded = true; }
+        for (size_t i = 0; i < names.size(); ++i)
+            if (item.name == names[i]) { assert(item.path == resolved[i]); }
+    }
+    assert(foundAdded && !resolveSystemActionIcon(&app, added).empty());
+    for (size_t i = 0; i < names.size(); ++i)
+        assert(resolveSystemActionIcon(&app, names[i]) == resolved[i]);
     assert(!loadCustomActionIcon(&app, "theme:not-installed-anywhere-729103", 32));
     assert(!loadCustomActionIcon(&app, "theme:../large.png", 32));
+    if (!findIconConverter().empty())
+    {
+        FXIcon* image = loadCustomActionIcon(&app, "theme:swordfish-fixture-svg", 48);
+        assert(image && image->getWidth() == 2 * image->getHeight());
+        delete image;
+    }
     for (const char* filename : {"wide.jpg", "small.xpm", "wide.svg"})
     {
         if (FXString(filename) == "wide.svg" && findIconConverter().empty()) { continue; }
@@ -759,11 +837,12 @@ int main(int argc, char** argv)
         assert(reread.items.size() == 1 && reread.items[0].icon == named.items[0].icon);
     }
     app.reg().writeStringEntry("SETTINGS", "iconpath", iconpath.text());
-    puts("PASS: named icons resolve host XDG themes, inheritance and hicolor instead of bundle; JPEG/XPM/SVG preserve bounds");
+    puts("PASS: targeted named icons match the lazy catalog, host roots, theme precedence and file selection; JPEG/XPM/SVG preserve bounds");
     model.items.push_back(node("separator", "Separator", CustomAction::SEPARATOR));
     CustomAction background = node("background", "Background", CustomAction::ACTION);
     background.background = true; background.files = false; background.folders = false;
     background.single = false; background.multiple = false; background.command = "printf '%%s\\n' %p";
+    background.icon = "theme:swordfish-fixture-inherited";
     model.items.push_back(background);
     CustomAction unmatched = node("unmatched", "Unmatched", CustomAction::ACTION);
     unmatched.patterns = "*.png"; unmatched.toolbar = false;
@@ -821,6 +900,7 @@ int main(int argc, char** argv)
     assert(actions && actions->model.items.size() == 6);
     for (unsigned n : {0u, 2u})
     {
+        assert(actions->icon(n) != minirunicon);
         assert(actions->icon(n)->getWidth() <= minirunicon->getHeight());
         assert(actions->icon(n)->getHeight() <= minirunicon->getHeight());
         assert(actions->icon(n)->getWidth() == 2 * actions->icon(n)->getHeight());

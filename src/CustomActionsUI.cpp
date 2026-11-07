@@ -984,6 +984,13 @@ void CustomActionsUI::rebuild()
     delete mainMenu; mainMenu = NULL;
     for (unsigned i = 0; i < icons.size(); ++i) { delete icons[i]; }
     icons.assign(model.items.size(), NULL);
+    std::vector<FXString> themeNames;
+    for (unsigned n = 0; n < model.items.size(); ++n)
+    {
+        const FXString& path = model.items[n].icon;
+        if (path.left(6) == "theme:") { themeNames.push_back(path.mid(6, path.length() - 6)); }
+    }
+    prefetchSystemActionIcons(owner->getApp(), themeNames);
     for (unsigned n = 0; n < model.items.size(); ++n)
     {
         const FXString& path = model.items[n].icon;

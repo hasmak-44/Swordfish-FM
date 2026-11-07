@@ -161,7 +161,9 @@ field, image/all-files filters, and a live preview below the left sidebar.
 There is no intermediate image-browser dialog. **No Icon** uses the default.
 System selections store an
 icon name and resolve it against host themes, inherited themes and hicolor;
-portable mode does not restrict this to bundled icons. Image selections store
+portable mode does not restrict this to bundled icons. Startup looks up the
+configured icon names together; the full catalog is built when the chooser
+opens. Image selections store
 an absolute filename. PNG, JPEG and XPM are supported; SVG uses the existing
 `rsvg-convert` tool and a converted-image cache. Image files have thumbnails
 and a larger selected-image preview. Moving an external image can break that

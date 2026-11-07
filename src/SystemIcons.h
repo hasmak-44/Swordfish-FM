@@ -38,6 +38,8 @@ struct SystemActionIcon
     Category category = UNCATEGORIZED;
 };
 const std::vector<SystemActionIcon>& systemActionIcons(FXApp* app);
+// Resolve several names together without building the icon chooser's catalog.
+void prefetchSystemActionIcons(FXApp* app, const std::vector<FXString>& names);
 FXString resolveSystemActionIcon(FXApp* app, const FXString& name);
 
 // Accepts theme:NAME or an image filename. SVG requires rsvg-convert.
