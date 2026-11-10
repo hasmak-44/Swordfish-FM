@@ -2573,12 +2573,12 @@ msgstr ""
 
 #: src/KeyBindings.cpp:100
 msgid ""
-"These key bindings are common to all Xfe applications.\n"
+"These key bindings are common to all Swordfish applications.\n"
 "Double click on an item to modify the selected key binding..."
 msgstr ""
 
 #: src/KeyBindings.cpp:107
-msgid "Xf&e Key Bindings"
+msgid "S&wordfish Key Bindings"
 msgstr ""
 
 #: src/KeyBindings.cpp:114
@@ -2663,7 +2663,7 @@ msgstr ""
 #: src/KeyBindings.cpp:998 src/KeyBindings.cpp:1150
 #, c-format
 msgid ""
-"The key binding %s is already used in the Xfe section.\n"
+"The key binding %s is already used in the Swordfish section.\n"
 "You should erase the existing key binding before assigning it again."
 msgstr ""
 
@@ -2687,7 +2687,7 @@ msgstr "选择一个可执行文件"
 
 #: src/MessageBox.cpp:102 src/XFileExplorer.cpp:1240
 #, fuzzy
-msgid "Launch Xfe as root"
+msgid "Launch Swordfish as root"
 msgstr "\t以root身份启动Xfe(Shift-F3)"
 
 #: src/MessageBox.cpp:124 src/MessageBox.cpp:142 src/MessageBox.cpp:178
@@ -3135,7 +3135,7 @@ msgstr ""
 
 #: src/Preferences.cpp:604
 #, fuzzy
-msgid "Open new Xfe window when mounting"
+msgid "Open new Swordfish window when mounting"
 msgstr "目录"
 
 #: src/Preferences.cpp:609
@@ -5421,7 +5421,7 @@ msgstr "\t移动所选文件到回收站(Del, F8)"
 
 #: src/XFileExplorer.cpp:1236
 #, fuzzy
-msgid "Launch Xfe"
+msgid "Launch Swordfish"
 msgstr "\t启动Xfe(F3)"
 
 #: src/XFileExplorer.cpp:1244
@@ -5727,7 +5727,9 @@ msgid "&About X File Explorer"
 msgstr "关于X File Explorer(&A)"
 
 #: src/XFileExplorer.cpp:3498
-msgid "Running Xfe as root!"
+#, fuzzy
+#| msgid "Running Xfe as root!"
+msgid "Running Swordfish as root!"
 msgstr "正在以root身份运行Xfe!"
 
 #: src/XFileExplorer.cpp:3542
@@ -5747,7 +5749,9 @@ msgid "No global swordfishrc file found! Please select a configuration file..."
 msgstr "配置文件xferc没有找到，请选择一个配置文件..."
 
 #: src/XFileExplorer.cpp:3573
-msgid "XFE configuration file"
+#, fuzzy
+#| msgid "XFE configuration file"
+msgid "Swordfish configuration file"
 msgstr "XFE配置文件"
 
 #: src/XFileExplorer.cpp:3586
@@ -6202,7 +6206,8 @@ msgstr "载入图标出错"
 msgid ""
 "Icon path doesn't exist, default icon path was selected.\n"
 "\n"
-"From Xfe, please check your icon path in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon path in Edit / Preferences / "
+"Appearance..."
 msgstr "不能载入一些图标，请检查你的图标路径"
 
 #: src/XFileArchive.cpp:2339 src/XFileImage.cpp:3342 src/XFilePackage.cpp:982
@@ -6211,7 +6216,8 @@ msgstr "不能载入一些图标，请检查你的图标路径"
 msgid ""
 "Unable to load some icons, default icon theme was selected.\n"
 "\n"
-"From Xfe, please check your icon theme in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon theme in Edit / Preferences / "
+"Appearance..."
 msgstr "不能载入一些图标，请检查你的图标路径"
 
 #: src/XFileArchive.cpp:2347 src/XFileImage.cpp:3350 src/XFilePackage.cpp:990
@@ -6220,7 +6226,7 @@ msgstr "不能载入一些图标，请检查你的图标路径"
 msgid ""
 "Unable to load default icons, no icons can be shown.\n"
 "\n"
-"Please check your Xfe installation..."
+"Please check your Swordfish installation..."
 msgstr "不能载入一些图标，请检查你的图标路径"
 
 #: src/XFileImage.cpp:182

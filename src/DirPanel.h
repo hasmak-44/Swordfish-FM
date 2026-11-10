@@ -57,8 +57,21 @@ protected:
         FXString sources;
         FXbool local;
     };
+    // Advertised non-SMB devices: ftp, sftp, media (UPnP/DLNA), printer, router
+    struct NetworkService
+    {
+        FXString kind;
+        FXString key;
+        FXString address;
+        FXString name;
+        FXString url;
+        FXString sources;
+    };
     FXButton* networkRefresh = NULL;
     std::vector<NetworkServer> networkServers;
+    std::vector<NetworkService> networkServices;
+    FXString networkFoundText() const;
+    void openNetworkService(const FXString& kind, const FXString& url, const FXString& name);
     FXLabel* networkStatus = NULL;
     int networkReadFd = -1;
     pid_t networkPid = -1;
@@ -193,6 +206,8 @@ public:
         ID_SIDEBAR_OPEN_TAB,
         ID_SIDEBAR_PROPERTIES,
         ID_SIDEBAR_OPEN_GROUP,
+        ID_SIDEBAR_OPEN_SERVICE,
+        ID_SIDEBAR_PRINTER_SETTINGS,
         ID_SIDEBAR_RENAME_GROUP,
         ID_SIDEBAR_REMOVE_GROUP,
         ID_LAST,
@@ -217,6 +232,7 @@ public:
     long onSidebarPopup(FXObject*, FXSelector, void*);
     long onSidebarRefresh(FXObject*, FXSelector, void*);
     long onSidebarAction(FXObject*, FXSelector, void*);
+    long onCmdSidebarService(FXObject*, FXSelector, void*);
     long onSidebarTabGroup(FXObject*, FXSelector, void*);
     long onUpdToggleHidden(FXObject*, FXSelector, void*);
     long onCmdPopupMenuDirList(FXObject*, FXSelector, void*);

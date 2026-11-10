@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#include <cmath>
 #include <set>
 #include <string>
 
@@ -40,9 +41,79 @@ FXDEFMAP(SidebarTree) SidebarTreeMap[] =
 FXIMPLEMENT(SidebarTree, FXTreeList, SidebarTreeMap, ARRAYNUMBER(SidebarTreeMap))
 FXIMPLEMENT(SidebarFrame, FXPacker, NULL, 0)
 
+static FXdouble linearColorComponent(FXuint component)
+{
+    const FXdouble value = component / 255.0;
+    return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+}
+
+static FXdouble colorLuminance(FXColor color)
+{
+    return 0.2126 * linearColorComponent(FXREDVAL(color)) +
+           0.7152 * linearColorComponent(FXGREENVAL(color)) +
+           0.0722 * linearColorComponent(FXBLUEVAL(color));
+}
+
+static FXColor mutedDeviceText(FXColor foreground, FXColor background)
+{
+    const FXdouble backLuminance = colorLuminance(background);
+    // Keep readable contrast, including when the theme's selection colors are inverted.
+    for (FXuint amount = 70; amount < 100; amount += 5)
+    {
+        FXColor muted = FXRGBA((FXREDVAL(foreground) * amount + FXREDVAL(background) * (100 - amount)) / 100,
+                               (FXGREENVAL(foreground) * amount + FXGREENVAL(background) * (100 - amount)) / 100,
+                               (FXBLUEVAL(foreground) * amount + FXBLUEVAL(background) * (100 - amount)) / 100,
+                               FXALPHAVAL(foreground));
+        const FXdouble textLuminance = colorLuminance(muted);
+        const FXdouble contrast = (FXMAX(textLuminance, backLuminance) + 0.05) /
+                                  (FXMIN(textLuminance, backLuminance) + 0.05);
+        if (contrast >= 4.5) return muted;
+    }
+    return foreground;
+}
+
+static void drawUnmountedDevice(const SidebarItem& item, const FXTreeList* list, FXDC& dc,
+                               FXint x, FXint y, FXint h)
+{
+    // Match FOX tree-item spacing while keeping the item enabled and clickable.
+    FXint labelX = x + 2;
+    FXIcon* image = item.isOpened() ? item.getOpenIcon() : item.getClosedIcon();
+    if (image)
+    {
+        dc.drawIcon(image, labelX, y + (h - image->getHeight()) / 2);
+        labelX += image->getWidth() + 4;
+    }
+    if (item.getText().empty()) return;
+
+    const FXColor background = item.isSelected() ? list->getSelBackColor() : list->getBackColor();
+    const FXColor foreground = item.isSelected() ? list->getSelTextColor() : list->getTextColor();
+    const FXColor muted = mutedDeviceText(foreground, background);
+    // Dimming already shows the state; keep the "(unmounted)" suffix only if the theme cannot dim it.
+    FXString label = item.getText();
+    const FXString suffix = _(" (unmounted)");
+    if (muted != foreground && label.length() > suffix.length() &&
+        label.right(suffix.length()) == suffix)
+        label.trunc(label.length() - suffix.length());
+    FXFont* font = list->getFont();
+    const FXint textWidth = font->getTextWidth(label.text(), label.length()) + 4;
+    const FXint textHeight = font->getFontHeight() + 4;
+    const FXint labelY = y + (h - textHeight) / 2;
+    if (item.isSelected())
+    {
+        dc.setForeground(background);
+        dc.fillRectangle(labelX, labelY, textWidth, textHeight);
+    }
+    if (item.hasFocus()) dc.drawFocusRectangle(labelX + 1, labelY + 1, textWidth - 2, textHeight - 2);
+    dc.setForeground(muted);
+    dc.drawText(labelX + 2, labelY + font->getFontAscent() + 2, label);
+}
+
 void SidebarItem::draw(const FXTreeList* list, FXDC& dc, FXint x, FXint y, FXint w, FXint h) const
 {
-    FXTreeItem::draw(list, dc, x, y, w, h);
+    if (kind == DEVICE && deviceAction == MOUNT_DEVICE && isEnabled())
+        drawUnmountedDevice(*this, list, dc, x, y, h);
+    else
+        FXTreeItem::draw(list, dc, x, y, w, h);
     if (deviceAction != NO_ACTION || canEject)
     {
         const SidebarTree* tree = static_cast<const SidebarTree*>(list);
@@ -52,32 +123,12 @@ void SidebarItem::draw(const FXTreeList* list, FXDC& dc, FXint x, FXint y, FXint
             FXint left = tree->deviceButtonLeft(button == 1);
             dc.setForeground(isSelected() ? list->getSelBackColor() : list->getBackColor());
             dc.fillRectangle(left, y, 24, h);
-            dc.setForeground(isSelected() ? list->getSelTextColor() : list->getTextColor());
-            dc.drawRectangle(left + 2, y + 2, 19, h - 5);
-            dc.setForeground(button == 0 && deviceAction == MOUNT_DEVICE ?
-                             FXRGB(46, 204, 113) : FXRGB(255, 64, 64));
-            FXint mid = y + h / 2;
-            if (button == 1)
-            {
-                FXPoint triangle[] = {FXPoint(left + 7, mid + 1), FXPoint(left + 12, mid - 5),
-                                      FXPoint(left + 17, mid + 1)};
-                dc.fillPolygon(triangle, 3);
-                dc.fillRectangle(left + 7, mid + 4, 11, 2);
-            }
-            else if (deviceAction == MOUNT_DEVICE)
-            {
-                FXPoint triangle[] = {FXPoint(left + 8, mid - 6), FXPoint(left + 17, mid),
-                                      FXPoint(left + 8, mid + 6)};
-                dc.fillPolygon(triangle, 3);
-            }
-            else
-            {
-                FXPoint stop[] = {FXPoint(left + 9, mid - 6), FXPoint(left + 15, mid - 6),
-                                  FXPoint(left + 18, mid - 3), FXPoint(left + 18, mid + 3),
-                                  FXPoint(left + 15, mid + 6), FXPoint(left + 9, mid + 6),
-                                  FXPoint(left + 6, mid + 3), FXPoint(left + 6, mid - 3)};
-                dc.fillPolygon(stop, 8);
-            }
+            const FXColor background = isSelected() ? list->getSelBackColor() : list->getBackColor();
+            const DeviceSymbol symbol = button == 1 ? DEVICE_SYMBOL_EJECT :
+                                        deviceAction == MOUNT_DEVICE ? DEVICE_SYMBOL_MOUNT : DEVICE_SYMBOL_UNMOUNT;
+            const FXint size = FXMIN(16, h - 4);
+            drawDeviceSymbol(dc, list->getApp(), symbol, left + (24 - size) / 2, y + (h - size) / 2, size,
+                             background);
         }
     }
 }
@@ -210,7 +261,7 @@ long SidebarTree::onExpandItem(FXObject*, FXSelector, void* ptr)
         return 1;
     }
     FXStat info;
-    if (item && !item->path.empty() && item->kind != SidebarItem::SERVER &&
+    if (item && !item->path.empty() && item->kind != SidebarItem::SERVER && item->kind != SidebarItem::SERVICE &&
         (!item->loaded || (FXStat::statFile(item->path, info) && info.modified() != item->modified)))
     {
         FXDir directory;
@@ -604,7 +655,7 @@ PlacesList::PlacesList(FXWindow* owner, FXComposite* p, FXObject* tgt, FXSelecto
 
     // Trash
     name = _("Trash can");
-    pathname = FXSystem::getHomeDirectory() + PATHSEPSTRING + ".local/share/Trash/files";
+    pathname = xf_trashdatahome() + PATHSEPSTRING TRASHFILESPATH;
     places->insert(name.text(), pathname.text());
     FXList::appendItem(name, minideleteicon);
     num++;

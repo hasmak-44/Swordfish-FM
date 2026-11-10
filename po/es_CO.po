@@ -2552,16 +2552,22 @@ msgid "&Global Key Bindings"
 msgstr "Atajos de teclado &globales"
 
 #: src/KeyBindings.cpp:100
+#, fuzzy
+#| msgid ""
+#| "These key bindings are common to all Xfe applications.\n"
+#| "Double click on an item to modify the selected key binding..."
 msgid ""
-"These key bindings are common to all Xfe applications.\n"
+"These key bindings are common to all Swordfish applications.\n"
 "Double click on an item to modify the selected key binding..."
 msgstr ""
 "Estas combinaciones de teclas son comunes a todas las aplicaciones Xfe.\n"
 "Doble pulsación en un elemento modifica el atajo de teclado..."
 
 #: src/KeyBindings.cpp:107
-msgid "Xf&e Key Bindings"
-msgstr "Atajos de teclado de Xf&e"
+#, fuzzy
+#| msgid "Xf&i Key Bindings"
+msgid "S&wordfish Key Bindings"
+msgstr "Atajos de teclado de Xf&i"
 
 #: src/KeyBindings.cpp:114
 msgid ""
@@ -2657,10 +2663,10 @@ msgstr ""
 #: src/KeyBindings.cpp:998 src/KeyBindings.cpp:1150
 #, fuzzy, c-format
 msgid ""
-"The key binding %s is already used in the Xfe section.\n"
+"The key binding %s is already used in the Swordfish section.\n"
 "You should erase the existing key binding before assigning it again."
 msgstr ""
-"El atajo de teclado %s ya se utiliza en la sección Xfe.\n"
+"El atajo de teclado %s ya se utiliza en la sección Xfi.\n"
 "\tUsted debe borrar el atajo de teclado existente antes de asignarlo de "
 "nuevo."
 
@@ -2689,7 +2695,9 @@ msgid "Select an Executable File"
 msgstr "Seleccione un archivo ejecutable"
 
 #: src/MessageBox.cpp:102 src/XFileExplorer.cpp:1240
-msgid "Launch Xfe as root"
+#, fuzzy
+#| msgid "Launch Xfe as root"
+msgid "Launch Swordfish as root"
 msgstr "Inicie Xfe como superusuario"
 
 #: src/MessageBox.cpp:124 src/MessageBox.cpp:142 src/MessageBox.cpp:178
@@ -3138,7 +3146,7 @@ msgstr ""
 
 #: src/Preferences.cpp:604
 #, fuzzy
-msgid "Open new Xfe window when mounting"
+msgid "Open new Swordfish window when mounting"
 msgstr "Ir al directorio personal"
 
 #: src/Preferences.cpp:609
@@ -5293,7 +5301,9 @@ msgid "Restore Selected Files From Trash Can"
 msgstr "Restaurar archivos seleccionados de la papelera"
 
 #: src/XFileExplorer.cpp:1236
-msgid "Launch Xfe"
+#, fuzzy
+#| msgid "Launch Xfe"
+msgid "Launch Swordfish"
 msgstr "Inicie Xfe"
 
 #: src/XFileExplorer.cpp:1244
@@ -5584,7 +5594,9 @@ msgid "&About X File Explorer"
 msgstr "Acerca de &X File Explorer"
 
 #: src/XFileExplorer.cpp:3498
-msgid "Running Xfe as root!"
+#, fuzzy
+#| msgid "Running Xfe as root!"
+msgid "Running Swordfish as root!"
 msgstr "¡Ejecutando Xfe como superusuario!"
 
 #: src/XFileExplorer.cpp:3542
@@ -5607,7 +5619,9 @@ msgstr ""
 "configuración..."
 
 #: src/XFileExplorer.cpp:3573
-msgid "XFE configuration file"
+#, fuzzy
+#| msgid "XFE configuration file"
+msgid "Swordfish configuration file"
 msgstr "Archivo de configuración de Xfe"
 
 #: src/XFileExplorer.cpp:3586
@@ -6142,7 +6156,8 @@ msgstr "Error al cargar los iconos"
 msgid ""
 "Icon path doesn't exist, default icon path was selected.\n"
 "\n"
-"From Xfe, please check your icon path in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon path in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "No se pueden cargar algunos iconos. Por favor, ¡compruebe la ruta de iconos!"
 
@@ -6152,7 +6167,8 @@ msgstr ""
 msgid ""
 "Unable to load some icons, default icon theme was selected.\n"
 "\n"
-"From Xfe, please check your icon theme in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon theme in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "No se pueden cargar algunos iconos. Por favor, ¡compruebe la ruta de iconos!"
 
@@ -6162,7 +6178,7 @@ msgstr ""
 msgid ""
 "Unable to load default icons, no icons can be shown.\n"
 "\n"
-"Please check your Xfe installation..."
+"Please check your Swordfish installation..."
 msgstr ""
 "No se pueden cargar algunos iconos. Por favor, ¡compruebe la ruta de iconos!"
 
@@ -7883,6 +7899,18 @@ msgstr "Un editor de texto sencillo para Xfe"
 #: swfw.desktop.in:5
 msgid "editor;viewer;text"
 msgstr ""
+
+#~ msgid "Xf&e Key Bindings"
+#~ msgstr "Atajos de teclado de Xf&e"
+
+#, fuzzy, c-format
+#~ msgid ""
+#~ "The key binding %s is already used in the Xfe section.\n"
+#~ "You should erase the existing key binding before assigning it again."
+#~ msgstr ""
+#~ "El atajo de teclado %s ya se utiliza en la sección Xfe.\n"
+#~ "\tUsted debe borrar el atajo de teclado existente antes de asignarlo de "
+#~ "nuevo."
 
 #, fuzzy
 #~ msgid "Run Xfe as root"

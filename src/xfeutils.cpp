@@ -14,6 +14,8 @@
 #include <libgen.h>
 #include <stdlib.h>
 #include <sys/statvfs.h>
+#include <fstream>
+#include <set>
 #if defined(linux)
 #include <mntent.h>
 #endif
@@ -714,19 +716,15 @@ int xf_create_trashinfo(FXString pathname, FXString trashpathname,
     // Create trash can files if it doesn't exist
     if (!xf_existfile(trashfileslocation))
     {
-        int mask = umask(0);
-        umask(mask);
-        int ret = xf_mkpath(trashfileslocation.text(), 511 & ~mask);
-        return ret;
+        int ret = xf_mkpath(trashfileslocation.text(), 0700);
+        if (ret != 0) return ret;
     }
 
     // Create trash can info if it doesn't exist
     if (!xf_existfile(trashinfolocation))
     {
-        int mask = umask(0);
-        umask(mask);
-        int ret = xf_mkpath(trashinfolocation.text(), 511 & ~mask);
-        return ret;
+        int ret = xf_mkpath(trashinfolocation.text(), 0700);
+        if (ret != 0) return ret;
     }
 
     // Deletion date
@@ -743,7 +741,7 @@ int xf_create_trashinfo(FXString pathname, FXString trashpathname,
     if ((fp = fopen(trashinfopathname.text(), "w")) != NULL)
     {
         fprintf(fp, "[Trash Info]\n");
-        fprintf(fp, "Path=%s\n", pathname.text());
+        fprintf(fp, "Path=%s\n", FXURL::encode(pathname).text());
         fprintf(fp, "DeletionDate=%s\n", deldate.text());
         fclose(fp);
         ret = 0;
@@ -1125,7 +1123,7 @@ FXulong xf_pathsize(char* path, FXuint* nbfiles, FXuint* nbsubdirs, FXulong* tot
 
 // Write the file size in human readable form (bytes, kBytes, MBytes, GBytes)
 // We use a decimal basis for kB, MB, GB count
-FXString xf_humansize(char* size)
+FXString xf_humansize(const char* size)
 {
     int flag = 0;
     char suf[64];
@@ -1517,6 +1515,54 @@ FXString xf_filefromuri(FXString uri)
 FXString xf_filetouri(const FXString& file)
 {
     return "file://" + file;
+}
+
+
+FXDragAction xf_dragaction(FXApp* app, FXint rootx, FXint rooty, FXDragAction action)
+{
+    if (action == DRAG_MOVE && !app->findWindowAt(rootx, rooty))
+    {
+        return DRAG_COPY;
+    }
+    return action;
+}
+
+
+// Tiny off-screen window that stays mapped on every desktop
+class DragGrabWindow : public FXShell
+{
+public:
+    DragGrabWindow(FXApp* a) : FXShell(a, 0, -10, -10, 1, 1)
+    {
+    }
+    virtual bool doesOverrideRedirect() const
+    {
+        return true;
+    }
+};
+
+
+// X releases a pointer grab when its window becomes unviewable, so move the grab
+// to a window that is never hidden; FOX keeps routing events to the source widget
+void xf_keepdraggrab(FXWindow* source)
+{
+    static DragGrabWindow* grabwin = NULL;
+
+    if (!source || !source->id() || !source->grabbed())
+    {
+        return;
+    }
+    FXApp* app = source->getApp();
+    if (!grabwin)
+    {
+        grabwin = new DragGrabWindow(app);
+        grabwin->create();
+    }
+    XMapRaised((Display*)app->getDisplay(), (Window)grabwin->id());
+    FXCursor* cursor = source->getDragCursor();
+    XGrabPointer((Display*)app->getDisplay(), (Window)grabwin->id(), False,
+                 ButtonPressMask | ButtonReleaseMask | PointerMotionMask | EnterWindowMask | LeaveWindowMask,
+                 GrabModeAsync, GrabModeAsync, None, cursor ? (Cursor)cursor->id() : None, CurrentTime);
 }
 
 
@@ -2741,9 +2787,9 @@ FXString xf_gvfsmounturi(const FXString& path)
         if (!user.empty()) login = (domain.empty() ? FXString::null : domain + ";") + user + "@";
         return "smb://" + login + server + "/" + share + "/";
     }
-    if (type == "sftp" && !server.empty())
+    if ((type == "sftp" || type == "ftp") && !server.empty())
     {
-        return "sftp://" + (user.empty() ? FXString::null : user + "@") + server +
+        return type + "://" + (user.empty() ? FXString::null : user + "@") + server +
                (port.empty() ? FXString::null : ":" + port) + "/";
     }
     if (type == "mtp" && !attributes.empty()) return "mtp://" + attributes.after('=') + "/";
@@ -3081,6 +3127,193 @@ FXulong xf_hashfile(const FXchar* filename)
     fclose(file);
 
     return hash;
+}
+
+
+FXString xf_trashdatahome(void)
+{
+    // The portable launcher redirects XDG_DATA_HOME into the bundle; the trash
+    // must stay the desktop's shared trash:/// so other file managers see it
+    const char* names[] = { "SWORDFISH_HOST_XDG_DATA_HOME", "XDG_DATA_HOME" };
+    for (const char* name : names)
+    {
+        const char* value = getenv(name);
+        if (value && value[0] == '/')
+        {
+            return value;
+        }
+    }
+    return FXSystem::getHomeDirectory() + PATHSEPSTRING DATAPATH;
+}
+
+std::vector<TrashLocation> xf_trashlocations()
+{
+    std::vector<TrashLocation> locations;
+    locations.push_back({xf_trashdatahome() + "/Trash", FXString::null});
+#if defined(linux)
+    std::set<std::pair<dev_t, ino_t> > seen;
+    struct stat info;
+    if (lstat(locations[0].directory.text(), &info) == 0)
+        seen.insert(std::make_pair(info.st_dev, info.st_ino));
+    FILE* mounts = setmntent(MTAB_PATH, "r");
+    if (!mounts)
+    {
+        appLog(APP_LOG_ERRORS, "trash-mounts", strerror(errno));
+        return locations;
+    }
+    struct mntent* mount;
+    while ((mount = getmntent(mounts)))
+    {
+        FXString top = FXPath::simplify(mount->mnt_dir);
+        FXString prefix = top == "/" ? FXString::null : top;
+        FXString shared = prefix + "/.Trash";
+        const FXbool sharedSafe = lstat(shared.text(), &info) == 0 &&
+                                  S_ISDIR(info.st_mode) && (info.st_mode & S_ISVTX);
+        FXString uid = FXStringVal((FXuint)getuid());
+        FXString candidates[] = {shared + "/" + uid, prefix + "/.Trash-" + uid};
+        for (int i = 0; i < 2; ++i)
+        {
+            if (i == 0 && !sharedSafe) continue;
+            if (lstat(candidates[i].text(), &info) != 0)
+            {
+                if (errno != ENOENT && errno != ENOTDIR)
+                    appLog(APP_LOG_ERRORS, "trash-discovery", candidates[i] + ": " + strerror(errno));
+                continue;
+            }
+            if (!S_ISDIR(info.st_mode) || info.st_uid != getuid()) continue;
+            if (seen.insert(std::make_pair(info.st_dev, info.st_ino)).second)
+                locations.push_back({candidates[i], top});
+        }
+    }
+    endmntent(mounts);
+#endif
+    return locations;
+}
+
+
+FXbool xf_trashlocation(const FXString& pathname, TrashLocation& location)
+{
+    FXString home = xf_trashdatahome() + "/Trash/files";
+    if (pathname != home && pathname.left(home.length() + 1) != home + "/" &&
+        pathname.find("/.Trash") < 0) return false;
+    for (const TrashLocation& candidate : xf_trashlocations())
+    {
+        FXString files = candidate.directory + "/files";
+        if (pathname == files || pathname.left(files.length() + 1) == files + "/")
+        {
+            location = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
+
+FXbool xf_readtrashinfo(const FXString& pathname, const TrashLocation& location,
+                       FXString& original, FXString& deleted, FXString& infofile)
+{
+    original.clear();
+    deleted.clear();
+    infofile.clear();
+    FXString prefix = location.directory + "/files/";
+    if (pathname.left(prefix.length()) != prefix) return false;
+    FXString relative = pathname.right(pathname.length() - prefix.length());
+    FXString basename = relative.before('/');
+    if (basename.empty() || basename == "." || basename == "..") return false;
+    infofile = location.directory + "/info/" + basename + ".trashinfo";
+    struct stat info;
+    if (lstat((location.directory + "/info").text(), &info) != 0 ||
+        !S_ISDIR(info.st_mode) || info.st_uid != getuid())
+    {
+        appLog(APP_LOG_ERRORS, "trash-info", "Missing or unsafe information folder: " + location.directory + "/info");
+        return false;
+    }
+    if (lstat(infofile.text(), &info) != 0 || !S_ISREG(info.st_mode) || info.st_uid != getuid())
+    {
+        appLog(APP_LOG_ERRORS, "trash-info", "Missing or unsafe restore information: " + infofile);
+        return false;
+    }
+    std::ifstream input(infofile.text());
+    std::string line;
+    FXbool section = false;
+    while (std::getline(input, line))
+    {
+        if (line.find('\0') != std::string::npos || line.size() > 3 * MAXPATHLEN + 64)
+        {
+            appLog(APP_LOG_ERRORS, "trash-info", "Invalid restore information: " + infofile);
+            original.clear();
+            return false;
+        }
+        FXString value(line.c_str());
+        if (!value.empty() && value[value.length() - 1] == '\r') value.trunc(value.length() - 1);
+        if (value[0] == '[') section = value == "[Trash Info]";
+        else if (section && value.left(5) == "Path=") original = FXURL::decode(value.right(value.length() - 5));
+        else if (section && value.left(13) == "DeletionDate=") deleted = value.right(value.length() - 13);
+    }
+    if (input.bad() || original.empty() || original.find('\0') >= 0)
+    {
+        appLog(APP_LOG_ERRORS, "trash-info", "Invalid restore information: " + infofile);
+        original.clear();
+        return false;
+    }
+    if (original[0] != '/')
+    {
+        if (location.mountpoint.empty())
+        {
+            appLog(APP_LOG_ERRORS, "trash-info", "Relative Home Trash restore path: " + infofile);
+            original.clear();
+            return false;
+        }
+        FXString resolved = FXPath::simplify(location.mountpoint + "/" + original);
+        FXString top = location.mountpoint == "/" ? FXString("/") : location.mountpoint + "/";
+        if (resolved.left(top.length()) != top)
+        {
+            appLog(APP_LOG_ERRORS, "trash-info", "Restore path escapes its volume: " + infofile);
+            original.clear();
+            return false;
+        }
+        original = resolved;
+    }
+    original += relative.right(relative.length() - basename.length());
+    return true;
+}
+
+void xf_cleanuptrashinfo(const FXString& pathname)
+{
+    FXString home = xf_trashdatahome() + "/Trash/files/";
+    if (pathname.left(home.length()) != home && pathname.find("/.Trash") < 0) return;
+    struct stat info;
+    if (lstat(pathname.text(), &info) == 0 || errno != ENOENT) return;
+    TrashLocation location;
+    if (!xf_trashlocation(pathname, location) ||
+        FXPath::directory(pathname) != location.directory + "/files") return;
+    FXString infofile = location.directory + "/info/" + FXPath::name(pathname) + ".trashinfo";
+    if (lstat((location.directory + "/info").text(), &info) != 0 ||
+        !S_ISDIR(info.st_mode) || info.st_uid != getuid())
+    {
+        appLog(APP_LOG_ERRORS, "trash-info-remove", "Missing or unsafe information folder: " + location.directory + "/info");
+        return;
+    }
+    if (lstat(infofile.text(), &info) != 0)
+    {
+        if (errno != ENOENT) appLog(APP_LOG_ERRORS, "trash-info-remove", infofile + ": " + strerror(errno));
+        return;
+    }
+    if (!S_ISREG(info.st_mode) || info.st_uid != getuid() || unlink(infofile.text()) != 0)
+        appLog(APP_LOG_ERRORS, "trash-info-remove", "Cannot remove restore information: " + infofile);
+}
+
+
+FXArrowButton* xf_historybutton(FXComposite* parent, FXObject* target, FXSelector selector, const FXString& tip)
+{
+    FXuint resolution = FXCLAMP(100U, parent->getApp()->reg().readUnsignedEntry("SETTINGS", "screenres", 100), 800U);
+    FXint padding = (FXint)(4.0 * resolution / 100.0);
+    FXArrowButton* button = new FXArrowButton(parent, target, selector,
+                                               ARROW_DOWN | FRAME_RAISED | FRAME_THICK | LAYOUT_FILL_Y,
+                                               0, 0, 0, 0, padding, padding, 2, 2);
+    button->setArrowSize((FXint)(10.0 * resolution / 100.0));
+    button->setTipText(tip);
+    return button;
 }
 
 

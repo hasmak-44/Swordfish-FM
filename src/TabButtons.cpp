@@ -268,6 +268,10 @@ static FXString tabLabel(const FXString& pathname)
     {
         return PATHSEPSTRING;
     }
+    if (RemoteDirectory::isMedia(pathname))
+    {
+        return RemoteDirectory::mediaLabel(pathname);
+    }
     if (RemoteDirectory::isServer(pathname))
     {
         FXString host = pathname.mid(6, pathname.length() - 6);

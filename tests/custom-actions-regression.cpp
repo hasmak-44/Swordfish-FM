@@ -313,6 +313,24 @@ int main(int argc, char** argv)
         for (const FXString& path : context.paths) { expected += path.text(); expected += '\0'; }
         expected += '2'; expected += '\0';
         assert(shell("cd " + qcwd + " && " + command) == expected);
+        {
+            FXString spaced = base + "/it's 100% spaced";
+            assert(rename(executable.text(), spaced.text()) == 0);
+            CustomAction converted = launch;
+            converted.program = spaced;
+            FXString text = CustomActions::commandText(converted);
+            assert(text.find("'") == 0 && text.find("100%% spaced") > 0 && text.find(" %F %c") > 0);
+            converted.programMode = false; converted.command = text;
+            converted.program.clear(); converted.parameters.clear();
+            assert(CustomActions::prepare(converted, context, command, directory, error) && directory == cwd);
+            assert(shell("cd " + qcwd + " && " + command) == expected);
+            CustomAction plainProgram = action("plain-program");
+            plainProgram.programMode = true; plainProgram.program = "/usr/bin/printf";
+            assert(CustomActions::commandText(plainProgram) == "/usr/bin/printf");
+            plainProgram.programMode = false; plainProgram.command = "  kept as typed ";
+            assert(CustomActions::commandText(plainProgram) == "  kept as typed ");
+            assert(rename(spaced.text(), executable.text()) == 0);
+        }
         launch.workingDirectory.clear();
         assert(CustomActions::prepare(launch, context, command, directory, error) && directory == base);
         launch.workingDirectory = "%o";

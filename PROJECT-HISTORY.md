@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 6 November 2026, for the accepted 0.0.3 beta 1 release
-(section 3.39). Latest release: `swordfish-0.0.3-beta1`.
+Last updated: 10 November 2026, through the 0.0.3 beta 2 release (section 3.56).
+Latest release: `swordfish-0.0.3-beta2`.
 Stable fallback: `swordfish-0.0.2`.
 
 **Purpose:** preserve enough history, decisions, architecture and operational
@@ -33,12 +33,13 @@ Historical implementation details below do not override the current code.
 6. The native remote loader is a major verified improvement. Do not remove
    `swordfish-network` just because discovery is hidden: its `--list` mode
    provides the fast mounted-share loader.
-7. User-confirmed fixes include the portable search warning, child-window icons
-   and the missing-archivemount guidance. Other device, rename and Beta 1 work
-   still needs real-machine acceptance (sections 3.21 and 3.23).
+7. User-confirmed fixes include the portable search warning, child-window
+   icons, missing-archivemount guidance and the icon-startup fix (section 3.40).
+   The subsequent Custom Action, device and custom-toolbar changes have local
+   automated tests but still need the user's real-machine testing.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read section 3.39 first, then sections 3.28-3.38. The RC4-RC6 notes are
+9. For the latest state, read sections 3.40-3.50. The RC4-RC6 notes are
    historical context, not the current release or pending-work status.
 
 This guide is a documentation addition after the frozen RC4 application commit.
@@ -1192,8 +1193,9 @@ The user approved implementation after discussion:
   Desktop and applications-menu entries remain per-user.
 - Right-click a Details heading for a show/hide checklist. Drag the middle of
   one heading onto another to reorder immediately; widths follow their column.
-  Name remains visible and first. Search retains Folder Name; Trash keeps its
-  two recovery columns fixed. Existing Preferences controls remain available.
+  Name remains visible and first. Search retains Folder Name; Trash uses the
+  fixed Caja-style Name, Size, Type, Trashed On and Original Location columns.
+  Existing Preferences controls remain available.
 - Tabs persist column order/visibility as well as widths, including reordering,
   closing and failed-unmount rollback. Changing column defaults in Preferences
   invalidates older saved tab layouts after restart so the Preferences controls
@@ -1646,6 +1648,841 @@ illustrations in source and packages; only obsolete test screenshots/downloads
 and known temporary build products are cleanup candidates. Never use a broad
 git reset/clean to perform this cleanup.
 
+### 3.40 Beta 1 startup delay fixed locally: 7 November
+
+The user reported that published 0.0.3 beta 1 started slowly. Their MX Linux
+measurements (`build/measure-startup.py`, alternating 3-5 runs against Xfe)
+isolated the delay to Custom Actions using `theme:` icons in `xferc`. Removing
+only those icon lines restored normal startup. The cause was startup icon
+resolution building the complete system-icon chooser catalog by scanning every
+installed theme.
+
+Fix, committed locally as `a62bc2e` on top of `64dfde3` (not pushed):
+configured theme icon names are batched and resolved through a targeted,
+cached lookup. The full catalog is built only when the icon chooser opens.
+Theme precedence, raster/SVG/size selection and pixmaps fallback are preserved
+and covered by expanded GUI regressions. Native build plus both Custom Actions
+regression suites passed before and after the commit; the committed source
+matched the delivered test build byte-for-byte.
+
+The user's matched run on 7 November, using separate temporary copies of the
+same `xferc` with four theme icons (medians: main window / Ctrl+F search ready):
+
+| Build | Swordfish | Xfe in the same run |
+|---|---:|---:|
+| Published beta 1 | 4.07 s / 4.56 s | 0.62 s / 1.08 s |
+| Icon-startup test build | 0.90 s / 1.51 s | 0.63 s / 1.08 s |
+
+The user also confirmed the four icons, launching an action and the folder,
+opening the editor and the icon chooser all work in the test build.
+
+Test build: `Swordfish-0.0.3-beta1-icon-startup-test.tar.gz`, SHA256
+`39bc69016ab617c214d2d94e7585a4ad6a81340773eab639a5d013e2fe6d2390`;
+source SHA256
+`34ecad8521c91c602082fa64324c68777c60661bd88bb81ac9ee2a9fed0b4621`.
+Both remain in `build/` with their SHA256SUMS file. The user installed the
+test build at `~/Applications/Swordfish-0.0.3-beta1-icon-startup-test` and will
+retest it later. If it passes, work resumes on features and modifications.
+Pushing or publishing the fix still requires explicit permission. The
+published beta 1 and stable 0.0.2 releases are unchanged.
+
+The user later retested this build and reported it working.
+
+### 3.41 Custom Action Properties simplified to one Command field (uncommitted)
+
+The user asked for the full shell command to be the only command-entry method.
+Changes in `src/CustomActionsUI.cpp`:
+
+- Program, Parameters, the **Advanced: full shell command** checkbox and the
+  live command preview were removed. One **Command** field remains; its
+  Browse inserts a quoted program/script path (with `%` escaped as `%%`).
+- **Show on custom toolbar** moved to a **Toolbar** group at the top of the
+  Appearance Conditions tab for actions. Folders have no Appearance tab, so
+  their checkbox stays on Basic.
+- Help labels, the Parameter Legend, Test Action messages and the tooltip were
+  reworded for the single command. New actions use command mode
+  (`programMode = false`).
+- Compatibility: the data model is unchanged. Program-mode actions saved by
+  earlier test builds open as one equivalent command via the new
+  `CustomActions::commandText()` (quotes unusual program paths, doubles `%`).
+  If the text is not edited, the action is kept exactly as stored, so no
+  false unsaved-changes prompt appears. Edited text is saved as a normal
+  command, clearing Program/Parameters. Execution of program mode is unchanged.
+- Layout follow-up (user review of screenshots): the placeholder list has a
+  fixed width with Insert beside it; Parameter Legend and Test Action moved to
+  their own line below. The dialog can be maximized. The user chose to keep
+  the text fields at their fixed width rather than stretching with the window.
+
+Tests: the core suite now checks that a converted command (path with spaces, a
+quote and `%`) produces identical output. The GUI suite checks the new field
+layout, no preview/mode switch, the toolbar checkbox location, and that a
+program-mode action opens as one command and closes without a prompt.
+`make -C src`, `tests/run-custom-actions-regression.sh` and
+`SWORDFISH_TEST_WM=1 tests/run-custom-actions-ui-regression.sh` all passed.
+`portable/README.md`, `docs/manual/index.html` and `CHANGELOG.md` were updated.
+Not committed, packaged or pushed.
+
+### 3.42 Unmounted Devices labels use muted text (uncommitted)
+
+The user clarified the first item in `build/for discussion.txt`: connected
+unmounted USB drives and internal partitions, and disconnected network shares,
+should be visibly muted until mounted/reconnected. A safely ejected USB drive
+should disappear once the system removes it; ejecting a disconnected share
+forgets its Devices entry.
+
+`src/Places.cpp` now paints enabled unmounted device labels with a muted color
+derived from the active theme's text and background, including the selected
+colors. It preserves FOX's icon, label, focus and selection geometry. The
+color keeps at least 4.5:1 contrast when possible; if further muting cannot
+maintain that contrast, the theme's original foreground is retained. The
+existing `(unmounted)` suffix still identifies the state in that case. Mounted
+labels, actions, mount/eject controls and enabled/clickable behavior are
+unchanged. Connected unmounted devices remain available to mount; remembered
+GVFS shares remain reconnectable for the current session.
+
+Validation: `make -C src -j2` passed. The focused
+`tests/run-folder-expansion-regression.sh` passed with a staged icon prefix:
+it checks light/dark and selected colors, contrast and FOX drawing geometry;
+simulates USB/internal mount-unmount transitions and USB ejection; and checks
+share disconnect, reconnect and eject. Its host `lsblk` query is read-only;
+device and share actions in the regression use fixtures. No physical hardware
+or real network share was tested. The user has not tested this change yet.
+The portable README, manual and changelog were updated. No test package,
+commit, push or release was made.
+
+### 3.43 Flat play/pause/eject device icons (uncommitted)
+
+The user asked for video-player-style device controls: play for Mount, pause
+for Unmount (the mount is "still there ready to resume") and eject for Eject.
+They must be flat line drawings, black on light backgrounds and white on dark
+ones, everywhere except Close Archive Folder.
+
+The reference sites could not be fetched, so the symbols are original
+geometry defined once in `src/icons.cpp` (`deviceSymbolOutlines`).
+`drawDeviceSymbol` draws them in sidebar device rows (`src/Places.cpp`),
+replacing the bordered green play, red stop and red eject shapes; hit areas
+are unchanged. `loadAppIcons` also generates antialiased
+`minidevicemounticon`, `minideviceunmounticon` and `minideviceejecticon`,
+sized like `minimount.png` and blended over the theme base color. These replace
+the device Mount/Unmount/Eject icons in `DirPanel.cpp`, `FilePanel.cpp` and the
+Tools menu/toolbar in `XFileExplorer.cpp`. `deviceSymbolColor` chooses black
+or white by higher contrast with the actual background (including selected
+rows). Close Archive Folder still uses `miniunmounticon`; theme PNGs are not
+changed.
+
+Review feedback: the first preview was fuzzy (strokes off the pixel grid) and
+the user wanted solid pause bars. `deviceSymbolShapes` now maps the design
+symmetrically onto whole pixels (stroke 2 px at 16-20 px sizes), pause is two
+filled bars, and only diagonal edges are antialiased. The user also asked to
+drop the `(unmounted)` suffix when dimming works: `drawUnmountedDevice` strips
+the translated suffix from the drawn label whenever the muted color differs
+from the theme text; the item text itself still carries the suffix, so the
+fallback for undimmable themes is unchanged.
+
+Validation: `make -C src -j2` and the folder-expansion regression (44 PASS,
+tests updated for the suffix rule) passed with a staged icon prefix. A preview
+was rendered from the real generated icon pixels via a temporary harness; the
+user has not tested a build yet. No test package, commit, push or release.
+
+### 3.44 Custom toolbar icon size (uncommitted)
+
+The user requested a Preferences-only toolbar icon size (no context menu).
+A first attempt also covered the General/Tools/Panel toolbars by swapping in
+enlarged copies after construction. It started crashing with heap corruption
+(valgrind: invalid writes in the `XFileExplorer` constructor). This was caused
+by stale objects after a header change, and a clean `make -C src clean` rebuild
+fixed it. However, the user recalled that main toolbar changes were what forced
+the Beta 1 rollback (3.39) and chose **custom toolbar only**. The main toolbar
+code was removed; `XFileExplorer.cpp` contains only the 3.43 icon swaps.
+
+Implementation: `SETTINGS/customtoolbariconsize` (16/24/32, read via
+`xf_toolbariconsize`). `CustomActionsUI::rebuild` gives toolbar buttons
+separate icons: actions with an image or `theme:` icon are reloaded from the
+source at the larger size (quality depends on the source); fallback/builtin icons use
+`xf_toolbaricon` (24 = smooth, 32 = exact doubling; device symbols redrawn).
+Menus keep normal icons. Preferences applies the change immediately by
+rebuilding the custom toolbar. Note that the Makefile does not track header
+dependencies reliably, so run a clean rebuild after header edits.
+
+Follow-up preflight found that wide icons could shrink instead of grow because
+the reload size used the icon's height rather than the standard toolbar size.
+The loader now uses the standard size as its bounding box. The GUI regression
+was updated for the new Preferences setting and checks wide file and system
+icons, normal/medium/large sizes, disk persistence, Cancel, normal menu icons,
+and unchanged main-toolbar icons.
+
+Validation: clean build; launched under Xvfb at 16/24/32 with sample actions.
+The native build and Custom Actions model and GUI regressions passed. The
+folder-expansion and search-window regressions also passed when linked with
+`-lXrandr`, required by the current local build configuration. The user has not
+tested these local changes yet.
+
+### 3.45 Discussion-list triage before a test build
+
+On 8 November the user had about one hour and asked which discussion items
+could be completed quickly and safely. The list still contains several items
+that are already implemented: per-tab column widths, the always-visible
+archive-folder action for supported archives with a missing-`archivemount`
+message, the menu-bar Preferences button, Copy Path, and grouped Copy/Move/Link
+actions including Other Pane. The user manual already exists as bundled offline
+HTML. Online publication, version-numbering policy and the meaning of
+"detailed representation of ui" still need discussion.
+
+The dimmed device labels, play/pause/eject controls, simplified Custom Action
+dialog and custom-toolbar icon-size setting are local changes awaiting user
+testing. The wide-icon issue found during this preflight was fixed and tested
+as recorded in section 3.44. The larger freedesktop multi-size icon/theme plan
+is documented in `build/for discussion.txt` and should not be rushed into this
+test build. No new test package, commit, push or release was made during this
+triage.
+
+### 3.46 Beta 1 updates test build (local, uncommitted)
+
+The user approved a separate portable test build, not a release. It includes
+the Custom Action dialog, dimmed unmounted devices, play/pause/eject controls
+and custom-toolbar icon sizing described in sections 3.41-3.44. The larger
+freedesktop icon/theme replacement remains deferred. No commit, push, published
+release or change to the user's installed Beta 1 was made for these updates.
+
+The x86-64 bundle was built from a frozen working-tree snapshot on Debian 10
+(glibc 2.28). The local download directory is
+`build/beta1-updates-test-download-20261108/`; it is ignored by Git and must
+not be mistaken for a permanent release. The source archive matches the build
+snapshot and predates this history entry:
+
+| Archive | SHA-256 |
+|---|---|
+| `Swordfish-0.0.3-beta1-updates-test.tar.gz` | `544447ef8ee9015026a7b61f5c9eba9aa6d594876e4c5ffd93058e6d225eb3d4` |
+| `Swordfish-FM-0.0.3-beta1-updates-test-source.tar.gz` | `ec633cbc217be94ed0f9e0f28c3e3374b0bbd3a8d98300e5f3c8b96204509f63` |
+
+Both archive checksums were verified. The portable archive omits
+`portable-data`; on normal launch it creates its own profile in the extracted
+test folder. Existing Beta 1 settings may be **copied**, not moved, into the
+test profile if the user wants their Custom Actions.
+
+Validation used the extracted archive and a separate temporary HOME under
+Xvfb with a window manager: first launch, resizing, clean exit, saved settings
+and restart passed. The Custom Actions GUI regression also passed with the
+portable-built object files and packaged default icons. Earlier native build,
+Custom Actions, device and search regressions are recorded above. The user has
+not yet tested this build and said they will test it later; no physical devices
+were exercised in these checks. The user normally extracts the archive with
+Archive Manager and runs `AppRun`; terminal commands are not required.
+
+After delivery, the user asked to clean disk space. The verified temporary
+source snapshot, build copies and extracted portable output were removed,
+along with the unused `swordfish-portable-builder:debian-buster-slim` Docker
+image. The next portable build will need to rebuild that image and may require
+network access. The test binary and matching source archives, checksums,
+earlier test and release files, and `build/for discussion.txt` were retained.
+The private download server was left running, but its link depends on the
+Codespace remaining available and may need to be restarted in a later session.
+
+Package inspection also found 18 dangling Swordfish-named theme links created
+by `iconlinks.sh`; the same links and absent targets are present in the
+previous icon-startup test package. The application currently loads its window
+icons by other names, and the hicolor application icons are present. This
+pre-existing packaging issue was not changed during the time-limited test build.
+
+### 3.47 Appearance Preferences usability feedback (pending)
+
+The user initially could not find the toolbar icon-size setting. After its
+location was explained, they supplied `build/appearance.png`, showing the
+Appearance page with Large (2x) selected. This confirms initial UI inspection,
+not successful testing of icon sizing or physical-device behavior.
+
+The user asked to make a note, not implement another build: rename the section
+to **Tool Bar Icon Size** and replace the dropdown with three clearly labeled
+choices, **16**, **24**, and **32** pixels. Mutually exclusive radio buttons
+are the suitable form of the requested radio-button/tick-box choice; keep the
+Custom Actions toolbar scope explicit and leave main-toolbar sizing deferred.
+
+The Appearance page construction also needs review. The screenshot shows
+stretched controls and a partly obscured lower row in Custom Colors. Review
+grouping, widths and resizing so controls remain visible and the size setting
+is easy to find; the final page layout still needs discussion. This follow-up
+is recorded in `build/for discussion.txt`. The screenshot and discussion file
+are local, Git-ignored resources. No application code, test archive, commit,
+push or release was changed for this note.
+
+### 3.48 Nested portable launch breaks host networking (local fix)
+
+The user reported that the updates test discovered only their own computer
+and that unmounting an existing SMB share failed with "Containing mount does
+not exist" (`build/error-unmount.png`). The earlier icon-startup test still
+worked. They had launched the new test's `AppRun` from the older Swordfish.
+Closing the test and starting it from Thunar restored operation, as confirmed
+by the user. Switching file managers is a workaround, not the required UX.
+The user also confirmed that launching through a Custom Action in the older
+build works. Custom Actions already wraps execution with `xf_hostcommand`;
+that clean launch route explains the difference from directly running the file.
+
+Discovery, unmount code and build-helper logic are unchanged from Beta 1.
+The two delivered test archives also contain identical launchers. The launcher
+unconditionally overwrote `SWORDFISH_HOST_*`, recording the older portable
+process's private PATH, libraries, XDG paths and GIO modules as the desktop
+environment. Later host commands restored that contaminated environment.
+
+`portable/AppRun` now preserves already-recorded original host settings,
+including explicitly empty library/module values. First-launch capture,
+separate portable profiles, preview-loader setup and companion launchers are
+unchanged. The new `tests/portable-launcher-regression.py` reproduced the
+nested-launch failures before the fix; it covers defaults, custom host paths,
+inherited portable settings, empty host values, two-launcher chaining and
+AppImage/companion profiles. No C++ or device-operation changes are required.
+All six launcher regressions pass. A fixture using the actual older archived
+`AppRun` also passes when chained into the corrected launcher.
+
+The corrected package is `Swordfish-0.0.3-beta1-updates-test2`, stored in
+`build/beta1-updates-test2-download-20261108/`. It reuses the verified updates
+test's binaries and libraries, changing only `AppRun` and the root README;
+checksums verified all 9,450 other regular runtime files were unchanged.
+The matching source archive retains the original application sources and adds
+the corrected launcher, its regression tests and updated documentation.
+
+| Archive | SHA-256 |
+|---|---|
+| `Swordfish-0.0.3-beta1-updates-test2.tar.gz` | `37c25fa7927635a99b13035750b4e3a2cf8b20a08a43685083f69249bd4c8785` |
+| `Swordfish-FM-0.0.3-beta1-updates-test2-source.tar.gz` | `96e36c52b6d5728c562a517982b2d540b813a994e9278366a88d6d56ebe44bc9` |
+
+The extracted corrected archive passed first launch, saved settings, resizing,
+clean shutdown and restart under Xvfb, both directly and through the actual
+older archived launcher with a fixture application forwarding to the new app.
+The real running process preserved the original host PATH, library path and
+GIO module settings. The matching source archive predates this delivery entry.
+The corrected archives and checksums are served separately on private forwarded
+port 8766; the earlier download on 8765 was not replaced. Temporary extraction,
+fixture and packaging copies were cleaned up after verification.
+
+The user tested the corrected build and confirmed it is working. This confirms
+the reported network discovery and share-unmount regression is resolved on
+their setup; it does not validate unrelated physical-device operations. The
+Appearance-page/radio-button request in section 3.47 remains pending.
+No commit, push or published release was requested.
+
+### 3.49 Framed device control icons (uncommitted)
+
+After testing, the user asked for two changes to the flat device symbols from
+section 3.43, to do next time:
+
+- Draw the Mount (play) and Unmount (pause) symbols inside a square or circle.
+- Fix the Eject symbol: it looks distorted. The user preferred the earlier eject
+  design from before the pixel-grid adjustment in section 3.43.
+
+The symbols are drawn in `src/icons.cpp` and `src/Places.cpp`. Check them at
+real size on light and dark themes before the next test build.
+
+The user supplied comparison screenshots `build/icons.png` (current flat black
+symbols without frames) and `build/old icons.png` (earlier framed square
+buttons with coloured symbols: red dot, green play, red eject with base bar).
+The framed buttons and old eject shape are the preferred direction.
+The user then rejected the red dot (ugly) and fixed red/green colours (they do
+not work on all backgrounds). Plan: square frames and the old eject shape, with
+play/pause/eject symbols and frames drawn in one contrast-chosen colour.
+
+Implemented locally: `deviceSymbolShapes` now draws a thin square frame plus a
+solid play triangle, two pause bars, or a solid eject triangle over a bar, all
+pixel-aligned. Sidebar rows (`src/Places.cpp`) now use the same smoothed
+`makeDeviceIcon` rendering through a per-background cache instead of separate
+line drawing; `deviceSymbolColor` is internal. Validation: `make -C src`
+without warnings; folder-expansion regression 44 PASS (needs `-lXrandr` locally);
+preview `build/v3-icons-preview.png` rendered from the real code at 16/20/24/32
+px on white, grey and dark backgrounds. No test build, commit or release.
+
+User note: play/pause/eject exist in most freedesktop themes as
+`media-playback-start`, `media-playback-pause` and `media-eject` (present in
+Adwaita and Humanity, not in the bundled sets). Stage 3 should map to them when
+a theme provides them, keeping the drawn symbols as fallback.
+
+Further user notes for Stage 3 and later: most themes also provide device and
+network-share icons (`drive-harddisk`, `drive-removable-media`, `media-optical`,
+`computer`, `network-server`, `network-workgroup`, `folder-remote`), so sidebar
+rows should map to them with bundled fallbacks. A future build could extend
+network discovery to FTP, SSH/SFTP, media servers, WebDAV and NFS, each with a
+distinct theme icon. Recorded only; not designed or implemented.
+
+Test 2 feedback (8-9 Nov): the user confirmed network-share mount, unmount and
+eject work. USB was initially unavailable; on 9 November the user reported that
+the USB test passed.
+
+Unmounting an internal partition asked for an administrator password
+(`build/pw.png`: "mounted by another user"); `build/umerror.png` shows
+`NotAuthorizedDismissed` after the prompt was cancelled. The user first reported
+that Thunar and Caja did not ask, then corrected this: both also ask when
+unmounting the same partition. Swordfish uses host `udisksctl unmount -b`, with
+authorization handled by UDisks/Polkit. No code or system policy was changed.
+
+### 3.50 Pre-modularization baseline and additional requests (discussion)
+
+The user wants a stable, tested build that can be committed and pushed before
+starting a modularization branch. Current source is not identical to updates
+test 2: comparison of regular source/test/portable files found 137 matching
+files and three changed icon-related files (`src/icons.cpp`, `src/icons.h`,
+`src/Places.cpp`). The framed icon revision still needs testing in a portable
+build. Documentation has also changed; generated build and translation changes
+must be reviewed separately rather than committed indiscriminately.
+
+The user proposed six further items on 9 November, not yet implemented:
+
+- Put transparent PNG, JPG and alternative application icons in an `app-icon`
+  folder inside the main folder. Confirm whether this means the extracted
+  portable root beside `AppRun`. Existing folder and circular artwork is
+  available; JPG cannot preserve transparency.
+- Add three or four smaller zoom-out levels because increased DPI makes icons
+  too large. Confirm which icon surfaces should change. Current file zoom has
+  five steps and affects Details icons as well as Icons/Thumbnails; preserve
+  existing saved zoom choices when extending it.
+- Make the default address bar editable text with dropdown history. Current
+  pane bars have a separate history arrow, breadcrumbs/read-only text and a
+  temporary text editor. Clarify new-profile defaults versus existing choices.
+- Make the root-launch toolbar icon red and root-window title bar/borders red.
+  Native title-bar/border colours are generally window-manager controlled;
+  an application-owned red warning/border is an alternative, not yet approved.
+- Add Batch Rename to Tools, accepting a selected folder or multiple files.
+  Reuse the existing `RenameDialog`; clarify whether selecting a folder means
+  its contents or renaming the folder itself.
+- Show the dragged column/tab and its drop position, like Firefox. Existing
+  column and tab reordering lacks that feedback; preserve resizing, tab state,
+  file dropping and hover-to-switch behaviour.
+
+These are requests for scope discussion, not all purely cosmetic changes.
+
+Implementation (9 November, uncommitted, not yet user-tested). The user chose
+"do any items that can be done safely":
+
+- `app-icon/`: folder and circle artwork as transparent 256/512 PNGs and white
+  512 JPGs, plus 256/512 shield JPGs from `logo.jpg`. Installed to
+  `share/swordfish/app-icon`; the portable root gets an `app-icon` symlink.
+- Zoom: three extra zoom-out steps (icons 24/20/16, Details rows 14/12/10).
+  Saved steps 0-4 remain valid.
+- Address bar: text mode is the default; local folders use a permanently
+  editable path field. The existing history arrow beside Back is the dropdown.
+  Fixed Preferences reading/writing `showpathlinker` while panels used
+  `show_pathlinker`.
+- Root: the root toolbar icon is tinted red in every theme; a root window has a
+  red menu bar with white text. Title bar/border colours stay WM-controlled.
+- Tools > Bulk Rename... (reusing the existing translated label). Multiple items
+  work as before; one selected folder renames its direct contents, sorted
+  naturally, including hidden files only when shown. An empty folder shows an
+  information message.
+- Drag preview for columns/tabs: not attempted; deferred as riskier.
+
+Validation: clean `src` build; Custom Actions regression and UI regression
+(including new zoom-out test); portable launcher regression; staged
+`make install`; folder-expansion regression 44/44 (run from a copy with
+`-lXrandr`, a pre-existing link omission in the repository script). Xvfb
+screenshots confirmed the editable path field and navigation, red root menu
+bar and icon, Bulk Rename dialog listing a folder's contents, an actual rename
+on disk, and the empty-folder message.
+
+Baseline test build (9 November, user-approved): built from a frozen snapshot
+on Debian 10 / glibc 2.28 as `Swordfish-0.0.3-beta1-baseline-test.tar.gz`
+(SHA-256 `d63edd1e72444789ca0ca51db7527fc9d8733ce223a85f10708c908b8b8658fc`)
+with matching source archive (SHA-256
+`c735d20e7c7e198ca641ec64df5ec65523c1747441e29803e749f8484507e208`) in
+`build/baseline-test-download-20261109/`. It also contains the untested framed
+device icons. The portable first-launch smoke test passed. Awaiting user
+testing; no commit, push or branch was made.
+
+User feedback on that build: no visible history arrow and no way to switch to
+breadcrumbs. Fix: the Folder History arrow moved from beside Back to the right
+end of the address field, dropping its list down below the arrow (it stays
+greyed out until there is history). The pencil button now toggles
+`show_pathlinker` (text/breadcrumbs) for both panels, saved immediately;
+Ctrl+L still focuses/edits the path. Preferences re-reads the setting each
+time it opens so it cannot overwrite the toggle. Verified in Xvfb (history
+list, toggle, persistence after restart) and with the Custom Actions, UI,
+portable launcher and folder-expansion regressions. Rebuilt as
+`Swordfish-0.0.3-beta1-baseline-test2.tar.gz` (SHA-256
+`dc2eb9f9e316f6da07d68a3d763adfcb98c372da69b4e64bf1cb26e5d95f21e2`) in
+`build/baseline-test2-download-20261109/`; smoke test passed.
+
+The user confirmed the old builds' path-linker preference did not work and
+found its wording ambiguous. Following their suggestion, the working-tree
+preference is now labelled **Default address bar mode**, with **Text** and
+**Breadcrumbs** choices. It uses the same saved setting as the address-bar
+switch. Fixed the text field remaining visible alongside breadcrumbs when a
+Preferences change refreshes the panes without an immediate restart.
+A clean source build and the UI regression passed; isolated Xvfb checks
+confirmed that each choice survives an application restart. This change is
+not included in baseline test 2, and no new portable build was made.
+
+Follow-up (9 November): the user asked to keep things simple — make the
+existing history buttons clearer and the mode setting clearer. The setting is
+now two radio buttons in a **Default address bar mode** group: **Button mode
+(breadcrumbs)** and **Edit mode (text)** (same `show_pathlinker` key). The
+pane Folder History arrow returned beside Back (its original position); it and
+the top toolbar's Back/Forward history arrows now share `xf_historybutton()`:
+raised, thick-framed, larger arrow scaled by `screenres`. The pane list drops
+down from the arrow's left edge, clamped to the screen; the toolbar lists open
+below their buttons instead of at fixed offsets. Clean `src` build; Custom
+Actions regression and the GUI regression (6 consecutive runs) passed,
+covering both panes, both modes, empty/populated history and selection.
+Not yet in a portable build.
+
+Trash bug (9 November, all builds): Places → Trash showed "Folder
+~/.local/share/Trash/files doesn't exist", and trashed files were invisible to
+Thunar/Caja (`trash:///`). Cause: portable `AppRun` redirects `XDG_DATA_HOME`
+into the bundle, so every trash path built from `xdgdatahome` pointed at a
+private trash inside the bundle, while Places hard-coded the real
+`~/.local/share/Trash/files`, which does not exist until something is trashed.
+Fix: new `xf_trashdatahome()` (prefers `SWORDFISH_HOST_XDG_DATA_HOME`, then an
+absolute `XDG_DATA_HOME`, then `$HOME/.local/share`) is used for all trash
+paths including Places; `DirPanel::onCmdGotoPlace` and `FilePanel::navigatePane`
+create the trash `files`/`info` folders (0700) on demand. Verified under a
+portable-like environment that startup creates the host trash and no bundle
+trash; both regressions pass. Note: items trashed by older portable builds
+remain in the bundle's private `data/Trash` and will not appear in the new view.
+This fixed Home Trash only, not the combined mounted-drive view provided by
+desktop file managers; see section 3.51.
+
+Trash controls (9 November): the user found no visible way to empty the trash
+(the existing Trash menu / Ctrl-Del was overlooked). Added, Caja-style, a
+**Trash** bar above the file list (`FilePanel::trashbar`, toggled in
+`onUpdStatus`) shown only while that panel displays the trash, with
+**Restore Selected Items** (activates that panel, then restores to each item's
+original location) and **Empty Trash**; plus **Empty Trash** in the sidebar
+right-click menu of the Trash can place (`DirPanel::onSidebarPopup`). Trash
+columns now match Caja's Name, Size, Type, Trashed On and Original Location
+order. The bar's Empty button forwards via
+`ID_TRASHBAR_EMPTY` because `mainWindow` is still NULL while panels are
+constructed. Verified in Xvfb: bar shows/hides, Restore enables on selection
+and restores, both Empty paths confirm and empty `files`/`info`.
+
+Integration / toolbar-size follow-up: the user reported repeated launcher
+creation and an error when changing toolbar size, even though integration
+appeared unchecked. The screenshot showed refusal to remove a modified desktop
+entry. Ownership verification failure had cleared the displayed choices, and
+every Preferences Accept reapplied integration, including unrelated saves.
+Recorded choices now remain visible on verification failure; only integration
+controls are disabled with an explicit warning. Other preferences still save.
+Integration is applied only when its choices or enabled command destination
+change. Reapplying unchanged desktop/menu entries no longer calls `fchmod`
+unnecessarily, preserving inode, mtime and ctime when permissions already match.
+Strict refusal to overwrite or delete changed/unrelated launchers is retained.
+Pure launch-only recreation has not been reproduced; no startup integration
+apply call was found.
+
+The specific request in section 3.47 is now implemented locally:
+**Tool Bar Icon Size**, with **16 px**, **24 px**, **32 px** radio buttons.
+This changes only the custom toolbar, retains DPI scaling, applies on Accept
+and discards on Cancel. Broader Appearance-page redesign remains deferred.
+A clean source build, System Integration regression and window-manager GUI
+regression passed. Coverage includes radio exclusivity/layout, unchanged
+launcher/state metadata across size saves, saving with a modified desktop
+entry, and intentional integration removal versus Cancel.
+Manual, portable notes and changelog updated. No new portable package,
+commit or push; the baseline-test2 download remains unchanged.
+
+Follow-up verification (9 November): the "launchers recreated" symptom is
+caused by Preferences Accept, not startup. With inotify watching the launcher
+folders, baseline test 2 produced ATTRIB/CLOSE_WRITE on both launchers and the
+state file on every Accept with no changes; the current build produced none,
+and three portable starts produced no events and identical checksums with
+either build. Ownership is now recognised by the Swordfish marker comment or
+the recorded Exec line, so a desktop-reformatted launcher keeps the choices
+checked and enabled; only truly unrelated files lock the integration controls.
+Unchanged launchers are opened read-only. Verified in Xvfb with the portable
+bundle: modified launcher, select 32 px, Accept, no error dialog, launchers
+unchanged, `customtoolbariconsize=32` saved.
+
+Drag fixes (9 November): dragging to Chrome or a text editor failed because
+Swordfish offered Move, which copy-only targets reject. When the pointer is
+outside Swordfish, Move now becomes Copy (`xf_dragaction`), and the UI log
+records `drag-to-other-program` accepted/rejected. The user also reported a
+stop sign on clicking items in a writable MegaSync folder. Cause: a click with
+slight movement starts a drag, and the cursor was chosen before the target's
+XDND status reply arrived, so the first frame always showed stop and stayed
+until the pointer moved again. `FXApp::dispatchEvent` in `foxhacks.cpp` now
+updates the drag cursor when the status arrives. `FileList::onDragged` also
+used `orgdirectory` (set only on DND enter, so empty on the first drag and
+stale afterwards) for the read-only source check; it now uses the list's own
+folder. Verified in Xvfb: short drags show the move cursor, a read-only target
+folder still shows stop, and both regression suites pass.
+
+The user then found that drags fail when the target is on another desktop
+(FeatherPad on desktop 2, Chrome restored from the panel): the pointer becomes
+normal and the file is lost, while Caja works. Cause: X releases a pointer grab
+when the grab window becomes unviewable, and FOX grabs on the source widget.
+`xf_keepdraggrab()` (called from `FileList`/`DirList::onBeginDrag`) moves the
+active grab to a 1x1 override-redirect window at -10,-10 that is mapped with
+`XMapRaised` (FOX `show()` does nothing because shells start with FLAG_SHOWN).
+FOX still routes events to `mouseGrabWindow`, and `ungrab()` releases it.
+Verified in Xvfb with fluxbox: drag, switch desktop, drop into FeatherPad
+(file opened, log "accepted"); drag, minimize Swordfish, grab kept, released
+on button up.
+
+Pre-build checks: Escape cancels a drag and releases the grab; internal drops
+still show Copy/Move/Link; two back-to-back cross-desktop drags both reach
+FeatherPad. The Places sidebar has never supported dragging. Tree-tab drags still
+failed: hovering over a folder during the drag expands it, and
+`DirList::onExpanded` called `ungrab()`, which also released the helper's grab.
+It now skips the ungrab while `isDragging()`. Verified: tree folder dragged
+to a copy-only target on desktop 2 arrived (`file:///go`). The
+folder-expansion regression passes; its script needs `-lXrandr` added to the
+link line (missing before this work).
+
+Baseline test 3 (9 November, end of day): built with
+`./portable/build-portable.sh build/Swordfish-0.0.3-beta1-baseline-test3`
+(Debian 10, glibc 2.28) and served from
+`build/baseline-test3-download-20261109/` on port 8766 (test 2 remains on
+8765). SHA-256 of the portable tarball:
+`722b906645878ff68042c3e9e2b8177471a233eea2f316712d9d5d4b51f497a8`. Smoke
+test of the extracted package: started normally, and a file dragged to a
+program on another desktop arrived ("accepted" in `ui.log`). It contains the
+trash bar and sidebar Empty Trash, clearer history arrows, address-mode radio
+buttons, the launcher/toolbar-size fixes, and all drag fixes above.
+
+Plan: the user tests test 3 the next day (cross-desktop and panel drags to
+Chrome/FeatherPad, Tree-tab drags, plain clicks, internal Copy/Move/Link menu,
+toolbar size, launchers after restart, trash buttons, address bar). If all
+pass, commit and push as the stable baseline, then branch for
+modularization. Nothing is committed yet. Disk clean-up removed superseded
+test packages (icon-startup, beta1-updates 1 and 2, baseline test 1) and
+temporary test folders; kept are `release-beta1`, baseline tests 2 and 3, and
+the user's notes and screenshots in `build/`.
+
+### 3.51. Combined Home and mounted-drive Trash (10 November 2026)
+
+The user tested baseline test 3 from a fresh extraction. Places -> Trash opened
+the correct host Home Trash. A disposable file trashed directly from Home in
+Caja appeared in both programs, but items from a mounted Projects drive were
+missing in Swordfish. The previous host-path fix was necessary but incomplete:
+Caja combines Home Trash and per-volume Trash; Swordfish listed Home only.
+
+The user approved a combined view, Restore to each item's original location,
+and Empty Trash applying to Home plus mounted drives after confirmation.
+Older private portable Trash must not be migrated or deleted automatically.
+
+Implementation:
+
+- Shared helpers discover the user's `.Trash-<uid>` and sticky `.Trash/<uid>`
+  layouts from mounted filesystems, reject symlink/foreign-owned roots and
+  deduplicate directories. They do not create per-volume Trash folders.
+- The Home Trash listing includes mounted-drive items, keeping each row's real
+  backing path and independent identity even when filenames match. Hidden
+  trashed items remain visible. Periodic refresh detects other-drive changes
+  and unmounts. The address bar retains the Home Trash navigation anchor.
+- Metadata parsing accepts either field order, decodes percent escapes once,
+  resolves volume-relative paths against their mount point and rejects
+  relative paths escaping that mount. Properties and both restore routes use
+  the same reader. New metadata is percent-encoded, including literal percent
+  signs; creating missing Trash directories no longer skips writing metadata.
+- Restore, clipboard, file operations, Properties, archive inputs and selected
+  size commands use physical item paths rather than joining a displayed name
+  onto Home Trash. Metadata cleanup requires the source to have actually
+  disappeared; successful File operations cover mounted-drive paths too.
+- Empty Trash confirms its combined scope, checks each folder, stops on
+  failure/cancellation, preserves metadata for remaining items, and recreates
+  removed files/info directories privately. Trash Size uses the same discovered
+  locations. Unmounted drives and legacy private portable Trash are untouched.
+- Ordinary folder listings and file operations avoid mounted-Trash discovery
+  unless their paths could be inside Trash. Read/discovery errors are logged.
+
+Validation uses disposable Home/volume fixtures and the existing mount-table
+interposition, never real desktop Trash. Added checks cover both volume
+layouts, duplicate names and selection after refresh, hidden folders,
+percent-encoded and unordered metadata, descendant paths, invalid escape/NUL
+paths, first-use metadata creation, symlink decoys, mount disappearance,
+actual clipboard/Properties, actual Restore, Empty confirmation cancellation,
+and a simulated deletion error preserving the remaining restore metadata.
+
+Clean native rebuild and the full folder/device regression passed, as did
+the Custom Actions model and window-manager GUI regressions. One initial
+folder/device run hit its existing 150ms UI timing assertion later in unrelated
+share-reconnection checks; subsequent complete runs passed without relaxing
+the threshold. The folder runner now links Xrandr only when the configured
+build uses it, matching the GUI runner's convention.
+
+Independent re-verification (clean `make -C src` rebuild, real tmpfs drive
+mounted at `/media/sftestvol`, disposable Home Trash, app driven on Xvfb):
+both Home and drive items listed with correct original locations (including a
+`%20`-encoded name); Restore moved the drive item back to
+`/media/sftestvol/projects/sfm/drive note.txt` and removed its record; Empty
+Trash counted both locations, Cancel kept everything, OK emptied both; with the
+drive remounted read-only, Home was emptied, the drive item and its record were
+kept, errors were shown and the app stayed running; unmounting the drive left
+a working Home-only Trash view. Custom Actions model and GUI regressions
+passed. Known cosmetic point: the read-only case shows two error boxes (file,
+then folder).
+
+Baseline test 4 (10 November, morning): built with
+`JOBS=2 ./portable/build-portable.sh build/Swordfish-0.0.3-beta1-baseline-test4`
+(Debian 10, glibc 2.28, about 6 minutes). It adds the multi-volume Trash fix to
+test 3. Downloads, source (working-tree, non-ignored files) and `SHA256SUMS`
+are in `build/baseline-test4-download-20261110/`, served on port 8767.
+Portable SHA-256:
+`ba579821736adc9b841f2aa27c667c89cf4af27e617049c84ee9f8793b4b3e3d`.
+Smoke test: the extracted package started normally and showed the welcome
+window.
+
+Updated the changelog, portable notes and manual. No commit, push or branch
+was made; baseline test 3 downloads remain unchanged.
+
+User test (10 November, 11:10 UTC): the user downloaded and tested test 4 on
+their machine and reported "trash fix passed".
+
+### 3.52. MX Blues built-in theme (10 November 2026)
+
+The user supplied `build/MX Blue.swordfish-theme` (named "MX Blues" inside)
+and asked for it as a built-in theme called MX Blues, right after Current
+Theme (index 1). Added to `PreferencesBox` before Swordfish with the file's
+exact colors; `NUM_DEFAULT_THEMES` raised from 14 to 15 (custom themes are
+stored separately as `THEMES/themeN`, so they are unaffected). Verified on
+Xvfb after a clean rebuild: the list shows Current Theme, MX Blues, Swordfish,
+...; selecting MX Blues and Accept saved basecolor `#29353b`, backcolor
+`#1e242d`, listbackcolor `#0f3540`, highlightcolor `#113d48`. Not in test 4.
+
+### 3.53. FTP unmount URI lookup (10 November 2026)
+
+A tester reported that mounting an FTP server from the address bar worked,
+but Unmount showed "Can't determine the network mount URI". The uploaded
+screenshot and `build/logs.tar.gz` confirm an FTP GVFS mount was opened and
+browsed. `xf_gvfsmounturi()` handled SMB, SFTP and MTP but omitted FTP.
+
+Added FTP to the existing host/user/port URI conversion, preserving encoded
+usernames and targeting the mount root even from a nested directory. This
+shared helper also supplies sidebar network-mount recognition. No mount,
+authentication or unmount-command behavior was otherwise changed.
+
+Incremental native build and the complete folder/network regression passed.
+New assertions cover plain FTP, encoded login/custom port, nested paths and
+missing host; real `File::mount()` calls with the fixture host `gio` verify
+the two expected FTP unmount commands are executed. This is local fixture
+verification, not a connection to the tester's server; real-server retesting
+is pending. Not included in test 4; no new package, commit or push.
+
+### 3.54. Network devices and read-only DLNA browsing (10 November 2026)
+
+The user asked to extend discovery to FTP, SSH, media servers, printers and
+network infrastructure, all before the baseline. Agreed scope: media is
+read-only browsing (folders and server categories in the file pane, files
+streamed to a player or the browser, Download saves copies); infrastructure
+is advertised devices only, no port scanning; no "Send to TV".
+
+Helper (`src/NetworkDiscovery.cpp`): SSDP M-SEARCH, mDNS (legacy unicast)
+and WS-Discovery printers emit `SERVICE<TAB>kind<TAB>key<TAB>address<TAB>name
+<TAB>url<TAB>sources` (kinds ftp, sftp, media, printer, router); local and
+non-IPv4 addresses are skipped. Web pages are only accepted on the same host
+(`sameHostPage`). New `--media LOCATION dlna://host:port/path` (SOAP Browse
+with paging, read-only GVariant rows whose link is the stream URL) and
+`--download URL FILE` (writes `FILE.part` with O_EXCL, links into place, never
+overwrites, prints DONE).
+
+GUI: `RemoteDirectory` treats `dlna://` as a server path (all share read-only
+guards apply), keeps a media-server registry (persisted in `NETWORK MEDIA`),
+and runs a sequential download queue with one "Download failed" summary.
+`DirPanel` lists services as `SidebarItem::SERVICE` rows ("Name (kind)") and
+opens them (media: pane; ftp/sftp: `resolveNetworkPath`; others: host
+xdg-open). FilePanel streams/downloads; tabs are labelled with the server
+name. Streaming via xdg-open disables startup notification, which otherwise
+left a busy cursor (caught by the GUI regression).
+
+Verified: clean native build without warnings; network-discovery, full
+folder-expansion GUI (new device, media, stream and download checks),
+custom-actions and custom-actions UI regressions. A real minidlna in the
+codespace was browsed, downloaded from (byte-identical, no overwrite) and
+discovered over SSDP from a Docker container; an Xvfb smoke of the patched
+test-4 bundle opened its folders from the address bar. Not tested on a real
+LAN, FTP/SFTP servers, printers or routers. No commit or push.
+
+Baseline test 5 (10 November, 12:28 UTC): built with
+`JOBS=2 ./portable/build-portable.sh build/Swordfish-0.0.3-beta1-baseline-test5`
+(Debian 10, glibc 2.28). Adds network devices/DLNA browsing (this section),
+MX Blues (3.52) and the FTP unmount fix (3.53) to test 4. Downloads, source and
+`SHA256SUMS` are in `build/baseline-test5-download-20261110/`, served on port
+8767. Portable SHA-256:
+`033ffc65a44124c1160de3431b541ce80639bf8e13ce3ed147d02f28ba999b05`.
+Smoke test: the extracted package started and exited cleanly; its
+`swordfish-network` includes the `--media`/`--download` modes.
+
+### 3.55. Media play choices and download progress (10 November 2026)
+
+The user tested test 5 with Kodi and Jellyfin: double-click always went to
+the browser (only Swordfish's own player setting was consulted, and the stream
+is an http address), and downloads gave no feedback.
+
+- Double-click order is now: the Swordfish audio/video player, then the
+  desktop's default application for the file's MIME type (guessed from the
+  name with GIO, looked up with `xf_defaultApplications`), then the browser
+  through host `xdg-open`. Desktop applications run through `xf_hostcommand`
+  with the stream URL appended.
+- The media file context menu (one file selected) has **Play**, **Play With**
+  (installed applications whose `MimeType` includes the type, the default
+  first, plus **Web Browser**), **Copy Stream Address** (text clipboard) and
+  **Download...**. Folders keep **Open / Download... / Refresh**.
+- The helper's `--download` prints `PROGRESS <bytes> <total|-1>` lines
+  (throttled to 250 ms) before `DONE`, and removes its `.part` file and exits
+  130 on SIGTERM/SIGINT.
+- `RemoteDirectory::download` now takes an owner window. The queue parses the
+  progress lines and shows a non-modal **Media Download** window after 0.5 s
+  (so quick downloads don't flash it): "Downloading N of M: name", a bar
+  (bytes when the size is known, else files) and the byte count. **Hide**
+  keeps it hidden until the batch ends; **Cancel Downloads**
+  (`RemoteDirectory::cancelDownloads`) terminates the helper, removes the
+  `.part` file, drops the queue and reports no error.
+
+Verified: clean native build without warnings; network-discovery (new
+progress, sized and SIGTERM cleanup checks), full folder-expansion GUI (menu
+contents, clipboard, default application, Play With, browser, progress
+window, Hide, Cancel), custom-actions and custom-actions UI regressions. The
+GUI test now isolates system application folders. Not yet tested with real
+Kodi/Jellyfin or a real player. No commit or push.
+
+Baseline test 6 (10 November, 13:16 UTC): built with
+`JOBS=2 ./portable/build-portable.sh build/Swordfish-0.0.3-beta1-baseline-test6`
+(Debian 10, glibc 2.28). Test 5 plus this section. Downloads, source and
+`SHA256SUMS` are in `build/baseline-test6-download-20261110/`, served on port
+8767 (test 5 server stopped). Portable SHA-256:
+`0c9dedcf720431204215f3f6cd390fae29eada3fab6c663202f8e456b11890b0`.
+Smoke test: the extracted package started under Xvfb and kept running; its
+binaries contain the new menu items and the helper's PROGRESS output.
+
+Feedback on test 6: **Play With** listed applications that cannot play the
+file (it took every application whose `MimeType` includes the type, such as
+editors), and offered no way to reach the regular Open With dialog. Changes:
+
+- `DesktopApplication` gained `acceptsUrls` (Exec has `%u`/`%U`). Besides the
+  desktop default, Play With lists only applications that accept URLs and
+  have a `Player`, `TV` or `Viewer` category, excluding `WebBrowser` ones
+  (covered by **Web Browser**).
+- **Other Application...** opens the regular Open With dialog.
+  `HistInputDialog::setOpenWithContext` takes an optional known MIME type,
+  because `file` cannot inspect a stream. "Remember" saves a Swordfish
+  association for the extension.
+- Double-click now also honours a Swordfish association that is a real
+  command; `<placeholder>` associations still only map to the audio/video
+  player settings. Commands outside the bundle (`swordfish-open`, `swf*`,
+  `xfw`) run through `xf_hostcommand`, like the regular Open With.
+
+Verified: clean rebuild without warnings; all four suites pass. The GUI test
+adds an editor and a `%F`-only player that must not appear, plus Other
+Application with and without Remember. No commit or push.
+
+Baseline test 7 (10 November, 13:40 UTC): built with
+`JOBS=2 ./portable/build-portable.sh build/Swordfish-0.0.3-beta1-baseline-test7`
+(Debian 10, glibc 2.28). Test 6 plus the Play With filtering and Other
+Application. Downloads, source and `SHA256SUMS` are in
+`build/baseline-test7-download-20261110/`, served on port 8767 (test 6 server
+stopped). Portable SHA-256:
+`9185071f2574da1d19cb9a4374f10d9fdb452307c0cc053f430cd978359bc20d`.
+Smoke test: the extracted package started under Xvfb and kept running.
+
+### 3.56. Swordfish 0.0.3 beta 2 released (10 November 2026)
+
+The user tested baseline test 7 ("all done") and asked to commit, push and
+publish beta 2. `configure.ac` and `configure` now say `0.0.3-beta2`; README,
+portable/README, the manual, RELEASE-NOTES and the CHANGELOG heading were
+updated. Release tag: `swordfish-0.0.3-beta2`; title **Swordfish 0.0.3 beta
+2**. As with beta 1 (3.39), it carries GitHub's Latest badge and is not
+flagged as a pre-release; 0.0.2 stays the stable fallback, unchanged.
+
+Files: portable ZIP and tar.gz and the source archive from the tag workflow,
+plus `Swordfish-User-Manual-0.0.3-beta2.zip` added by hand, with
+`Swordfish-0.0.3-beta2-SHA256SUMS` covering all four. The commit also carries
+regenerated autotools/gettext files (`aclocal.m4`, `Makefile.in`, `po/*.po`);
+the release container regenerates them with `autoreconf -fi` regardless.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -1925,6 +2762,10 @@ prereleases and must not be assumed to select RC4.
 
 ### 9.0 Current position (26 October 2026)
 
+- **Superseded by sections 3.40-3.42:** 0.0.3 beta 1 is published; its
+  startup fix is committed locally as `a62bc2e`, tested by the user and
+  unpushed. Subsequent dialog and device-label changes are uncommitted and
+  await real-machine testing. The items below are kept as history.
 - **Latest:** Test 2 feedback reopened several bugs; see section 3.16.
   Test 4 is now built from `91fa099` for limited no-selection/inventory/spare
   USB testing; delivery details and checksum are in section 3.16.
@@ -2183,8 +3024,9 @@ Do not amend published commits/tags as an automatic workaround.
 
 ### Durable starting point
 
-0.0.2 is the current frozen stable release. Sections 3.21-3.23 record the local
-test-build changes and their validation/acceptance boundaries, with section
-3.24 recording the latest PATH/column changes. Start there,
-not from an old experimental ZIP, an obsolete roadmap or an incomplete chat
-summary. Do not publish local work without the user's permission.
+0.0.2 is the current frozen stable release; 0.0.3 beta 1 is published.
+Sections 3.40-3.42 record the latest state: the user-tested startup fix is
+local and unpushed; the subsequent dialog and device-label changes are
+uncommitted and await real-machine testing. Start there, not from an old
+experimental ZIP, an obsolete roadmap or an incomplete chat summary. Do not
+publish local work without the user's permission.

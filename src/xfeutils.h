@@ -658,7 +658,7 @@ size_t xf_strlcat(char*, const char*, size_t);
 FXulong xf_dirsize(const char*);
 FXulong xf_pathsize(char*, FXuint*, FXuint*, FXulong*, int* = NULL);
 
-FXString xf_humansize(char*);
+FXString xf_humansize(const char*);
 FXString xf_cleanpath(const FXString);
 FXString xf_filepath(const FXString);
 FXString xf_filepath(const FXString, const FXString);
@@ -684,6 +684,12 @@ enum
     XDS_DROP_TIMEOUT
 };
 FXDragType xf_xdsdragtype(FXApp*);
+
+// Drag action for the window under the pointer; other programs only accept copies or links
+FXDragAction xf_dragaction(FXApp*, FXint rootx, FXint rooty, FXDragAction action);
+
+// Keep the drag alive when the window that started it is hidden (desktop switch, minimize)
+void xf_keepdraggrab(FXWindow* source);
 int xf_xdsdrop(FXWindow*, const FXString&, FXuint);
 FXString xf_buildcopyname(const FXString&, const FXbool, FXString&, const FXuint);
 
@@ -738,6 +744,22 @@ void xf_replacestring(FXchar*, FXint*, FXint, FXint, const FXchar*, FXint);
 FXString xf_substitutecase(const FXString&, const FXString&, const FXString&, bool all = true);
 
 FXulong xf_hashfile(const FXchar*);
+
+// Data folder holding the user's trash can (the host's, also inside the portable bundle)
+FXString xf_trashdatahome(void);
+
+struct TrashLocation
+{
+    FXString directory;
+    FXString mountpoint;
+};
+std::vector<TrashLocation> xf_trashlocations();
+FXbool xf_trashlocation(const FXString& pathname, TrashLocation& location);
+FXbool xf_readtrashinfo(const FXString& pathname, const TrashLocation& location,
+                       FXString& original, FXString& deleted, FXString& infofile);
+void xf_cleanuptrashinfo(const FXString& pathname);
+
+FXArrowButton* xf_historybutton(FXComposite*, FXObject*, FXSelector, const FXString&);
 
 // Background color of a bar, shaded from the base color (level 0 = base color)
 FXColor xf_barcolor(FXApp*, int level);

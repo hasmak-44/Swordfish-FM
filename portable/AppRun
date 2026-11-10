@@ -26,13 +26,15 @@ if [ ! -w "$data_root" ]; then
     exit 1
 fi
 
-export SWORDFISH_HOST_PATH="${PATH:-/usr/bin:/bin}"
-export SWORDFISH_HOST_LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
-export SWORDFISH_HOST_XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-export SWORDFISH_HOST_XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-export SWORDFISH_HOST_XDG_CONFIG_DIRS="${XDG_CONFIG_DIRS:-/etc/xdg}"
-export SWORDFISH_HOST_XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
-export SWORDFISH_HOST_GIO_MODULE_DIR="${GIO_MODULE_DIR:-}"
+# Preserve the original desktop environment when another portable copy launches us.
+# Empty recorded library/module settings mean host defaults, not the current bundle.
+export SWORDFISH_HOST_PATH="${SWORDFISH_HOST_PATH-${PATH:-/usr/bin:/bin}}"
+export SWORDFISH_HOST_LD_LIBRARY_PATH="${SWORDFISH_HOST_LD_LIBRARY_PATH-${LD_LIBRARY_PATH:-}}"
+export SWORDFISH_HOST_XDG_CONFIG_HOME="${SWORDFISH_HOST_XDG_CONFIG_HOME-${XDG_CONFIG_HOME:-$HOME/.config}}"
+export SWORDFISH_HOST_XDG_DATA_HOME="${SWORDFISH_HOST_XDG_DATA_HOME-${XDG_DATA_HOME:-$HOME/.local/share}}"
+export SWORDFISH_HOST_XDG_CONFIG_DIRS="${SWORDFISH_HOST_XDG_CONFIG_DIRS-${XDG_CONFIG_DIRS:-/etc/xdg}}"
+export SWORDFISH_HOST_XDG_DATA_DIRS="${SWORDFISH_HOST_XDG_DATA_DIRS-${XDG_DATA_DIRS:-/usr/local/share:/usr/share}}"
+export SWORDFISH_HOST_GIO_MODULE_DIR="${SWORDFISH_HOST_GIO_MODULE_DIR-${GIO_MODULE_DIR:-}}"
 
 export SWORDFISH_PORTABLE=1
 export SWORDFISH_PORTABLE_DATA="$data_root"

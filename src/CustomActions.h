@@ -48,6 +48,8 @@ public:
     static bool prepare(const CustomAction&, const CustomActionContext&, FXString& command,
                         FXString& directory, FXString& error, bool verify = true);
     static bool check(const CustomAction&, const CustomActionContext&, FXString& error);
+    // Program-mode actions are shown as one equivalent shell command
+    static FXString commandText(const CustomAction&);
 };
 
 #endif

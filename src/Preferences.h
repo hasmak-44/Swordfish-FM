@@ -8,6 +8,7 @@
 #include "ComboBox.h"
 #include "DialogBox.h"
 #include "KeyBindings.h"
+#include "SystemIntegration.h"
 #include "SystemIcons.h"
 
 class ProgramChoice : public ComboBox
@@ -27,7 +28,7 @@ public:
 #define NUM_COLORS    12
 
 // Number of default themes
-#define NUM_DEFAULT_THEMES    14
+#define NUM_DEFAULT_THEMES    15
 
 
 struct Theme
@@ -149,6 +150,7 @@ private:
     ComboBox* integrationDestination = NULL;
     std::vector<std::string> integrationCommandPaths;
     std::string integrationPreviousCommand;
+    SystemIntegration::Selection integrationInitialSelection;
     FXLabel* integrationStatus = NULL;
     FXTabBook* preferencesTabs = NULL;
     FXint integrationTabIndex = -1;
@@ -179,7 +181,10 @@ private:
     FXCheckButton* relativeresize = NULL;
     FXCheckButton* alwaysshowtabbar = NULL;
     FXCheckButton* restoretabs = NULL;
-    FXCheckButton* showpathlink = NULL;
+    FXRadioButton* addressbuttonmode = NULL;
+    FXRadioButton* addresseditmode = NULL;
+    FXDataTarget addressbarmodetarget;
+    FXuint addressbarmode = 0;
 #if defined(linux) && defined(XFE_AUTOMOUNTER)
     FXCheckButton* automountbutton = NULL;
     FXCheckButton* autoopenbutton = NULL;
@@ -210,6 +215,9 @@ private:
     FXRadioButton* dirpanel_treestartup = NULL;
     FXSpinner* spindpi = NULL;
     FXSpinner* spinshade = NULL;
+    FXRadioButton* customtoolbariconsizebuttons[3] = { NULL, NULL, NULL };
+    FXDataTarget customtoolbariconsizetarget;
+    FXint customtoolbariconsize = 16;
     FXDataTarget startdirtarget;
     FXDataTarget newtabdirtarget;
     FXuint startdirmode = 0;

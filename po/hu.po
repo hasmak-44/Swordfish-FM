@@ -2536,16 +2536,22 @@ msgid "&Global Key Bindings"
 msgstr "&Globális billentyűparancsok"
 
 #: src/KeyBindings.cpp:100
+#, fuzzy
+#| msgid ""
+#| "These key bindings are common to all Xfe applications.\n"
+#| "Double click on an item to modify the selected key binding..."
 msgid ""
-"These key bindings are common to all Xfe applications.\n"
+"These key bindings are common to all Swordfish applications.\n"
 "Double click on an item to modify the selected key binding..."
 msgstr ""
 "Ezen beállítások az összes XFE alkalmazásra érvényes lesznek.\n"
 "Kattintson duplán az elemen a billentyűparancs módosításához..."
 
 #: src/KeyBindings.cpp:107
-msgid "Xf&e Key Bindings"
-msgstr "Xf&e billentyűparancsok"
+#, fuzzy
+#| msgid "Xf&i Key Bindings"
+msgid "S&wordfish Key Bindings"
+msgstr "Xf&i billentyűparancsok"
 
 #: src/KeyBindings.cpp:114
 msgid ""
@@ -2636,10 +2642,10 @@ msgstr ""
 #: src/KeyBindings.cpp:998 src/KeyBindings.cpp:1150
 #, fuzzy, c-format
 msgid ""
-"The key binding %s is already used in the Xfe section.\n"
+"The key binding %s is already used in the Swordfish section.\n"
 "You should erase the existing key binding before assigning it again."
 msgstr ""
-"A %s billentyűparancsot már használja az Xfe billentyűparancsoknál.\n"
+"A %s billentyűparancsot már használja az Xfi billentyűparancsoknál.\n"
 "\tTörölje azt, hogy itt használhassa."
 
 #: src/KeyBindings.cpp:1018 src/KeyBindings.cpp:1262
@@ -2665,7 +2671,9 @@ msgid "Select an Executable File"
 msgstr "Válasszon ki egy futtatható fájlt"
 
 #: src/MessageBox.cpp:102 src/XFileExplorer.cpp:1240
-msgid "Launch Xfe as root"
+#, fuzzy
+#| msgid "Launch Xfe as root"
+msgid "Launch Swordfish as root"
 msgstr "XFE indítása rootként"
 
 #: src/MessageBox.cpp:124 src/MessageBox.cpp:142 src/MessageBox.cpp:178
@@ -3113,7 +3121,7 @@ msgstr ""
 #: src/Preferences.cpp:604
 #, fuzzy
 #| msgid "Start in home folder"
-msgid "Open new Xfe window when mounting"
+msgid "Open new Swordfish window when mounting"
 msgstr "Indulás a saját könyvtárban"
 
 #: src/Preferences.cpp:609
@@ -5239,7 +5247,9 @@ msgid "Restore Selected Files From Trash Can"
 msgstr "Kijelölt fájlok visszaállítása a kukából"
 
 #: src/XFileExplorer.cpp:1236
-msgid "Launch Xfe"
+#, fuzzy
+#| msgid "Launch Xfe"
+msgid "Launch Swordfish"
 msgstr "XFE indítása"
 
 #: src/XFileExplorer.cpp:1244
@@ -5523,7 +5533,9 @@ msgid "&About X File Explorer"
 msgstr "X File Explorer &névjegy"
 
 #: src/XFileExplorer.cpp:3498
-msgid "Running Xfe as root!"
+#, fuzzy
+#| msgid "Running Xfe as root!"
+msgid "Running Swordfish as root!"
 msgstr "Xfe rendszergazdaként!"
 
 #: src/XFileExplorer.cpp:3542
@@ -5545,7 +5557,9 @@ msgid "No global swordfishrc file found! Please select a configuration file..."
 msgstr "Nem találtam meg a globális xferc fájlt! Kérem válasszon ki egyet..."
 
 #: src/XFileExplorer.cpp:3573
-msgid "XFE configuration file"
+#, fuzzy
+#| msgid "XFE configuration file"
+msgid "Swordfish configuration file"
 msgstr "XFE beállítás fájl"
 
 #: src/XFileExplorer.cpp:3586
@@ -6074,7 +6088,8 @@ msgstr "Hiba történt az ikonok betöltése során"
 msgid ""
 "Icon path doesn't exist, default icon path was selected.\n"
 "\n"
-"From Xfe, please check your icon path in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon path in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "Hiba történt az ikonok betöltése során. Kérem, ellenőrizze az ikonok elérési "
 "útvonalát!"
@@ -6085,7 +6100,8 @@ msgstr ""
 msgid ""
 "Unable to load some icons, default icon theme was selected.\n"
 "\n"
-"From Xfe, please check your icon theme in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon theme in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "Hiba történt az ikonok betöltése során. Kérem, ellenőrizze az ikonok elérési "
 "útvonalát!"
@@ -6096,7 +6112,7 @@ msgstr ""
 msgid ""
 "Unable to load default icons, no icons can be shown.\n"
 "\n"
-"Please check your Xfe installation..."
+"Please check your Swordfish installation..."
 msgstr ""
 "Hiba történt az ikonok betöltése során. Kérem, ellenőrizze az ikonok elérési "
 "útvonalát!"
@@ -7914,6 +7930,17 @@ msgstr "Egyszerű fájlszerkesztő Xfe-hez"
 #: swfw.desktop.in:5
 msgid "editor;viewer;text"
 msgstr ""
+
+#~ msgid "Xf&e Key Bindings"
+#~ msgstr "Xf&e billentyűparancsok"
+
+#, fuzzy, c-format
+#~ msgid ""
+#~ "The key binding %s is already used in the Xfe section.\n"
+#~ "You should erase the existing key binding before assigning it again."
+#~ msgstr ""
+#~ "A %s billentyűparancsot már használja az Xfe billentyűparancsoknál.\n"
+#~ "\tTörölje azt, hogy itt használhassa."
 
 #~ msgid "Run Xfe as root"
 #~ msgstr "Xfe futtatása rendszergazdaként"

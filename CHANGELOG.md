@@ -1,5 +1,95 @@
 # Swordfish FM portable changelog
 
+## swordfish-0.0.3-beta2 — 10 November 2026
+
+Published as **0.0.3 beta 2**, the latest release, after the user accepted
+baseline test 7. This is beta software, not a declaration of final 0.0.3
+stability. The stable 0.0.2 release remains available unchanged.
+
+### Changed
+- Custom Action Properties now has a single **Command** field (program plus
+  arguments, as typed in a terminal). The separate Program/Parameters fields,
+  the Advanced full-shell-command switch and the command preview were removed.
+  Actions saved with Program/Parameters open as one equivalent command and stay
+  unchanged unless edited.
+- **Show on custom toolbar** for actions moved to the Appearance Conditions tab.
+- Connected, unmounted USB drives and internal partitions, and remembered
+  disconnected network shares, are dimmed with muted theme-aware text. The
+  **(unmounted)** label is shown only if the theme cannot dim them legibly.
+  They remain clickable for mounting or reconnection; normal text is retained
+  if muting would make it harder to read.
+- Mount, Unmount and Eject now use solid play, pause and eject symbols inside a
+  square frame, with pixel-sharp edges,
+  black on light backgrounds and white on dark ones, in device rows, device
+  menus and the Tools menu/toolbar. Close Archive Folder keeps its icon.
+
+### Added
+- Network discovery also lists advertised **media servers** (UPnP/DLNA),
+  **FTP** and **SFTP** servers, **printers** and **routers / access points**,
+  each labelled with its kind. Devices are found only by what they announce
+  (SSDP, Zeroconf, WS-Discovery); nothing is port-scanned.
+- Media servers are browsed read-only like folders. Double-click a file to
+  play it with the audio/video player set in Swordfish, else the desktop's
+  default application for that file type, else the browser. Right-click a
+  file for **Play**, **Play With** (the default application and installed
+  players or viewers that accept a web address, the web browser, or
+  **Other Application...** for the regular Open With dialog) and **Copy Stream
+  Address**. **Download...** saves copies without
+  overwriting existing files and shows a progress window (file, bytes, bar)
+  with **Hide** and **Cancel Downloads**; cancelling removes the unfinished
+  file. FTP/SFTP entries connect like the address bar;
+  printers and routers open their settings page in the browser, and printers
+  also offer the local printer settings.
+- New built-in **MX Blues** color theme, listed right after Current Theme in
+  Preferences > Appearance.
+- The Trash view uses Caja's Name, Size, Type, Trashed On and Original
+  Location columns, with **Restore Selected Items** and **Empty Trash**
+  controls above the list. Restore returns selected items to their original
+  locations.
+- Preferences > Appearance > **Tool Bar Icon Size** sets the custom toolbar's icon
+  size using **16 px**, **24 px** or **32 px** radio buttons, scaled for display
+  DPI. Accept applies the change; Cancel discards it. Image and
+  system icons are reloaded from their source at the new size, preserving their
+  proportions; built-in fallback icons are enlarged. The built-in toolbars and
+  menus are unchanged.
+
+### Fixed
+- FTP servers mounted from the address bar can now be unmounted; the GVFS
+  mount URI lookup now recognizes FTP as well as SFTP.
+- Trash now combines Home Trash with the current user's standard Trash folders
+  on mounted drives, including items trashed by other file managers. Restore
+  uses each item's own original location; Empty Trash and Trash Size cover the
+  combined view. Same-named items on different drives remain distinct. Old
+  private portable Trash contents are not migrated or deleted automatically.
+- Dragging files from Swordfish into another program (browser upload, text
+  editor) now offers Copy instead of Move, which most programs require. Drags
+  inside Swordfish keep the Copy/Move/Link choice. The UI log records whether
+  the other program accepted the drop (`drag-to-other-program`).
+- A click with a slight mouse movement in a file list no longer shows a stop
+  sign. The drag cursor now updates as soon as the drop target answers, and the
+  Move/Copy choice is based on the folder being dragged from.
+- A drag no longer ends when Swordfish is hidden mid-drag (switching desktops,
+  or a panel/taskbar bringing another program forward), so files can be dropped
+  into programs on other desktops or restored from the panel. This also applies
+  to drags from the folder tree, which no longer cancel when hovering opens a
+  folder.
+- Saving unrelated preferences no longer reapplies System Integration or
+  attempts to remove a modified launcher. Ownership errors preserve the recorded
+  choices and disable only integration controls, allowing other settings to save.
+- Reapplying unchanged desktop/menu launchers leaves their permissions and
+  timestamps untouched instead of unnecessarily changing trust-related metadata.
+  Previously every Preferences Accept rewrote both launchers, so desktops
+  redrew them as if they had been recreated.
+- Launchers that a desktop environment or older build reformatted are still
+  recognised as Swordfish's own (marker comment or recorded Exec line), so the
+  integration choices stay checked and changing other settings no longer shows
+  "Refusing to remove a changed or unrelated desktop entry".
+- Launching a portable copy from another Swordfish copy preserves the original
+  host library, GIO module and desktop settings instead of recording the older
+  bundle's private environment as the host environment.
+- Startup no longer scans every installed icon theme when Custom Actions use
+  system (`theme:`) icons.
+
 ## swordfish-0.0.3-beta1 — 6 November 2026
 
 Published as **0.0.3 beta 1**, the latest release, following user acceptance of

@@ -90,7 +90,12 @@ build_triplet = x86_64-pc-linux-gnu
 host_triplet = x86_64-pc-linux-gnu
 subdir = icons/apps
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/configure.ac
+am__aclocal_m4_deps = $(top_srcdir)/m4/gettext.m4 \
+	$(top_srcdir)/m4/host-cpu-c-abi.m4 $(top_srcdir)/m4/iconv.m4 \
+	$(top_srcdir)/m4/intlmacosx.m4 $(top_srcdir)/m4/lib-ld.m4 \
+	$(top_srcdir)/m4/lib-link.m4 $(top_srcdir)/m4/lib-prefix.m4 \
+	$(top_srcdir)/m4/nls.m4 $(top_srcdir)/m4/po.m4 \
+	$(top_srcdir)/m4/progtest.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(am__DIST_COMMON)
@@ -145,23 +150,23 @@ am__uninstall_files_from_dir = { \
          $(am__cd) "$$dir" && rm -f $$files; }; \
   }
 am__installdirs = "$(DESTDIR)$(icondir)"
-DATA = $(icon_DATA)
+DATA = $(nobase_icon_DATA)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 am__DIST_COMMON = $(srcdir)/Makefile.in
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
-ACLOCAL = ${SHELL} '/media/Hassanein/Projects/Swordfish-FM-main-0.0.1.1/missing' aclocal-1.16
+ACLOCAL = ${SHELL} '/workspaces/Swordfish-FM/missing' aclocal-1.16
 ALLOCA = 
 AMTAR = $${TAR-tar}
 AM_DEFAULT_VERBOSITY = 1
-AUTOCONF = ${SHELL} '/media/Hassanein/Projects/Swordfish-FM-main-0.0.1.1/missing' autoconf
-AUTOHEADER = ${SHELL} '/media/Hassanein/Projects/Swordfish-FM-main-0.0.1.1/missing' autoheader
-AUTOMAKE = ${SHELL} '/media/Hassanein/Projects/Swordfish-FM-main-0.0.1.1/missing' automake-1.16
-AWK = gawk
+AUTOCONF = ${SHELL} '/workspaces/Swordfish-FM/missing' autoconf
+AUTOHEADER = ${SHELL} '/workspaces/Swordfish-FM/missing' autoheader
+AUTOMAKE = ${SHELL} '/workspaces/Swordfish-FM/missing' automake-1.16
+AWK = mawk
 CC = gcc
 CCDEPMODE = depmode=gcc3
 CFLAGS = -O2 -Wall 
 CPP = gcc -E
-CPPFLAGS = -I/usr/include/freetype2 -I/usr/include/libpng16  -I/usr/include/freetype2 -I/usr/include/libpng16  
+CPPFLAGS = -I/usr/include/freetype2 -I/usr/include/libpng16  -I/usr/include/freetype2 -I/usr/include/libpng16   -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -pthread -I/usr/include/libmount -I/usr/include/blkid 
 CSCOPE = cscope
 CTAGS = ctags
 CXX = g++
@@ -176,13 +181,14 @@ ECHO_T =
 EGREP = /usr/bin/grep -E
 ETAGS = etags
 EXEEXT = 
+FFMPEGTHUMBNAILER = /usr/bin/ffmpegthumbnailer
 FOX_CONFIG = fox-config-1.6
 FREETYPE_CFLAGS = -I/usr/include/freetype2 -I/usr/include/libpng16 
 FREETYPE_LIBS = -lfreetype 
 GETTEXT_MACRO_VERSION = 0.20
 GETTEXT_PACKAGE = swordfish
-GMSGFMT = /usr/bin/msgfmt
-GMSGFMT_015 = /usr/bin/msgfmt
+GMSGFMT = /opt/conda/bin/msgfmt
+GMSGFMT_015 = /opt/conda/bin/msgfmt
 GREP = /usr/bin/grep
 INSTALL = /usr/bin/install -c
 INSTALL_DATA = ${INSTALL} -m 644
@@ -194,34 +200,38 @@ INTL_MACOSX_LIBS =
 LDFLAGS = 
 LIBICONV = -liconv
 LIBINTL = 
-LIBNOTIFY_CFLAGS = -I/usr/include/gdk-pixbuf-2.0 -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -I/usr/include/libpng16 -I/usr/include/x86_64-linux-gnu -I/usr/include/libmount -I/usr/include/blkid -pthread  -DHAVE_LIBNOTIFY
+LIBNOTIFY_CFLAGS = -I/usr/include/gdk-pixbuf-2.0 -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -I/usr/include/libpng16 -I/usr/include/x86_64-linux-gnu -I/usr/include/webp -I/usr/include/libmount -I/usr/include/blkid -pthread  -DHAVE_LIBNOTIFY
 LIBNOTIFY_LIBS = -lnotify -lgdk_pixbuf-2.0 -lgio-2.0 -lgobject-2.0 -lglib-2.0 
 LIBOBJS = 
-LIBS = -lfontconfig -lpng -lFOX-1.6  -lX11 -lfreetype  -lXft  -lXrandr -lxcb  -lxcb-util -lxcb  -lX11-xcb -lX11 -lxcb 
+LIBS = -lfontconfig -lpng -lFOX-1.6  -lX11 -lgio-2.0 -lgobject-2.0 -lglib-2.0  -lfreetype  -lXft  -lXrandr -lxcb  -lxcb-util -lxcb  -lX11-xcb -lX11 -lxcb 
 LN_S = ln -s
 LTLIBICONV = -liconv
 LTLIBINTL = 
 LTLIBOBJS = 
-MAKEINFO = ${SHELL} '/media/Hassanein/Projects/Swordfish-FM-main-0.0.1.1/missing' makeinfo
+MAKEINFO = ${SHELL} '/workspaces/Swordfish-FM/missing' makeinfo
 MKDIR_P = /usr/bin/mkdir -p
-MSGFMT = /usr/bin/msgfmt
-MSGMERGE = /usr/bin/msgmerge
+MSGFMT = /opt/conda/bin/msgfmt
+MSGMERGE = /opt/conda/bin/msgmerge
 MSGMERGE_FOR_MSGFMT_OPTION = --for-msgfmt
 OBJEXT = o
 PACKAGE = swordfish
 PACKAGE_BUGREPORT = 
 PACKAGE_NAME = swordfish
-PACKAGE_STRING = swordfish 2.1.11
+PACKAGE_STRING = swordfish 0.0.3-beta2
 PACKAGE_TARNAME = swordfish
 PACKAGE_URL = 
-PACKAGE_VERSION = 2.1.11
+PACKAGE_VERSION = 0.0.3-beta2
 PATH_SEPARATOR = :
 PKG_CONFIG = /usr/bin/pkg-config
 PKG_CONFIG_LIBDIR = 
 PKG_CONFIG_PATH = 
-POLKIT_CFLAGS = -I/usr/include/polkit-1 -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -pthread -I/usr/include/libmount -I/usr/include/blkid 
-POLKIT_LIBS = -lpolkit-gobject-1 -lgio-2.0 -lgobject-2.0 -lglib-2.0 
+POLKIT_CFLAGS = 
+POLKIT_LIBS = 
 POSUB = po
+PREVIEW_CFLAGS = -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -pthread -I/usr/include/libmount -I/usr/include/blkid 
+PREVIEW_LIBS = -lgio-2.0 -lgobject-2.0 -lglib-2.0 
+PREVIEW_WORKER_CFLAGS = -I/usr/include/gdk-pixbuf-2.0 -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -I/usr/include/libpng16 -I/usr/include/x86_64-linux-gnu -I/usr/include/webp -I/usr/include/libmount -I/usr/include/blkid -I/usr/include/librsvg-2.0 -I/usr/include/cairo -I/usr/include/freetype2 -I/usr/include/pixman-1 -I/usr/include/poppler/glib -I/usr/include/poppler -pthread -I/usr/include/libraw 
+PREVIEW_WORKER_LIBS = -lrsvg-2 -lm -lgdk_pixbuf-2.0 -lpoppler-glib -lcairo -lgio-2.0 -lgobject-2.0 -lglib-2.0 -lwebp -lraw_r -lstdc++ -fopenmp -llcms2 
 SED = /usr/bin/sed
 SET_MAKE = 
 SHELL = /bin/bash
@@ -230,17 +240,17 @@ STRIP =
 UDISKS2_CFLAGS = -I/usr/include/udisks2 -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -pthread -I/usr/include/libmount -I/usr/include/blkid 
 UDISKS2_LIBS = -ludisks2 -lgio-2.0 -lgobject-2.0 -lglib-2.0 
 USE_NLS = yes
-VERSION = 2.1.11
+VERSION = 0.0.3-beta2
 XFT_CFLAGS = -I/usr/include/freetype2 -I/usr/include/libpng16 
 XFT_LIBS = -lXft 
-XGETTEXT = /usr/bin/xgettext
-XGETTEXT_015 = /usr/bin/xgettext
+XGETTEXT = /opt/conda/bin/xgettext
+XGETTEXT_015 = /opt/conda/bin/xgettext
 XGETTEXT_EXTRA_OPTIONS = 
 XMKMF = 
-abs_builddir = /media/Hassanein/Projects/Swordfish-FM-main-0.0.1.1/icons/apps
-abs_srcdir = /media/Hassanein/Projects/Swordfish-FM-main-0.0.1.1/icons/apps
-abs_top_builddir = /media/Hassanein/Projects/Swordfish-FM-main-0.0.1.1
-abs_top_srcdir = /media/Hassanein/Projects/Swordfish-FM-main-0.0.1.1
+abs_builddir = /workspaces/Swordfish-FM/icons/apps
+abs_srcdir = /workspaces/Swordfish-FM/icons/apps
+abs_top_builddir = /workspaces/Swordfish-FM
+abs_top_srcdir = /workspaces/Swordfish-FM
 ac_ct_CC = gcc
 ac_ct_CXX = g++
 am__include = include
@@ -268,7 +278,7 @@ host_vendor = pc
 htmldir = ${docdir}
 includedir = ${prefix}/include
 infodir = ${datarootdir}/info
-install_sh = ${SHELL} /media/Hassanein/Projects/Swordfish-FM-main-0.0.1.1/install-sh
+install_sh = ${SHELL} /workspaces/Swordfish-FM/install-sh
 libdir = ${exec_prefix}/lib
 libexecdir = ${exec_prefix}/libexec
 localedir = ${datarootdir}/locale
@@ -277,7 +287,7 @@ mandir = ${datarootdir}/man
 mkdir_p = $(MKDIR_P)
 oldincludedir = /usr/include
 pdfdir = ${docdir}
-prefix = /usr
+prefix = /usr/local
 program_transform_name = s,x,x,
 psdir = ${docdir}
 runstatedir = ${localstatedir}/run
@@ -298,8 +308,69 @@ xcb_aux_LIBS = -lxcb-util -lxcb
 xcb_event_CFLAGS = 
 xcb_event_LIBS = -lxcb-util -lxcb 
 xft_config = 
-icondir = $(datadir)/icons/hicolor/48x48/apps
-icon_DATA = *.png *.xpm
+icondir = $(datadir)/icons/hicolor
+nobase_icon_DATA = \
+	16x16/apps/swordfish.png \
+	16x16/apps/swordfish-archive.png \
+	16x16/apps/swordfish-image.png \
+	16x16/apps/swordfish-package.png \
+	16x16/apps/swordfish-write.png \
+	16x16/apps/swordfish-dock.png \
+	22x22/apps/swordfish.png \
+	22x22/apps/swordfish-archive.png \
+	22x22/apps/swordfish-image.png \
+	22x22/apps/swordfish-package.png \
+	22x22/apps/swordfish-write.png \
+	22x22/apps/swordfish-dock.png \
+	24x24/apps/swordfish.png \
+	24x24/apps/swordfish-archive.png \
+	24x24/apps/swordfish-image.png \
+	24x24/apps/swordfish-package.png \
+	24x24/apps/swordfish-write.png \
+	24x24/apps/swordfish-dock.png \
+	32x32/apps/swordfish.png \
+	32x32/apps/swordfish-archive.png \
+	32x32/apps/swordfish-image.png \
+	32x32/apps/swordfish-package.png \
+	32x32/apps/swordfish-write.png \
+	32x32/apps/swordfish-dock.png \
+	48x48/apps/swordfish.png \
+	48x48/apps/swordfish-archive.png \
+	48x48/apps/swordfish-image.png \
+	48x48/apps/swordfish-package.png \
+	48x48/apps/swordfish-write.png \
+	48x48/apps/swordfish-dock.png \
+	64x64/apps/swordfish.png \
+	64x64/apps/swordfish-archive.png \
+	64x64/apps/swordfish-image.png \
+	64x64/apps/swordfish-package.png \
+	64x64/apps/swordfish-write.png \
+	64x64/apps/swordfish-dock.png \
+	128x128/apps/swordfish.png \
+	128x128/apps/swordfish-archive.png \
+	128x128/apps/swordfish-image.png \
+	128x128/apps/swordfish-package.png \
+	128x128/apps/swordfish-write.png \
+	128x128/apps/swordfish-dock.png \
+	256x256/apps/swordfish.png \
+	256x256/apps/swordfish-archive.png \
+	256x256/apps/swordfish-image.png \
+	256x256/apps/swordfish-package.png \
+	256x256/apps/swordfish-write.png \
+	256x256/apps/swordfish-dock.png \
+	512x512/apps/swordfish.png \
+	512x512/apps/swordfish-archive.png \
+	512x512/apps/swordfish-image.png \
+	512x512/apps/swordfish-package.png \
+	512x512/apps/swordfish-write.png \
+	512x512/apps/swordfish-dock.png \
+	1024x1024/apps/swordfish.png \
+	1024x1024/apps/swordfish-archive.png \
+	1024x1024/apps/swordfish-image.png \
+	1024x1024/apps/swordfish-package.png \
+	1024x1024/apps/swordfish-write.png \
+	1024x1024/apps/swordfish-dock.png
+
 all: all-am
 
 .SUFFIXES:
@@ -332,26 +403,29 @@ $(top_srcdir)/configure:  $(am__configure_deps)
 $(ACLOCAL_M4):  $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
-install-iconDATA: $(icon_DATA)
+install-nobase_iconDATA: $(nobase_icon_DATA)
 	@$(NORMAL_INSTALL)
-	@list='$(icon_DATA)'; test -n "$(icondir)" || list=; \
+	@list='$(nobase_icon_DATA)'; test -n "$(icondir)" || list=; \
 	if test -n "$$list"; then \
 	  echo " $(MKDIR_P) '$(DESTDIR)$(icondir)'"; \
 	  $(MKDIR_P) "$(DESTDIR)$(icondir)" || exit 1; \
 	fi; \
-	for p in $$list; do \
-	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
-	  echo "$$d$$p"; \
-	done | $(am__base_list) | \
-	while read files; do \
-	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(icondir)'"; \
-	  $(INSTALL_DATA) $$files "$(DESTDIR)$(icondir)" || exit $$?; \
+	$(am__nobase_list) | while read dir files; do \
+	  xfiles=; for file in $$files; do \
+	    if test -f "$$file"; then xfiles="$$xfiles $$file"; \
+	    else xfiles="$$xfiles $(srcdir)/$$file"; fi; done; \
+	  test -z "$$xfiles" || { \
+	    test "x$$dir" = x. || { \
+	      echo " $(MKDIR_P) '$(DESTDIR)$(icondir)/$$dir'"; \
+	      $(MKDIR_P) "$(DESTDIR)$(icondir)/$$dir"; }; \
+	    echo " $(INSTALL_DATA) $$xfiles '$(DESTDIR)$(icondir)/$$dir'"; \
+	    $(INSTALL_DATA) $$xfiles "$(DESTDIR)$(icondir)/$$dir" || exit $$?; }; \
 	done
 
-uninstall-iconDATA:
+uninstall-nobase_iconDATA:
 	@$(NORMAL_UNINSTALL)
-	@list='$(icon_DATA)'; test -n "$(icondir)" || list=; \
-	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	@list='$(nobase_icon_DATA)'; test -n "$(icondir)" || list=; \
+	$(am__nobase_strip_setup); files=`$(am__nobase_strip)`; \
 	dir='$(DESTDIR)$(icondir)'; $(am__uninstall_files_from_dir)
 tags TAGS:
 
@@ -449,7 +523,7 @@ info: info-am
 
 info-am:
 
-install-data-am: install-iconDATA
+install-data-am: install-nobase_iconDATA
 
 install-dvi: install-dvi-am
 
@@ -493,7 +567,7 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-iconDATA
+uninstall-am: uninstall-nobase_iconDATA
 
 .MAKE: install-am install-strip
 
@@ -501,13 +575,13 @@ uninstall-am: uninstall-iconDATA
 	ctags-am distclean distclean-generic distdir dvi dvi-am html \
 	html-am info info-am install install-am install-data \
 	install-data-am install-dvi install-dvi-am install-exec \
-	install-exec-am install-html install-html-am install-iconDATA \
-	install-info install-info-am install-man install-pdf \
-	install-pdf-am install-ps install-ps-am install-strip \
-	installcheck installcheck-am installdirs maintainer-clean \
-	maintainer-clean-generic mostlyclean mostlyclean-generic pdf \
-	pdf-am ps ps-am tags-am uninstall uninstall-am \
-	uninstall-iconDATA
+	install-exec-am install-html install-html-am install-info \
+	install-info-am install-man install-nobase_iconDATA \
+	install-pdf install-pdf-am install-ps install-ps-am \
+	install-strip installcheck installcheck-am installdirs \
+	maintainer-clean maintainer-clean-generic mostlyclean \
+	mostlyclean-generic pdf pdf-am ps ps-am tags-am uninstall \
+	uninstall-am uninstall-nobase_iconDATA
 
 .PRECIOUS: Makefile
 

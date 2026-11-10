@@ -2462,8 +2462,12 @@ msgid "&Global Key Bindings"
 msgstr "Raccourcis clavier &globaux"
 
 #: src/KeyBindings.cpp:100
+#, fuzzy
+#| msgid ""
+#| "These key bindings are common to all Xfe applications.\n"
+#| "Double click on an item to modify the selected key binding..."
 msgid ""
-"These key bindings are common to all Xfe applications.\n"
+"These key bindings are common to all Swordfish applications.\n"
 "Double click on an item to modify the selected key binding..."
 msgstr ""
 "Ces raccourcis clavier sont communs à toutes les applications Xfe.\n"
@@ -2471,8 +2475,10 @@ msgstr ""
 "sélectionné..."
 
 #: src/KeyBindings.cpp:107
-msgid "Xf&e Key Bindings"
-msgstr "Raccourcis clavier de X&fe"
+#, fuzzy
+#| msgid "Xf&i Key Bindings"
+msgid "S&wordfish Key Bindings"
+msgstr "Raccourcis clavier de Xf&i"
 
 #: src/KeyBindings.cpp:114
 msgid ""
@@ -2568,13 +2574,16 @@ msgstr ""
 "Vous devriez supprimer le raccourci existant avant de l'affecter à nouveau."
 
 #: src/KeyBindings.cpp:998 src/KeyBindings.cpp:1150
-#, c-format
+#, fuzzy, c-format
+#| msgid ""
+#| "The key binding %s is already used in the Xfi section.\n"
+#| "You should erase the existing key binding before assigning it again."
 msgid ""
-"The key binding %s is already used in the Xfe section.\n"
+"The key binding %s is already used in the Swordfish section.\n"
 "You should erase the existing key binding before assigning it again."
 msgstr ""
-"Le raccourci clavier %s est déjà utilisé dans la section Xfe.\n"
-"Vous devriez effacer le raccourci existant avant de l'affecter à nouveau."
+"Le raccourci clavier %s est déjà utilisé dans la section Xfi.\n"
+"Vous devriez supprimer le raccourci existant avant de l'affecter à nouveau."
 
 #: src/KeyBindings.cpp:1018 src/KeyBindings.cpp:1262
 #, c-format
@@ -2599,7 +2608,9 @@ msgid "Select an Executable File"
 msgstr "Sélectionner un fichier exécutable"
 
 #: src/MessageBox.cpp:102 src/XFileExplorer.cpp:1240
-msgid "Launch Xfe as root"
+#, fuzzy
+#| msgid "Launch Xfe as root"
+msgid "Launch Swordfish as root"
 msgstr "Lancer Xfe en tant que root"
 
 #: src/MessageBox.cpp:124 src/MessageBox.cpp:142 src/MessageBox.cpp:178
@@ -3015,7 +3026,9 @@ msgid "Enable automounting"
 msgstr "Activer l'automontage"
 
 #: src/Preferences.cpp:604
-msgid "Open new Xfe window when mounting"
+#, fuzzy
+#| msgid "Open new Xfe window when mounting"
+msgid "Open new Swordfish window when mounting"
 msgstr "Ouvrir une nouvelle fenêtre Xfe lors du montage"
 
 #: src/Preferences.cpp:609
@@ -5054,7 +5067,9 @@ msgid "Restore Selected Files From Trash Can"
 msgstr "Restaurer les fichiers sélectionnés depuis la corbeille"
 
 #: src/XFileExplorer.cpp:1236
-msgid "Launch Xfe"
+#, fuzzy
+#| msgid "Launch Xfe"
+msgid "Launch Swordfish"
 msgstr "Lancer Xfe"
 
 #: src/XFileExplorer.cpp:1244
@@ -5312,7 +5327,9 @@ msgid "&About X File Explorer"
 msgstr "À &propos de X File Explorer"
 
 #: src/XFileExplorer.cpp:3498
-msgid "Running Xfe as root!"
+#, fuzzy
+#| msgid "Running Xfe as root!"
+msgid "Running Swordfish as root!"
 msgstr "Vous utilisez Xfe en tant que root !"
 
 #: src/XFileExplorer.cpp:3542
@@ -5336,7 +5353,9 @@ msgstr ""
 "configuration..."
 
 #: src/XFileExplorer.cpp:3573
-msgid "XFE configuration file"
+#, fuzzy
+#| msgid "XFE configuration file"
+msgid "Swordfish configuration file"
 msgstr "XFE configuration"
 
 #: src/XFileExplorer.cpp:3586
@@ -5811,10 +5830,17 @@ msgstr "Erreur de chargement des icônes"
 
 #: src/XFileArchive.cpp:2331 src/XFileImage.cpp:3334 src/XFilePackage.cpp:974
 #: src/XFileWrite.cpp:353 src/main.cpp:564
+#, fuzzy
+#| msgid ""
+#| "Icon path doesn't exist, default icon path was selected.\n"
+#| "\n"
+#| "From Xfe, please check your icon path in Edit / Preferences / "
+#| "Appearance..."
 msgid ""
 "Icon path doesn't exist, default icon path was selected.\n"
 "\n"
-"From Xfe, please check your icon path in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon path in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "Le chemin d'accès aux icônes n'existe pas, le chemin par défaut a été "
 "sélectionné.\n"
@@ -5824,10 +5850,17 @@ msgstr ""
 
 #: src/XFileArchive.cpp:2339 src/XFileImage.cpp:3342 src/XFilePackage.cpp:982
 #: src/XFileWrite.cpp:361 src/main.cpp:572
+#, fuzzy
+#| msgid ""
+#| "Unable to load some icons, default icon theme was selected.\n"
+#| "\n"
+#| "From Xfe, please check your icon theme in Edit / Preferences / "
+#| "Appearance..."
 msgid ""
 "Unable to load some icons, default icon theme was selected.\n"
 "\n"
-"From Xfe, please check your icon theme in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon theme in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "Impossible de charger certaines icônes, le thème d'icônes par défaut a été "
 "sélectionné.\n"
@@ -5837,10 +5870,15 @@ msgstr ""
 
 #: src/XFileArchive.cpp:2347 src/XFileImage.cpp:3350 src/XFilePackage.cpp:990
 #: src/XFileWrite.cpp:369 src/main.cpp:580
+#, fuzzy
+#| msgid ""
+#| "Unable to load default icons, no icons can be shown.\n"
+#| "\n"
+#| "Please check your Xfe installation..."
 msgid ""
 "Unable to load default icons, no icons can be shown.\n"
 "\n"
-"Please check your Xfe installation..."
+"Please check your Swordfish installation..."
 msgstr ""
 "Impossible de charger les icônes par défaut, aucune icône ne peut être "
 "affichée.\n"
@@ -8456,6 +8494,17 @@ msgstr "Un éditeur de texte simple pour Xfe"
 #: swfw.desktop.in:5
 msgid "editor;viewer;text"
 msgstr "éditeur;visualiseur;texte"
+
+#~ msgid "Xf&e Key Bindings"
+#~ msgstr "Raccourcis clavier de X&fe"
+
+#, c-format
+#~ msgid ""
+#~ "The key binding %s is already used in the Xfe section.\n"
+#~ "You should erase the existing key binding before assigning it again."
+#~ msgstr ""
+#~ "Le raccourci clavier %s est déjà utilisé dans la section Xfe.\n"
+#~ "Vous devriez effacer le raccourci existant avant de l'affecter à nouveau."
 
 #~ msgid "Run Xfe as root"
 #~ msgstr "Lancer Xfe en tant que root"

@@ -173,6 +173,9 @@ extern FXIcon* minitreetwopanelsicon;
 extern FXIcon* minitwopanelsicon;
 extern FXIcon* miniundoicon;
 extern FXIcon* miniunmounticon;
+extern FXIcon* minidevicemounticon;
+extern FXIcon* minideviceunmounticon;
+extern FXIcon* minideviceejecticon;
 extern FXIcon* miniuppercaseicon;
 extern FXIcon* miniworkicon;
 extern FXIcon* miniwrapofficon;
@@ -230,5 +233,15 @@ extern FXIcon* docklefticon;
 extern FXIcon* dockrighticon;
 extern FXIcon* dockflipicon;
 extern FXIcon* dockfreeicon;
+
+
+// Flat play, pause and eject symbols for device mount, unmount and eject controls
+enum DeviceSymbol { DEVICE_SYMBOL_MOUNT, DEVICE_SYMBOL_UNMOUNT, DEVICE_SYMBOL_EJECT };
+void drawDeviceSymbol(FXDC& dc, FXApp* app, DeviceSymbol symbol, FXint x, FXint y, FXint size, FXColor background);
+
+// Toolbar icon sizes, chosen in Preferences: 16 = theme size, 24 = smoothed 1.5x, 32 = exact 2x
+FXint xf_toolbariconsize(FXApp* app, const char* key);
+// New icon enlarged for a toolbar of the given size, or NULL when no enlargement is needed
+FXIcon* xf_toolbaricon(FXApp* app, FXIcon* icon, FXint size);
 
 #endif

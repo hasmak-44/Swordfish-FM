@@ -1,6 +1,6 @@
 # Portable Linux build
 
-Current latest release: **0.0.3 beta 1** (`swordfish-0.0.3-beta1`).
+Current latest release: **0.0.3 beta 2** (`swordfish-0.0.3-beta2`).
 This is beta software; stable 0.0.2 remains available unchanged. Extract into a
 new folder for testing and back up existing `portable-data` before migrating it.
 Release archives do not include a settings profile or test data.
@@ -31,12 +31,19 @@ The bundle also provides the original Xfe executable names (`xfa`, `xfi`,
 `xfp`, and `xfw`) as compatibility aliases for saved settings and file
 associations.
 
+## Alternative app icons
+
+The `app-icon` folder contains alternative Swordfish icons for menus,
+launchers or docks: transparent PNG files, plus JPG files with a white or
+dark background. A normal installation places them in
+`share/swordfish/app-icon`.
+
 ## User Manual, welcome and optional shortcuts
 
 Choose **Help > User Manual** for the bundled, illustrated beginner guide.
 It opens in your browser and works offline; the HTML file is
 `usr/share/swordfish/manual/index.html`. Its screenshots describe the matching
-0.0.3-beta1 interface. The same HTML and images can be hosted online without
+0.0.3-beta2 interface. The same HTML and images can be hosted online without
 maintaining a separate manual.
 
 A new personal settings profile shows a welcome with manual access, then
@@ -46,11 +53,15 @@ dialog as **Edit > Preferences**.
 
 The **System Integration** tab offers a desktop shortcut, applications-menu
 entry and an optional `swordfish` command link. All start unchecked. Accept applies
-the choices; Cancel does not. Launchers for this portable build use `AppRun`,
+changed integration choices; Cancel does not. Saving unrelated preferences
+leaves the launchers alone. If an owned launcher has been modified, the recorded
+choices stay visible but integration controls are disabled with a warning;
+other preferences can still be saved. Launchers for this portable build use `AppRun`,
 not the bare binary. Only unchanged integration items created by Swordfish
 are removed when unchecked; unrelated existing items are never overwritten.
-Moving the portable folder breaks its shortcuts; reapply integration from the
-new location to repair them. Desktop environments may additionally require
+Moving the portable folder breaks its shortcuts; from the new location,
+uncheck the affected choices and Accept, then recheck them and Accept to
+recreate them. Desktop environments may additionally require
 **Allow Launching**. The command destination is selected from the existing host
 PATH, with writable locations preferred. The full destination and whether it is
 shared or requires administrator authorization are shown before applying.
@@ -64,14 +75,27 @@ reports an error and leaves Preferences open.
 
 In Details view, right-click a column heading to show/hide columns, or drag a
 heading onto another heading to change their order. Name remains first and
-visible. Search results retain their Folder Name column, and Trash keeps its
-recovery columns fixed. Existing Preferences column controls remain available
+visible. Search results retain their Folder Name column. Trash uses the fixed
+Caja-style columns Name, Size, Type, Trashed On and Original Location.
+Existing Preferences column controls remain available
 with a Left / Top Panel or Right / Bottom Panel selector. Visibility and order
 are shared by every tab in that panel; the other panel is independent.
 Preferences and the heading menu edit the same choices immediately, without
 a restart; Cancel discards pending Preferences edits. Column widths remain
 per-tab, including when saved tabs are restored. Existing Beta 1 per-tab
 layouts migrate using each panel's previously active tab.
+
+On Linux, **Trash** combines the host's Home Trash with the current user's
+standard Trash folders on mounted drives (`.Trash/<uid>` under a sticky
+directory, or `.Trash-<uid>`). This includes items trashed by other file
+managers. The address bar retains the Home Trash folder as its navigation
+anchor; **Original Location** distinguishes same-named items from different
+drives. **Restore Selected Items** uses each item's own restore information.
+**Trash Size** and confirmed **Empty Trash** apply to the combined view.
+Unmounted drives are unavailable until mounted again. Contents left in an
+older portable bundle's private `portable-data/data/Trash` are not moved or
+deleted automatically and are not part of this combined view.
+
 **Copy Path** copies full paths as text. The context menu groups
 editing/rename separately from copy/move/link actions; Other Pane commands
 use the other pane's active tab.
@@ -90,26 +114,23 @@ folder also removes its children after confirmation.
 The editor uses an icon/name/description tree with compact side controls.
 Action properties have **Basic** and **Appearance Conditions** tabs, command
 browsing, an icon preview, and placeholder help.
-New actions separate **Program** (one executable name on the host PATH or a
-literal executable path, without shell quotes) from **Parameters**. For example,
-Program `wine`, Parameters `"/path/to/application.exe"`. Browse selects a program
-or script. **Working directory** defaults to the active folder when empty;
+Each action has one **Command** field: the program followed by its arguments
+and placeholders, as typed in a terminal, for example `gimp %F` or
+`wine "/path/to/application.exe"`. Quote a program path that contains spaces.
+Browse selects a program or script and inserts its quoted path; add arguments
+after it. **Working directory** defaults to the active folder when empty;
 Browse selects another folder. It accepts `%p`, `%o`, `%d`, `%f`, and `%%`
 without shell evaluation. Relative paths resolve from the active folder.
-Existing actions retain **Full command (legacy/shell syntax)** mode and their
-original command text; switching modes does not silently split that text.
-Only the selected mode's fields are shown. Normally Program and Parameters
-are editable; selecting **Advanced: full shell command** replaces them with
-one editable Full command field. Existing full-command actions open with that
-advanced switch selected. Unchecking it shows the separate fields; enter their
-values explicitly rather than expecting automatic command splitting.
+Actions saved by earlier test builds with separate Program and Parameters
+fields open as one equivalent command. They are saved unchanged unless the
+command text is edited; an edited one is saved as a normal command.
 
-The live preview never runs a command. **Parameter Legend…** opens scrollable
-help. **Test Action** checks placeholder expansion, working directory,
-executable availability in Program mode, and shell syntax without running the
+**Parameter Legend…** opens scrollable
+help. **Test Action** checks placeholder expansion, working directory and
+shell syntax without running the
 action. It shows Checks Passed or an explanatory error. It cannot verify an
-application's supported options or guarantee runtime success; a legacy shell
-command's executable names are not resolved by the syntax checker.
+application's supported options or guarantee runtime success; executable
+names in the command are not resolved by the syntax checker.
 Actions have a name, description, optional PNG icon, command, file/folder and
 selection conditions, and semicolon-separated filename patterns. Use `*` for
 all files, or `.jpg;.png;.tar.gz` as shorthand for `*.jpg;*.png;*.tar.gz`.
@@ -139,7 +160,8 @@ with **Folders** enabled, selected-path/name/URI placeholders use the current
 folder too; otherwise they report that a selection is required. For complex
 shell logic use a script.
 
-Check **Show on custom toolbar** for individual actions or folders. A checked
+Check **Show on custom toolbar** for individual actions (on the
+**Appearance Conditions** tab) or folders (on the **Basic** tab). A checked
 folder exposes its descendants as a dropdown; checked descendants are not
 duplicated outside it. Separators divide toolbar groups. Unavailable context
 actions are hidden; toolbar actions are disabled. Context submenus always
@@ -147,8 +169,12 @@ include an editing entry, even with no configured/applicable actions.
 **Tools → Show Custom Toolbar** toggles this independent toolbar; its far-right
 **Settings** button opens the editor with an **Edit Custom Actions** tooltip.
 Custom-action toolbar contents remain separate from the built-in toolbars.
-Custom PNG icons are reduced to fit the toolbar's standard small-icon size
-while preserving their proportions.
+In **Preferences → Appearance → Tool Bar Icon Size**, choose the **16 px**,
+**24 px** or **32 px** radio button for the custom toolbar. Sizes scale with
+display DPI. The change applies when Preferences is accepted; Cancel discards
+it. Image and system icons are loaded at the selected size, keeping their
+proportions; the result depends on the quality of the source image. Menus and
+the built-in toolbars keep their normal sizes.
 Click the icon preview or its Browse control to open **Choose an Icon**.
 The maximizable chooser displays installed system icons in a labeled grid
 that reflows when resized. Select a category (actions, applications, devices,
@@ -171,10 +197,10 @@ selection; a named system icon depends on the target host's icons.
 
 The built-in **General**, **Tools** and **Panel** toolbars use their original
 commands, order and theme icon sizes. Experimental toolbar customization,
-right-click presentation menus, size/display preferences and overflow controls
-have been removed. Older toolbar-customization settings are ignored; saved
-Custom Actions are preserved. Manage custom toolbar contents through the
-Custom Actions editor, not the built-in toolbars.
+right-click presentation menus, built-in toolbar size/display preferences and
+overflow controls have been removed. Older toolbar-customization settings are
+ignored; saved Custom Actions are preserved. Manage custom toolbar contents
+through the Custom Actions editor, not the built-in toolbars.
 
 Properties **Apply** changes the editor's working copy; **Save** persists it.
 Editor **Cancel** discards unsaved edits. Settings belong to Swordfish's own
@@ -206,23 +232,32 @@ Normal archive extraction does not require `archivemount`.
 
 Mounted disks under `/media/` and `/run/media/` appear in Devices.
 Connected, unmounted filesystems reported by the host `lsblk` also appear,
-including internal partitions. Their names use normal readable theme text,
-with an **(unmounted)** suffix, and remain clickable
-to mount and open them. Mount-table changes are polled, including disks
-unmounted by another application. Unknown filesystems, locked encrypted
+including internal partitions. Their names are dimmed with muted, theme-aware
+text, but remain clickable to mount and open them. Mounted entries use normal
+text. If a theme's colors cannot be muted while maintaining readable contrast,
+the normal text color is retained and an **(unmounted)** suffix identifies the
+entry instead. Mount-table changes are polled, including
+disks unmounted by another application. Unknown filesystems, locked encrypted
 volumes and swap are not offered as new mountable volumes.
 
 Device rows have separate controls at the right:
 
-- The red stop-shaped button unmounts the selected filesystem. When it is
-  unmounted but still available, this becomes a green play/go-shaped Mount button.
-- The red eject symbol safely removes a supported USB/hotplug drive. It unmounts
+- The pause button unmounts the selected filesystem. When it is unmounted but
+  still available, this becomes a play button that mounts it again.
+- The eject button safely removes a supported USB/hotplug drive. It unmounts
   all filesystems on the physical drive before powering it off, not just
-  the selected partition. Internal partitions do not have an eject button.
+  the selected partition. The drive disappears from Devices when the system
+  removes it. Internal partitions do not have an eject button.
+
+These play, pause and eject symbols are flat outlines: black on light
+backgrounds and white on dark ones. The same symbols are used for Mount,
+Unmount and Eject in device menus and the Tools menu/toolbar. Close Archive
+Folder keeps its own icon.
 - Root and other protected mounts have neither action.
 
 Supported GVFS network shares (SMB and SFTP) stay in Devices after unmounting,
-labelled **(unmounted)** and remountable through the Mount button or by opening the entry.
+using the same muted text (or the **(unmounted)** suffix if it cannot be muted). They can be remounted
+through the Mount button or by opening the entry.
 These disconnected entries are remembered for the current Swordfish session.
 Eject disconnects the share and removes its retained entry, without deleting
 or changing saved credentials. Connect to Server can add the share again.
@@ -332,7 +367,12 @@ cache; loader settings are applied only inside the worker, not to host apps.
 Bundled GIO uses its own module directory rather than loading incompatible
 host GVFS modules; external commands restore the host GIO module setting.
 SMB discovery uses the separate `swordfish-network` helper with the host GIO/GVFS
-environment. In post-RC4 development builds, expand or click Network to discover
+environment. When one portable copy launches another, the new launcher preserves
+the already-recorded original desktop environment, including empty host library
+and GIO module settings. Otherwise the older bundle's private libraries/modules
+can be mistaken for host settings, breaking discovery and network-share unmounting.
+Launcher regression checks run with `python3 tests/portable-launcher-regression.py`.
+In post-RC4 development builds, expand or click Network to discover
 computers through GVFS/DNS-SD and WS-Discovery. Discovery never mounts anything
 or requests credentials, and does not run at startup.
 
@@ -365,6 +405,27 @@ or navigation start, so a slow mount cannot hold the desktop's mouse input.
 Shares unmounted by another file manager also have their tabs closed. If a pane loses its last tab, it opens one Home tab. Attempting to open
 an already-mounted share reports its local mount path and reuses the mount
 instead of issuing another mount command.
+
+Network discovery also lists other devices that announce themselves on the
+local network (UPnP/SSDP, Zeroconf/mDNS and WS-Discovery; nothing is
+port-scanned): media servers, FTP and SFTP servers, printers and routers /
+access points. Devices on this computer itself are not listed. Clicking a
+media server browses its folders read-only (`dlna://` paths in the address
+bar); double-clicking a file streams it to the audio or video player set in
+Swordfish, else to the desktop's default application for the file type
+(`mimeapps.list`), else to the browser through host `xdg-open`. Right-click a
+file for **Play**, **Play With** (the default application, plus installed
+players or viewers that declare the type and accept URLs, **Web Browser** and
+**Other Application...**, which opens the regular Open With dialog) and **Copy
+Stream Address**. An application remembered from that dialog becomes the
+double-click choice for the extension. **Download...**
+saves copies, one at a time in the background, never overwriting existing
+files; a progress window shows the file, bytes and a bar, and **Cancel
+Downloads** stops the queue and removes the unfinished `.part` file. FTP/SFTP entries connect
+through GVFS like typed addresses. Printers and routers open their own web
+page in the browser; printers also offer **Printer Settings on This
+Computer** (`system-config-printer`, or the CUPS page). Found media servers
+are remembered so restored `dlna://` tabs work before the next search.
 Third-party copyright notices, license texts and build package versions are in
 `usr/share/doc` and `usr/share/common-licenses`. Video codec availability depends
 on the bundled FFmpeg build. The portable download is larger with these engines.
@@ -498,8 +559,8 @@ bundled `rsvg-convert`, using `usr/share/swordfish/icons/system-icon-map.txt`
 to map names, and stores the result in `portable-data/icons/<theme>-system`.
 It is converted once and works without the system theme afterwards; delete the
 folder to convert again. Icons the theme lacks keep the default icon.
-The built-in color themes also include Charcoal, Forest Green,
-Forest Green 2, Gray On Blue and Gray-Blue. The additional bundled icon themes
+The built-in color themes also include MX Blues (first in the list), Charcoal,
+Forest Green, Forest Green 2, Gray On Blue and Gray-Blue. The additional bundled icon themes
 are Adwaita, Faba, HighContrast, Human, Moka, Numix, Numix-Circle, Obsidian-Amber,
 Obsidian-Aqua, Obsidian-Green, Papirus, Tango, ePapirus, ePapirus-Dark,
 gnome-brave, gnome-dust and gnome-human. These are already converted to
@@ -527,20 +588,28 @@ controls navigate their own pane and synchronize the shared tree with it.
 The Desktop shortcut uses the desktop folder configured by the host; it
 does not create a folder if that location is missing.
 
-Click the edit-path button or the empty area after the breadcrumb buttons to
-type a path. Ctrl+L edits the active pane's path (the shortcut remains
-customizable in Settings). Enter navigates to the folder and returns to
-breadcrumbs; Escape cancels editing without changing folders. Relative
-paths, `~/` paths, local file URIs, `smb://server/share` addresses, the
-common `smb//server/share` typo, and Windows-style `\\server\share` paths are
-supported. For SMB servers, typing only `smb://server` opens a share picker.
-Invalid or inaccessible folders show an error rather than silently navigating
-somewhere else.
+For local folders, the default address bar is an editable text field. The
+pencil button to its left switches between text and clickable folder buttons
+(breadcrumbs) for both panes, and saves the choice. The same choice is in
+Edit > Preferences > General > General Options under **Default address bar
+mode**, with **Button mode (breadcrumbs)** and **Edit mode (text)** choices.
+Changing it in Preferences prompts for a restart.
 
-The edit-path button sits just left of the path, after the navigation
-controls. Vertical separators distinguish navigation, the path, and places
-shortcuts. Address rows and panes have visible borders, with a contrasting
-resizable divider between the two panes in either orientation.
+The raised arrow button beside each pane's Back button opens a list of
+previous folders; it is greyed out until there is history. The top toolbar's
+Back and Forward history arrows use the same larger raised style. In breadcrumb mode, click the empty area after the
+folder buttons to edit a path temporarily. Ctrl+L also edits the active pane's
+path (the shortcut remains customizable in Settings). Enter navigates to the
+folder; Escape cancels editing without changing folders. Relative paths, `~/`
+paths, local file URIs, `smb://server/share` addresses, the common
+`smb//server/share` typo, and Windows-style `\\server\share` paths are supported.
+For SMB servers, typing only `smb://server` opens a share picker. Invalid or
+inaccessible folders show an error rather than silently navigating somewhere
+else.
+
+Vertical separators distinguish navigation, the path, and places shortcuts.
+Address rows and panes have visible borders, with a contrasting resizable
+divider between the two panes in either orientation.
 
 The existing global toolbars remain available during the pane redesign.
 
@@ -610,7 +679,8 @@ The browse (file selection) dialog has a resizable sidebar on the left:
   Swordfish bookmarks.
 - **Devices** – mounted partitions, USB drives and CD/DVD media (`/media`,
   `/run/media`, `/mnt` and other mounted disks) plus mounted network shares
-  (SMB/CIFS, NFS, SSHFS and GVFS). Unmounted drives are not listed yet.
+  (SMB/CIFS, NFS, SSHFS and GVFS). This file chooser lists mounted locations
+  only; mount an unmounted drive from the main sidebar first.
 
 Click an entry to open that folder; hover it to see the full path.
 

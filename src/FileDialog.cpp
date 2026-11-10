@@ -416,7 +416,7 @@ FileSelector::FileSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXuint
 void FileSelector::create()
 {
     // Display or hide path linker
-    FXbool show_pathlink = getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true);
+    FXbool show_pathlink = getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false);
 
     if (show_pathlink)
     {

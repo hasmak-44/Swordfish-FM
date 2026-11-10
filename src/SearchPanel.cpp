@@ -344,9 +344,9 @@ SearchPanel::SearchPanel(FXComposite* p, FXuint* ic, FXuint nc, FXuint name_size
     associations = new FileDict(getApp());
 
     // Trashcan locations
-    trashlocation = xdgdatahome + PATHSEPSTRING TRASHPATH;
-    trashfileslocation = xdgdatahome + PATHSEPSTRING TRASHFILESPATH;
-    trashinfolocation = xdgdatahome + PATHSEPSTRING TRASHINFOPATH;
+    trashlocation = xf_trashdatahome() + PATHSEPSTRING TRASHPATH;
+    trashfileslocation = xf_trashdatahome() + PATHSEPSTRING TRASHFILESPATH;
+    trashinfolocation = xf_trashdatahome() + PATHSEPSTRING TRASHINFOPATH;
 
     // Default programs identifiers
     progs["<txtviewer>"] = TXTVIEWER;
@@ -3489,8 +3489,7 @@ long SearchPanel::onCmdFileDelete(FXObject*, FXSelector, void*)
                     FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
                     if (use_trash_can && (pathname.left(trashfileslocation.length()) == trashfileslocation))
                     {
-                        FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + filename + ".trashinfo";
-                        unlink(trashinfopathname.text());
+                        xf_cleanuptrashinfo(pathname);
                     }
 
                     // If action is cancelled in progress dialog
@@ -4187,8 +4186,7 @@ x:
             FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
             if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
             {
-                FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) + ".trashinfo";
-                unlink(trashinfopathname.text());
+                xf_cleanuptrashinfo(source);
             }
         }
         else if (command == "move")
@@ -4235,8 +4233,7 @@ x:
             // Do it silently and don't report any error if it fails
             if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
             {
-                FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) + ".trashinfo";
-                unlink(trashinfopathname.text());
+                xf_cleanuptrashinfo(source);
             }
 
             // An error has occurred
@@ -4379,9 +4376,7 @@ x:
                         FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
                         if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
                         {
-                            FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) +
-                                                         ".trashinfo";
-                            unlink(trashinfopathname.text());
+                            xf_cleanuptrashinfo(source);
                         }
 
                         // If action is cancelled in progress dialog
@@ -4515,9 +4510,7 @@ x:
                     // Do it silently and don't report any error if it fails
                     if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
                     {
-                        FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) +
-                                                     ".trashinfo";
-                        unlink(trashinfopathname.text());
+                        xf_cleanuptrashinfo(source);
                     }
 
                     // An error has occurred

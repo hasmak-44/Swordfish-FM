@@ -1352,6 +1352,7 @@ int File::remove(const FXString& file)
             }
             else
             {
+                xf_cleanuptrashinfo(file);
                 return true;
             }
         }
@@ -1417,6 +1418,7 @@ int File::remove(const FXString& file)
             }
             else
             {
+                xf_cleanuptrashinfo(file);
                 return true;
             }
         }
@@ -1528,6 +1530,7 @@ int File::rename(const FXString& source, const FXString& target)
         // This should only work for files that are on the same file system
         if (::rename(source.text(), target.text()) == 0)
         {
+            xf_cleanuptrashinfo(source);
             return true;
         }
 
@@ -1726,6 +1729,7 @@ int File::fmove(const FXString& source, const FXString& target, const FXString& 
     // This should only work for files that are on the same file system
     if (::rename(source.text(), targetfile.text()) == 0)
     {
+        xf_cleanuptrashinfo(source);
         return true;
     }
 

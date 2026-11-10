@@ -2704,8 +2704,12 @@ msgid "&Global Key Bindings"
 msgstr "&Καθολικές Συντομεύσεις"
 
 #: src/KeyBindings.cpp:100
+#, fuzzy
+#| msgid ""
+#| "These key bindings are common to all Xfe applications.\n"
+#| "Double click on an item to modify the selected key binding..."
 msgid ""
-"These key bindings are common to all Xfe applications.\n"
+"These key bindings are common to all Swordfish applications.\n"
 "Double click on an item to modify the selected key binding..."
 msgstr ""
 "Αυτές οι συντομεύσεις πληκτρολογίου είναι για όλες τις εφαρμογές του ΕξΕφΕ.\n"
@@ -2713,8 +2717,10 @@ msgstr ""
 "συντόμευση πληκτρολογίου..."
 
 #: src/KeyBindings.cpp:107
-msgid "Xf&e Key Bindings"
-msgstr "Συντομ&εύσεις του Xfe"
+#, fuzzy
+#| msgid "Xf&i Key Bindings"
+msgid "S&wordfish Key Bindings"
+msgstr "Συντομεύσε&ις του Xfi"
 
 #: src/KeyBindings.cpp:114
 msgid ""
@@ -2816,12 +2822,15 @@ msgstr ""
 "αναθέσεις ξανά."
 
 #: src/KeyBindings.cpp:998 src/KeyBindings.cpp:1150
-#, c-format
+#, fuzzy, c-format
+#| msgid ""
+#| "The key binding %s is already used in the Xfi section.\n"
+#| "You should erase the existing key binding before assigning it again."
 msgid ""
-"The key binding %s is already used in the Xfe section.\n"
+"The key binding %s is already used in the Swordfish section.\n"
 "You should erase the existing key binding before assigning it again."
 msgstr ""
-"Η συντόμευση πληκτρολογίου %s χρησιμοποιείται, ήδη, στην ενότητα του Xfe.\n"
+"Η συντόμευση πληκτρολογίου %s χρησιμοποιείται, ήδη, στην ενότητα του Xfi.\n"
 "Θα πρέπει να διαγράψεις την υπάρχουσα συντόμευση πληκτρολογίου, πριν την "
 "αναθέσεις ξανά."
 
@@ -2850,7 +2859,9 @@ msgid "Select an Executable File"
 msgstr "Επέλεξε ένα εκτελέσιμο αρχείο"
 
 #: src/MessageBox.cpp:102 src/XFileExplorer.cpp:1240
-msgid "Launch Xfe as root"
+#, fuzzy
+#| msgid "Launch Xfe as root"
+msgid "Launch Swordfish as root"
 msgstr "Εκκίνηση του Xfe σαν υπερχρήστης"
 
 #: src/MessageBox.cpp:124 src/MessageBox.cpp:142 src/MessageBox.cpp:178
@@ -3303,7 +3314,7 @@ msgstr ""
 #: src/Preferences.cpp:604
 #, fuzzy
 #| msgid "Start in home folder"
-msgid "Open new Xfe window when mounting"
+msgid "Open new Swordfish window when mounting"
 msgstr "Εκκίνηση στον οικιακό φάκελο"
 
 #: src/Preferences.cpp:609
@@ -5447,7 +5458,9 @@ msgid "Restore Selected Files From Trash Can"
 msgstr "Αποκατάσταση των επιλεγμένων αρχείων από κάδο απορριμμάτων"
 
 #: src/XFileExplorer.cpp:1236
-msgid "Launch Xfe"
+#, fuzzy
+#| msgid "Launch Xfe"
+msgid "Launch Swordfish"
 msgstr "Εκκίνηση του Xfe"
 
 #: src/XFileExplorer.cpp:1244
@@ -5731,7 +5744,9 @@ msgid "&About X File Explorer"
 msgstr "&Σχετικά με τον Εξ Φάειλ Εξπλόρερ"
 
 #: src/XFileExplorer.cpp:3498
-msgid "Running Xfe as root!"
+#, fuzzy
+#| msgid "Running Xfe as root!"
+msgid "Running Swordfish as root!"
 msgstr "Εκτέλεση του Xfe σαν υπερχρήστης."
 
 #: src/XFileExplorer.cpp:3542
@@ -5759,7 +5774,9 @@ msgstr ""
 "ρυθμίσεων..."
 
 #: src/XFileExplorer.cpp:3573
-msgid "XFE configuration file"
+#, fuzzy
+#| msgid "XFE configuration file"
+msgid "Swordfish configuration file"
 msgstr "Αρχείο ρυθμίσεων του XFE"
 
 #: src/XFileExplorer.cpp:3586
@@ -6303,7 +6320,8 @@ msgstr "Σφάλμα στη φόρτωση των εικονιδίων"
 msgid ""
 "Icon path doesn't exist, default icon path was selected.\n"
 "\n"
-"From Xfe, please check your icon path in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon path in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "Αδυναμία φόρτωσης κάποιων εικονιδίων. Παρακαλώ, έλεγξε την διαδρομή των "
 "εικονιδίων."
@@ -6314,7 +6332,8 @@ msgstr ""
 msgid ""
 "Unable to load some icons, default icon theme was selected.\n"
 "\n"
-"From Xfe, please check your icon theme in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon theme in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "Αδυναμία φόρτωσης κάποιων εικονιδίων. Παρακαλώ, έλεγξε την διαδρομή των "
 "εικονιδίων."
@@ -6325,7 +6344,7 @@ msgstr ""
 msgid ""
 "Unable to load default icons, no icons can be shown.\n"
 "\n"
-"Please check your Xfe installation..."
+"Please check your Swordfish installation..."
 msgstr ""
 "Αδυναμία φόρτωσης κάποιων εικονιδίων. Παρακαλώ, έλεγξε την διαδρομή των "
 "εικονιδίων."
@@ -7741,6 +7760,19 @@ msgstr "Ένας απλός επεξεργαστής κειμένου για τ�
 #: swfw.desktop.in:5
 msgid "editor;viewer;text"
 msgstr ""
+
+#~ msgid "Xf&e Key Bindings"
+#~ msgstr "Συντομ&εύσεις του Xfe"
+
+#, c-format
+#~ msgid ""
+#~ "The key binding %s is already used in the Xfe section.\n"
+#~ "You should erase the existing key binding before assigning it again."
+#~ msgstr ""
+#~ "Η συντόμευση πληκτρολογίου %s χρησιμοποιείται, ήδη, στην ενότητα του "
+#~ "Xfe.\n"
+#~ "Θα πρέπει να διαγράψεις την υπάρχουσα συντόμευση πληκτρολογίου, πριν την "
+#~ "αναθέσεις ξανά."
 
 #~ msgid "Run Xfe as root"
 #~ msgstr "Εκτέλεση Xfe ως root"

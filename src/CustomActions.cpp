@@ -554,3 +554,24 @@ bool CustomActions::check(const CustomAction& action, const CustomActionContext&
     }
     return true;
 }
+
+FXString CustomActions::commandText(const CustomAction& a)
+{
+    if (!a.programMode) { return a.command; }
+    FXString program = a.program;
+    program.substitute("%", "%%");
+    bool plain = !program.empty();
+    for (int i = 0; i < program.length(); ++i)
+    {
+        char c = program[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+              c == '/' || c == '.' || c == '_' || c == '-' || c == '+' || c == '%'))
+        { plain = false; break; }
+    }
+    if (!plain)
+    {
+        program.substitute("'", "'\\''");
+        program = "'" + program + "'";
+    }
+    return a.parameters.empty() ? program : program + " " + a.parameters;
+}

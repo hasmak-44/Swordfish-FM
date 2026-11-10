@@ -178,6 +178,7 @@ FXbool readDesktopApplication(const FXString& path, DesktopApplication& app, FXb
 
     app.name = !localname.empty() ? localname : (!languagename.empty() ? languagename : name);
     app.command = desktopExecCommand(exec);
+    app.acceptsUrls = exec.find("%u") >= 0 || exec.find("%U") >= 0;
     return type == "Application" && !hidden && (includeUnlisted || (!terminal && !nodisplay)) &&
            !app.name.empty() && !app.command.empty() &&
            (tryexec.empty() || xf_existcommand(tryexec)) && xf_existcommand(app.command);
@@ -737,10 +738,11 @@ FXIcon* HistInputDialog::applicationIcon(const FXString& name)
 }
 
 
-void HistInputDialog::setOpenWithContext(const FXString& pathname, FXint count)
+void HistInputDialog::setOpenWithContext(const FXString& pathname, FXint count, const FXString& knownMime)
 {
     contextPath = pathname;
-    contextMime = pathname.empty() ? FXString::null : xf_mimetype(pathname).before(';').trim();
+    contextMime = !knownMime.empty() ? knownMime :
+                  pathname.empty() ? FXString::null : xf_mimetype(pathname).before(';').trim();
     FXString message;
     if (count == 1)
     {

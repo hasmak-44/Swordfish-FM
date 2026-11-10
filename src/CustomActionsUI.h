@@ -12,6 +12,7 @@ class CustomActionsUI : public FXObject
     XFileExplorer* owner;
     FXToolBar* toolbar;
     std::vector<FXIcon*> icons;
+    std::vector<FXIcon*> toolbarIcons;
     CustomActionMenu* toolbarMenu = NULL;
     CustomActionMenu* mainMenu = NULL;
     FXMenuPane* mainPane = NULL;
@@ -29,6 +30,8 @@ public:
     CustomActionMenu* appendContextMenu(FXMenuPane*, FilePanel*);
     void run(unsigned, const CustomActionContext&);
     FXIcon* icon(unsigned) const;
+    // Rebuild after the custom toolbar icon size preference changes
+    void refreshToolbarIcons() { rebuild(); }
 };
 
 // Owns cascading panes (FOX menu cascades do not own their popup).

@@ -100,7 +100,7 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/gettext.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(top_srcdir)/configure \
-	$(am__configure_deps) $(dist_manual_DATA) \
+	$(am__configure_deps) $(dist_appicon_DATA) $(dist_manual_DATA) \
 	$(dist_manualimages_DATA) $(am__DIST_COMMON)
 am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
  configure.lineno config.status.lineno
@@ -137,9 +137,9 @@ am__uninstall_files_from_dir = { \
          $(am__cd) "$$dir" && rm -f $$files; }; \
   }
 am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" \
-	"$(DESTDIR)$(desktopdir)" "$(DESTDIR)$(manualdir)" \
-	"$(DESTDIR)$(manualimagesdir)" "$(DESTDIR)$(polkit_actiondir)" \
-	"$(DESTDIR)$(rcdir)"
+	"$(DESTDIR)$(desktopdir)" "$(DESTDIR)$(appicondir)" \
+	"$(DESTDIR)$(manualdir)" "$(DESTDIR)$(manualimagesdir)" \
+	"$(DESTDIR)$(polkit_actiondir)" "$(DESTDIR)$(rcdir)"
 SCRIPTS = $(bin_SCRIPTS)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -171,8 +171,8 @@ am__can_run_installinfo = \
 man1dir = $(mandir)/man1
 NROFF = nroff
 MANS = $(man_MANS)
-DATA = $(desktop_DATA) $(dist_manual_DATA) $(dist_manualimages_DATA) \
-	$(polkit_action_DATA) $(rc_DATA)
+DATA = $(desktop_DATA) $(dist_appicon_DATA) $(dist_manual_DATA) \
+	$(dist_manualimages_DATA) $(polkit_action_DATA) $(rc_DATA)
 RECURSIVE_CLEAN_TARGETS = mostlyclean-recursive clean-recursive	\
   distclean-recursive maintainer-clean-recursive
 am__recursive_targets = \
@@ -418,6 +418,11 @@ dist_manualimages_DATA = docs/manual/images/workspace.png docs/manual/images/ann
                         docs/manual/images/context-menu.png docs/manual/images/mouse-and-keyboard.svg \
                         docs/manual/images/copy-vs-move.svg
 
+appicondir = $(rcdir)/app-icon
+dist_appicon_DATA = app-icon/swordfish-folder-256.png app-icon/swordfish-folder-512.png app-icon/swordfish-folder-512.jpg \
+                    app-icon/swordfish-circle-256.png app-icon/swordfish-circle-512.png app-icon/swordfish-circle-512.jpg \
+                    app-icon/swordfish-shield-256.jpg app-icon/swordfish-shield-512.jpg
+
 pkdir = $(prefix)/share/polkit-1/actions
 EXTRA_DIST = autogen.sh install-swordfish-system.sh iconlinks.sh config.h i18n.h org.swordfish.root.policy.in.in swordfish.1 swordfish-archive.1 swordfish-image.1 swordfish-package.1 swordfish-write.1 \
              portable/AppRun portable/Dockerfile portable/build-portable-in-container portable/build-portable.sh portable/README.md \
@@ -430,6 +435,7 @@ EXTRA_DIST = autogen.sh install-swordfish-system.sh iconlinks.sh config.h i18n.h
              tests/custom-actions-ui-regression.cpp tests/run-custom-actions-ui-regression.sh \
              tests/run-command-link-regression.sh \
              tests/fake-remote-directory.py tests/native-directory-helper-regression.py \
+             tests/portable-launcher-regression.py \
              ABOUT-NLS TODO BUGS swordfishrc.in *.desktop.in.in \
                  $(top_srcdir)/icons/*
 
@@ -607,6 +613,27 @@ uninstall-desktopDATA:
 	@list='$(desktop_DATA)'; test -n "$(desktopdir)" || list=; \
 	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
 	dir='$(DESTDIR)$(desktopdir)'; $(am__uninstall_files_from_dir)
+install-dist_appiconDATA: $(dist_appicon_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_appicon_DATA)'; test -n "$(appicondir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(appicondir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(appicondir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(appicondir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(appicondir)" || exit $$?; \
+	done
+
+uninstall-dist_appiconDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_appicon_DATA)'; test -n "$(appicondir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(appicondir)'; $(am__uninstall_files_from_dir)
 install-dist_manualDATA: $(dist_manual_DATA)
 	@$(NORMAL_INSTALL)
 	@list='$(dist_manual_DATA)'; test -n "$(manualdir)" || list=; \
@@ -1002,7 +1029,7 @@ check: check-recursive
 all-am: Makefile $(SCRIPTS) $(MANS) $(DATA) config.h
 installdirs: installdirs-recursive
 installdirs-am:
-	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(desktopdir)" "$(DESTDIR)$(manualdir)" "$(DESTDIR)$(manualimagesdir)" "$(DESTDIR)$(polkit_actiondir)" "$(DESTDIR)$(rcdir)"; do \
+	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(desktopdir)" "$(DESTDIR)$(appicondir)" "$(DESTDIR)$(manualdir)" "$(DESTDIR)$(manualimagesdir)" "$(DESTDIR)$(polkit_actiondir)" "$(DESTDIR)$(rcdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-recursive
@@ -1056,9 +1083,9 @@ info: info-recursive
 
 info-am:
 
-install-data-am: install-desktopDATA install-dist_manualDATA \
-	install-dist_manualimagesDATA install-man \
-	install-polkit_actionDATA install-rcDATA
+install-data-am: install-desktopDATA install-dist_appiconDATA \
+	install-dist_manualDATA install-dist_manualimagesDATA \
+	install-man install-polkit_actionDATA install-rcDATA
 	@$(NORMAL_INSTALL)
 	$(MAKE) $(AM_MAKEFLAGS) install-data-hook
 install-dvi: install-dvi-recursive
@@ -1106,8 +1133,9 @@ ps: ps-recursive
 ps-am:
 
 uninstall-am: uninstall-binSCRIPTS uninstall-desktopDATA \
-	uninstall-dist_manualDATA uninstall-dist_manualimagesDATA \
-	uninstall-man uninstall-polkit_actionDATA uninstall-rcDATA
+	uninstall-dist_appiconDATA uninstall-dist_manualDATA \
+	uninstall-dist_manualimagesDATA uninstall-man \
+	uninstall-polkit_actionDATA uninstall-rcDATA
 	@$(NORMAL_INSTALL)
 	$(MAKE) $(AM_MAKEFLAGS) uninstall-hook
 uninstall-man: uninstall-man1
@@ -1124,19 +1152,19 @@ uninstall-man: uninstall-man1
 	distuninstallcheck dvi dvi-am html html-am info info-am \
 	install install-am install-binSCRIPTS install-data \
 	install-data-am install-data-hook install-desktopDATA \
-	install-dist_manualDATA install-dist_manualimagesDATA \
-	install-dvi install-dvi-am install-exec install-exec-am \
-	install-html install-html-am install-info install-info-am \
-	install-man install-man1 install-pdf install-pdf-am \
-	install-polkit_actionDATA install-ps install-ps-am \
-	install-rcDATA install-strip installcheck installcheck-am \
-	installdirs installdirs-am maintainer-clean \
-	maintainer-clean-generic mostlyclean mostlyclean-generic pdf \
-	pdf-am ps ps-am tags tags-am uninstall uninstall-am \
-	uninstall-binSCRIPTS uninstall-desktopDATA \
-	uninstall-dist_manualDATA uninstall-dist_manualimagesDATA \
-	uninstall-hook uninstall-man uninstall-man1 \
-	uninstall-polkit_actionDATA uninstall-rcDATA
+	install-dist_appiconDATA install-dist_manualDATA \
+	install-dist_manualimagesDATA install-dvi install-dvi-am \
+	install-exec install-exec-am install-html install-html-am \
+	install-info install-info-am install-man install-man1 \
+	install-pdf install-pdf-am install-polkit_actionDATA \
+	install-ps install-ps-am install-rcDATA install-strip \
+	installcheck installcheck-am installdirs installdirs-am \
+	maintainer-clean maintainer-clean-generic mostlyclean \
+	mostlyclean-generic pdf pdf-am ps ps-am tags tags-am uninstall \
+	uninstall-am uninstall-binSCRIPTS uninstall-desktopDATA \
+	uninstall-dist_appiconDATA uninstall-dist_manualDATA \
+	uninstall-dist_manualimagesDATA uninstall-hook uninstall-man \
+	uninstall-man1 uninstall-polkit_actionDATA uninstall-rcDATA
 
 .PRECIOUS: Makefile
 

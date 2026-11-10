@@ -2505,6 +2505,41 @@ bool FXApp::dispatchEvent(FXRawEvent& ev)
                 xdndRect.h = ((FXuint)ev.xclient.data.l[3]) & 0xffff;
                 xdndStatusReceived = true;
                 xdndStatusPending = false;
+
+                // The drag cursor is chosen before the target answers, so a short drag
+                // kept showing the stop cursor until the pointer moved again
+                if (dragWindow)
+                {
+                    FXCursor* stopcur = getDefaultCursor(DEF_DNDSTOP_CURSOR);
+                    FXCursor* copycur = getDefaultCursor(DEF_DNDCOPY_CURSOR);
+                    FXCursor* movecur = getDefaultCursor(DEF_DNDMOVE_CURSOR);
+                    FXCursor* linkcur = getDefaultCursor(DEF_DNDLINK_CURSOR);
+                    FXCursor* curcur = dragWindow->getDragCursor();
+                    if ((curcur == stopcur) || (curcur == copycur) || (curcur == movecur) || (curcur == linkcur))
+                    {
+                        FXCursor* newcur = curcur;
+                        if (ansAction == DRAG_REJECT)
+                        {
+                            newcur = stopcur;
+                        }
+                        else if (ansAction == DRAG_COPY)
+                        {
+                            newcur = copycur;
+                        }
+                        else if (ansAction == DRAG_MOVE)
+                        {
+                            newcur = movecur;
+                        }
+                        else if (ansAction == DRAG_LINK)
+                        {
+                            newcur = linkcur;
+                        }
+                        if (newcur != curcur)
+                        {
+                            dragWindow->setDragCursor(newcur);
+                        }
+                    }
+                }
             }
             return true;
 

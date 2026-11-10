@@ -2536,16 +2536,22 @@ msgid "&Global Key Bindings"
 msgstr "&Algemene toetsencombinaties"
 
 #: src/KeyBindings.cpp:100
+#, fuzzy
+#| msgid ""
+#| "These key bindings are common to all Xfe applications.\n"
+#| "Double click on an item to modify the selected key binding..."
 msgid ""
-"These key bindings are common to all Xfe applications.\n"
+"These key bindings are common to all Swordfish applications.\n"
 "Double click on an item to modify the selected key binding..."
 msgstr ""
 "Deze toetsencombinaties worden toegepast in alle Xfe applicaties.\n"
 "Om een toetsencombinatie aan te passen klikt u op het desbetreffende item..."
 
 #: src/KeyBindings.cpp:107
-msgid "Xf&e Key Bindings"
-msgstr "X&fe toetsencombinaties"
+#, fuzzy
+#| msgid "Xf&i Key Bindings"
+msgid "S&wordfish Key Bindings"
+msgstr "Xf&i toetsencombinaties"
 
 #: src/KeyBindings.cpp:114
 msgid ""
@@ -2640,10 +2646,10 @@ msgstr ""
 #: src/KeyBindings.cpp:998 src/KeyBindings.cpp:1150
 #, fuzzy, c-format
 msgid ""
-"The key binding %s is already used in the Xfe section.\n"
+"The key binding %s is already used in the Swordfish section.\n"
 "You should erase the existing key binding before assigning it again."
 msgstr ""
-"De toetsencombinatie %s is reeds in gebruik in de Xfe sectie.\n"
+"De toetsencombinatie %s is reeds in gebruik in de Xfi sectie.\n"
 "\tU dient de bestaande combinatie eerst te verwijderen voordat u deze weer "
 "kunt toewijzen."
 
@@ -2672,7 +2678,9 @@ msgid "Select an Executable File"
 msgstr "Kies een uitvoerbaar bestand"
 
 #: src/MessageBox.cpp:102 src/XFileExplorer.cpp:1240
-msgid "Launch Xfe as root"
+#, fuzzy
+#| msgid "Launch Xfe as root"
+msgid "Launch Swordfish as root"
 msgstr "Xfe als root starten"
 
 #: src/MessageBox.cpp:124 src/MessageBox.cpp:142 src/MessageBox.cpp:178
@@ -3120,7 +3128,7 @@ msgstr ""
 
 #: src/Preferences.cpp:604
 #, fuzzy
-msgid "Open new Xfe window when mounting"
+msgid "Open new Swordfish window when mounting"
 msgstr "Naar de 'home'-directory gaan"
 
 #: src/Preferences.cpp:609
@@ -5278,7 +5286,9 @@ msgid "Restore Selected Files From Trash Can"
 msgstr "Haal geselecteerde bestanden terug uit de prullenbak"
 
 #: src/XFileExplorer.cpp:1236
-msgid "Launch Xfe"
+#, fuzzy
+#| msgid "Launch Xfe"
+msgid "Launch Swordfish"
 msgstr "XFE starten"
 
 #: src/XFileExplorer.cpp:1244
@@ -5569,7 +5579,9 @@ msgid "&About X File Explorer"
 msgstr "&Over X File Explorer"
 
 #: src/XFileExplorer.cpp:3498
-msgid "Running Xfe as root!"
+#, fuzzy
+#| msgid "Running Xfe as root!"
+msgid "Running Swordfish as root!"
 msgstr "U gebruikt Xfe als root!"
 
 #: src/XFileExplorer.cpp:3542
@@ -5591,7 +5603,9 @@ msgstr ""
 "Geen algemeen xferc bestand gevonden! Kies a.u.b. een configuratiebestand..."
 
 #: src/XFileExplorer.cpp:3573
-msgid "XFE configuration file"
+#, fuzzy
+#| msgid "XFE configuration file"
+msgid "Swordfish configuration file"
 msgstr "XFE configuratiebestand"
 
 #: src/XFileExplorer.cpp:3586
@@ -6062,7 +6076,8 @@ msgstr "Fout bij het laden van iconen"
 msgid ""
 "Icon path doesn't exist, default icon path was selected.\n"
 "\n"
-"From Xfe, please check your icon path in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon path in Edit / Preferences / "
+"Appearance..."
 msgstr "Onmogelijk bepaalde iconen te laden. Check a.u.b. het icoon-pad"
 
 #: src/XFileArchive.cpp:2339 src/XFileImage.cpp:3342 src/XFilePackage.cpp:982
@@ -6071,7 +6086,8 @@ msgstr "Onmogelijk bepaalde iconen te laden. Check a.u.b. het icoon-pad"
 msgid ""
 "Unable to load some icons, default icon theme was selected.\n"
 "\n"
-"From Xfe, please check your icon theme in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon theme in Edit / Preferences / "
+"Appearance..."
 msgstr "Onmogelijk bepaalde iconen te laden. Check a.u.b. het icoon-pad"
 
 #: src/XFileArchive.cpp:2347 src/XFileImage.cpp:3350 src/XFilePackage.cpp:990
@@ -6080,7 +6096,7 @@ msgstr "Onmogelijk bepaalde iconen te laden. Check a.u.b. het icoon-pad"
 msgid ""
 "Unable to load default icons, no icons can be shown.\n"
 "\n"
-"Please check your Xfe installation..."
+"Please check your Swordfish installation..."
 msgstr "Onmogelijk bepaalde iconen te laden. Check a.u.b. het icoon-pad"
 
 #: src/XFileImage.cpp:182
@@ -7429,6 +7445,18 @@ msgstr "Een eenvoudige teksteditor voor Xfe"
 #: swfw.desktop.in:5
 msgid "editor;viewer;text"
 msgstr ""
+
+#~ msgid "Xf&e Key Bindings"
+#~ msgstr "X&fe toetsencombinaties"
+
+#, fuzzy, c-format
+#~ msgid ""
+#~ "The key binding %s is already used in the Xfe section.\n"
+#~ "You should erase the existing key binding before assigning it again."
+#~ msgstr ""
+#~ "De toetsencombinatie %s is reeds in gebruik in de Xfe sectie.\n"
+#~ "\tU dient de bestaande combinatie eerst te verwijderen voordat u deze "
+#~ "weer kunt toewijzen."
 
 #~ msgid "Run Xfe as root"
 #~ msgstr "Xfe uitvoeren als systeembeheerder (root)"

@@ -2538,16 +2538,22 @@ msgid "&Global Key Bindings"
 msgstr "Globalne skróty klawiszowe"
 
 #: src/KeyBindings.cpp:100
+#, fuzzy
+#| msgid ""
+#| "These key bindings are common to all Xfe applications.\n"
+#| "Double click on an item to modify the selected key binding..."
 msgid ""
-"These key bindings are common to all Xfe applications.\n"
+"These key bindings are common to all Swordfish applications.\n"
 "Double click on an item to modify the selected key binding..."
 msgstr ""
 "Te skróty klawiszowe są wspólne dla wszystkich aplikacji Xfe.\n"
 "Kliknij dwukrotnie aby zmienić wybrany skrót..."
 
 #: src/KeyBindings.cpp:107
-msgid "Xf&e Key Bindings"
-msgstr "Skróty klawiszowe Xfe"
+#, fuzzy
+#| msgid "Xf&i Key Bindings"
+msgid "S&wordfish Key Bindings"
+msgstr "Skróty klawiszowe Xfi"
 
 #: src/KeyBindings.cpp:114
 msgid ""
@@ -2639,10 +2645,10 @@ msgstr ""
 #: src/KeyBindings.cpp:998 src/KeyBindings.cpp:1150
 #, fuzzy, c-format
 msgid ""
-"The key binding %s is already used in the Xfe section.\n"
+"The key binding %s is already used in the Swordfish section.\n"
 "You should erase the existing key binding before assigning it again."
 msgstr ""
-"Skrót klawiszowy %s jest już użyty w sekcji Xfe.\n"
+"Skrót klawiszowy %s jest już użyty w sekcji Xfi.\n"
 "\tPowinieneś usunąć istniejący skrót klawiszowy przed ponownym jego "
 "przyporządkowaniem."
 
@@ -2671,7 +2677,9 @@ msgid "Select an Executable File"
 msgstr "Wybierz plik wykonywalny"
 
 #: src/MessageBox.cpp:102 src/XFileExplorer.cpp:1240
-msgid "Launch Xfe as root"
+#, fuzzy
+#| msgid "Launch Xfe as root"
+msgid "Launch Swordfish as root"
 msgstr "Uruchom XFE jako root"
 
 #: src/MessageBox.cpp:124 src/MessageBox.cpp:142 src/MessageBox.cpp:178
@@ -3118,7 +3126,7 @@ msgstr ""
 
 #: src/Preferences.cpp:604
 #, fuzzy
-msgid "Open new Xfe window when mounting"
+msgid "Open new Swordfish window when mounting"
 msgstr "Przejdź do katalogu domowego"
 
 #: src/Preferences.cpp:609
@@ -5281,7 +5289,9 @@ msgid "Restore Selected Files From Trash Can"
 msgstr "Przywróć zaznaczone pliki z kosza"
 
 #: src/XFileExplorer.cpp:1236
-msgid "Launch Xfe"
+#, fuzzy
+#| msgid "Launch Xfe"
+msgid "Launch Swordfish"
 msgstr "Uruchom Xfe"
 
 #: src/XFileExplorer.cpp:1244
@@ -5572,7 +5582,9 @@ msgid "&About X File Explorer"
 msgstr "O X File Explorer"
 
 #: src/XFileExplorer.cpp:3498
-msgid "Running Xfe as root!"
+#, fuzzy
+#| msgid "Running Xfe as root!"
+msgid "Running Swordfish as root!"
 msgstr "XFE uruchomiony jako root!"
 
 #: src/XFileExplorer.cpp:3542
@@ -5595,7 +5607,9 @@ msgstr ""
 "konfiguracyjny..."
 
 #: src/XFileExplorer.cpp:3573
-msgid "XFE configuration file"
+#, fuzzy
+#| msgid "XFE configuration file"
+msgid "Swordfish configuration file"
 msgstr "Plik konfiguracyjny XFE"
 
 #: src/XFileExplorer.cpp:3586
@@ -6100,7 +6114,8 @@ msgstr "Błąd wczytywania ikon"
 msgid ""
 "Icon path doesn't exist, default icon path was selected.\n"
 "\n"
-"From Xfe, please check your icon path in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon path in Edit / Preferences / "
+"Appearance..."
 msgstr "Nie powiodło się wczytanie ikon. Sprawdź ścieżkę do ikon!"
 
 #: src/XFileArchive.cpp:2339 src/XFileImage.cpp:3342 src/XFilePackage.cpp:982
@@ -6109,7 +6124,8 @@ msgstr "Nie powiodło się wczytanie ikon. Sprawdź ścieżkę do ikon!"
 msgid ""
 "Unable to load some icons, default icon theme was selected.\n"
 "\n"
-"From Xfe, please check your icon theme in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon theme in Edit / Preferences / "
+"Appearance..."
 msgstr "Nie powiodło się wczytanie ikon. Sprawdź ścieżkę do ikon!"
 
 #: src/XFileArchive.cpp:2347 src/XFileImage.cpp:3350 src/XFilePackage.cpp:990
@@ -6118,7 +6134,7 @@ msgstr "Nie powiodło się wczytanie ikon. Sprawdź ścieżkę do ikon!"
 msgid ""
 "Unable to load default icons, no icons can be shown.\n"
 "\n"
-"Please check your Xfe installation..."
+"Please check your Swordfish installation..."
 msgstr "Nie powiodło się wczytanie ikon. Sprawdź ścieżkę do ikon!"
 
 #: src/XFileImage.cpp:182
@@ -7408,6 +7424,18 @@ msgstr "Prosty edytor tekstu dla Xfe"
 #: swfw.desktop.in:5
 msgid "editor;viewer;text"
 msgstr ""
+
+#~ msgid "Xf&e Key Bindings"
+#~ msgstr "Skróty klawiszowe Xfe"
+
+#, fuzzy, c-format
+#~ msgid ""
+#~ "The key binding %s is already used in the Xfe section.\n"
+#~ "You should erase the existing key binding before assigning it again."
+#~ msgstr ""
+#~ "Skrót klawiszowy %s jest już użyty w sekcji Xfe.\n"
+#~ "\tPowinieneś usunąć istniejący skrót klawiszowy przed ponownym jego "
+#~ "przyporządkowaniem."
 
 #~ msgid "Run Xfe as root"
 #~ msgstr "Uruchomienie programu Xfe jako administrator"

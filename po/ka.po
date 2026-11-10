@@ -2452,16 +2452,22 @@ msgid "&Global Key Bindings"
 msgstr "&გლობალური კლავიატურის მალსახმობები"
 
 #: src/KeyBindings.cpp:100
+#, fuzzy
+#| msgid ""
+#| "These key bindings are common to all Xfe applications.\n"
+#| "Double click on an item to modify the selected key binding..."
 msgid ""
-"These key bindings are common to all Xfe applications.\n"
+"These key bindings are common to all Swordfish applications.\n"
 "Double click on an item to modify the selected key binding..."
 msgstr ""
 "ეს კლავიატურის მალსახმობები საერთოა ყველა Xfe-ის აპლიკაციისთვის.\n"
 "მონიშნული კლავიატურის მალსახმობის შესაცვლელად ორჯერ დააწკაპუნეთ მასზე..."
 
 #: src/KeyBindings.cpp:107
-msgid "Xf&e Key Bindings"
-msgstr "Xfe-ის კლავიატურის მალსახმობ&ები"
+#, fuzzy
+#| msgid "Xf&i Key Bindings"
+msgid "S&wordfish Key Bindings"
+msgstr "Xfi-ის კლავ&იატურის მალსახმობები"
 
 #: src/KeyBindings.cpp:114
 msgid ""
@@ -2552,12 +2558,15 @@ msgstr ""
 "მის მინიჭებამდე ის, ჯერ, უნდა წაშალოთ."
 
 #: src/KeyBindings.cpp:998 src/KeyBindings.cpp:1150
-#, c-format
+#, fuzzy, c-format
+#| msgid ""
+#| "The key binding %s is already used in the Xfi section.\n"
+#| "You should erase the existing key binding before assigning it again."
 msgid ""
-"The key binding %s is already used in the Xfe section.\n"
+"The key binding %s is already used in the Swordfish section.\n"
 "You should erase the existing key binding before assigning it again."
 msgstr ""
-"კლავიატურის მალსახმობი %s უკვე გამოიყენება Xfe-ის სექციაში.\n"
+"კლავიატურის მალსახმობი %s უკვე გამოიყენება Xfi-ის სექციაში.\n"
 "მის მინიჭებამდე ის, ჯერ, უნდა წაშალოთ."
 
 #: src/KeyBindings.cpp:1018 src/KeyBindings.cpp:1262
@@ -2583,7 +2592,9 @@ msgid "Select an Executable File"
 msgstr "აირჩიეთ გამშვები ფაილი"
 
 #: src/MessageBox.cpp:102 src/XFileExplorer.cpp:1240
-msgid "Launch Xfe as root"
+#, fuzzy
+#| msgid "Launch Xfe as root"
+msgid "Launch Swordfish as root"
 msgstr "Xfe-ის გაშვება root-ით"
 
 #: src/MessageBox.cpp:124 src/MessageBox.cpp:142 src/MessageBox.cpp:178
@@ -2995,7 +3006,9 @@ msgid "Enable automounting"
 msgstr "ავტომიმაგრების ჩართვა"
 
 #: src/Preferences.cpp:604
-msgid "Open new Xfe window when mounting"
+#, fuzzy
+#| msgid "Open new Xfe window when mounting"
+msgid "Open new Swordfish window when mounting"
 msgstr "Xfe-ის ახალი ფანჯრის გახსნა მიმაგრებისას"
 
 #: src/Preferences.cpp:609
@@ -5033,7 +5046,9 @@ msgid "Restore Selected Files From Trash Can"
 msgstr "მონიშნული ფაილების აღდგენა ნაგვის ყუთიდან"
 
 #: src/XFileExplorer.cpp:1236
-msgid "Launch Xfe"
+#, fuzzy
+#| msgid "Launch Xfe"
+msgid "Launch Swordfish"
 msgstr "Xfe-ის გაშვება"
 
 #: src/XFileExplorer.cpp:1244
@@ -5291,7 +5306,9 @@ msgid "&About X File Explorer"
 msgstr "X File Explorer-ის შეს&ახებ"
 
 #: src/XFileExplorer.cpp:3498
-msgid "Running Xfe as root!"
+#, fuzzy
+#| msgid "Running Xfe as root!"
+msgid "Running Swordfish as root!"
 msgstr "Xfe გაშვებულია root-ით!"
 
 #: src/XFileExplorer.cpp:3542
@@ -5313,7 +5330,9 @@ msgid "No global swordfishrc file found! Please select a configuration file..."
 msgstr "გლობალური xferc ფაილი აღმოჩენილი არა! აირჩიეთ კონფიგურაციის ფაილი..."
 
 #: src/XFileExplorer.cpp:3573
-msgid "XFE configuration file"
+#, fuzzy
+#| msgid "XFE configuration file"
+msgid "Swordfish configuration file"
 msgstr "XFE-ის კონფიგურაციის ფაილი"
 
 #: src/XFileExplorer.cpp:3586
@@ -5786,10 +5805,17 @@ msgstr "ხატულების ჩატვირთვის შეცდ�
 
 #: src/XFileArchive.cpp:2331 src/XFileImage.cpp:3334 src/XFilePackage.cpp:974
 #: src/XFileWrite.cpp:353 src/main.cpp:564
+#, fuzzy
+#| msgid ""
+#| "Icon path doesn't exist, default icon path was selected.\n"
+#| "\n"
+#| "From Xfe, please check your icon path in Edit / Preferences / "
+#| "Appearance..."
 msgid ""
 "Icon path doesn't exist, default icon path was selected.\n"
 "\n"
-"From Xfe, please check your icon path in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon path in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "ხატულების ბილიკი არ არსებობს. არჩეულია ნაგულისხმევი ხატულების ბილიკი.\n"
 "\n"
@@ -5798,10 +5824,17 @@ msgstr ""
 
 #: src/XFileArchive.cpp:2339 src/XFileImage.cpp:3342 src/XFilePackage.cpp:982
 #: src/XFileWrite.cpp:361 src/main.cpp:572
+#, fuzzy
+#| msgid ""
+#| "Unable to load some icons, default icon theme was selected.\n"
+#| "\n"
+#| "From Xfe, please check your icon theme in Edit / Preferences / "
+#| "Appearance..."
 msgid ""
 "Unable to load some icons, default icon theme was selected.\n"
 "\n"
-"From Xfe, please check your icon theme in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon theme in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "ზოგიერთი ხატულას ჩატვირთვა შეუძლებელია. არჩეულია ნაგულისხმევი ხატულების "
 "თემა.\n"
@@ -5811,10 +5844,15 @@ msgstr ""
 
 #: src/XFileArchive.cpp:2347 src/XFileImage.cpp:3350 src/XFilePackage.cpp:990
 #: src/XFileWrite.cpp:369 src/main.cpp:580
+#, fuzzy
+#| msgid ""
+#| "Unable to load default icons, no icons can be shown.\n"
+#| "\n"
+#| "Please check your Xfe installation..."
 msgid ""
 "Unable to load default icons, no icons can be shown.\n"
 "\n"
-"Please check your Xfe installation..."
+"Please check your Swordfish installation..."
 msgstr ""
 "ნაგულისხმევი ხატულების ჩატვირთვა შეუძლებელია. ხატულები ნაჩვენები არ იქნება.\n"
 "\n"
@@ -7182,6 +7220,17 @@ msgstr "მარტივი ტექსტური რედაქტორ�
 #: swfw.desktop.in:5
 msgid "editor;viewer;text"
 msgstr "editor;viewer;text;რედაქტორი;ტექსტი"
+
+#~ msgid "Xf&e Key Bindings"
+#~ msgstr "Xfe-ის კლავიატურის მალსახმობ&ები"
+
+#, c-format
+#~ msgid ""
+#~ "The key binding %s is already used in the Xfe section.\n"
+#~ "You should erase the existing key binding before assigning it again."
+#~ msgstr ""
+#~ "კლავიატურის მალსახმობი %s უკვე გამოიყენება Xfe-ის სექციაში.\n"
+#~ "მის მინიჭებამდე ის, ჯერ, უნდა წაშალოთ."
 
 #~ msgid "Run Xfe as root"
 #~ msgstr "Xfe-ის გაშვება root-ით"

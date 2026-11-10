@@ -1,3 +1,25 @@
+Swordfish Portable 0.0.3 beta 2 — 10 November 2026
+================================================
+Latest release, explicitly beta; stable 0.0.2 remains available unchanged.
+Extract into a new folder and launch AppRun. Back up existing portable-data
+before transferring settings. Release archives contain no test settings.
+
+- Network discovery also lists media servers (UPnP/DLNA), FTP/SFTP servers,
+  printers and routers, found only by what they announce.
+- Media servers browse read-only like folders. Double-click plays with the
+  Swordfish player, the desktop default or the browser; right-click offers
+  Play, Play With (players, Web Browser, Other Application...), Copy Stream
+  Address and Download... with a progress window and Cancel.
+- Trash combines Home Trash with mounted drives' Trash, including items
+  trashed by other file managers; Caja-style columns, Restore and Empty Trash.
+- New MX Blues theme; custom toolbar icon size (16/24/32 px).
+- Fixes: FTP unmount, dragging files to other programs and other desktops,
+  drag cursor, launcher rewrites, nested portable launches, startup icon scan.
+
+Validated with local model/GUI regressions, Debian 10/glibc 2.28 portable
+builds and real Kodi/Jellyfin media servers. The user accepted test 7.
+See CHANGELOG.md, PROJECT-HISTORY.md and Help > User Manual for details.
+
 Swordfish Portable 0.0.3 beta 1 — 6 November 2026
 ================================================
 Latest release, explicitly beta; stable 0.0.2 remains available unchanged.

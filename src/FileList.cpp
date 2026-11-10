@@ -273,7 +273,14 @@ gpointer folderSizeThread(gpointer data)
 namespace
 {
 std::vector<FileList*> zoomLists;
-const int zoomSizes[] = { 32, 48, 64, 96, 128 };
+// Saved file_zoom_step values 0..4 predate the smaller levels, so negative
+// steps are used for zooming out further without changing saved choices.
+const int minZoomStep = -3;
+const int maxZoomStep = 4;
+const int zoomSizeTable[] = { 16, 20, 24, 32, 48, 64, 96, 128 };
+const int zoomRowSizeTable[] = { 10, 12, 14, 16, 20, 24, 32, 40 };
+const int* const zoomSizes = zoomSizeTable - minZoomStep;
+const int* const zoomRowSizes = zoomRowSizeTable - minZoomStep;
 
 FXString diagnosticPath(const FXString& path)
 {
@@ -503,15 +510,13 @@ FileList::FileList(FXWindow* focuswin, FXComposite* p, FXuint* ic, FXuint nc,
     // Not in a search list
     if (!(options & FILELIST_SEARCH))
     {
-        // Column ids when in Trash
-        idColTrash[0] = ID_COL_NAME; // Force to name
-        idColTrash[1] = ID_COL_ORIGPATH;
-        idColTrash[2] = ID_COL_DELDATE;
-        for (FXuint i = 1; i < nbCols; i++)
-        {
-            idColTrash[i + 2] = idCol[i];
-        }
-        nbColsTrash = nbCols + 2;
+        // Keep the Trash columns in the same order as Caja.
+        idColTrash[0] = ID_COL_NAME;
+        idColTrash[1] = ID_COL_SIZE;
+        idColTrash[2] = ID_COL_TYPE;
+        idColTrash[3] = ID_COL_DELDATE;
+        idColTrash[4] = ID_COL_ORIGPATH;
+        nbColsTrash = 5;
     }
 
     // Header indices by name
@@ -682,8 +687,8 @@ FileList::FileList(FXWindow* focuswin, FXComposite* p, FXuint* ic, FXuint nc,
 #endif
 
     // Trashcan location
-    trashfileslocation = xdgdatahome + PATHSEPSTRING TRASHFILESPATH;
-    trashinfolocation = xdgdatahome + PATHSEPSTRING TRASHINFOPATH;
+    trashfileslocation = xf_trashdatahome() + PATHSEPSTRING TRASHFILESPATH;
+    trashinfolocation = xf_trashdatahome() + PATHSEPSTRING TRASHINFOPATH;
 }
 
 
@@ -722,16 +727,35 @@ void FileList::setColumnLayout(const std::vector<FXuint>& columns)
     for (FXint i = 0; i < getNumHeaders(); ++i) widths[getHeaderId(i)] = getHeaderSize(i);
     nbCols = columns.size();
     for (FXuint i = 0; i < nbCols; ++i) idCol[i] = columns[i];
-    nbColsTrash = nbCols + 2;
+    for (FXuint id : columns)
+    {
+        if (widths.count(id))
+        {
+            normalColumnWidths[id] = widths[id];
+        }
+        else if (!normalColumnWidths.count(id))
+        {
+            normalColumnWidths[id] = 120;
+        }
+    }
+    nbColsTrash = 5;
     idColTrash[0] = ID_COL_NAME;
-    idColTrash[1] = ID_COL_ORIGPATH;
-    idColTrash[2] = ID_COL_DELDATE;
-    for (FXuint i = 1; i < nbCols; ++i) idColTrash[i + 2] = idCol[i];
+    idColTrash[1] = ID_COL_SIZE;
+    idColTrash[2] = ID_COL_TYPE;
+    idColTrash[3] = ID_COL_DELDATE;
+    idColTrash[4] = ID_COL_ORIGPATH;
     header->clearItems();
     FXuint* ids = inTrash ? idColTrash : idCol;
     FXuint count = inTrash ? nbColsTrash : nbCols;
     for (FXuint i = 0; i < count; ++i)
-        appendHeader(getHeaderName(ids[i]), NULL, widths.count(ids[i]) ? widths[ids[i]] : 120);
+    {
+        FXString label = getHeaderName(ids[i]);
+        if (inTrash && ids[i] == ID_COL_DELDATE) label = _("Trashed On");
+        if (inTrash && ids[i] == ID_COL_ORIGPATH) label = _("Original Location");
+        FXuint width = widths.count(ids[i]) ? widths[ids[i]] : 120;
+        if (!inTrash && normalColumnWidths.count(ids[i])) width = normalColumnWidths[ids[i]];
+        appendHeader(label, NULL, width);
+    }
     name_index = 0;
     size_index = getHeaderIndex(ID_COL_SIZE);
     type_index = getHeaderIndex(ID_COL_TYPE);
@@ -1838,9 +1862,7 @@ long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
                 // Do it silently and don't report any error if it fails
                 if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
                 {
-                    FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) +
-                                                 ".trashinfo";
-                    unlink(trashinfopathname.text());
+                    xf_cleanuptrashinfo(source);
                 }
 
                 // An error has occurred
@@ -1979,6 +2001,7 @@ long FileList::onBeginDrag(FXObject* sender, FXSelector sel, void* ptr)
     }
     if (beginDrag(&urilistType, 1))
     {
+        xf_keepdraggrab(this);
         dragfiles = FXString::null;
         for (i = 0; i < getNumItems(); i++)
         {
@@ -2007,6 +2030,14 @@ long FileList::onEndDrag(FXObject* sender, FXSelector sel, void* ptr)
     if (IconList::onEndDrag(sender, sel, ptr))
     {
         return 1;
+    }
+    FXint rootx, rooty;
+    FXuint buttons;
+    getRoot()->getCursorPosition(rootx, rooty, buttons);
+    if (!getApp()->findWindowAt(rootx, rooty))
+    {
+        appLog(APP_LOG_UI, "drag-to-other-program",
+               didAccept() == DRAG_REJECT ? "rejected by the target program" : "accepted by the target program");
     }
     endDrag((didAccept() != DRAG_REJECT));
     setDragCursor(getDefaultCursor());
@@ -2041,11 +2072,12 @@ long FileList::onDragged(FXObject* sender, FXSelector sel, void* ptr)
     }
 
     // If source directory is read-only, convert move action to copy
-    if (!xf_iswritable(orgdirectory) && (action == DRAG_MOVE))
+    if (!xf_iswritable(getDirectory()) && (action == DRAG_MOVE))
     {
         action = DRAG_COPY;
     }
 
+    action = xf_dragaction(getApp(), event->root_x, event->root_y, action);
     handleDrag(event->root_x, event->root_y, action);
     if (didAccept() != DRAG_REJECT)
     {
@@ -2263,7 +2295,16 @@ long FileList::onUpdHideHidden(FXObject* sender, FXSelector, void*)
 // Move up one level
 long FileList::onCmdDirectoryUp(FXObject*, FXSelector, void*)
 {
-    if (RemoteDirectory::isServer(directory)) return 1;
+    if (RemoteDirectory::isServer(directory))
+    {
+        const FXString parent = RemoteDirectory::mediaParent(directory);
+        if (!parent.empty())
+        {
+            setFocus();
+            setDirectory(parent, true, directory);
+        }
+        return 1;
+    }
     setFocus();
     setDirectory(FXPath::upLevel(directory), true, directory);
     return 1;
@@ -2273,7 +2314,8 @@ long FileList::onCmdDirectoryUp(FXObject*, FXSelector, void*)
 // Determine if we can still go up more
 long FileList::onUpdDirectoryUp(FXObject* sender, FXSelector, void* ptr)
 {
-    FXuint msg = FXPath::isTopDirectory(directory) ? ID_DISABLE : ID_ENABLE;
+    FXuint msg = (RemoteDirectory::isServer(directory) ? RemoteDirectory::mediaParent(directory).empty() :
+                  FXPath::isTopDirectory(directory)) ? ID_DISABLE : ID_ENABLE;
 
     sender->handle(this, FXSEL(SEL_COMMAND, msg), ptr);
     return 1;
@@ -5823,17 +5865,16 @@ long FileList::onUpdView(FXObject* sender, FXSelector sel, void*)
 
 int FileList::getZoomStep() const
 {
-    return FXCLAMP(0, getApp()->reg().readIntEntry("SETTINGS", "file_zoom_step", 1), 4);
+    return FXCLAMP(minZoomStep, getApp()->reg().readIntEntry("SETTINGS", "file_zoom_step", 1), maxZoomStep);
 }
 
 void FileList::applyZoom()
 {
     int step = getZoomStep();
     int bigSize = (int)(zoomSizes[step] * scalefrac * (displaythumbnails ? 2 : 1));
-    const int rowSizes[] = { 16, 20, 24, 32, 40 };
     getApp()->reg().writeUnsignedEntry("SETTINGS", "bigthumb_size", zoomSizes[step] * 2);
-    getApp()->reg().writeUnsignedEntry("SETTINGS", "minithumb_size", rowSizes[step]);
-    setViewMetrics(bigSize, (int)(rowSizes[step] * scalefrac), displaythumbnails);
+    getApp()->reg().writeUnsignedEntry("SETTINGS", "minithumb_size", zoomRowSizes[step]);
+    setViewMetrics(bigSize, (int)(zoomRowSizes[step] * scalefrac), displaythumbnails);
 }
 
 void FileList::scaleItemIcons(FileItem* item)
@@ -5853,7 +5894,7 @@ void FileList::scaleItemIcons(FileItem* item)
 long FileList::onCmdZoom(FXObject*, FXSelector sel, void*)
 {
     int step = FXSELID(sel) == ID_ZOOM_RESET ? 1 :
-               FXCLAMP(0, getZoomStep() + (FXSELID(sel) == ID_ZOOM_IN ? 1 : -1), 4);
+               FXCLAMP(minZoomStep, getZoomStep() + (FXSELID(sel) == ID_ZOOM_IN ? 1 : -1), maxZoomStep);
     getApp()->reg().writeIntEntry("SETTINGS", "file_zoom_step", step);
     for (size_t i = 0; i < zoomLists.size(); ++i)
     {
@@ -5869,7 +5910,7 @@ long FileList::onCmdZoom(FXObject*, FXSelector sel, void*)
 long FileList::onUpdZoom(FXObject* sender, FXSelector sel, void*)
 {
     FXbool enabled = FXSELID(sel) == ID_ZOOM_RESET ||
-                     (FXSELID(sel) == ID_ZOOM_IN ? getZoomStep() < 4 : getZoomStep() > 0);
+                     (FXSELID(sel) == ID_ZOOM_IN ? getZoomStep() < maxZoomStep : getZoomStep() > minZoomStep);
     sender->handle(this, FXSEL(SEL_COMMAND, enabled ? ID_ENABLE : ID_DISABLE), NULL);
     return 1;
 }
@@ -6034,6 +6075,10 @@ FXString FileList::getItemPathname(int index) const
         exit(EXIT_FAILURE);
     }
     FXString label = items[index]->getText();
+    if (inTrash && label.section('\t', 0) != "..")
+    {
+        return getItemFullPathname(index);
+    }
     if (RemoteDirectory::isServer(directory))
     {
         gchar* name = g_uri_escape_string(label.section('\t', 0).text(), NULL, false);
@@ -6432,7 +6477,8 @@ void FileList::scan(FXbool force)
                     subchanged = true;
                 }
             }
-            if (force || subchanged || (timestamp != newdate) || (counter == 0) || fusedir)
+            if (force || subchanged || (timestamp != newdate) || (counter == 0) || fusedir ||
+                (inTrash && counter % 3 == 0))
             {
                 // And do the refresh
 #if defined(linux)
@@ -7142,36 +7188,57 @@ void FileList::listItems(FXbool force)
             dirname += PATHSEPSTRING;
         }
 
-        // Add the deletion time and original path headers if we are in trash can
-        if (!(options & FILELIST_SEARCH) && (dirname.left(trashfileslocation.length()) == trashfileslocation))
+        std::vector<TrashLocation> trashlocations;
+        TrashLocation trashLocation;
+        FXbool trashDirectory = false;
+        if (!(options & FILELIST_SEARCH) &&
+            (directory == trashfileslocation ||
+             directory.left(trashfileslocation.length() + 1) == trashfileslocation + "/" ||
+             directory.find("/.Trash") >= 0))
         {
-            if (getNumHeaders() == (int)nbCols)
+            trashlocations = xf_trashlocations();
+            for (const TrashLocation& location : trashlocations)
             {
-                // Remove all headers and get their size
-                FXuint size[NMAX_COLS + 2];
+                FXString files = location.directory + "/files";
+                if (directory == files || directory.left(files.length() + 1) == files + "/")
+                {
+                    trashDirectory = true;
+                    trashLocation = location;
+                    break;
+                }
+            }
+        }
+
+        // Use the Caja-style recovery columns when in Trash.
+        if (trashDirectory)
+        {
+            if (!inTrash)
+            {
+                std::map<FXuint, FXuint> widths;
                 for (FXuint i = 0; i < nbCols; i++)
                 {
-                    size[i] = header->getItemSize(0);
-                    removeHeader(0);
+                    FXuint id = getHeaderId(i);
+                    widths[id] = getHeaderSize(i);
+                    normalColumnWidths[id] = widths[id];
                 }
 
-                // Append headers and set their size
-                FXuint j = 0;
+                while (getNumHeaders() > 0) removeHeader(0);
                 for (FXuint i = 0; i < nbColsTrash; i++)
                 {
-                    if (idColTrash[i] == ID_COL_ORIGPATH)
+                    FXuint id = idColTrash[i];
+                    FXString label = getHeaderName(id);
+                    FXuint width = widths.count(id) ? widths[id] : 120;
+                    if (id == ID_COL_DELDATE)
                     {
-                        appendHeader(getHeaderName(idColTrash[i]), NULL, origpath_size);
+                        label = _("Trashed On");
+                        width = deldate_size;
                     }
-                    else if (idColTrash[i] == ID_COL_DELDATE)
+                    else if (id == ID_COL_ORIGPATH)
                     {
-                        appendHeader(getHeaderName(idColTrash[i]), NULL, deldate_size);
+                        label = _("Original Location");
+                        width = origpath_size;
                     }
-                    else
-                    {
-                        appendHeader(getHeaderName(idColTrash[i]), NULL, size[j]);
-                        j++;
-                    }
+                    appendHeader(label, NULL, width);
                 }
             }
             inTrash = true;
@@ -7181,12 +7248,19 @@ void FileList::listItems(FXbool force)
         else
         {
             // Not in a search list
-            if (!(options & FILELIST_SEARCH) && (getNumHeaders() == (int)nbColsTrash))
+            if (!(options & FILELIST_SEARCH) && inTrash)
             {
-                origpath_size = header->getItemSize(1);
-                deldate_size = header->getItemSize(2);
-                removeHeader(1);
-                removeHeader(1);
+                int origpath = getHeaderIndex(ID_COL_ORIGPATH);
+                int deldate = getHeaderIndex(ID_COL_DELDATE);
+                if (origpath >= 0) origpath_size = getHeaderSize(origpath);
+                if (deldate >= 0) deldate_size = getHeaderSize(deldate);
+                while (getNumHeaders() > 0) removeHeader(0);
+                for (FXuint i = 0; i < nbCols; ++i)
+                {
+                    FXuint id = idCol[i];
+                    FXuint width = normalColumnWidths.count(id) ? normalColumnWidths[id] : 120;
+                    appendHeader(getHeaderName(id), NULL, width);
+                }
 
                 // Change back the sort function to default if necessary
                 if ((sortfunc == ascendingOrigpath) || (sortfunc == ascendingOrigpathMix) ||
@@ -7213,6 +7287,27 @@ void FileList::listItems(FXbool force)
         ExpandJob rootjob;
         rootjob.dir = dirname;
         jobs.push_back(rootjob);
+        if (directory == trashfileslocation && !(options & FILELIST_SEARCH))
+        {
+            for (const TrashLocation& location : trashlocations)
+            {
+                if (location.directory + "/files" == trashfileslocation) continue;
+                FXString files = location.directory + "/files";
+                struct stat trashinfo;
+                if (lstat(files.text(), &trashinfo) != 0)
+                {
+                    if (errno != ENOENT)
+                        appLog(APP_LOG_ERRORS, "trash-list", files + ": " + strerror(errno));
+                }
+                else if (S_ISDIR(trashinfo.st_mode) && trashinfo.st_uid == getuid())
+                {
+                    ExpandJob job;
+                    job.dir = files + "/";
+                    jobs.push_back(job);
+                }
+                else appLog(APP_LOG_ERRORS, "trash-list", "Unsafe Trash folder: " + files);
+            }
+        }
 
         for (size_t jobidx = 0; jobidx < jobs.size(); jobidx++)
         {
@@ -7220,6 +7315,18 @@ void FileList::listItems(FXbool force)
         FXString prefix = jobs[jobidx].prefix;
         FileItem* jobparent = jobs[jobidx].parent;
         int jobdepth = jobs[jobidx].depth;
+        if (inTrash)
+        {
+            for (const TrashLocation& location : trashlocations)
+            {
+                FXString files = location.directory + "/files/";
+                if (dirname.left(files.length()) == files)
+                {
+                    trashLocation = location;
+                    break;
+                }
+            }
+        }
 
         // Get directory stream pointer
         const FXbool remote = RemoteDirectory::handles(dirname);
@@ -7234,6 +7341,8 @@ void FileList::listItems(FXbool force)
         const RemoteDirectory::Entry* remoteEntry = NULL;
         dirp = remote ? NULL : opendir(dirname.text());
         const int openError = dirp || remote ? 0 : errno;
+        if (inTrash && openError)
+            appLog(APP_LOG_ERRORS, "trash-list", dirname + ": " + strerror(openError));
         if (diagnostic)
             trace("directory-open", "path=\"" + diagnosticPath(dirname) + "\" remote=" + FXStringVal(remote) +
                   " errno=" + FXStringVal(openError));
@@ -7256,6 +7365,7 @@ void FileList::listItems(FXbool force)
                 }
                 // Directory entry name
                 name = remote ? remoteEntry->name : dp->d_name;
+                if (inTrash && jobidx > 0 && (name == "." || name == "..")) continue;
                 ++readEntries;
                 const FXTime entryStarted = entryDiagnostic ? FXThread::time() : 0;
                 if (entryDiagnostic)
@@ -7273,7 +7383,7 @@ void FileList::listItems(FXbool force)
                 // Hidden files in the trash can base directory are always shown
                 if ((name[0] == '.') && ((name[1] == 0) || (!((name[1] == '.') && (name[2] == 0)) &&
                                                             !(options & FILELIST_SHOWHIDDEN) &&
-                                                            (dirname != trashfileslocation + PATHSEPSTRING))))
+                                                            !inTrash)))
                 {
                     skipped("hidden-or-dot-entry", dirname, name);
                     continue;
@@ -7362,7 +7472,8 @@ void FileList::listItems(FXbool force)
                 // Find it, and take it out from the old list if found
                 for (pp = po; (item = *pp) != NULL; pp = &item->link)
                 {
-                    if (fileequal(item->label, relname))
+                    if (fileequal(item->label, relname) &&
+                        (!inTrash || item->label.rafter('\t') == pathname))
                     {
                         *pp = item->link;
                         item->link = NULL;
@@ -7454,71 +7565,9 @@ fnd:
                     FXString delstr = "";
                     if (inTrash)
                     {
-                        // Obtain trash base name and sub path
-                        FXString subpath = dirname;
-                        subpath.erase(0, trashfileslocation.length() + 1);
-                        FXString trashbasename = subpath.before('/');
-                        if (trashbasename == "")
-                        {
-                            trashbasename = name;
-                        }
-                        subpath.erase(0, trashbasename.length());
-
-                        // Read the .trashinfo file
-                        FILE* fp;
-                        char line[1024];
-                        FXbool success = true;
-                        FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + trashbasename + ".trashinfo";
-                        if ((fp = fopen(trashinfopathname.text(), "r")) != NULL)
-                        {
-                            // Read the first three lines and get the strings
-                            if (fgets(line, sizeof(line), fp) == NULL)
-                            {
-                                success = false;
-                            }
-                            if (fgets(line, sizeof(line), fp) == NULL)
-                            {
-                                success = false;
-                            }
-                            if (success)
-                            {
-                                origpath = line;
-                                origpath = origpath.after('=');
-                                origpath = origpath.before('\n');
-                            }
-                            if (fgets(line, sizeof(line), fp) == NULL)
-                            {
-                                success = false;
-                            }
-                            if (success)
-                            {
-                                delstr = line;
-                                delstr = delstr.after('=');
-                                delstr = delstr.before('\n');
-                            }
-                            fclose(fp);
-                        }
-
-                        // Possibly include sub path in the original path
-                        if (subpath == "")
-                        {
-                            origpath = origpath + subpath;
-                        }
-                        else
-                        {
-                            origpath = origpath + subpath + name;
-                        }
-                        if (delstr == "")
-                        {
-                            origpath = "";
-                        }
-
-                        // Special case
-                        if (name == "..")
-                        {
-                            origpath = "";
-                            delstr = "";
-                        }
+                        FXString infofile;
+                        if (name != "..")
+                            xf_readtrashinfo(pathname, trashLocation, origpath, delstr, infofile);
 
                         // Convert date
                         deldate = xf_deltime(delstr);
@@ -7985,6 +8034,8 @@ fnd:
                 trace("directory-read-end", "path=\"" + diagnosticPath(dirname) + "\" errno=" +
                       FXStringVal(readError) + " remote=" + FXStringVal(remote));
             if (dirp) closedir(dirp);
+            if (inTrash && readError)
+                appLog(APP_LOG_ERRORS, "trash-list", dirname + ": " + strerror(readError));
             if (jobparent && items.no() == firstChild && (!remote || !RemoteDirectory::loading(dirname)) &&
                 (!remote || RemoteDirectory::error(dirname).empty()))
             {

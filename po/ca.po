@@ -2541,16 +2541,22 @@ msgid "&Global Key Bindings"
 msgstr "Assignacions de tecles &globals"
 
 #: src/KeyBindings.cpp:100
+#, fuzzy
+#| msgid ""
+#| "These key bindings are common to all Xfe applications.\n"
+#| "Double click on an item to modify the selected key binding..."
 msgid ""
-"These key bindings are common to all Xfe applications.\n"
+"These key bindings are common to all Swordfish applications.\n"
 "Double click on an item to modify the selected key binding..."
 msgstr ""
 "Aquestes assignacions de tecles són comunes a totes les aplicacions Xfe.\n"
 "Feu doble clic sobre un element per modificar l'assignació seleccionada..."
 
 #: src/KeyBindings.cpp:107
-msgid "Xf&e Key Bindings"
-msgstr "Assignació de tecles del Xf&e"
+#, fuzzy
+#| msgid "Xf&i Key Bindings"
+msgid "S&wordfish Key Bindings"
+msgstr "Assignació de tecles del Xf&i"
 
 #: src/KeyBindings.cpp:114
 msgid ""
@@ -2642,12 +2648,15 @@ msgstr ""
 "Hauríeu d'esborrar la l'assignació existent abans d'assignar-la de nou."
 
 #: src/KeyBindings.cpp:998 src/KeyBindings.cpp:1150
-#, c-format
+#, fuzzy, c-format
+#| msgid ""
+#| "The key binding %s is already used in the Xfi section.\n"
+#| "You should erase the existing key binding before assigning it again."
 msgid ""
-"The key binding %s is already used in the Xfe section.\n"
+"The key binding %s is already used in the Swordfish section.\n"
 "You should erase the existing key binding before assigning it again."
 msgstr ""
-"L'assignació de tecles %s ja s'utilitza a la secció Xfe.\n"
+"L'assignació de tecles %s ja s'utilitza a la secció Xfi.\n"
 "Hauríeu d'esborrar la l'assignació existent abans d'assignar-la de nou."
 
 #: src/KeyBindings.cpp:1018 src/KeyBindings.cpp:1262
@@ -2673,7 +2682,9 @@ msgid "Select an Executable File"
 msgstr "Seleccioneu un fitxer executable"
 
 #: src/MessageBox.cpp:102 src/XFileExplorer.cpp:1240
-msgid "Launch Xfe as root"
+#, fuzzy
+#| msgid "Launch Xfe as root"
+msgid "Launch Swordfish as root"
 msgstr "Inicia Xfe com a root"
 
 #: src/MessageBox.cpp:124 src/MessageBox.cpp:142 src/MessageBox.cpp:178
@@ -3115,7 +3126,7 @@ msgstr ""
 #: src/Preferences.cpp:604
 #, fuzzy
 #| msgid "Start in home folder"
-msgid "Open new Xfe window when mounting"
+msgid "Open new Swordfish window when mounting"
 msgstr "Inici a la carpeta d'inici"
 
 #: src/Preferences.cpp:609
@@ -5227,7 +5238,9 @@ msgid "Restore Selected Files From Trash Can"
 msgstr "Restaura els fitxers seleccionats de la paperera"
 
 #: src/XFileExplorer.cpp:1236
-msgid "Launch Xfe"
+#, fuzzy
+#| msgid "Launch Xfe"
+msgid "Launch Swordfish"
 msgstr "Posa en funcionament Xfe"
 
 #: src/XFileExplorer.cpp:1244
@@ -5509,7 +5522,9 @@ msgid "&About X File Explorer"
 msgstr "&Quant al X File Explorer"
 
 #: src/XFileExplorer.cpp:3498
-msgid "Running Xfe as root!"
+#, fuzzy
+#| msgid "Running Xfe as root!"
+msgid "Running Swordfish as root!"
 msgstr "S'està executant Xfe com a root."
 
 #: src/XFileExplorer.cpp:3542
@@ -5533,7 +5548,9 @@ msgstr ""
 "configuració..."
 
 #: src/XFileExplorer.cpp:3573
-msgid "XFE configuration file"
+#, fuzzy
+#| msgid "XFE configuration file"
+msgid "Swordfish configuration file"
 msgstr "Fitxer de configuració del XFE"
 
 #: src/XFileExplorer.cpp:3586
@@ -5979,7 +5996,8 @@ msgstr "Error en carregar les icones"
 msgid ""
 "Icon path doesn't exist, default icon path was selected.\n"
 "\n"
-"From Xfe, please check your icon path in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon path in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "El camí de la icones no existeix, el tema de la icona s'ha tornat a "
 "configurar per defecte. Si us plau, comproveu el camí de les icones!"
@@ -5993,7 +6011,8 @@ msgstr ""
 msgid ""
 "Unable to load some icons, default icon theme was selected.\n"
 "\n"
-"From Xfe, please check your icon theme in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon theme in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "El camí de la icones no existeix, el tema de la icona s'ha tornat a "
 "configurar per defecte. Si us plau, comproveu el camí de les icones!"
@@ -6007,7 +6026,7 @@ msgstr ""
 msgid ""
 "Unable to load default icons, no icons can be shown.\n"
 "\n"
-"Please check your Xfe installation..."
+"Please check your Swordfish installation..."
 msgstr ""
 "El camí de la icones no existeix, el tema de la icona s'ha tornat a "
 "configurar per defecte. Si us plau, comproveu el camí de les icones!"
@@ -7280,6 +7299,17 @@ msgstr "Un editor de text simple per a Xfe"
 #: swfw.desktop.in:5
 msgid "editor;viewer;text"
 msgstr ""
+
+#~ msgid "Xf&e Key Bindings"
+#~ msgstr "Assignació de tecles del Xf&e"
+
+#, c-format
+#~ msgid ""
+#~ "The key binding %s is already used in the Xfe section.\n"
+#~ "You should erase the existing key binding before assigning it again."
+#~ msgstr ""
+#~ "L'assignació de tecles %s ja s'utilitza a la secció Xfe.\n"
+#~ "Hauríeu d'esborrar la l'assignació existent abans d'assignar-la de nou."
 
 #~ msgid "Run Xfe as root"
 #~ msgstr "Executa Xfe com a root"

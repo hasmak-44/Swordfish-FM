@@ -245,10 +245,30 @@ int main()
         return 1;
     }
 
+    struct stat desktopBefore, menuBefore, desktopAfter, menuAfter;
+    const std::string menuPath = data + "/applications/swordfish.desktop";
+    if (!check(lstat(desktopPath.c_str(), &desktopBefore) == 0 &&
+               lstat(menuPath.c_str(), &menuBefore) == 0, "launcher state should be readable"))
+    {
+        return 1;
+    }
+    usleep(20000);
     if (!check(SystemIntegration::applySelection(selection, error, warning), "reapplying integrations is safe") ||
         !check(SystemIntegration::readSelection(selection, error) && selection.desktopShortcut &&
                selection.applicationsMenu && selection.commandSymlink,
-               "reapplying should preserve ownership"))
+               "reapplying should preserve ownership") ||
+        !check(lstat(desktopPath.c_str(), &desktopAfter) == 0 &&
+               lstat(menuPath.c_str(), &menuAfter) == 0, "reapplied launcher state should be readable") ||
+        !check(desktopBefore.st_ino == desktopAfter.st_ino && menuBefore.st_ino == menuAfter.st_ino &&
+               desktopBefore.st_mtim.tv_sec == desktopAfter.st_mtim.tv_sec &&
+               desktopBefore.st_mtim.tv_nsec == desktopAfter.st_mtim.tv_nsec &&
+               desktopBefore.st_ctim.tv_sec == desktopAfter.st_ctim.tv_sec &&
+               desktopBefore.st_ctim.tv_nsec == desktopAfter.st_ctim.tv_nsec &&
+               menuBefore.st_mtim.tv_sec == menuAfter.st_mtim.tv_sec &&
+               menuBefore.st_mtim.tv_nsec == menuAfter.st_mtim.tv_nsec &&
+               menuBefore.st_ctim.tv_sec == menuAfter.st_ctim.tv_sec &&
+               menuBefore.st_ctim.tv_nsec == menuAfter.st_ctim.tv_nsec,
+               "unchanged launchers must not be rewritten, replaced or chmodded"))
     {
         std::cerr << error << std::endl;
         return 1;
@@ -258,7 +278,9 @@ int main()
     if (!check(writeFile(desktopPath, originalDesktop + "# user modification\n"),
                "modified desktop entry fixture should be writable") ||
         !check(!SystemIntegration::readSelection(selection, error),
-               "modified owned desktop entry must not be reported as unchecked"))
+               "modified owned desktop entry must report a verification error") ||
+        !check(selection.desktopShortcut && selection.applicationsMenu && selection.commandSymlink,
+               "a verification error must retain the recorded integration choices"))
     {
         return 1;
     }

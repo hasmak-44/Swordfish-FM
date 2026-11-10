@@ -159,6 +159,7 @@ done
 for program in swfa swfi swfp swfw; do
     ln -s AppRun "$output_dir/run-$program"
 done
+ln -s usr/share/swordfish/app-icon "$output_dir/app-icon"
 
 for directory in config data cache state scripts themes icons addons; do
     mkdir -p "$output_dir/portable-data/$directory"

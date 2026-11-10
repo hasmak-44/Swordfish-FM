@@ -10,7 +10,7 @@
 class SidebarItem : public FXTreeItem
 {
 public:
-    enum Kind { GROUP, PLACE, BOOKMARK, DEVICE, DIRECTORY, SERVER, REFRESH, NOTICE, TABGROUP };
+    enum Kind { GROUP, PLACE, BOOKMARK, DEVICE, DIRECTORY, SERVER, REFRESH, NOTICE, TABGROUP, SERVICE };
     Kind kind;
     FXString path;
     FXString key;

@@ -191,8 +191,8 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString file, FXString path, FXbool
     FILE* p;
 
     // Trash locations
-    trashfileslocation = xdgdatahome + PATHSEPSTRING TRASHFILESPATH;
-    trashinfolocation = xdgdatahome + PATHSEPSTRING TRASHINFOPATH;
+    trashfileslocation = xf_trashdatahome() + PATHSEPSTRING TRASHFILESPATH;
+    trashinfolocation = xf_trashdatahome() + PATHSEPSTRING TRASHINFOPATH;
 
     // Buttons
     FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X,
@@ -723,7 +723,8 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString file, FXString path, FXbool
         }
 
         // If the file is in the trash can
-        if (parentdir.left(trashfileslocation.length()) == trashfileslocation)
+        TrashLocation trashLocation;
+        if (xf_trashlocation(pathname, trashLocation))
         {
             isInTrash = true;
 
@@ -849,62 +850,12 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString file, FXString path, FXbool
     // If the file is in the trash can
     if (isInTrash)
     {
-        // Obtain trash base name and sub path
-        FXString subpath = parentdir + PATHSEPSTRING;
-        subpath.erase(0, trashfileslocation.length() + 1);
-        FXString trashbasename = subpath.before('/');
-        if (trashbasename == "")
-        {
-            trashbasename = FXPath::name(pathname);
-        }
-        subpath.erase(0, trashbasename.length());
-
-        // Read the .trashinfo file
-        FILE* fp;
-        char line[1024];
         FXString origpath = "", delstr = "";
         FXlong deldate = 0;
-        FXbool success = true;
-        FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + trashbasename + ".trashinfo";
-        if ((fp = fopen(trashinfopathname.text(), "r")) != NULL)
-        {
-            // Read the first three lines and get the strings
-            if (fgets(line, sizeof(line), fp) == NULL)
-            {
-                success = false;
-            }
-            if (fgets(line, sizeof(line), fp) == NULL)
-            {
-                success = false;
-            }
-            if (success)
-            {
-                origpath = line;
-                origpath = origpath.after('=');
-                origpath = origpath.before('\n');
-            }
-            if (fgets(line, sizeof(line), fp) == NULL)
-            {
-                success = false;
-            }
-            if (success)
-            {
-                delstr = line;
-                delstr = delstr.after('=');
-                delstr = delstr.before('\n');
-            }
-            fclose(fp);
-        }
-
-        // Possibly include sub path in the original path
-        if (subpath == "")
-        {
-            origpath = origpath + subpath;
-        }
-        else
-        {
-            origpath = origpath + subpath + FXPath::name(pathname);
-        }
+        TrashLocation trashLocation;
+        FXString infofile;
+        if (xf_trashlocation(pathname, trashLocation))
+            xf_readtrashinfo(pathname, trashLocation, origpath, delstr, infofile);
 
         // Convert date
         deldate = xf_deltime(delstr);

@@ -15,6 +15,7 @@ struct DesktopApplication
     FXString mimetypes;
     FXString categories;
     FXString icon;
+    FXbool acceptsUrls = false;  // Exec has %u or %U
 };
 
 std::vector<DesktopApplication> xf_installedApplications(FXbool includeUnlisted = false);
@@ -153,7 +154,8 @@ public:
 
     // Add installed desktop applications after the history entries
     void appendInstalledApplications();
-    void setOpenWithContext(const FXString& pathname, FXint count);
+    // knownMime skips content sniffing (used for files that are not local)
+    void setOpenWithContext(const FXString& pathname, FXint count, const FXString& knownMime = FXString::null);
     void setAssociationOption(const FXString&, FXbool editing = false);
     void setMessage(const FXString& text)
     {

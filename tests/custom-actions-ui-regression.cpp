@@ -10,6 +10,7 @@
 #include "FileList.h"
 #include "CommandWindow.h"
 #include "Preferences.h"
+#include "DirHistBox.h"
 #include "FileDialog.h"
 #include "icons.h"
 #include <cassert>
@@ -378,10 +379,11 @@ public:
         {
             assert(properties);
             std::vector<FXTextField*> fields = widgets<FXTextField>(properties);
-            assert(fields.size() >= 8);
+            // name, description, command, working directory, icon, file pattern
+            assert(fields.size() >= 6);
             fields[0]->setText("Added action"); fields[1]->setText("Editor regression action");
-            fields[6]->setText(iconPath);
-            fields[6]->getTarget()->handle(fields[6], FXSEL(SEL_CHANGED, fields[6]->getSelector()), NULL);
+            fields[4]->setText(iconPath);
+            fields[4]->getTarget()->handle(fields[4], FXSEL(SEL_CHANGED, fields[4]->getSelector()), NULL);
             bool preview = false, browseCommand = false, browseDirectory = false;
             for (FXButton* button : widgets<FXButton>(properties))
             {
@@ -391,23 +393,32 @@ public:
                            button->getIcon()->getHeight() <= 48);
                     preview = true;
                 }
-                if (button->getTipText() == "Choose an executable") { browseCommand = true; }
+                if (button->getTipText() == "Choose a program or script (replaces the command)") { browseCommand = true; }
                 if (button->getTipText() == "Choose a working directory") { browseDirectory = true; }
             }
             assert(preview && browseCommand && browseDirectory);
-            fields[2]->setText("/usr/bin/printf");
+            assert(widgets<FXText>(properties).empty());
+            for (FXCheckButton* check : widgets<FXCheckButton>(properties))
+            {
+                assert(check->getText() != "Advanced: full shell command");
+                if (check->getText() == "Show on custom toolbar")
+                {
+                    FXGroupBox* group = dynamic_cast<FXGroupBox*>(check->getParent());
+                    assert(group && group->getText() == "Toolbar");
+                }
+            }
+            fields[2]->setText("/usr/bin/printf '%%s'");
             CheckAutomation replace(app, "Replace Action Icon");
             app.addTimeout(&replace, 1, 10); click(properties, "Use Program Icon");
-            assert(fields[6]->getText() == "theme:swordfish-fixture-application");
-            fields[6]->setText(iconPath);
+            assert(fields[4]->getText() == "theme:swordfish-fixture-application");
+            fields[4]->setText(iconPath);
             fields[2]->setText("printf");
-            fields[2]->getTarget()->handle(fields[2], FXSEL(SEL_CHANGED, fields[2]->getSelector()), NULL);
-            assert(fields[6]->getText() == iconPath);
+            assert(fields[4]->getText() == iconPath);
             for (int route : {IconChooserAutomation::CANCEL, IconChooserAutomation::SYSTEM,
                               IconChooserAutomation::MISSING, IconChooserAutomation::IMAGE_CANCEL,
                               IconChooserAutomation::NONE, IconChooserAutomation::IMAGE})
             {
-                FXString before = fields[6]->getText();
+                FXString before = fields[4]->getText();
                 IconChooserAutomation chooser(app, route, iconPath);
                 app.addTimeout(&chooser, 1, 10);
                 click(properties, "Choose an icon");
@@ -415,62 +426,36 @@ public:
                 assert(!dialog(app, "Select an Icon Image File"));
                 assert(dialog(app, "Custom Action Properties") == properties);
                 if (route == IconChooserAutomation::SYSTEM)
-                    assert(fields[6]->getText() == "theme:swordfish-fixture-application");
-                else if (route == IconChooserAutomation::NONE) { assert(fields[6]->getText().empty()); }
-                else if (route == IconChooserAutomation::IMAGE) { assert(fields[6]->getText() == iconPath); }
-                else { assert(fields[6]->getText() == before); }
+                    assert(fields[4]->getText() == "theme:swordfish-fixture-application");
+                else if (route == IconChooserAutomation::NONE) { assert(fields[4]->getText().empty()); }
+                else if (route == IconChooserAutomation::IMAGE) { assert(fields[4]->getText() == iconPath); }
+                else { assert(fields[4]->getText() == before); }
             }
             BrowseAutomation chooseProgram(app, "Select a Program or Script", "/usr/bin/printf");
             app.addTimeout(&chooseProgram, 1, 10);
-            click(properties, "Choose an executable");
-            assert(fields[2]->getText() == "/usr/bin/printf");
+            click(properties, "Choose a program or script (replaces the command)");
+            assert(fields[2]->getText() == "/usr/bin/printf" || fields[2]->getText() == "'/usr/bin/printf'");
             assert(widgets<FXTabBook>(properties).size() == 1);
             std::vector<FXTabItem*> tabs = widgets<FXTabItem>(properties);
             assert(tabs.size() == 2 && tabs[0]->getText() == "Basic" && tabs[1]->getText() == "Appearance Conditions");
-            fields[2]->setText("printf");
-            fields[3]->setText("'%%s\\n' ");
-            fields[3]->setCursorPos(fields[3]->getText().length());
+            fields[2]->setText("printf '%%s\\n' ");
+            fields[2]->setCursorPos(fields[2]->getText().length());
             widgets<FXComboBox>(properties)[0]->setCurrentItem(8);
             click(properties, "Insert");
-            assert(fields[3]->getText() == "'%%s\\n' %p");
-            std::vector<FXText*> commandPreview = widgets<FXText>(properties);
-            assert(commandPreview.size() == 1 && commandPreview[0]->getText().find("'printf'") >= 0);
-            assert(fields[2]->isEnabled() && !fields[4]->isEnabled());
-            assert(fields[2]->getParent()->shown() && fields[3]->shown());
-            assert(!fields[4]->getParent()->shown());
-            fields[3]->setText("%Q");
-            fields[3]->getTarget()->handle(fields[3], FXSEL(SEL_CHANGED, fields[3]->getSelector()), NULL);
-            assert(commandPreview[0]->getText().find("Preview unavailable: ") == 0);
-            fields[3]->setText("'%%s\\n' %p");
+            assert(fields[2]->getText() == "printf '%%s\\n' %p");
             CheckAutomation passed(app, "Checks Passed");
             app.addTimeout(&passed, 1, 20);
             click(properties, "Test Action");
-            fields[3]->setText("value )");
+            fields[2]->setText("printf value )");
             CheckAutomation failed(app, "Action Check Failed");
             app.addTimeout(&failed, 1, 20);
             click(properties, "Test Action");
-            fields[3]->setText("'%%s\\n' %p");
-            for (FXCheckButton* check : widgets<FXCheckButton>(properties))
-            {
-                if (check->getText() != "Advanced: full shell command") { continue; }
-                fields[4]->setText("  printf 'legacy unchanged'  ");
-                check->setCheck(true);
-                check->getTarget()->handle(check, FXSEL(SEL_COMMAND, check->getSelector()), NULL);
-                assert(fields[4]->isEnabled() && !fields[2]->isEnabled());
-                assert(fields[4]->getParent()->shown());
-                assert(!fields[2]->getParent()->shown() && !fields[3]->shown());
-                assert(commandPreview[0]->getText().find("  printf 'legacy unchanged'  ") >= 0);
-                check->setCheck(false);
-                check->getTarget()->handle(check, FXSEL(SEL_COMMAND, check->getSelector()), NULL);
-                assert(fields[4]->getText() == "  printf 'legacy unchanged'  " && fields[2]->isEnabled());
-            }
+            fields[2]->setText("printf '%%s\\n' %p");
             BrowseAutomation chooseDirectory(app, "Select Working Directory", FXPath::directory(iconPath));
             app.addTimeout(&chooseDirectory, 1, 10);
             click(properties, "Choose a working directory");
-            assert(fields[5]->getText() == FXPath::directory(iconPath));
-            fields[5]->setText("%o");
-            fields[5]->getTarget()->handle(fields[5], FXSEL(SEL_CHANGED, fields[5]->getSelector()), NULL);
-            assert(commandPreview[0]->getText().find("Directory: ") == 0);
+            assert(fields[3]->getText() == FXPath::directory(iconPath));
+            fields[3]->setText("%o");
             LegendAutomation legend(app);
             app.addTimeout(&legend, 1, 10);
             click(properties, "Parameter Legend...");
@@ -529,6 +514,269 @@ public:
         assert(false); return 0;
     }
 };
+
+class ToolbarSizePreferenceAutomation : public FXObject
+{
+    PreferencesBox& preferences;
+    FXint initial;
+    FXint choice;
+    bool accept;
+    bool integrationReadable;
+public:
+    ToolbarSizePreferenceAutomation(PreferencesBox& dialog, FXint current, FXint selected, bool save,
+                                    bool readable = true) :
+        preferences(dialog), initial(current), choice(selected), accept(save), integrationReadable(readable) {}
+    long handle(FXObject*, FXSelector, void*)
+    {
+        FXGroupBox* toolbarIcons = NULL;
+        FXGroupBox* integration = NULL;
+        for (FXGroupBox* group : widgets<FXGroupBox>(&preferences))
+        {
+            if (group->getText() == "Tool Bar Icon Size") { toolbarIcons = group; }
+            if (group->getText() == "Optional System Integration") { integration = group; }
+        }
+        assert(toolbarIcons && integration);
+        std::vector<FXTabBook*> books = widgets<FXTabBook>(&preferences);
+        assert(books.size() == 1);
+        FXint page = 0;
+        bool appearanceSelected = false;
+        for (FXWindow* child = books[0]->getFirst(); child; child = child->getNext())
+        {
+            if (FXTabItem* tab = dynamic_cast<FXTabItem*>(child))
+            {
+                FXString label = tab->getText();
+                label.substitute("&", "");
+                if (label == "Appearance")
+                {
+                    books[0]->setCurrent(page);
+                    appearanceSelected = true;
+                }
+                ++page;
+            }
+        }
+        assert(appearanceSelected);
+        std::vector<FXRadioButton*> sizes = widgets<FXRadioButton>(toolbarIcons);
+        assert(sizes.size() == 3 && widgets<FXListBox>(toolbarIcons).empty());
+        for (FXint i = 0; i < 3; ++i) { assert(sizes[i]->getCheck() == (i == initial)); }
+        sizes[choice]->setCheck(true, true);
+        preferences.getApp()->forceRefresh();
+        pump(*preferences.getApp(), 50);
+        for (FXint i = 0; i < 3; ++i)
+        {
+            assert(sizes[i]->getCheck() == (i == choice));
+            assert(sizes[i]->getWidth() >= sizes[i]->getDefaultWidth());
+            assert(sizes[i]->getX() + sizes[i]->getWidth() <= sizes[i]->getParent()->getWidth());
+        }
+        std::vector<FXCheckButton*> integrationChoices = widgets<FXCheckButton>(integration);
+        assert(integrationChoices.size() == 3);
+        for (FXCheckButton* button : integrationChoices)
+        {
+            assert(button->isEnabled() == integrationReadable);
+            assert(button->getCheck());
+        }
+        if (!integrationReadable)
+        {
+            bool diagnostic = false;
+            for (FXLabel* label : widgets<FXLabel>(integration))
+                if (label->getText().contains("Other preferences can still be saved.")) { diagnostic = true; }
+            assert(diagnostic);
+        }
+        if (accept)
+            preferences.onCmdAccept(NULL, 0, NULL);
+        else
+            preferences.onCmdCancel(NULL, 0, NULL);
+        return 1;
+    }
+};
+
+class RemoveIntegrationPreferenceAutomation : public FXObject
+{
+    PreferencesBox& preferences;
+    bool accept;
+public:
+    RemoveIntegrationPreferenceAutomation(PreferencesBox& dialog, bool save) :
+        preferences(dialog), accept(save) {}
+    long handle(FXObject*, FXSelector, void*)
+    {
+        FXGroupBox* integration = NULL;
+        for (FXGroupBox* group : widgets<FXGroupBox>(&preferences))
+            if (group->getText() == "Optional System Integration") { integration = group; }
+        assert(integration);
+        std::vector<FXCheckButton*> choices = widgets<FXCheckButton>(integration);
+        assert(choices.size() == 3);
+        for (FXCheckButton* choice : choices)
+        {
+            assert(choice->isEnabled() && choice->getCheck());
+            choice->setCheck(false);
+        }
+        if (accept)
+        {
+            DismissDialog confirm(*preferences.getApp(), "Confirm Command Integration", "Yes");
+            preferences.getApp()->addTimeout(&confirm, 1, 30);
+            preferences.onCmdAccept(NULL, 0, NULL);
+        }
+        else
+        {
+            preferences.onCmdCancel(NULL, 0, NULL);
+        }
+        return 1;
+    }
+};
+
+class AddressModePreferenceAutomation : public FXObject
+{
+    PreferencesBox& preferences;
+    FXint initial;
+    FXint choice;
+    bool accept;
+public:
+    AddressModePreferenceAutomation(PreferencesBox& dialog, FXint current, FXint selected, bool save) :
+        preferences(dialog), initial(current), choice(selected), accept(save) {}
+    long handle(FXObject*, FXSelector, void*)
+    {
+        FXGroupBox* group = NULL;
+        for (FXGroupBox* candidate : widgets<FXGroupBox>(&preferences))
+            if (candidate->getText() == "Default address bar mode") { group = candidate; }
+        assert(group);
+        std::vector<FXRadioButton*> modes = widgets<FXRadioButton>(group);
+        assert(modes.size() == 2);
+        assert(modes[0]->getText() == "Button mode (breadcrumbs) " && modes[1]->getText() == "Edit mode (text) ");
+        assert(modes[0]->shown() && modes[1]->shown());
+        assert(modes[0]->getWidth() >= modes[0]->getDefaultWidth() &&
+               modes[1]->getWidth() >= modes[1]->getDefaultWidth());
+        assert(modes[0]->getCheck() == (initial == 1) && modes[1]->getCheck() == (initial == 0));
+        FXRadioButton* selected = modes[choice == 1 ? 0 : 1];
+        selected->setCheck(true, true);
+        preferences.getApp()->forceRefresh();
+        pump(*preferences.getApp(), 100);
+        assert(modes[0]->getCheck() == (choice == 1) && modes[1]->getCheck() == (choice == 0));
+        if (accept)
+        {
+            DismissDialog restart(*preferences.getApp(), "Restart", "Cancel");
+            if (choice != initial) { preferences.getApp()->addTimeout(&restart, 1, 30); }
+            preferences.onCmdAccept(NULL, 0, NULL);
+        }
+        else
+        {
+            preferences.onCmdCancel(NULL, 0, NULL);
+        }
+        return 1;
+    }
+};
+
+class PaneHistoryAutomation : public FXObject
+{
+    FXApp& app;
+    FilePanel* panel;
+    FXArrowButton* button;
+    FXString expected;
+    bool alignRight;
+public:
+    bool handled = false;
+    PaneHistoryAutomation(FXApp& application, FilePanel* p, FXArrowButton* arrow, const FXString& path, bool right) :
+        app(application), panel(p), button(arrow), expected(path), alignRight(right) {}
+    long handle(FXObject*, FXSelector, void*)
+    {
+        for (FXMenuPane* menu : widgets<FXMenuPane>(app.getRootWindow()))
+        {
+            if (!menu->shown() || menu->getOwner() != panel) { continue; }
+            std::vector<FXMenuCommand*> commands = widgets<FXMenuCommand>(menu);
+            assert(!commands.empty() && commands[0]->getText() == expected);
+            FXint bx, by, mx, my;
+            button->translateCoordinatesTo(bx, by, app.getRootWindow(), 0, button->getHeight());
+            menu->translateCoordinatesTo(mx, my, app.getRootWindow(), 0, 0);
+            assert(mx >= 0 && mx + menu->getWidth() <= app.getRootWindow()->getWidth());
+            if (alignRight && bx + button->getWidth() >= menu->getWidth())
+                assert(abs(mx + menu->getWidth() - bx - button->getWidth()) <= 2);
+            if (!alignRight && bx + menu->getWidth() <= app.getRootWindow()->getWidth())
+                assert(abs(mx - bx) <= 2);
+            FXMenuCommand* selected = commands[0];
+            menu->popdown();
+            selected->getTarget()->handle(selected, FXSEL(SEL_COMMAND, selected->getSelector()), NULL);
+            handled = true;
+            return 1;
+        }
+        assert(false); return 0;
+    }
+};
+
+class ToolbarHistoryAutomation : public FXObject
+{
+    FXApp& app;
+    FXArrowButton* button;
+    FXString expected;
+public:
+    bool handled = false;
+    ToolbarHistoryAutomation(FXApp& application, FXArrowButton* arrow, const FXString& path) :
+        app(application), button(arrow), expected(path) {}
+    long handle(FXObject*, FXSelector, void*)
+    {
+        for (DirHistBox* box : widgets<DirHistBox>(app.getRootWindow()))
+        {
+            if (!box->shown() || box->getOwner() != button) { continue; }
+            std::vector<FXList*> lists = widgets<FXList>(box);
+            assert(lists.size() == 1 && lists[0]->getNumItems() > 0 && lists[0]->getItemText(0) == expected);
+            lists[0]->setCurrentItem(0);
+            box->onCmdClicked(lists[0], FXSEL(SEL_CLICKED, DirHistBox::ID_LIST), NULL);
+            handled = true;
+            return 1;
+        }
+        assert(false); return 0;
+    }
+};
+
+static std::vector<FXArrowButton*> paneHistoryButtons(FilePanel* panel)
+{
+    std::vector<FXArrowButton*> result;
+    for (FXArrowButton* button : widgets<FXArrowButton>(panel))
+        if (button->getTarget() == panel && FXSELID(button->getSelector()) == FilePanel::ID_PANE_HISTORY)
+            result.push_back(button);
+    assert(result.size() == 1);
+    for (FXArrowButton* button : result)
+    {
+        assert(button->shown() && button->getArrowSize() >= 10 && button->getWidth() >= 22);
+        assert((button->getFrameStyle() & (FRAME_RAISED | FRAME_THICK)) == (FRAME_RAISED | FRAME_THICK));
+        assert(button->getTipText() == "Folder History");
+    }
+    return result;
+}
+
+static void checkPaneHistory(FXApp& app, FilePanel* panel, FXArrowButton* button,
+                             const FXString& expected, bool alignRight)
+{
+    PaneHistoryAutomation choose(app, panel, button, expected, alignRight);
+    app.addTimeout(&choose, 1, 50);
+    button->getTarget()->handle(button, FXSEL(SEL_COMMAND, button->getSelector()), NULL);
+    pump(app, 100);
+    assert(choose.handled && panel->getDirectory() == expected);
+}
+
+static void checkToolbarHistory(FXApp& app, FilePanel* panel, FXArrowButton* button, const FXString& expected)
+{
+    // The window manager can steal focus and close the list first; retry the pick
+    for (int attempt = 0; attempt < 6 && panel->getDirectory() != expected; ++attempt)
+    {
+        ToolbarHistoryAutomation choose(app, button, expected);
+        app.addTimeout(&choose, 1, 50);
+        button->getTarget()->handle(button, FXSEL(SEL_COMMAND, button->getSelector()), NULL);
+        pump(app, 300);
+        assert(choose.handled);
+    }
+    assert(panel->getDirectory() == expected);
+}
+
+static void checkAddressBarMode(FilePanel* panel, bool breadcrumbs)
+{
+    FXTextField* editor = NULL;
+    for (FXTextField* field : widgets<FXTextField>(panel))
+        if (field->getTarget() == panel && FXSELID(field->getSelector()) == FilePanel::ID_ENTER_PATH)
+            { assert(!editor); editor = field; }
+    std::vector<PathLinker*> linkers = widgets<PathLinker>(panel);
+    assert(editor && linkers.size() == 1);
+    assert(editor->shown() == !breadcrumbs && linkers[0]->shown() == breadcrumbs);
+    std::vector<FXArrowButton*> arrows = paneHistoryButtons(panel);
+    assert(arrows[0]->getX() < editor->getX());
+}
 
 static CustomAction node(const char* id, const char* name, int kind, const char* parent = "")
 {
@@ -603,6 +851,7 @@ public:
                 {
                     FXTopWindow* properties = dialog(app, "Custom Action Properties"); assert(properties);
                     FXTextField* name = widgets<FXTextField>(properties)[0];
+                    assert(widgets<FXTextField>(properties)[2]->getText() == "/usr/bin/printf '%%s\\n' %F");
                     FXString original = name->getText(); name->setText(original + " edited");
                     DismissDialog keep(app, "Unsaved Custom Action Changes", "Keep editing");
                     app.addTimeout(&keep, 1, 10); click(properties, "Cancel");
@@ -894,6 +1143,15 @@ int main(int argc, char** argv)
         app.reg().writeIntEntry("SETTINGS", "file_zoom_step", 1);
         zoom->getTarget()->handle(zoom, FXSEL(SEL_COMMAND, zoom->getSelector()), NULL);
         assert(app.reg().readIntEntry("SETTINGS", "file_zoom_step", -1) == 2);
+        const int zoom64 = window->getLeftPanel()->getList()->getViewIconSize();
+        for (int click = 0; click < 10; ++click)
+            zoom->getTarget()->handle(zoom, FXSEL(SEL_COMMAND, FilePanel::ID_ZOOM_OUT), NULL);
+        assert(app.reg().readIntEntry("SETTINGS", "file_zoom_step", 0) == -3);
+        assert(app.reg().readUnsignedEntry("SETTINGS", "bigthumb_size", 0) == 32);
+        assert(window->getLeftPanel()->getList()->getViewIconSize() * 4 <= zoom64 + 4);
+        zoom->getTarget()->handle(zoom, FXSEL(SEL_COMMAND, FilePanel::ID_ZOOM_RESET), NULL);
+        assert(app.reg().readIntEntry("SETTINGS", "file_zoom_step", -1) == 1);
+        puts("PASS: three extra zoom-out levels stop at 16 px and Reset Zoom restores the default");
         puts("PASS: original built-in toolbar order/icons and Zoom In restored; stale customization ignored, no toolbar editor, presentation menus or overflow");
     }
     CustomActionsUI* actions = window->getCustomActions();
@@ -908,6 +1166,86 @@ int main(int argc, char** argv)
     puts("PASS: oversized action and folder PNGs fit toolbar/menu bounds and preserve proportions");
     FilePanel* left = window->getLeftPanel(); FilePanel* right = window->getRightPanel();
     left->setDirectory(fixture); right->setDirectory(fixture + "/other");
+    {
+        std::vector<FXArrowButton*> leftHistory = paneHistoryButtons(left);
+        std::vector<FXArrowButton*> rightHistory = paneHistoryButtons(right);
+        FXArrowButton* toolbarBack = NULL;
+        FXArrowButton* toolbarForward = NULL;
+        for (FXArrowButton* button : widgets<FXArrowButton>(window))
+        {
+            if (button->getTarget() != window) { continue; }
+            if (FXSELID(button->getSelector()) == XFileExplorer::ID_DIR_BACK_HIST) { toolbarBack = button; }
+            if (FXSELID(button->getSelector()) == XFileExplorer::ID_DIR_FORWARD_HIST) { toolbarForward = button; }
+        }
+        assert(toolbarBack && toolbarForward);
+        for (FXArrowButton* button : {toolbarBack, toolbarForward})
+        {
+            assert(button->shown() && button->getArrowSize() >= 10 && button->getWidth() >= 22);
+            assert((button->getFrameStyle() & (FRAME_RAISED | FRAME_THICK)) == (FRAME_RAISED | FRAME_THICK));
+        }
+        {
+            FXuint dpi = app.reg().readUnsignedEntry("SETTINGS", "screenres", 100);
+            FXHorizontalFrame frame(app.getRootWindow(), FRAME_NONE);
+            app.reg().writeUnsignedEntry("SETTINGS", "screenres", 60);
+            FXArrowButton* normal = xf_historybutton(&frame, NULL, 0, "History");
+            app.reg().writeUnsignedEntry("SETTINGS", "screenres", 200);
+            FXArrowButton* larger = xf_historybutton(&frame, NULL, 0, "History");
+            assert(normal->getArrowSize() == 10 && larger->getArrowSize() == 20);
+            assert(larger->getDefaultWidth() > normal->getDefaultWidth());
+            app.reg().writeUnsignedEntry("SETTINGS", "screenres", dpi);
+        }
+
+        left->backhistRemoveAllItems(); left->forwardhistRemoveAllItems();
+        right->backhistRemoveAllItems(); right->forwardhistRemoveAllItems();
+        for (FilePanel* panel : {left, right})
+            for (FXArrowButton* button : paneHistoryButtons(panel))
+            {
+                panel->onUpdPaneNavigation(button, FXSEL(SEL_UPDATE, FilePanel::ID_PANE_HISTORY), NULL);
+                assert(!button->isEnabled());
+            }
+
+        assert(left->navigatePane(fixture + "/other"));
+        for (FXArrowButton* button : leftHistory)
+        {
+            left->onUpdPaneNavigation(button, FXSEL(SEL_UPDATE, FilePanel::ID_PANE_HISTORY), NULL);
+            assert(button->isEnabled());
+        }
+        right->setActive();
+        checkPaneHistory(app, left, leftHistory[0], fixture, false);
+        assert(window->getCurrentPanel() == left && right->getDirectory() == fixture + "/other");
+
+        assert(right->navigatePane(fixture));
+        left->setActive();
+        checkPaneHistory(app, right, rightHistory[0], fixture + "/other", false);
+        assert(window->getCurrentPanel() == right && left->getDirectory() == fixture);
+
+        left->onCmdTogglePathMode(NULL, 0, NULL);
+        pump(app, 100);
+        checkAddressBarMode(left, true);
+        checkAddressBarMode(right, true);
+        assert(left->navigatePane(fixture + "/other"));
+        checkPaneHistory(app, left, leftHistory[0], fixture, false);
+        left->onCmdTogglePathMode(NULL, 0, NULL);
+        pump(app, 100);
+        checkAddressBarMode(left, false);
+        checkAddressBarMode(right, false);
+
+        assert(left->navigatePane(fixture + "/other"));
+        window->onUpdDirBackHist(toolbarBack, 0, NULL);
+        assert(toolbarBack->isEnabled());
+        checkToolbarHistory(app, left, toolbarBack, fixture);
+        assert(left->getDirectory() == fixture && right->getDirectory() == fixture + "/other");
+        window->onUpdDirForwardHist(toolbarForward, 0, NULL);
+        assert(toolbarForward->isEnabled());
+        checkToolbarHistory(app, left, toolbarForward, fixture + "/other");
+        assert(left->getDirectory() == fixture + "/other");
+
+        left->setDirectory(fixture); left->updatePath();
+        right->setDirectory(fixture + "/other"); right->updatePath();
+        left->backhistRemoveAllItems(); left->forwardhistRemoveAllItems();
+        right->backhistRemoveAllItems(); right->forwardhistRemoveAllItems();
+        puts("PASS: larger DPI-aware toolbar and pane history buttons; both panes, modes, popup placement and navigation");
+    }
     left->setActive(); select(left);
     CustomActionContext ctx = actions->context();
     assert(ctx.directory == fixture && ctx.opposite == fixture + "/other" && ctx.paths.size() == 2);
@@ -1132,14 +1470,14 @@ int main(int argc, char** argv)
     }
     assert(addedFolder && addedAction && addedFolder->toolbar && addedAction->toolbar && addedAction->background &&
            addedAction->showOutput && addedFolder->icon == fixture + "/large.png" && addedAction->icon == addedFolder->icon &&
-           addedAction->parent == addedFolder->id && addedAction->programMode && addedAction->program == "printf" &&
-           addedAction->parameters == "'%%s\\n' %p" && addedAction->workingDirectory == "%o" &&
-           addedAction->command == "  printf 'legacy unchanged'  ");
+           addedAction->parent == addedFolder->id && !addedAction->programMode && addedAction->program.empty() &&
+           addedAction->parameters.empty() && addedAction->workingDirectory == "%o" &&
+           addedAction->command == "printf '%%s\\n' %p");
     CustomActions persisted; assert(persisted.load(app.reg(), error) && persisted.items.size() == 9);
     assert(app.reg().write());
     FXRegistry disk("SwordfishCustomActionsTest", "SwordfishCustomActionsTest");
     assert(disk.read()); CustomActions reread; assert(reread.load(disk, error) && reread.items.size() == 9);
-    puts("PASS: program/parameters/cwd fields and Browse controls, live preview, scrolling legend, Basic/Appearance tabs, icon bounds, toolbar/output flags, Save and disk reload");
+    puts("PASS: single command/cwd fields and Browse controls, no preview or mode switch, toolbar option on Appearance Conditions, scrolling legend, Basic/Appearance tabs, icon bounds, toolbar/output flags, Save and disk reload");
     puts("PASS: maximizable categorized system-icon grid, search/paging/select; normal image chooser with live left preview, invalid-image errors, cancel and No Icon routes");
     DismissDialog cancelEditor(app, "Custom Actions", "Cancel");
     app.addTimeout(&cancelEditor, 1, 30);
@@ -1148,9 +1486,66 @@ int main(int argc, char** argv)
     assert(reread.load(app.reg(), error) && reread.items.size() == 9);
     puts("PASS: editor Cancel leaves persisted actions unchanged");
     {
+        const FXString appRun = FXPath::directory(prefix) + "/AppRun";
+        const FXString integrationIcons = prefix + "/share/icons/hicolor/scalable/apps";
+        assert(xf_mkpath(integrationIcons.text(), 0700) == 0);
+        assert(FXFile::copy(fixture + "/wide.svg", integrationIcons + "/swordfish.svg"));
+        {
+            std::ofstream launcher(appRun.text());
+            launcher << "#!/bin/sh\nexit 0\n";
+            assert(launcher.good());
+        }
+        assert(chmod(appRun.text(), 0700) == 0);
+        const char* previousPortableValue = getenv("SWORDFISH_PORTABLE");
+        const bool hadPortable = previousPortableValue != NULL;
+        const FXString previousPortable = previousPortableValue ? previousPortableValue : "";
+        assert(getenv("SWORDFISH_HOST_PATH"));
+        const FXString previousHostPath = getenv("SWORDFISH_HOST_PATH");
+        assert(setenv("SWORDFISH_HOST_PATH", (homedir + "/.local/bin:/usr/bin:/bin").text(), 1) == 0);
+        assert(setenv("SWORDFISH_PORTABLE", "1", 1) == 0);
+        SystemIntegration::Selection integration;
+        integration.desktopShortcut = integration.applicationsMenu = integration.commandSymlink = true;
+        integration.commandPath = (homedir + "/.local/bin/swordfish").text();
+        std::string integrationError, integrationWarning;
+        assert(SystemIntegration::applySelection(integration, integrationError, integrationWarning));
+        if (hadPortable)
+            assert(setenv("SWORDFISH_PORTABLE", previousPortable.text(), 1) == 0);
+        else
+            assert(unsetenv("SWORDFISH_PORTABLE") == 0);
+        const FXString desktopPath = homedir + "/Desktop/Swordfish.desktop";
+        const FXString menuPath = host + "/applications/swordfish.desktop";
+        const FXString statePath = fixture + "/host-config/swordfish/system-integration.state";
+        auto fileState = [](const FXString& path)
+        {
+            struct stat info;
+            assert(lstat(path.text(), &info) == 0);
+            return info;
+        };
+        auto unchanged = [&](const FXString& path, const struct stat& initial)
+        {
+            struct stat current = fileState(path);
+            assert(current.st_dev == initial.st_dev && current.st_ino == initial.st_ino &&
+                   current.st_mode == initial.st_mode && current.st_size == initial.st_size &&
+                   current.st_mtim.tv_sec == initial.st_mtim.tv_sec &&
+                   current.st_mtim.tv_nsec == initial.st_mtim.tv_nsec &&
+                   current.st_ctim.tv_sec == initial.st_ctim.tv_sec &&
+                   current.st_ctim.tv_nsec == initial.st_ctim.tv_nsec);
+        };
+        const struct stat originalDesktopState = fileState(desktopPath);
+        const struct stat originalMenuState = fileState(menuPath);
+        const struct stat originalIntegrationState = fileState(statePath);
+        std::ifstream desktopFile(desktopPath.text());
+        const std::string originalDesktop((std::istreambuf_iterator<char>(desktopFile)),
+                                           std::istreambuf_iterator<char>());
         PreferencesBox preferences(window);
+        FXGroupBox* toolbarIcons = NULL;
         for (FXGroupBox* group : widgets<FXGroupBox>(&preferences))
-            assert(group->getText() != "Toolbar Icons");
+            if (group->getText() == "Tool Bar Icon Size") { toolbarIcons = group; }
+        assert(toolbarIcons);
+        std::vector<FXRadioButton*> sizes = widgets<FXRadioButton>(toolbarIcons);
+        assert(sizes.size() == 3 && widgets<FXListBox>(toolbarIcons).empty());
+        assert(sizes[0]->getText() == "16 px" && sizes[1]->getText() == "24 px" &&
+               sizes[2]->getText() == "32 px");
         std::vector<FXTabItem*> tabs = widgets<FXTabItem>(&preferences);
         bool customTab = false;
         for (FXTabItem* tab : tabs) { if (tab->getText() == "Custom Actions") { customTab = true; } }
@@ -1159,9 +1554,172 @@ int main(int argc, char** argv)
         app.addTimeout(&cancelPreferencesEditor, 1, 30);
         click(&preferences, "Edit Custom Actions...");
         assert(actions->model.items.size() == 9);
+
+        auto checkToolbarIcons = [&](FXint size)
+        {
+            const FXint side = minirunicon->getHeight() * size / 16;
+            FXIcon* folderIcon = NULL;
+            for (FXMenuButton* button : widgets<FXMenuButton>(custom))
+                if (button->getText() == "Utilities") { folderIcon = button->getIcon(); }
+            FXIcon* actionIcon = NULL;
+            FXIcon* editorIcon = NULL;
+            for (FXButton* button : widgets<FXButton>(custom))
+            {
+                if (button->getText() == "Background") { actionIcon = button->getIcon(); }
+                if (button->getTipText() == "Edit Custom Actions") { editorIcon = button->getIcon(); }
+            }
+            assert(folderIcon && actionIcon && editorIcon);
+            if (folderIcon->getWidth() != side || folderIcon->getHeight() != side / 2)
+                fprintf(stderr, "Folder icon at size %d: %dx%d, expected %dx%d\n", size,
+                        folderIcon->getWidth(), folderIcon->getHeight(), side, side / 2);
+            assert(folderIcon->getWidth() == side && folderIcon->getHeight() == side / 2);
+            assert(actionIcon->getWidth() == side && actionIcon->getHeight() == side / 2);
+            assert(editorIcon->getWidth() == miniprefsicon->getWidth() * size / 16);
+            assert(editorIcon->getHeight() == miniprefsicon->getHeight() * size / 16);
+            assert(actions->icon(0)->getWidth() == minirunicon->getHeight());
+            assert(actions->icon(0)->getHeight() == minirunicon->getHeight() / 2);
+            bool originalBack = false;
+            for (FXButton* button : widgets<FXButton>(window))
+                if (button->getTarget() == window && FXSELID(button->getSelector()) == XFileExplorer::ID_DIR_BACK)
+                    originalBack = button->getIcon() == minidirbackicon;
+            assert(originalBack);
+        };
+        checkToolbarIcons(16);
+
+        ToolbarSizePreferenceAutomation cancelSize(preferences, 0, 2, false);
+        app.addTimeout(&cancelSize, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 0);
+        assert(xf_toolbariconsize(&app, "customtoolbariconsize") == 16);
+        checkToolbarIcons(16);
+
+        for (FXint choice : {1, 2, 0})
+        {
+            const FXint previous = choice == 1 ? 0 : choice == 2 ? 1 : 2;
+            const FXint size = 16 + choice * 8;
+            ToolbarSizePreferenceAutomation changeSize(preferences, previous, choice, true);
+            app.addTimeout(&changeSize, 1, 30);
+            assert(preferences.execute(PLACEMENT_OWNER) == 1);
+            assert(xf_toolbariconsize(&app, "customtoolbariconsize") == size);
+            FXRegistry settingsOnDisk("SwordfishCustomActionsTest", "SwordfishCustomActionsTest");
+            assert(settingsOnDisk.read());
+            assert(settingsOnDisk.readIntEntry("SETTINGS", "customtoolbariconsize", 0) == size);
+            checkToolbarIcons(size);
+            unchanged(desktopPath, originalDesktopState);
+            unchanged(menuPath, originalMenuState);
+            unchanged(statePath, originalIntegrationState);
+        }
+        {
+            std::ofstream modified(desktopPath.text(), std::ios::app);
+            modified << "\n# Desktop environment metadata\n";
+            assert(modified.good());
+        }
+        const struct stat modifiedDesktopState = fileState(desktopPath);
+        // A launcher the desktop has reformatted is still recognised as Swordfish's own
+        ToolbarSizePreferenceAutomation sizeWithModifiedLauncher(preferences, 0, 1, true);
+        app.addTimeout(&sizeWithModifiedLauncher, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 1);
+        assert(xf_toolbariconsize(&app, "customtoolbariconsize") == 24);
+        checkToolbarIcons(24);
+        unchanged(desktopPath, modifiedDesktopState);
+        unchanged(menuPath, originalMenuState);
+        unchanged(statePath, originalIntegrationState);
+        {
+            std::ofstream unrelated(desktopPath.text());
+            unrelated << "[Desktop Entry]\nType=Application\nName=Other Program\nExec=other\n";
+            assert(unrelated.good());
+        }
+        const struct stat unrelatedDesktopState = fileState(desktopPath);
+        ToolbarSizePreferenceAutomation sizeWithUnrelatedLauncher(preferences, 1, 0, true, false);
+        app.addTimeout(&sizeWithUnrelatedLauncher, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 1);
+        assert(xf_toolbariconsize(&app, "customtoolbariconsize") == 16);
+        checkToolbarIcons(16);
+        unchanged(desktopPath, unrelatedDesktopState);
+        unchanged(menuPath, originalMenuState);
+        unchanged(statePath, originalIntegrationState);
+        {
+            std::ofstream restored(desktopPath.text());
+            restored << originalDesktop;
+            assert(restored.good());
+        }
+        puts("PASS: 16/24/32 px radio buttons are exclusive; toolbar saves leave integrated launchers and ownership state untouched, a desktop-reformatted launcher stays recognised and an unrelated one locks only the integration controls");
+
+        assert(!app.reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false));
+        checkAddressBarMode(left, false);
+        checkAddressBarMode(right, false);
+        AddressModePreferenceAutomation cancelAddress(preferences, 0, 1, false);
+        app.addTimeout(&cancelAddress, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 0);
+        assert(!app.reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false));
+
+        AddressModePreferenceAutomation saveAddress(preferences, 0, 1, true);
+        app.addTimeout(&saveAddress, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 1);
+        assert(app.reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false));
+        FXRegistry settingsOnDisk("SwordfishCustomActionsTest", "SwordfishCustomActionsTest");
+        assert(settingsOnDisk.read());
+        assert(settingsOnDisk.readUnsignedEntry("SETTINGS", "show_pathlinker", false));
+        checkAddressBarMode(left, true);
+        checkAddressBarMode(right, true);
+
+        AddressModePreferenceAutomation cancelText(preferences, 1, 0, false);
+        app.addTimeout(&cancelText, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 0);
+        assert(app.reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false));
+
+        AddressModePreferenceAutomation saveText(preferences, 1, 0, true);
+        app.addTimeout(&saveText, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 1);
+        assert(!app.reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true));
+        FXRegistry textSettingsOnDisk("SwordfishCustomActionsTest", "SwordfishCustomActionsTest");
+        assert(textSettingsOnDisk.read());
+        assert(!textSettingsOnDisk.readUnsignedEntry("SETTINGS", "show_pathlinker", true));
+        checkAddressBarMode(left, false);
+        checkAddressBarMode(right, false);
+
+        left->onCmdTogglePathMode(NULL, 0, NULL);
+        assert(app.reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false));
+        checkAddressBarMode(left, true);
+        checkAddressBarMode(right, true);
+        AddressModePreferenceAutomation switchedBreadcrumbs(preferences, 1, 1, false);
+        app.addTimeout(&switchedBreadcrumbs, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 0);
+        left->onCmdTogglePathMode(NULL, 0, NULL);
+        assert(!app.reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true));
+        checkAddressBarMode(left, false);
+        checkAddressBarMode(right, false);
+        AddressModePreferenceAutomation switchedAddress(preferences, 0, 0, false);
+        app.addTimeout(&switchedAddress, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 0);
+        assert(!app.reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true));
+        puts("PASS: named address mode choices, cancel, saved preference, panel refresh and toolbar synchronization");
+        RemoveIntegrationPreferenceAutomation cancelRemoval(preferences, false);
+        app.addTimeout(&cancelRemoval, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 0);
+        SystemIntegration::Selection reloadedIntegration;
+        assert(SystemIntegration::readSelection(reloadedIntegration, integrationError));
+        assert(reloadedIntegration.desktopShortcut && reloadedIntegration.applicationsMenu &&
+               reloadedIntegration.commandSymlink);
+        RemoveIntegrationPreferenceAutomation removeIntegration(preferences, true);
+        app.addTimeout(&removeIntegration, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 1);
+        assert(SystemIntegration::readSelection(reloadedIntegration, integrationError));
+        assert(!reloadedIntegration.desktopShortcut && !reloadedIntegration.applicationsMenu &&
+               !reloadedIntegration.commandSymlink);
+        assert(!FXStat::exists(desktopPath) && !FXStat::exists(menuPath) && !FXStat::exists(statePath));
+        assert(setenv("SWORDFISH_HOST_PATH", previousHostPath.text(), 1) == 0);
+        puts("PASS: explicit integration changes still confirm and apply; Cancel leaves launchers installed");
     }
-    puts("PASS: Preferences Custom Actions tab opens the same controller/editor without duplicating saved state");
+    puts("PASS: Preferences Custom Actions editor and custom toolbar sizes apply, persist and cancel without changing menus or main toolbars");
     {
+        // An older program/parameters action must open as one command and stay unchanged
+        for (CustomAction& action : actions->model.items)
+            if (action.id == "record")
+            {
+                action.programMode = true; action.program = "/usr/bin/printf";
+                action.parameters = "'%%s\\n' %F"; action.command = "  printf 'legacy unchanged'  ";
+            }
+        assert(actions->model.validate(error)); actions->model.save(app.reg());
         std::vector<CustomAction> baseline = actions->model.items;
         UnsavedAutomation dirty(app, false);
         app.addTimeout(&dirty, 1, 10);

@@ -43,6 +43,7 @@ protected:
     FXButton* activeicon = NULL;
     FXFrame* activebar = NULL;
     FXButton* closefilter = NULL;
+    FXHorizontalFrame* trashbar = NULL;
     FXString name;
     FXbool ctrlkey = false;
     FXbool selmult = false;
@@ -57,6 +58,9 @@ protected:
     FXDragType utf8Type = 0;                              // UTF-8 text type
     FXbool clipboard_locked = false;                      // Clipboard locked to prevent changes when viewing it
     progsmap progs;                                       // Map between program string identifiers and integer indexes
+    FXString mediaPopupName;                              // Media file under the context menu
+    FXString mediaPopupUrl;
+    std::vector<FXString> mediaPopupCommands;             // Play With choices; empty means the web browser
     InputDialog* newfiledialog = NULL;
     InputDialog* newdirdialog = NULL;
     InputDialog* newlinkdialog = NULL;
@@ -145,6 +149,8 @@ public:
         ID_ADD_TO_ARCH,
         ID_GO_HOME,
         ID_GO_TRASH,
+        ID_TRASHBAR_RESTORE,
+        ID_TRASHBAR_EMPTY,
         ID_PANE_BACK,
         ID_PANE_FORWARD,
         ID_PANE_UP,
@@ -156,6 +162,7 @@ public:
         ID_INLINE_RENAME,
         ID_ENTER_PATH,
         ID_PATH_PASTE_GO,
+        ID_TOGGLE_PATH_MODE,
         ID_PANE_HISTORY_FIRST,
         ID_PANE_HISTORY_LAST = ID_PANE_HISTORY_FIRST + 63,
         ID_NEW_TAB,
@@ -203,6 +210,11 @@ public:
         ID_ZOOM_OUT,
         ID_ZOOM_IN,
         ID_ZOOM_RESET,
+        ID_MEDIA_DOWNLOAD,
+        ID_MEDIA_PLAY,
+        ID_MEDIA_PLAY_WITH,
+        ID_MEDIA_COPY_ADDRESS,
+        ID_MEDIA_OPEN_WITH,
         ID_LAST,
     };
 public:
@@ -227,6 +239,8 @@ public:
     long onCmdPaneNavigation(FXObject*, FXSelector, void*);
     long onUpdPaneNavigation(FXObject*, FXSelector, void*);
     long onCmdEditPath(FXObject*, FXSelector, void*);
+    long onCmdTogglePathMode(FXObject*, FXSelector, void*);
+    long onUpdTogglePathMode(FXObject*, FXSelector, void*);
     long onCmdInlineRename(FXObject*, FXSelector, void*);
     long onCmdEnterPath(FXObject*, FXSelector, void*);
     long onPathKeyPress(FXObject*, FXSelector, void*);
@@ -260,12 +274,22 @@ public:
     int resolveNetworkPath(const FXString& text, FXString& localpath, FXbool savepassword = false);
     void openServerShares(const FXString& host);
     FXbool requiresMountedShare();
+    void openMediaItem(FXint index);
+    void playMediaStream(const FXString& name, const FXString& url);
+    void launchMediaStream(const FXString& url, const FXString& command, FXbool hostApplication);
+    long onCmdMediaDownload(FXObject*, FXSelector, void*);
+    long onCmdMediaPlay(FXObject*, FXSelector, void*);
+    long onCmdMediaPlayWith(FXObject*, FXSelector, void*);
+    long onCmdMediaCopyAddress(FXObject*, FXSelector, void*);
+    long onCmdMediaOpenWith(FXObject*, FXSelector, void*);
     long onCmdEdit(FXObject*, FXSelector, void*);
     long onCmdCompare(FXObject*, FXSelector, void*);
     long onCmdProperties(FXObject*, FXSelector, void*);
     long onCmdFileMan(FXObject*, FXSelector, void*);
     long onCmdContextRename(FXObject*, FXSelector, void*);
     long onUpdContextRename(FXObject*, FXSelector, void*);
+    long bulkRename(FXObject*, const FXString&, const FXString&, int);
+    int bulkRenameFolderItem() const;
     long onCmdFileTrash(FXObject*, FXSelector, void*);
     long onCmdFileRestore(FXObject*, FXSelector, void*);
     long onCmdFileDelete(FXObject*, FXSelector, void*);
@@ -308,6 +332,9 @@ public:
     long onUpdFileTrash(FXObject*, FXSelector, void*);
     long onUpdFileRestore(FXObject*, FXSelector, void*);
     long onUpdGoTrash(FXObject*, FXSelector, void*);
+    long onCmdTrashbarRestore(FXObject*, FXSelector, void*);
+    long onUpdTrashbarRestore(FXObject*, FXSelector, void*);
+    long onCmdTrashbarEmpty(FXObject*, FXSelector, void*);
     void updatePath(FXbool resetEditor = false);
     long onCmdStopListRefreshTimer(FXObject*, FXSelector, void*);
     long onUpdRunScript(FXObject*, FXSelector, void*);

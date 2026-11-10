@@ -2441,16 +2441,22 @@ msgid "&Global Key Bindings"
 msgstr "&Globální přiřazení kláves"
 
 #: src/KeyBindings.cpp:100
+#, fuzzy
+#| msgid ""
+#| "These key bindings are common to all Xfe applications.\n"
+#| "Double click on an item to modify the selected key binding..."
 msgid ""
-"These key bindings are common to all Xfe applications.\n"
+"These key bindings are common to all Swordfish applications.\n"
 "Double click on an item to modify the selected key binding..."
 msgstr ""
 "Toto přiřazení kláves je společné všem Xfe aplikacím.\n"
 "Dvoj-klikem spustíte úpravu vybraného přiřazení kláves..."
 
 #: src/KeyBindings.cpp:107
-msgid "Xf&e Key Bindings"
-msgstr "Přiřazení kláves Xf&e"
+#, fuzzy
+#| msgid "Xf&i Key Bindings"
+msgid "S&wordfish Key Bindings"
+msgstr "Přiřazení kláves Xf&i"
 
 #: src/KeyBindings.cpp:114
 msgid ""
@@ -2540,12 +2546,15 @@ msgstr ""
 "přiřazením."
 
 #: src/KeyBindings.cpp:998 src/KeyBindings.cpp:1150
-#, c-format
+#, fuzzy, c-format
+#| msgid ""
+#| "The key binding %s is already used in the Xfi section.\n"
+#| "You should erase the existing key binding before assigning it again."
 msgid ""
-"The key binding %s is already used in the Xfe section.\n"
+"The key binding %s is already used in the Swordfish section.\n"
 "You should erase the existing key binding before assigning it again."
 msgstr ""
-"Přiřazení kláves %s už existuje v Xfe sekci.\n"
+"Přiřazení kláves %s už existuje v Xfi sekci.\n"
 "Měl byste smazat existující přiřazení kláves před jejich opětovným "
 "přiřazením."
 
@@ -2574,7 +2583,9 @@ msgid "Select an Executable File"
 msgstr "Vyberte spustitelný soubor"
 
 #: src/MessageBox.cpp:102 src/XFileExplorer.cpp:1240
-msgid "Launch Xfe as root"
+#, fuzzy
+#| msgid "Launch Xfe as root"
+msgid "Launch Swordfish as root"
 msgstr "Spustit Xfe jako root"
 
 #: src/MessageBox.cpp:124 src/MessageBox.cpp:142 src/MessageBox.cpp:178
@@ -2985,7 +2996,9 @@ msgid "Enable automounting"
 msgstr "Povolit automatické připojování"
 
 #: src/Preferences.cpp:604
-msgid "Open new Xfe window when mounting"
+#, fuzzy
+#| msgid "Open new Xfe window when mounting"
+msgid "Open new Swordfish window when mounting"
 msgstr "Otevřít nové okno Xfe při připojování"
 
 #: src/Preferences.cpp:609
@@ -5018,7 +5031,9 @@ msgid "Restore Selected Files From Trash Can"
 msgstr "Obnoví vybrané soubory z koše"
 
 #: src/XFileExplorer.cpp:1236
-msgid "Launch Xfe"
+#, fuzzy
+#| msgid "Launch Xfe"
+msgid "Launch Swordfish"
 msgstr "Spustit Xfe"
 
 #: src/XFileExplorer.cpp:1244
@@ -5276,7 +5291,9 @@ msgid "&About X File Explorer"
 msgstr "&O X File Explorer"
 
 #: src/XFileExplorer.cpp:3498
-msgid "Running Xfe as root!"
+#, fuzzy
+#| msgid "Running Xfe as root!"
+msgid "Running Swordfish as root!"
 msgstr "Xfe běží pod rootem!"
 
 #: src/XFileExplorer.cpp:3542
@@ -5298,7 +5315,9 @@ msgid "No global swordfishrc file found! Please select a configuration file..."
 msgstr "Nenalezen soubor xferc! Vyberte prosím konfigurační soubor..."
 
 #: src/XFileExplorer.cpp:3573
-msgid "XFE configuration file"
+#, fuzzy
+#| msgid "XFE configuration file"
+msgid "Swordfish configuration file"
 msgstr "Konfigurační soubor XFE"
 
 #: src/XFileExplorer.cpp:3586
@@ -5801,10 +5820,17 @@ msgstr "Chyba při nahrávání ikon"
 
 #: src/XFileArchive.cpp:2331 src/XFileImage.cpp:3334 src/XFilePackage.cpp:974
 #: src/XFileWrite.cpp:353 src/main.cpp:564
+#, fuzzy
+#| msgid ""
+#| "Icon path doesn't exist, default icon path was selected.\n"
+#| "\n"
+#| "From Xfe, please check your icon path in Edit / Preferences / "
+#| "Appearance..."
 msgid ""
 "Icon path doesn't exist, default icon path was selected.\n"
 "\n"
-"From Xfe, please check your icon path in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon path in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "Cesta k ikonám neexistuje, téma nastaveno zpět na výchozí.\n"
 "\n"
@@ -5812,10 +5838,17 @@ msgstr ""
 
 #: src/XFileArchive.cpp:2339 src/XFileImage.cpp:3342 src/XFilePackage.cpp:982
 #: src/XFileWrite.cpp:361 src/main.cpp:572
+#, fuzzy
+#| msgid ""
+#| "Unable to load some icons, default icon theme was selected.\n"
+#| "\n"
+#| "From Xfe, please check your icon theme in Edit / Preferences / "
+#| "Appearance..."
 msgid ""
 "Unable to load some icons, default icon theme was selected.\n"
 "\n"
-"From Xfe, please check your icon theme in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon theme in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "Nemohu načíst některé ikony, výchozí téma bylo vybráno.\n"
 "\n"
@@ -5823,10 +5856,15 @@ msgstr ""
 
 #: src/XFileArchive.cpp:2347 src/XFileImage.cpp:3350 src/XFilePackage.cpp:990
 #: src/XFileWrite.cpp:369 src/main.cpp:580
+#, fuzzy
+#| msgid ""
+#| "Unable to load default icons, no icons can be shown.\n"
+#| "\n"
+#| "Please check your Xfe installation..."
 msgid ""
 "Unable to load default icons, no icons can be shown.\n"
 "\n"
-"Please check your Xfe installation..."
+"Please check your Swordfish installation..."
 msgstr ""
 "Nemohu načíst výchozí ikony, nebudou zobrazeny žádné ikony.\n"
 "\n"
@@ -8237,6 +8275,18 @@ msgstr "Jednoduchý textový editor pro Xfe"
 #: swfw.desktop.in:5
 msgid "editor;viewer;text"
 msgstr "editor;prohlížeč;text"
+
+#~ msgid "Xf&e Key Bindings"
+#~ msgstr "Přiřazení kláves Xf&e"
+
+#, c-format
+#~ msgid ""
+#~ "The key binding %s is already used in the Xfe section.\n"
+#~ "You should erase the existing key binding before assigning it again."
+#~ msgstr ""
+#~ "Přiřazení kláves %s už existuje v Xfe sekci.\n"
+#~ "Měl byste smazat existující přiřazení kláves před jejich opětovným "
+#~ "přiřazením."
 
 #~ msgid "Run Xfe as root"
 #~ msgstr "Spustit Xfe jako root"

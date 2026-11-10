@@ -40,6 +40,12 @@ if os.path.basename(sys.argv[0]) == "udisksctl":
         if os.environ.get("SWORDFISH_TEST_POWER_OFF_FAIL"):
             print("Power-off failed")
             sys.exit(1)
+        volumes = os.environ.get("SWORDFISH_TEST_EJECT_VOLUMES")
+        if volumes:
+            with open(volumes) as inventory:
+                remaining = [line for line in inventory if not line.startswith('PATH="/dev/test-usb')]
+            with open(volumes, "w") as inventory:
+                inventory.writelines(remaining)
     sys.exit(0)
 
 if os.path.basename(sys.argv[0]) == "lsblk":
@@ -57,10 +63,18 @@ if os.path.basename(sys.argv[0]) == "lsblk":
             print(volumes.read(), end="")
     sys.exit(0)
 
+if os.path.basename(sys.argv[0]) == "fake-player":
+    assert not os.environ.get("LD_LIBRARY_PATH")
+    with open(os.environ["SWORDFISH_TEST_MOUNT_LOG"], "a") as log:
+        log.write("player " + " ".join(sys.argv[1:]) + "\n")
+    sys.exit(0)
+
 if os.path.basename(sys.argv[0]) == "xdg-open":
     assert not os.environ.get("LD_LIBRARY_PATH")
     assert not os.environ.get("GIO_MODULE_DIR")
-    assert sys.argv[1:] == ["https://github.com/hasmak-44/Swordfish-FM"]
+    assert len(sys.argv) == 2 and sys.argv[1] in (
+        "https://github.com/hasmak-44/Swordfish-FM", "http://192.168.1.50/",
+        "http://192.168.1.70:8200/MediaItems/1.mp3"), sys.argv
     with open(os.environ["SWORDFISH_TEST_MOUNT_LOG"], "a") as log:
         log.write("website " + sys.argv[1] + "\n")
     sys.exit(0)
@@ -136,9 +150,63 @@ if sys.argv[1:] == ["--discover"]:
         "STATUS\tgvfs\tdns-sd://local/: simulated failure",
         "SERVER\t192.168.1.104\t192.168.1.104\tDELL-740\tWorkgroup:MAKHLOUF\tws-discovery\t0",
     ]
+    if os.environ.get("SWORDFISH_TEST_SERVICES"):
+        records += [
+            "SERVICE\tprinter\tprinter@192.168.1.50\t192.168.1.50\tOffice Printer\thttp://192.168.1.50/\tmdns",
+            "SERVICE\tmedia\tmedia@http://192.168.1.70:8200/rootDesc.xml\t192.168.1.70\tLiving Room"
+            "\thttp://192.168.1.70:8200/rootDesc.xml\tssdp",
+            "SERVICE\tftp\tftp@192.168.1.60:21\t192.168.1.60\tNAS\tftp://192.168.1.60:21/\tmdns",
+            "SERVICE\trouter\trouter@192.168.1.1\t192.168.1.1\tHome Router\thttp://192.168.1.1/\tssdp",
+            "SERVICE\tsftp\tsftp@192.168.1.60:22\t192.168.1.60\tNAS\tsftp://192.168.1.60:22/\tmdns",
+            # Rejected: unknown kind, unsafe address, script URL, wrong field count
+            "SERVICE\ttoaster\ttoaster@192.168.1.9\t192.168.1.9\tToaster\thttp://192.168.1.9/\tssdp",
+            "SERVICE\tprinter\tprinter@x\tbad;host\tBad\thttp://192.168.1.9/\tmdns",
+            "SERVICE\tprinter\tprinter@192.168.1.8\t192.168.1.8\tEvil\tjavascript:alert(1)\tmdns",
+            "SERVICE\tftp\ttoo-few-fields",
+            # A later record for the same device replaces the earlier one
+            "SERVICE\tprinter\tprinter@192.168.1.50\t192.168.1.50\tOffice Laser\thttp://192.168.1.50/\tmdns,ssdp",
+        ]
     for record in records:
         print(record, flush=True)
         time.sleep(0.1)
+    print("DONE", flush=True)
+    sys.exit(0)
+if sys.argv[1] == "--media":
+    assert sys.argv[2] == "http://192.168.1.70:8200/rootDesc.xml", sys.argv
+    path = sys.argv[3].rstrip("/")
+    time.sleep(0.15)
+    if path == "dlna://192.168.1.70:8200":
+        entry("Music", mode=stat.S_IFDIR | 0o555)
+        entry("Video", mode=stat.S_IFDIR | 0o555)
+    elif path == "dlna://192.168.1.70:8200/Music":
+        entry("Song One.mp3", mode=stat.S_IFREG | 0o444, target="http://192.168.1.70:8200/MediaItems/1.mp3")
+        entry("Live 50%.flac", mode=stat.S_IFREG | 0o444, target="http://192.168.1.70:8200/MediaItems/2.flac")
+        entry("Albums", mode=stat.S_IFDIR | 0o555)
+    elif path == "dlna://192.168.1.70:8200/Music/Albums":
+        pass
+    else:
+        print("ERROR This folder is no longer on the media server.", flush=True)
+        sys.exit(1)
+    print("DONE", flush=True)
+    sys.exit(0)
+if sys.argv[1] == "--download":
+    url, destination = sys.argv[2], sys.argv[3]
+    with open(os.environ["SWORDFISH_TEST_MOUNT_LOG"], "a") as log:
+        log.write("download " + url + "\n")
+    if url.endswith("/missing.mp3"):
+        print("ERROR The media server answered 404 Not Found", flush=True)
+        sys.exit(1)
+    if url.endswith("/slow.mp3"):
+        # Stays in progress until the test cancels it
+        fd = os.open(destination + ".part", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        os.write(fd, b"x" * 512)
+        print("PROGRESS 0 2048\nPROGRESS 512 2048", flush=True)
+        time.sleep(60)
+        sys.exit(1)
+    print("PROGRESS 0 -1", flush=True)
+    fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    os.write(fd, ("media:" + url).encode())
+    os.close(fd)
     print("DONE", flush=True)
     sys.exit(0)
 if sys.argv[1] == "--shares":

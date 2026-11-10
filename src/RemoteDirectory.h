@@ -33,5 +33,20 @@ FXString displayPath(const FXString& path);
 // GVFS mount name as share@computer, user@host or device model (empty if not a GVFS mount)
 FXString mountLabel(const FXString& gvfsname);
 FXString titlePath(const FXString& path);
+// UPnP/DLNA media servers browsed read-only as dlna://HOST:PORT/Folder/Sub (segments URI-escaped)
+FXbool isMedia(const FXString& path);
+// Remembers a discovered server's description URL; returns its dlna://HOST:PORT root or "" if invalid
+FXString addMediaServer(const FXString& location, const FXString& name);
+FXString mediaRoot(const FXString& location);
+FXString mediaServerLocation(const FXString& path);
+FXString mediaParent(const FXString& path);
+// Stream address of a file listed in an open media folder ("" if unknown)
+FXString mediaLink(const FXString& path);
+FXString mediaLabel(const FXString& path);
+// Background copy of a media stream with a progress window; failures are reported when the queue is empty
+void download(FXWindow* owner, const FXString& url, const FXString& destination);
+FXuint downloadsPending();
+// Stops the current download (removing its unfinished file) and drops the rest of the queue
+void cancelDownloads();
 }
 #endif

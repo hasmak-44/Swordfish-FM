@@ -10,11 +10,12 @@ if [[ ! -d "$icons" ]]; then
 fi
 prefix=$(cd -- "$icons/../../../.." && pwd)
 scratch=$(mktemp -d /tmp/swordfish-expansion-test.XXXXXX)
-trap 'rm -f "$scratch/main.o" "$scratch/test" "$scratch/swordfish-network" "$scratch/gio" "$scratch/xdg-open" "$scratch/lsblk" "$scratch/udisksctl" "$scratch/mount.log"; rm -rf "$scratch/fixture" "$scratch/home"; rmdir "$scratch"' EXIT
+trap 'rm -f "$scratch/main.o" "$scratch/test" "$scratch/swordfish-network" "$scratch/gio" "$scratch/xdg-open" "$scratch/fake-player" "$scratch/lsblk" "$scratch/udisksctl" "$scratch/mount.log"; rm -rf "$scratch/fixture" "$scratch/home"; rmdir "$scratch"' EXIT
 cp "$root/tests/fake-remote-directory.py" "$scratch/swordfish-network"
 chmod +x "$scratch/swordfish-network"
 ln -s swordfish-network "$scratch/gio"
 ln -s swordfish-network "$scratch/xdg-open"
+ln -s swordfish-network "$scratch/fake-player"
 ln -s swordfish-network "$scratch/lsblk"
 ln -s swordfish-network "$scratch/udisksctl"
 mkdir -p "$scratch/fixture/folder" "$scratch/fixture/empty" "$scratch/home"
@@ -33,17 +34,23 @@ for object in "$root"/src/*.o; do
         *) objects+=("$object");;
     esac
 done
+read -r -a configured_flags <<< "$(sed -n 's/^CXXFLAGS = //p' "$root/src/Makefile")"
+randr_libs=()
+if [[ " ${configured_flags[*]} " == *" -DHAVE_XRANDR_H=1 "* ]]; then
+    randr_libs=(-lXrandr)
+fi
 g++ -std=gnu++11 -Wall -I"$root/src" -I"$root" $(fox-config --cflags) \
     "$root/tests/folder-expansion-regression.cpp" "$scratch/main.o" "${objects[@]}" \
     "$root/st/x.o" "$root/st/st.o" "$root"/libsn/*.o \
     -lutil -lfontconfig -lpng -lFOX-1.6 -lX11 -lfreetype -lXft -lxcb -lxcb-util \
-    -lX11-xcb -ldl $(pkg-config --libs gio-2.0) -o "$scratch/test"
+    -lX11-xcb "${randr_libs[@]}" -ldl $(pkg-config --libs gio-2.0) -o "$scratch/test"
 runner=()
 if [[ ${SWORDFISH_TEST_DEBUG:-0} == 1 ]]; then
     runner=(gdb --batch -ex run -ex bt --args)
 fi
 HOME="$scratch/home" SWORDFISH_HOST_PATH="$scratch:/usr/bin:/bin" \
 SWORDFISH_HOST_LD_LIBRARY_PATH="" SWORDFISH_HOST_GIO_MODULE_DIR="" \
+SWORDFISH_HOST_XDG_DATA_DIRS="$scratch/no-system-data" SWORDFISH_HOST_XDG_CONFIG_DIRS="$scratch/no-system-config" \
 LD_LIBRARY_PATH="/nonexistent/swordfish-test-bundle" GIO_MODULE_DIR="/nonexistent/swordfish-test-modules" \
 SWORDFISH_TEST_MOUNT_LOG="$scratch/mount.log" SWORDFISH_TEST_MOUNT_PATH="$scratch/fixture/large" \
 timeout 120s xvfb-run -a "${runner[@]}" "$scratch/test" "$scratch/fixture" "$prefix/bin/swordfish" "$icons"

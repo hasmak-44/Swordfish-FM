@@ -2552,16 +2552,22 @@ msgid "&Global Key Bindings"
 msgstr "全域按鍵組合(&G)"
 
 #: src/KeyBindings.cpp:100
+#, fuzzy
+#| msgid ""
+#| "These key bindings are common to all Xfe applications.\n"
+#| "Double click on an item to modify the selected key binding..."
 msgid ""
-"These key bindings are common to all Xfe applications.\n"
+"These key bindings are common to all Swordfish applications.\n"
 "Double click on an item to modify the selected key binding..."
 msgstr ""
 "這些按鍵組合共用於所有 Xfe 應用程式。\n"
 "在項目上連按兩下以修改已選按鍵組合…"
 
 #: src/KeyBindings.cpp:107
-msgid "Xf&e Key Bindings"
-msgstr "Xfe 按鍵組合(&E)"
+#, fuzzy
+#| msgid "Xf&i Key Bindings"
+msgid "S&wordfish Key Bindings"
+msgstr "Xfi 按鍵組合(&I)"
 
 #: src/KeyBindings.cpp:114
 msgid ""
@@ -2652,10 +2658,10 @@ msgstr ""
 #: src/KeyBindings.cpp:998 src/KeyBindings.cpp:1150
 #, fuzzy, c-format
 msgid ""
-"The key binding %s is already used in the Xfe section.\n"
+"The key binding %s is already used in the Swordfish section.\n"
 "You should erase the existing key binding before assigning it again."
 msgstr ""
-"按鍵組合 %s 已經用於 Xfe 區段中。\n"
+"按鍵組合 %s 已經用於 Xfi 區段中。\n"
 "\t您應該在再次指派它之前清除現有按鍵組合。"
 
 #: src/KeyBindings.cpp:1018 src/KeyBindings.cpp:1262
@@ -2681,7 +2687,9 @@ msgid "Select an Executable File"
 msgstr "選取可執行檔"
 
 #: src/MessageBox.cpp:102 src/XFileExplorer.cpp:1240
-msgid "Launch Xfe as root"
+#, fuzzy
+#| msgid "Launch Xfe as root"
+msgid "Launch Swordfish as root"
 msgstr "以 root 身分啟動 Xfe"
 
 #: src/MessageBox.cpp:124 src/MessageBox.cpp:142 src/MessageBox.cpp:178
@@ -3127,7 +3135,7 @@ msgstr ""
 
 #: src/Preferences.cpp:604
 #, fuzzy
-msgid "Open new Xfe window when mounting"
+msgid "Open new Swordfish window when mounting"
 msgstr "前往個人目錄："
 
 #: src/Preferences.cpp:609
@@ -5283,7 +5291,9 @@ msgid "Restore Selected Files From Trash Can"
 msgstr "從回收筒復原已選檔案"
 
 #: src/XFileExplorer.cpp:1236
-msgid "Launch Xfe"
+#, fuzzy
+#| msgid "Launch Xfe"
+msgid "Launch Swordfish"
 msgstr "啟動 Xfe"
 
 #: src/XFileExplorer.cpp:1244
@@ -5574,7 +5584,9 @@ msgid "&About X File Explorer"
 msgstr "關於 X File Explorer(&A)"
 
 #: src/XFileExplorer.cpp:3498
-msgid "Running Xfe as root!"
+#, fuzzy
+#| msgid "Running Xfe as root!"
+msgid "Running Swordfish as root!"
 msgstr "以 root 身分執行 Xfe！"
 
 #: src/XFileExplorer.cpp:3542
@@ -5595,7 +5607,9 @@ msgid "No global swordfishrc file found! Please select a configuration file..."
 msgstr "找不到系統 xferc 檔案！請選取組態檔案…"
 
 #: src/XFileExplorer.cpp:3573
-msgid "XFE configuration file"
+#, fuzzy
+#| msgid "XFE configuration file"
+msgid "Swordfish configuration file"
 msgstr "XFE 組態檔案"
 
 #: src/XFileExplorer.cpp:3586
@@ -6123,7 +6137,8 @@ msgstr "載入圖示時發生錯誤 "
 msgid ""
 "Icon path doesn't exist, default icon path was selected.\n"
 "\n"
-"From Xfe, please check your icon path in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon path in Edit / Preferences / "
+"Appearance..."
 msgstr "無法載入某些圖示。請檢查您的圖示路徑！"
 
 #: src/XFileArchive.cpp:2339 src/XFileImage.cpp:3342 src/XFilePackage.cpp:982
@@ -6132,7 +6147,8 @@ msgstr "無法載入某些圖示。請檢查您的圖示路徑！"
 msgid ""
 "Unable to load some icons, default icon theme was selected.\n"
 "\n"
-"From Xfe, please check your icon theme in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon theme in Edit / Preferences / "
+"Appearance..."
 msgstr "無法載入某些圖示。請檢查您的圖示路徑！"
 
 #: src/XFileArchive.cpp:2347 src/XFileImage.cpp:3350 src/XFilePackage.cpp:990
@@ -6141,7 +6157,7 @@ msgstr "無法載入某些圖示。請檢查您的圖示路徑！"
 msgid ""
 "Unable to load default icons, no icons can be shown.\n"
 "\n"
-"Please check your Xfe installation..."
+"Please check your Swordfish installation..."
 msgstr "無法載入某些圖示。請檢查您的圖示路徑！"
 
 #: src/XFileImage.cpp:182
@@ -7784,6 +7800,17 @@ msgstr "Xfe 的簡單的文字編輯器"
 #: swfw.desktop.in:5
 msgid "editor;viewer;text"
 msgstr ""
+
+#~ msgid "Xf&e Key Bindings"
+#~ msgstr "Xfe 按鍵組合(&E)"
+
+#, fuzzy, c-format
+#~ msgid ""
+#~ "The key binding %s is already used in the Xfe section.\n"
+#~ "You should erase the existing key binding before assigning it again."
+#~ msgstr ""
+#~ "按鍵組合 %s 已經用於 Xfe 區段中。\n"
+#~ "\t您應該在再次指派它之前清除現有按鍵組合。"
 
 #~ msgid "Run Xfe as root"
 #~ msgstr "以 root 執行 Xfe"

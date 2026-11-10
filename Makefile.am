@@ -17,6 +17,10 @@ dist_manualimages_DATA = docs/manual/images/workspace.png docs/manual/images/ann
                         docs/manual/images/welcome.png docs/manual/images/preferences.png \
                         docs/manual/images/context-menu.png docs/manual/images/mouse-and-keyboard.svg \
                         docs/manual/images/copy-vs-move.svg
+appicondir = $(rcdir)/app-icon
+dist_appicon_DATA = app-icon/swordfish-folder-256.png app-icon/swordfish-folder-512.png app-icon/swordfish-folder-512.jpg \
+                    app-icon/swordfish-circle-256.png app-icon/swordfish-circle-512.png app-icon/swordfish-circle-512.jpg \
+                    app-icon/swordfish-shield-256.jpg app-icon/swordfish-shield-512.jpg
 pkdir = $(prefix)/share/polkit-1/actions
 
 EXTRA_DIST = autogen.sh install-swordfish-system.sh iconlinks.sh config.h i18n.h org.swordfish.root.policy.in.in swordfish.1 swordfish-archive.1 swordfish-image.1 swordfish-package.1 swordfish-write.1 \
@@ -30,6 +34,7 @@ EXTRA_DIST = autogen.sh install-swordfish-system.sh iconlinks.sh config.h i18n.h
              tests/custom-actions-ui-regression.cpp tests/run-custom-actions-ui-regression.sh \
              tests/run-command-link-regression.sh \
              tests/fake-remote-directory.py tests/native-directory-helper-regression.py \
+             tests/portable-launcher-regression.py \
              ABOUT-NLS TODO BUGS swordfishrc.in *.desktop.in.in \
                  $(top_srcdir)/icons/*
 

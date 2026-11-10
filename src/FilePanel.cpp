@@ -1,6 +1,8 @@
 #include "config.h"
 #include "RemoteDirectory.h"
 #include <set>
+#include <algorithm>
+#include <vector>
 #include "i18n.h"
 
 #include "AppLogger.h"
@@ -30,6 +32,7 @@
 #include "Properties.h"
 #include "XFileExplorer.h"
 #include "CustomActionsUI.h"
+#include <gio/gio.h>
 #include "InputDialog.h"
 #include "BrowseInputDialog.h"
 #include "ArchInputDialog.h"
@@ -96,12 +99,23 @@ static void logFileOpen(const char* event, FXApp* app, const FXString& pathname,
 
 
 // Map
+// In text mode the address bar is a permanently editable field;
+// remote server addresses keep the read-only display
+static FXbool pathAlwaysEditable(FXApp* app, const FXString& directory)
+{
+    return !app->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false) &&
+           !RemoteDirectory::isServer(directory);
+}
+
+
 FXDEFMAP(FilePanel) FilePanelMap[] =
 {
     FXMAPFUNCS(SEL_COMMAND, FilePanel::ID_PANE_BACK, FilePanel::ID_PANE_HISTORY, FilePanel::onCmdPaneNavigation),
     FXMAPFUNCS(SEL_UPDATE, FilePanel::ID_PANE_BACK, FilePanel::ID_PANE_HISTORY, FilePanel::onUpdPaneNavigation),
     FXMAPFUNCS(SEL_COMMAND, FilePanel::ID_PANE_HISTORY_FIRST, FilePanel::ID_PANE_HISTORY_LAST, FilePanel::onCmdPaneNavigation),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_EDIT_PATH, FilePanel::onCmdEditPath),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_TOGGLE_PATH_MODE, FilePanel::onCmdTogglePathMode),
+    FXMAPFUNC(SEL_UPDATE, FilePanel::ID_TOGGLE_PATH_MODE, FilePanel::onUpdTogglePathMode),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_INLINE_RENAME, FilePanel::onCmdInlineRename),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_ENTER_PATH, FilePanel::onCmdEnterPath),
     FXMAPFUNC(SEL_KEYPRESS, FilePanel::ID_ENTER_PATH, FilePanel::onPathKeyPress),
@@ -123,6 +137,9 @@ FXDEFMAP(FilePanel) FilePanelMap[] =
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_FILTER_CURRENT, FilePanel::onCmdItemFilter),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_GO_HOME, FilePanel::onCmdGoHome),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_GO_TRASH, FilePanel::onCmdGoTrash),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_TRASHBAR_RESTORE, FilePanel::onCmdTrashbarRestore),
+    FXMAPFUNC(SEL_UPDATE, FilePanel::ID_TRASHBAR_RESTORE, FilePanel::onUpdTrashbarRestore),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_TRASHBAR_EMPTY, FilePanel::onCmdTrashbarEmpty),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_VIEW, FilePanel::onCmdEdit),
     FXMAPFUNC(SEL_MIDDLEBUTTONPRESS, FilePanel::ID_FILELIST, FilePanel::onCmdEdit),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_EDIT, FilePanel::onCmdEdit),
@@ -158,6 +175,11 @@ FXDEFMAP(FilePanel) FilePanelMap[] =
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_RUN_AS_ADMINISTRATOR, FilePanel::onCmdRunAsAdministrator),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_RUN_IN_TERMINAL, FilePanel::onCmdRunInTerminal),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_REFRESH, FilePanel::onCmdRefresh),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_MEDIA_DOWNLOAD, FilePanel::onCmdMediaDownload),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_MEDIA_PLAY, FilePanel::onCmdMediaPlay),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_MEDIA_PLAY_WITH, FilePanel::onCmdMediaPlayWith),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_MEDIA_COPY_ADDRESS, FilePanel::onCmdMediaCopyAddress),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_MEDIA_OPEN_WITH, FilePanel::onCmdMediaOpenWith),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_SHOW_BIG_ICONS, FilePanel::onCmdShow),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_SHOW_MINI_ICONS, FilePanel::onCmdShow),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_SHOW_DETAILS, FilePanel::onCmdShow),
@@ -855,6 +877,17 @@ FilePanel::FilePanel(FXWindow* owner, const char* nm, FXComposite* p, DirPanel* 
     FXVerticalFrame* cont2 = new FXVerticalFrame(cont, LAYOUT_FILL_Y | LAYOUT_FILL_X | FRAME_NONE,
                                                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
+    // Trash bar (like Caja/Nautilus), shown only while this panel displays the trash can
+    trashbar = new FXHorizontalFrame(cont2, LAYOUT_FILL_X | FRAME_NONE, 0, 0, 0, 0, 6, 4, 3, 3);
+    new FXLabel(trashbar, _("Trash"), NULL, JUSTIFY_LEFT | LAYOUT_LEFT | LAYOUT_CENTER_Y);
+    new FXButton(trashbar, _("Empty Trash") + TAB + _("Permanently delete all items in the trash can"),
+                 NULL, this, ID_TRASHBAR_EMPTY,
+                 BUTTON_NORMAL | FRAME_RAISED | FRAME_THICK | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 8, 8, 2, 2);
+    new FXButton(trashbar, _("Restore Selected Items") + TAB + _("Restore the selected items to their original location"),
+                 NULL, this, ID_TRASHBAR_RESTORE,
+                 BUTTON_NORMAL | FRAME_RAISED | FRAME_THICK | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 8, 8, 2, 2);
+    trashbar->hide();
+
     list = new FileList(owner, cont2, ic, nc, this, ID_FILELIST, showthumbs, deldate_size, origpath_size,
                         options);
     list->setInlineEditTarget(this, ID_INLINE_RENAME);
@@ -917,16 +950,13 @@ FilePanel::FilePanel(FXWindow* owner, const char* nm, FXComposite* p, DirPanel* 
 
     new FXButton(pathframe, TAB + _("Go to Previous Folder"), minidirbackicon, this, ID_PANE_BACK,
                  BUTTON_TOOLBAR | LAYOUT_CENTER_Y);
-    FXArrowButton* history = new FXArrowButton(pathframe, this, ID_PANE_HISTORY,
-                                               ARROW_DOWN | ARROW_TOOLBAR | LAYOUT_CENTER_Y);
-    history->setTipText(_("Folder History"));
+    xf_historybutton(pathframe, this, ID_PANE_HISTORY, _("Folder History"));
     new FXButton(pathframe, TAB + _("Go to Next Folder"), minidirforwardicon, this, ID_PANE_FORWARD,
                  BUTTON_TOOLBAR | LAYOUT_CENTER_Y);
     new FXButton(pathframe, TAB + _("Go to Parent Folder"), minidirupicon, this, ID_PANE_UP,
                  BUTTON_TOOLBAR | LAYOUT_CENTER_Y);
     new FXVerticalSeparator(pathframe, SEPARATOR_GROOVE | LAYOUT_FILL_Y);
-    FXString pathkey = getApp()->reg().readStringEntry("KEYBINDINGS", "clear_address", "Ctrl-L");
-    new FXButton(pathframe, TAB + _("Edit Path") + PARS(pathkey), miniediticon, this, ID_EDIT_PATH,
+    new FXButton(pathframe, TAB + _("Switch to Breadcrumbs"), miniediticon, this, ID_TOGGLE_PATH_MODE,
                  BUTTON_NORMAL | FRAME_RAISED | LAYOUT_CENTER_Y);
 
     // Path text
@@ -997,9 +1027,9 @@ FilePanel::FilePanel(FXWindow* owner, const char* nm, FXComposite* p, DirPanel* 
     }
 
     // Home and trahscan locations
-    trashlocation = xdgdatahome + PATHSEPSTRING TRASHPATH;
-    trashfileslocation = xdgdatahome + PATHSEPSTRING TRASHFILESPATH;
-    trashinfolocation = xdgdatahome + PATHSEPSTRING TRASHINFOPATH;
+    trashlocation = xf_trashdatahome() + PATHSEPSTRING TRASHPATH;
+    trashfileslocation = xf_trashdatahome() + PATHSEPSTRING TRASHFILESPATH;
+    trashinfolocation = xf_trashdatahome() + PATHSEPSTRING TRASHINFOPATH;
 
     // Start location (we return to the start location after each chdir)
     startlocation = FXSystem::getCurrentDirectory();
@@ -1031,6 +1061,7 @@ FilePanel::FilePanel(FXWindow* owner, const char* nm, FXComposite* p, DirPanel* 
     xf_shadebar(addressbar, xf_barcolor(getApp(), 1));
     xf_shadebar(tabbar, xf_barcolor(getApp(), 2));
     xf_shadebar(statusbar, xf_barcolor(getApp(), 1));
+    xf_shadebar(trashbar, xf_barcolor(getApp(), 2));
 }
 
 
@@ -1049,9 +1080,15 @@ void FilePanel::create()
     // Register standard UTF-8 text type used for file dialogs
     utf8Type = getApp()->registerDragType("UTF8_STRING");
 
-    // Display or hide path linker
-    FXbool show_pathlink = getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true);
-    if (show_pathlink)
+    // Display the path linker, the editable path or the read-only path
+    FXbool show_pathlink = getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false);
+    if (pathAlwaysEditable(getApp(), list->getDirectory()))
+    {
+        pathtext->hide();
+        pathlink->hide();
+        pathedit->show();
+    }
+    else if (show_pathlink)
     {
         pathtext->hide();
         pathlink->show();
@@ -1382,7 +1419,6 @@ long FilePanel::onClipboardRequest(FXObject* sender, FXSelector sel, void* ptr)
 long FilePanel::onCmdCopyCut(FXObject*, FXSelector sel, void*)
 {
     if (requiresMountedShare()) return 1;
-    FXString name, curdir;
 
     // Clear clipboard if normal copy or cut
     if ((FXSELID(sel) == ID_COPY_CLIPBOARD) || (FXSELID(sel) == ID_CUT_CLIPBOARD))
@@ -1422,22 +1458,11 @@ long FilePanel::onCmdCopyCut(FXObject*, FXSelector sel, void*)
         }
 
         // Construct the uri list of files and fill the clipboard with it
-        curdir = current->list->getDirectory();
-
         for (int u = 0; u < current->list->getNumItems(); u++)
         {
             if (current->list->isItemSelected(u))
             {
-                name = current->list->getItemText(u).text();
-                name = name.section('\t', 0);
-                if (curdir == ROOTDIR)
-                {
-                    clipboard += FXURL::encode(::xf_filetouri(curdir + name)) + "\n";
-                }
-                else
-                {
-                    clipboard += FXURL::encode(::xf_filetouri(curdir + PATHSEPSTRING + name)) + "\n";
-                }
+                clipboard += FXURL::encode(::xf_filetouri(current->list->getItemPathname(u))) + "\n";
             }
         }
     }
@@ -1922,7 +1947,7 @@ long FilePanel::onCmdOpenDefaultApp(FXObject*, FXSelector, void*)
 // Keyboard press
 long FilePanel::onKeyPress(FXObject* sender, FXSelector sel, void* ptr)
 {
-    if (editingPath && pathedit->hasFocus())
+    if (pathedit->hasFocus())
     {
         return FXVerticalFrame::onKeyPress(sender, sel, ptr);
     }
@@ -1962,6 +1987,14 @@ long FilePanel::onKeyPress(FXObject* sender, FXSelector sel, void* ptr)
 // Double Click on File Item
 long FilePanel::onCmdItemDoubleClicked(FXObject* sender, FXSelector sel, void* ptr)
 {
+    if (RemoteDirectory::isMedia(list->getDirectory()))
+    {
+        const FXival item = reinterpret_cast<FXival>(ptr);
+        if (item < 0 || item >= list->getNumItems()) return 1;
+        setActive();
+        openMediaItem(item);
+        return 1;
+    }
     if (RemoteDirectory::isServer(list->getDirectory()))
     {
         const FXival item = reinterpret_cast<FXival>(ptr);
@@ -2397,7 +2430,12 @@ long FilePanel::onCmdPreviewSelection(FXObject*, FXSelector, void*)
 // Go to parent directory
 long FilePanel::onCmdDirectoryUp(FXObject* sender, FXSelector sel, void* ptr)
 {
-    if (RemoteDirectory::isServer(current->list->getDirectory())) return 1;
+    if (RemoteDirectory::isServer(current->list->getDirectory()))
+    {
+        const FXString parent = RemoteDirectory::mediaParent(current->list->getDirectory());
+        if (!parent.empty()) current->navigatePane(parent);
+        return 1;
+    }
     current->list->handle(this, FXSEL(SEL_COMMAND, FileList::ID_DIRECTORY_UP), NULL);
     current->list->setFocus();
     dirpanel->setDirectory(current->list->getDirectory(), true);
@@ -2485,9 +2523,273 @@ FXbool FilePanel::requiresMountedShare()
 {
     if (!RemoteDirectory::isServer(current->list->getDirectory())) return false;
     appLog(APP_LOG_UI, "share-browser-operation-unavailable", current->list->getDirectory());
+    if (RemoteDirectory::isMedia(current->list->getDirectory()))
+    {
+        MessageBox::warning(this, BOX_OK, _("Media server"),
+                            _("Media servers are read-only. Use Download to save a copy of a file."));
+        return true;
+    }
     MessageBox::warning(this, BOX_OK, _("Shared folders"),
                         _("Open a shared folder before performing file operations."));
     return true;
+}
+
+static FXString mediaMimeType(const FXString& name)
+{
+    gchar* type = g_content_type_guess(name.text(), NULL, 0, NULL);
+    gchar* mime = type ? g_content_type_get_mime_type(type) : NULL;
+    const FXString result = mime ? mime : "";
+    g_free(mime);
+    g_free(type);
+    return result;
+}
+
+static FXbool hasCategory(const DesktopApplication& app, const char* category)
+{
+    return (";" + app.categories + ";").find(FXString(";") + category + ";") >= 0;
+}
+
+// Players that declare the file's type and take a stream address, the desktop's default first.
+// Editors and converters also declare media types but only open local files.
+static std::vector<DesktopApplication> mediaApplications(const FXString& name, FXbool& hasDefault)
+{
+    hasDefault = false;
+    std::vector<DesktopApplication> result;
+    const FXString mime = mediaMimeType(name);
+    if (mime.empty() || mime == "application/octet-stream") return result;
+    FXString error;
+    const std::map<FXString, FXString> defaults = xf_defaultApplications(error);
+    const auto found = defaults.find(mime);
+    const FXString defaultId = found != defaults.end() ? found->second : FXString::null;
+    for (const DesktopApplication& app : xf_installedApplications())
+    {
+        if ((";" + app.mimetypes + ";").find(";" + mime + ";") < 0) continue;
+        const FXbool player = app.acceptsUrls && !hasCategory(app, "WebBrowser") &&
+                              (hasCategory(app, "Player") || hasCategory(app, "TV") || hasCategory(app, "Viewer"));
+        if (!defaultId.empty() && app.id == defaultId)
+        {
+            result.insert(result.begin(), app);
+            hasDefault = true;
+        }
+        else if (player)
+        {
+            result.push_back(app);
+        }
+    }
+    return result;
+}
+
+// Programs shipped inside the portable bundle run there; others run with the host environment
+static FXbool hostProgram(const FXString& command)
+{
+    const FXString program = FXPath::name(xf_commandprogram(command));
+    return program != "swordfish-open" && program != "swfw" && program != "xfw" && program != "swfi" &&
+           program != "swfp" && program != "swfa";
+}
+
+// Media folders open in place; media files stream to a player or the browser.
+void FilePanel::openMediaItem(FXint index)
+{
+    const FXString pathname = list->getItemPathname(index);
+    if (list->isItemDirectory(index))
+    {
+        navigatePane(pathname);
+        return;
+    }
+    const FXString url = RemoteDirectory::mediaLink(pathname);
+    if (url.empty())
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("This item has no stream address. Refresh the folder and try again."));
+        return;
+    }
+    playMediaStream(list->getItemFilename(index), url);
+}
+
+// Order: the player set in Swordfish, the desktop's default application for the type, the browser
+void FilePanel::playMediaStream(const FXString& name, const FXString& url)
+{
+    FXString command;
+    FileDict* assocdict = new FileDict(getApp());
+    FileAssoc* association = assocdict->findFileBinding(name.text());
+    if (association)
+    {
+        // A <placeholder> names a Preferences program; anything else was chosen with "Remember" in Open With
+        FXString cmd = association->command.section(',', 0);
+        if (progs[cmd] == AUDIOPLAYER)
+            cmd = getApp()->reg().readStringEntry("PROGS", "audioplayer", DEFAULT_AUDIOPLAYER);
+        else if (progs[cmd] == VIDEOPLAYER)
+            cmd = getApp()->reg().readStringEntry("PROGS", "videoplayer", DEFAULT_VIDEOPLAYER);
+        else if (cmd.left(1) == "<")
+            cmd.clear();
+        // Players such as VLC, mpv or Audacious play an http address directly
+        if (!cmd.empty() && FXPath::name(cmd.before(' ')) != "swordfish-open" && xf_existcommand(cmd))
+            command = cmd;
+    }
+    delete assocdict;
+    if (!command.empty())
+    {
+        launchMediaStream(url, command, hostProgram(command));
+        return;
+    }
+    FXbool hasDefault;
+    const std::vector<DesktopApplication> apps = mediaApplications(name, hasDefault);
+    launchMediaStream(url, hasDefault ? apps[0].command : FXString::null, true);
+}
+
+// An empty command opens the address in the web browser
+void FilePanel::launchMediaStream(const FXString& url, const FXString& command, FXbool hostApplication)
+{
+    FXString program = command, launch;
+    if (!command.empty())
+    {
+        launch = command + " " + xf_quote(url);
+        if (hostApplication) launch = xf_hostcommand(launch);
+    }
+    else
+    {
+        const char* hostPath = getenv("SWORDFISH_HOST_PATH");
+        FXString opener = FXPath::search(hostPath ? FXString(hostPath) : FXSystem::getExecPath(), "xdg-open");
+        if (opener.empty() || !FXStat::isExecutable(opener))
+        {
+            MessageBox::error(this, BOX_OK, _("Error"),
+                              _("No player was found for this file and xdg-open is not installed.\n\n"
+                                "Set a player in Preferences, or install xdg-utils to play media in the browser."));
+            return;
+        }
+        program = "xdg-open";
+        launch = xf_hostcommand(xf_quote(opener) + " " + xf_quote(url));
+    }
+    appLog(APP_LOG_FILE_OPERATIONS, "media-stream-open", "program=\"" + program + "\" url=\"" + url + "\"");
+#ifdef STARTUP_NOTIFICATION
+    // xdg-open exits at once and never completes a startup notification
+    const FXbool notify = program != "xdg-open" &&
+                          getApp()->reg().readUnsignedEntry("OPTIONS", "use_startup_notification", true);
+    const int result = runcmd(launch, program, FXSystem::getHomeDirectory(), startlocation, notify,
+                              getApp()->reg().readStringEntry("OPTIONS", "startup_notification_exceptions", ""));
+#else
+    const int result = runcmd(launch, FXSystem::getHomeDirectory(), startlocation);
+#endif
+    if (result < 0)
+        MessageBox::error(this, BOX_OK, _("Error"), _("Unable to start %s"), program.text());
+}
+
+long FilePanel::onCmdMediaPlay(FXObject*, FXSelector, void*)
+{
+    if (!mediaPopupUrl.empty()) playMediaStream(mediaPopupName, mediaPopupUrl);
+    return 1;
+}
+
+long FilePanel::onCmdMediaPlayWith(FXObject* sender, FXSelector, void*)
+{
+    const FXival choice = reinterpret_cast<FXival>(static_cast<FXMenuCommand*>(sender)->getUserData());
+    if (mediaPopupUrl.empty() || choice < 0 || choice >= (FXival)mediaPopupCommands.size()) return 1;
+    launchMediaStream(mediaPopupUrl, mediaPopupCommands[choice], true);
+    return 1;
+}
+
+// The regular Open With dialog, with the type taken from the media server's file name
+long FilePanel::onCmdMediaOpenWith(FXObject*, FXSelector, void*)
+{
+    if (mediaPopupUrl.empty()) return 1;
+    const FXString name = mediaPopupName, url = mediaPopupUrl;
+    if (opendialog == NULL)
+    {
+        opendialog = new HistInputDialog(this, "", _("Open selected file(s) with:"), _("Open With"), "",
+                                         bigfileopenicon, false, true, HIST_INPUT_EXECUTABLE_FILE, true, _("A&ssociate"));
+    }
+    const FXString extension = FileDict::associationExtension(name);
+    opendialog->setText("");
+    opendialog->setTitle(_("Open With"));
+    opendialog->setAssociationOption(extension, false);
+    opendialog->setOpenWithContext(name, 1, mediaMimeType(name));
+    opendialog->CursorEnd();
+    opendialog->selectAll();
+    opendialog->clearItems();
+    for (int i = 0; i < OpenNum; i++) opendialog->appendItem(OpenHistory[i]);
+    opendialog->setDirectory(ROOTDIR);
+    opendialog->sortItems();
+    opendialog->appendInstalledApplications();
+    if (!opendialog->execute()) return 1;
+    const FXString command = opendialog->getText().trim();
+    if (command.empty()) return 1;
+    if (!xf_existcommand(xf_commandprogram(command)))
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Command not found: %s"), command.text());
+        return 1;
+    }
+    if (opendialog->getOption() && !extension.empty())
+        FileDict::setUserCommand(getApp()->reg(), extension, command);
+    launchMediaStream(url, command, hostProgram(command));
+    return 1;
+}
+
+// Lets the address be pasted into another player or a browser
+long FilePanel::onCmdMediaCopyAddress(FXObject*, FXSelector, void*)
+{
+    if (mediaPopupUrl.empty()) return 1;
+    clipboard = mediaPopupUrl;
+    clipboard_type = COPYNAME_CLIPBOARD;
+    FXDragType types[] = {utf8Type};
+    acquireClipboard(types, 1);
+    return 1;
+}
+
+// Save copies of the selected media files into a local folder.
+long FilePanel::onCmdMediaDownload(FXObject*, FXSelector, void*)
+{
+    if (!RemoteDirectory::isMedia(current->list->getDirectory())) return 0;
+    std::vector<FXint> items;
+    for (FXint i = 0; i < current->list->getNumItems(); ++i)
+        if (current->list->isItemSelected(i) && !current->list->isItemDirectory(i)) items.push_back(i);
+    if (items.empty())
+    {
+        MessageBox::information(this, BOX_OK, _("Download"), _("Select one or more files to download (not folders)."));
+        return 1;
+    }
+    FXString target = FXSystem::getHomeDirectory() + PATHSEPSTRING + "Downloads";
+    if (current->next->shown() && !RemoteDirectory::handles(current->next->list->getDirectory()) &&
+        xf_iswritable(current->next->list->getDirectory()))
+        target = current->next->list->getDirectory();
+    else if (!xf_isdirectory(target))
+        target = FXSystem::getHomeDirectory();
+    if (operationdialogmultiple == NULL)
+        operationdialogmultiple = new BrowseInputDialog(this, "", "", _("Download"), _("To folder:"), bigcopyicon,
+                                                        BROWSE_INPUT_FOLDER);
+    operationdialogmultiple->setTitle(_("Download"));
+    operationdialogmultiple->setIcon(bigcopyicon);
+    operationdialogmultiple->setMessage(FXStringVal((FXint)items.size()) + _(" file(s) from the media server"));
+    operationdialogmultiple->setText(target);
+    operationdialogmultiple->CursorEnd();
+    operationdialogmultiple->setDirectory(target);
+    if (!operationdialogmultiple->execute(PLACEMENT_CURSOR)) return 1;
+    target = xf_cleanpath(operationdialogmultiple->getText());
+    if (target.find("~/") == 0 || target == "~") target.replace(0, 1, FXSystem::getHomeDirectory());
+    if (!xf_isdirectory(target) || !xf_iswritable(target))
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Cannot save into %s"), target.text());
+        return 1;
+    }
+    FXString skipped;
+    FXint queued = 0;
+    for (FXint index : items)
+    {
+        const FXString name = current->list->getItemFilename(index);
+        const FXString url = RemoteDirectory::mediaLink(current->list->getItemPathname(index));
+        const FXString destination = target + PATHSEPSTRING + name;
+        if (url.empty() || xf_existfile(destination) || xf_existfile(destination + ".part"))
+        {
+            skipped += "  " + name + "\n";
+            continue;
+        }
+        RemoteDirectory::download(this, url, destination);
+        ++queued;
+    }
+    appLog(APP_LOG_FILE_OPERATIONS, "media-download-queued",
+           "count=" + FXStringVal(queued) + " folder=\"" + target + "\"");
+    if (!skipped.empty())
+        MessageBox::warning(this, BOX_OK, _("Download"), _("These files were skipped because they already exist in %s or are no longer listed:\n\n%s"),
+                            target.text(), skipped.text());
+    return 1;
 }
 
 FXbool FilePanel::navigatePane(const FXString& pathname)
@@ -2495,6 +2797,12 @@ FXbool FilePanel::navigatePane(const FXString& pathname)
     // Deliver any pending pointer ungrab before checking a possibly unresponsive mount
     getApp()->flush(true);
     xf_setwaitcursor(getApp(), BEGIN_CURSOR);
+    // The trash folders only exist after a first deletion; create them on demand like other file managers
+    if ((pathname == trashfileslocation) && !xf_existfile(pathname))
+    {
+        xf_mkpath(trashfileslocation.text(), 0700);
+        xf_mkpath(trashinfolocation.text(), 0700);
+    }
     if (!RemoteDirectory::handles(pathname) && !xf_isdirectory(pathname))
     {
         xf_setwaitcursor(getApp(), END_CURSOR);
@@ -2542,6 +2850,12 @@ long FilePanel::onCmdPaneNavigation(FXObject* sender, FXSelector sel, void* ptr)
             int x, y;
             FXuint state;
             getRoot()->getCursorPosition(x, y, state);
+            FXWindow* button = dynamic_cast<FXWindow*>(sender);
+            if (button)
+            {
+                button->translateCoordinatesTo(x, y, getRoot(), 0, button->getHeight());
+                x = FXCLAMP(0, x, FXMAX(0, getRoot()->getWidth() - menu.getDefaultWidth()));
+            }
             menu.popup(NULL, x, y);
             getApp()->runModalWhileShown(&menu);
         }
@@ -2576,7 +2890,12 @@ long FilePanel::onCmdPaneNavigation(FXObject* sender, FXSelector sel, void* ptr)
     switch (id)
     {
     case ID_PANE_UP:
-        if (RemoteDirectory::isServer(list->getDirectory())) return 1;
+        if (RemoteDirectory::isServer(list->getDirectory()))
+        {
+            path = RemoteDirectory::mediaParent(list->getDirectory());
+            if (path.empty()) return 1;
+            break;
+        }
         path = FXPath::upLevel(list->getDirectory());
         break;
     case ID_PANE_HOME:
@@ -2609,7 +2928,8 @@ long FilePanel::onUpdPaneNavigation(FXObject* sender, FXSelector sel, void* ptr)
         enabled = forwardhistGetNumItems() > 0;
         break;
     case ID_PANE_UP:
-        enabled = list->getDirectory() != ROOTDIR && !RemoteDirectory::isServer(list->getDirectory());
+        enabled = RemoteDirectory::isServer(list->getDirectory()) ?
+                  !RemoteDirectory::mediaParent(list->getDirectory()).empty() : list->getDirectory() != ROOTDIR;
         break;
     }
     sender->handle(this, FXSEL(SEL_COMMAND, enabled ? ID_ENABLE : ID_DISABLE), ptr);
@@ -2620,15 +2940,23 @@ long FilePanel::onUpdPaneNavigation(FXObject* sender, FXSelector sel, void* ptr)
 void FilePanel::finishPathEditing()
 {
     editingPath = false;
-    pathedit->hide();
-    if (!RemoteDirectory::isServer(list->getDirectory()) &&
-        getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true))
+    if (pathAlwaysEditable(getApp(), list->getDirectory()))
     {
+        pathedit->setText(list->getDirectory());
+        pathedit->show();
+        pathtext->hide();
+        pathlink->hide();
+    }
+    else if (!RemoteDirectory::isServer(list->getDirectory()) &&
+             getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false))
+    {
+        pathedit->hide();
         pathlink->show();
         pathtext->hide();
     }
     else
     {
+        pathedit->hide();
         pathtext->show();
         pathlink->hide();
     }
@@ -2658,6 +2986,35 @@ long FilePanel::onCmdEditPath(FXObject* sender, FXSelector, void*)
 }
 
 
+// Switch the address bar between editable text and breadcrumbs, in both panels
+long FilePanel::onCmdTogglePathMode(FXObject*, FXSelector, void*)
+{
+    FXbool breadcrumbs = !getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false);
+    getApp()->reg().writeUnsignedEntry("SETTINGS", "show_pathlinker", breadcrumbs);
+    getApp()->reg().write();
+    finishPathEditing();
+    if (next)
+    {
+        next->finishPathEditing();
+    }
+    list->setFocus();
+    return 1;
+}
+
+
+long FilePanel::onUpdTogglePathMode(FXObject* sender, FXSelector, void*)
+{
+    FXbool breadcrumbs = getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false);
+    FXString tip = breadcrumbs ? _("Switch to Text Address") : _("Switch to Breadcrumbs");
+    FXButton* button = dynamic_cast<FXButton*>(sender);
+    if (button && button->getTipText() != tip)
+    {
+        button->setTipText(tip);
+    }
+    return 1;
+}
+
+
 long FilePanel::onCmdEnterPath(FXObject*, FXSelector, void*)
 {
     FXString path = pathedit->getText();
@@ -2665,6 +3022,20 @@ long FilePanel::onCmdEnterPath(FXObject*, FXSelector, void*)
     {
         MessageBox::warning(this, BOX_OK, _("Warning"), _("File name is empty, operation cancelled"));
         pathedit->setFocus();
+        return 1;
+    }
+    if (comparecase(path.left(7), "dlna://") == 0)
+    {
+        while (path.length() > 9 && path[path.length() - 1] == '/') path.trunc(path.length() - 1);
+        if (!RemoteDirectory::isMedia(path))
+        {
+            MessageBox::error(this, BOX_OK, _("Error"), _("Invalid media server address."));
+            pathedit->setFocus();
+        }
+        else if (!navigatePane(path))
+        {
+            pathedit->setFocus();
+        }
         return 1;
     }
     FXString netpath;
@@ -2699,7 +3070,7 @@ long FilePanel::onCmdEnterPath(FXObject*, FXSelector, void*)
 // Right-click menu of the path editor
 long FilePanel::onPathPopup(FXObject*, FXSelector, void*)
 {
-    if (!editingPath)
+    if (!pathedit->shown())
     {
         return 0;
     }
@@ -2777,9 +3148,79 @@ long FilePanel::onCmdStopListRefreshTimer(FXObject*, FXSelector, void*)
 }
 
 
+// Index of the only selected item when it is a folder that can be bulk renamed, -1 otherwise
+int FilePanel::bulkRenameFolderItem() const
+{
+    if (list->getNumSelectedItems() != 1)
+    {
+        return -1;
+    }
+    for (int u = 0; u < list->getNumItems(); u++)
+    {
+        if (list->isItemSelected(u))
+        {
+            FXString name = list->getItemText(u).section('\t', 0);
+            return (list->isItemDirectory(u) && name != ".." && name != ".") ? u : -1;
+        }
+    }
+    return -1;
+}
+
 long FilePanel::onCmdContextRename(FXObject* sender, FXSelector sel, void* ptr)
 {
-    const int count = current->list->getNumSelectedItems();
+    // Commands from the main window menus are sent to the left panel; use the active one
+    if (current && current != this)
+    {
+        return current->handle(sender, sel, ptr);
+    }
+    const int count = list->getNumSelectedItems();
+    if ((FXSELID(sel) == ID_CONTEXT_BULK_RENAME) && (count == 1))
+    {
+        // A single selected folder: bulk rename the items directly inside it
+        int item = bulkRenameFolderItem();
+        if (item < 0 || requiresMountedShare())
+        {
+            return 1;
+        }
+        FXString folder = list->getItemPathname(item);
+        if (!xf_iswritable(folder))
+        {
+            MessageBox::error(getApp(), BOX_OK_SU, _("Error"), _("Can't write to %s: Permission denied"), folder.text());
+            return 1;
+        }
+        std::vector<FXString> names;
+        FXbool hidden = list->shownHiddenFiles();
+        DIR* dir = opendir(folder.text());
+        if (dir)
+        {
+            struct dirent* entry;
+            while ((entry = readdir(dir)) != NULL)
+            {
+                FXString name = entry->d_name;
+                if (name == "." || name == ".." || (!hidden && name[0] == '.'))
+                {
+                    continue;
+                }
+                names.push_back(name);
+            }
+            closedir(dir);
+        }
+        if (names.empty())
+        {
+            MessageBox::information(this, BOX_OK, _("Bulk Rename"), _("Folder %s is empty"), folder.text());
+            return 1;
+        }
+        std::sort(names.begin(), names.end(), [](const FXString& a, const FXString& b)
+        {
+            return xf_comparenat(a.text(), b.text(), true) < 0;
+        });
+        FXString src;
+        for (size_t i = 0; i < names.size(); i++)
+        {
+            src += folder + PATHSEPSTRING + names[i] + "\n";
+        }
+        return bulkRename(sender, _("Rename"), src, (int)names.size());
+    }
     if ((FXSELID(sel) == ID_CONTEXT_RENAME) ? count == 1 : count > 1)
     {
         return onCmdFileMan(sender, FXSEL(SEL_COMMAND, ID_FILE_RENAME), ptr);
@@ -2787,11 +3228,98 @@ long FilePanel::onCmdContextRename(FXObject* sender, FXSelector sel, void* ptr)
     return 1;
 }
 
-long FilePanel::onUpdContextRename(FXObject* sender, FXSelector sel, void*)
+long FilePanel::onUpdContextRename(FXObject* sender, FXSelector sel, void* ptr)
 {
-    const int count = current->list->getNumSelectedItems();
-    const FXbool enabled = (FXSELID(sel) == ID_CONTEXT_RENAME) ? count == 1 : count > 1;
+    if (current && current != this)
+    {
+        return current->handle(sender, sel, ptr);
+    }
+    const int count = list->getNumSelectedItems();
+    const FXbool enabled = (FXSELID(sel) == ID_CONTEXT_RENAME) ? count == 1 :
+                           (count > 1 || bulkRenameFolderItem() >= 0);
     sender->handle(this, FXSEL(SEL_COMMAND, enabled ? ID_ENABLE : ID_DISABLE), NULL);
+    return 1;
+}
+
+// Rename several items with the bulk Rename dialog
+// src holds one full path per line
+long FilePanel::bulkRename(FXObject* sender, const FXString& title, const FXString& src, int num)
+{
+    FXString source, target;
+    File* f = NULL;
+    int ret;
+
+    // Read Rename Dialog geometry
+    FXuint width = getApp()->reg().readUnsignedEntry("OPTIONS", "rename_width", 800);
+    FXuint height = getApp()->reg().readUnsignedEntry("OPTIONS", "rename_height", 600);
+
+    // Rename dialog
+    RenameDialog* renamedialog = new RenameDialog(this, title, src, num, false, width, height);  // Hide folder names
+    renamedialog->execute(PLACEMENT_OWNER);
+
+    // Rename files
+    FXString tgt = renamedialog->getTarget();
+    if (tgt != "")
+    {
+        getApp()->beginWaitCursor();
+
+        f = new File(this, _("Rename Files"), RENAME, num);
+        f->create();
+
+        // Loop on the multiple files
+        for (int i = 0; i < num; i++)
+        {
+            // Individual source and target files
+            source = src.section('\n', i);
+            target = tgt.section('\n', i);
+
+            if (target != "" && target != source)
+            {
+                ret = f->rename(source, target);
+
+                // If source file is located at trash location, try to also remove the corresponding trashinfo file if it exists
+                // Do it silently and don't report any error if it fails
+                FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
+                if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
+                {
+                    xf_cleanuptrashinfo(source);
+                }
+
+                // If action is cancelled in progress dialog
+                if (f->isCancelled())
+                {
+                    MessageBox::warning(this, BOX_OK, _("Warning"), _("Rename file operation cancelled!"));
+                    break;
+                }
+                // An known error has occurred
+                if (ret == -1)
+                {
+                    break;
+                }
+
+                // An unknown error has occurred
+                if (ret == 0)
+                {
+                    MessageBox::error(this, BOX_OK, _("Error"),
+                                      _("An error has occurred during the rename file operation!"));
+                    break;
+                }
+            }
+        }
+
+        // Deselect all items
+        list->handle(sender, FXSEL(SEL_COMMAND, FileList::ID_DESELECT_ALL), NULL);
+
+        getApp()->endWaitCursor();
+        delete f;
+    }
+
+    // Write Rename Dialog geometry
+    getApp()->reg().writeUnsignedEntry("OPTIONS", "rename_width", (FXuint)renamedialog->getWidth());
+    getApp()->reg().writeUnsignedEntry("OPTIONS", "rename_height", (FXuint)renamedialog->getHeight());
+    getApp()->reg().write();
+
+    delete renamedialog;
     return 1;
 }
 
@@ -2864,9 +3392,6 @@ long FilePanel::onCmdFileMan(FXObject* sender, FXSelector sel, void* ptr)
     // Obtain the parameters from the file panel
     else
     {
-        // Current directory
-        FXString curdir = current->list->getDirectory();
-
         // Number of selected items
         num = current->list->getNumSelectedItems();
 
@@ -2892,9 +3417,7 @@ long FilePanel::onCmdFileMan(FXObject* sender, FXSelector sel, void* ptr)
                     firstitem = u;
                 }
                 lastitem = u;
-                name = current->list->getItemText(u).text();
-                name = name.section('\t', 0);
-                src += curdir + PATHSEPSTRING + name + "\n";
+                src += current->list->getItemPathname(u) + "\n";
             }
         }
         targetdir = current->next->list->getDirectory();
@@ -3147,7 +3670,7 @@ long FilePanel::onCmdFileMan(FXObject* sender, FXSelector sel, void* ptr)
     }
 
     // Update target and target parent directory
-    target = xf_filepath(target, current->list->getDirectory());
+    target = xf_filepath(target, FXSELID(sel) == ID_FILE_RENAME ? dir : current->list->getDirectory());
     if (xf_isdirectory(target))
     {
         targetdir = target;
@@ -3297,8 +3820,7 @@ long FilePanel::onCmdFileMan(FXObject* sender, FXSelector sel, void* ptr)
             FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
             if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
             {
-                FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) + ".trashinfo";
-                unlink(trashinfopathname.text());
+                xf_cleanuptrashinfo(source);
             }
         }
         else if (command == "move")
@@ -3345,8 +3867,7 @@ long FilePanel::onCmdFileMan(FXObject* sender, FXSelector sel, void* ptr)
             // Do it silently and don't report any error if it fails
             if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
             {
-                FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) + ".trashinfo";
-                unlink(trashinfopathname.text());
+                xf_cleanuptrashinfo(source);
             }
 
             // An unknown error has occurred
@@ -3430,80 +3951,7 @@ long FilePanel::onCmdFileMan(FXObject* sender, FXSelector sel, void* ptr)
         {
             getApp()->endWaitCursor();
 
-            // Read Rename Dialog geometry
-            FXuint width = getApp()->reg().readUnsignedEntry("OPTIONS", "rename_width", 800);
-            FXuint height = getApp()->reg().readUnsignedEntry("OPTIONS", "rename_height", 600);
-
-            // Rename dialog
-            RenameDialog* renamedialog = new RenameDialog(this, title, src, num, false, width, height);  // Hide folder names
-            renamedialog->execute(PLACEMENT_OWNER);
-
-            // Rename files
-            FXString tgt = renamedialog->getTarget();
-            if (tgt != "")
-            {
-                getApp()->beginWaitCursor();
-
-                f = new File(this, _("Rename Files"), RENAME, num);
-                f->create();
-
-                // Loop on the multiple files
-                for (int i = 0; i < num; i++)
-                {
-                    // Individual source and target files
-                    source = src.section('\n', i);
-                    target = tgt.section('\n', i);
-
-                    if (target != "" && target != source)
-                    {
-                        ret = f->rename(source, target);
-
-                        // If source file is located at trash location, try to also remove the corresponding trashinfo file if it exists
-                        // Do it silently and don't report any error if it fails
-                        FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
-                        if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
-                        {
-                            FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) +
-                                                         ".trashinfo";
-                            unlink(trashinfopathname.text());
-                        }
-
-                        // If action is cancelled in progress dialog
-                        if (f->isCancelled())
-                        {
-                            MessageBox::warning(this, BOX_OK, _("Warning"), _("Rename file operation cancelled!"));
-                            break;
-                        }
-                        // An known error has occurred
-                        if (ret == -1)
-                        {
-                            break;
-                        }
-
-                        // An unknown error has occurred
-                        if (ret == 0)
-                        {
-                            MessageBox::error(this, BOX_OK, _("Error"),
-                                              _("An error has occurred during the rename file operation!"));
-                            break;
-                        }
-                    }
-                }
-
-                // Deselect all items
-                list->handle(sender, FXSEL(SEL_COMMAND, FileList::ID_DESELECT_ALL), NULL);
-
-                getApp()->endWaitCursor();
-                delete f;
-            }
-
-            // Write Rename Dialog geometry
-            getApp()->reg().writeUnsignedEntry("OPTIONS", "rename_width", (FXuint)renamedialog->getWidth());
-            getApp()->reg().writeUnsignedEntry("OPTIONS", "rename_height", (FXuint)renamedialog->getHeight());
-            getApp()->reg().write();
-
-            delete renamedialog;
-            return 1;
+            return bulkRename(sender, title, src, num);
         }
         // Shouldn't happen
         else
@@ -3639,9 +4087,7 @@ long FilePanel::onCmdFileMan(FXObject* sender, FXSelector sel, void* ptr)
                     // Do it silently and don't report any error if it fails
                     if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
                     {
-                        FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) +
-                                                     ".trashinfo";
-                        unlink(trashinfopathname.text());
+                        xf_cleanuptrashinfo(source);
                     }
 
                     // An known error has occurred
@@ -3782,8 +4228,7 @@ long FilePanel::onCmdInlineRename(FXObject*, FXSelector, void* ptr)
     FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
     if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
     {
-        FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) + ".trashinfo";
-        unlink(trashinfopathname.text());
+        xf_cleanuptrashinfo(source);
     }
     delete f;
 
@@ -4140,43 +4585,11 @@ long FilePanel::onCmdFileRestore(FXObject*, FXSelector, void*)
                 // Don't restore '..' directory
                 if (filename != "..")
                 {
-                    // Obtain trash base name and sub path
-                    FXString subpath = pathname;
-                    subpath.erase(0, trashfileslocation.length() + 1);
-                    FXString trashbasename = subpath.before('/');
-                    if (trashbasename == "")
-                    {
-                        trashbasename = name;
-                    }
-                    subpath.erase(0, trashbasename.length());
-
-                    // Read the .trashinfo file
-                    FILE* fp;
-                    char line[1024];
-                    FXbool success = true;
-                    FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + trashbasename + ".trashinfo";
+                    TrashLocation location;
                     FXString origpathname = "";
-
-                    if ((fp = fopen(trashinfopathname.text(), "r")) != NULL)
-                    {
-                        // Read the first two lines and get the strings
-                        if (fgets(line, sizeof(line), fp) == NULL)
-                        {
-                            success = false;
-                        }
-                        if (fgets(line, sizeof(line), fp) == NULL)
-                        {
-                            success = false;
-                        }
-                        if (success)
-                        {
-                            origpathname = line;
-                            origpathname = origpathname.after('=');
-                            origpathname = origpathname.before('\n');
-                        }
-                        fclose(fp);
-                        origpathname = origpathname + subpath;
-                    }
+                    FXString deleted, trashinfopathname;
+                    if (xf_trashlocation(pathname, location))
+                        xf_readtrashinfo(pathname, location, origpathname, deleted, trashinfopathname);
 
                     // Confirm restore dialog
                     if (confirm_trash && (u == firstitem))
@@ -4271,12 +4684,7 @@ long FilePanel::onCmdFileRestore(FXObject*, FXSelector, void*)
                         goto end;
                     }
 
-                    // Silently remove trashinfo file
-                    FXString trashfilespathname = trashfileslocation + PATHSEPSTRING + trashbasename;
-                    if ((pathname == trashfilespathname) && !xf_existfile(trashfilespathname))
-                    {
-                        unlink(trashinfopathname.text());
-                    }
+                    xf_cleanuptrashinfo(pathname);
                 }
                 // If action is cancelled in progress dialog
                 if (f->isCancelled())
@@ -4568,14 +4976,7 @@ long FilePanel::onCmdFileDelete(FXObject*, FXSelector, void*)
                         // Definitively remove file or folder
                         f->remove(pathname);
 
-                        // If is located at trash location, try to also remove the corresponding trashinfo file if it exists
-                        // Do it silently and don't report any error if it fails
-                        FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
-                        if (use_trash_can && (pathname.left(trashfileslocation.length()) == trashfileslocation))
-                        {
-                            FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + filename + ".trashinfo";
-                            unlink(trashinfopathname.text());
-                        }
+                        xf_cleanuptrashinfo(pathname);
                     }
                     // If action is cancelled in progress dialog
                     if (f->isCancelled())
@@ -5127,9 +5528,9 @@ long FilePanel::onCmdProperties(FXObject* sender, FXSelector, void*)
             current->list->deselectItem(0);
         }
 
-        FXString path = current->list->getDirectory();
-        FXString filename = current->list->getItemText(itm);
-        filename = filename.section('\t', 0);
+        FXString pathname = current->list->getItemPathname(itm);
+        FXString path = FXPath::directory(pathname);
+        FXString filename = FXPath::name(pathname);
         PropertiesBox* attrdlg = new PropertiesBox(this, filename, path);
         attrdlg->create();
         attrdlg->show(PLACEMENT_OWNER);
@@ -5155,7 +5556,6 @@ long FilePanel::onCmdProperties(FXObject* sender, FXSelector, void*)
             return 0;
         }
 
-        FXString path = current->list->getDirectory();
         FXString* files = new FXString[num];
         FXString* paths = new FXString[num];
 
@@ -5170,8 +5570,9 @@ long FilePanel::onCmdProperties(FXObject* sender, FXSelector, void*)
         {
             if (current->list->isItemSelected(u))
             {
-                files[i] = current->list->getItemText(u).section('\t', 0);
-                paths[i] = path;
+                FXString pathname = current->list->getItemPathname(u);
+                files[i] = FXPath::name(pathname);
+                paths[i] = FXPath::directory(pathname);
                 i++;
             }
         }
@@ -6010,8 +6411,40 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
     {
         setActive();
         FXEvent* event = static_cast<FXEvent*>(ptr);
+        FXMenuPane playWith(this);
         FXMenuPane menu(this);
-        new FXMenuCommand(&menu, _("Open"), minifoldericon, this, ID_OPEN);
+        mediaPopupName = mediaPopupUrl = FXString::null;
+        mediaPopupCommands.clear();
+        FXint file = -1;
+        if (RemoteDirectory::isMedia(list->getDirectory()) && list->getNumSelectedItems() == 1)
+            for (FXint i = 0; i < list->getNumItems(); ++i)
+                if (list->isItemSelected(i) && !list->isItemDirectory(i)) file = i;
+        if (file >= 0) mediaPopupUrl = RemoteDirectory::mediaLink(list->getItemPathname(file));
+        if (!mediaPopupUrl.empty())
+        {
+            mediaPopupName = list->getItemFilename(file);
+            new FXMenuCommand(&menu, _("Play"), minirunicon, this, ID_MEDIA_PLAY);
+            FXbool hasDefault;
+            for (const DesktopApplication& app : mediaApplications(mediaPopupName, hasDefault))
+            {
+                FXMenuCommand* item = new FXMenuCommand(&playWith, app.name, NULL, this, ID_MEDIA_PLAY_WITH);
+                item->setUserData(reinterpret_cast<void*>((FXival)mediaPopupCommands.size()));
+                mediaPopupCommands.push_back(app.command);
+            }
+            FXMenuCommand* browser = new FXMenuCommand(&playWith, _("Web Browser"), NULL, this, ID_MEDIA_PLAY_WITH);
+            browser->setUserData(reinterpret_cast<void*>((FXival)mediaPopupCommands.size()));
+            mediaPopupCommands.push_back(FXString::null);
+            new FXMenuSeparator(&playWith);
+            new FXMenuCommand(&playWith, _("Other Application..."), NULL, this, ID_MEDIA_OPEN_WITH);
+            new FXMenuCascade(&menu, _("Play With"), NULL, &playWith);
+            new FXMenuCommand(&menu, _("Copy Stream Address"), minicopyicon, this, ID_MEDIA_COPY_ADDRESS);
+        }
+        else
+        {
+            new FXMenuCommand(&menu, _("Open"), minifoldericon, this, ID_OPEN);
+        }
+        if (RemoteDirectory::isMedia(list->getDirectory()))
+            new FXMenuCommand(&menu, _("Download..."), minicopyicon, this, ID_MEDIA_DOWNLOAD);
         new FXMenuCommand(&menu, _("Refresh"), minireloadicon, this, ID_REFRESH);
         menu.create();
         menu.popup(NULL, event->root_x, event->root_y);
@@ -6219,8 +6652,8 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         }
         else if ((num == 1) && (fsdevices->find(name.text()) || mtdevices->find(name.text())))
         {
-            new FXMenuCommand(menu, _("&Mount"), minimounticon, current, FilePanel::ID_MOUNT);
-            new FXMenuCommand(menu, _("Unmount"), miniunmounticon, current, FilePanel::ID_UMOUNT);
+            new FXMenuCommand(menu, _("&Mount"), minidevicemounticon, current, FilePanel::ID_MOUNT);
+            new FXMenuCommand(menu, _("Unmount"), minideviceunmounticon, current, FilePanel::ID_UMOUNT);
             new FXMenuSeparator(menu);
         }
 #endif
@@ -6647,7 +7080,7 @@ long FilePanel::onCmdAddToArch(FXObject* sender, FXSelector, void*)
                 if (name != "..")
                 {
                     cmd += " ";
-                    cmd = cmd + xf_quote(name);
+                    cmd = cmd + xf_quote(current->list->isInTrash() ? current->list->getItemPathname(u) : name);
                     cmd += " ";
                 }
             }
@@ -6694,11 +7127,8 @@ long FilePanel::onCmdAddToArch(FXObject* sender, FXSelector, void*)
 long FilePanel::onCmdExtract(FXObject*, FXSelector, void*)
 {
     if (requiresMountedShare()) return 1;
-    FXString name, ext1, ext2, cmd, dir, cdir;
+    FXString name, ext1, ext2, cmd, dir;
     File* f;
-
-    // Current directory
-    cdir = current->list->getDirectory();
 
     // File selection dialog
     FileDialog browse(this, _("Select a Destination Folder"));
@@ -6719,7 +7149,7 @@ long FilePanel::onCmdExtract(FXObject*, FXSelector, void*)
 
         ext1 = name.section('\t', 0).rafter('.', 1).lower();
         ext2 = name.section('\t', 0).rafter('.', 2).lower();
-        name = xf_quote(cdir + PATHSEPSTRING + name.section('\t', 0));
+        name = xf_quote(current->list->getItemPathname(item));
 
         // Handle different archive formats
         if ((ext2 == "tar.gz") || (ext2 == "tar.bz2") || (ext2 == "tar.xz") || (ext2 == "tar.zst") || (ext2 == "tar.z"))
@@ -6875,7 +7305,7 @@ long FilePanel::onCmdExtractToFolder(FXObject*, FXSelector, void*)
         }
 
         // Archive pathname
-        pathname = xf_quote(cdir + PATHSEPSTRING + name.section('\t', 0));
+        pathname = xf_quote(current->list->getItemPathname(item));
 
         // Handle different archive formats
         if ((ext2 == "tar.gz") || (ext2 == "tar.bz2") || (ext2 == "tar.xz") || (ext2 == "tar.zst") || (ext2 == "tar.z"))
@@ -6985,7 +7415,7 @@ long FilePanel::onCmdExtractHere(FXObject*, FXSelector, void*)
             ext1 = name.section('\t', 0).rafter('.', 1);
             lower();
             ext2 = name.section('\t', 0).rafter('.', 2).lower();
-            name = xf_quote(cdir + PATHSEPSTRING + name.section('\t', 0));
+            name = xf_quote(current->list->getItemPathname(item));
 
             // Handle different archive formats
             if ((ext2 == "tar.gz") || (ext2 == "tar.bz2") || (ext2 == "tar.xz") || (ext2 == "tar.zst") ||
@@ -7085,10 +7515,8 @@ long FilePanel::onCmdExtractHere(FXObject*, FXSelector, void*)
 long FilePanel::onCmdPkgInstall(FXObject*, FXSelector, void*)
 {
     if (requiresMountedShare()) return 1;
-    FXString name, path, cmd, dir, cdir;
+    FXString name, path, cmd, dir;
     File* f;
-
-    cdir = current->list->getDirectory();
 
     int itm;
     current->list->getNumSelectedItems(&itm);
@@ -7096,7 +7524,7 @@ long FilePanel::onCmdPkgInstall(FXObject*, FXSelector, void*)
     {
         name = current->list->getItemText(itm).text();
         name = name.section('\t', 0);
-        path = xf_quote(cdir + PATHSEPSTRING + name);
+        path = xf_quote(current->list->getItemPathname(itm));
 
         // Command to perform
         FXString ext = FXPath::extension(name);
@@ -8071,7 +8499,7 @@ long FilePanel::onCmdDirUsage(FXObject* sender, FXSelector, void*)
             name = current->list->getItemFilename(u);
 
             // List of selected items
-            itemslist += xf_quote(name) + " ";
+            itemslist += xf_quote(current->list->isInTrash() ? current->list->getItemPathname(u) : name) + " ";
         }
     }
 
@@ -8112,10 +8540,22 @@ long FilePanel::onUpdStatus(FXObject* sender, FXSelector, void*)
     {
         onCmdPreviewSelection(NULL, 0, NULL);
     }
+
+    FXbool intrash = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true) && list->isInTrash();
+    if (intrash != (FXbool)trashbar->shown())
+    {
+        intrash ? trashbar->show() : trashbar->hide();
+        trashbar->getParent()->recalc();
+    }
+
     if (RemoteDirectory::isServer(list->getDirectory()))
     {
+        const FXbool media = RemoteDirectory::isMedia(list->getDirectory());
         FXString text = RemoteDirectory::loading(list->getDirectory()) ?
-            _("Loading shared folders...") : RemoteDirectory::error(list->getDirectory());
+            (media ? _("Loading media...") : _("Loading shared folders...")) : RemoteDirectory::error(list->getDirectory());
+        if (text.empty() && media)
+            text = FXStringVal(list->getNumItems()) +
+                   _(" item(s). Double-click to play; right-click to download. Media servers are read-only.");
         if (text.empty())
             text = FXStringVal(list->getNumItems()) + _(" shared folder(s). Double-click a share to connect.");
         statuslabel->setText(text);
@@ -8318,12 +8758,7 @@ long FilePanel::onUpdStatus(FXObject* sender, FXSelector, void*)
             FXString str = list->getItemText(item);
 
             // Are we in trash?
-            FXString dirpath = list->getDirectory();
-            FXbool inTrash = false;
-            if (dirpath.left(trashfileslocation.length()) == trashfileslocation)
-            {
-                inTrash = true;
-            }
+            FXbool inTrash = list->isInTrash();
 
             // Actual number of columns
             FXuint nbHeaders;
@@ -8425,19 +8860,40 @@ void FilePanel::updatePath(FXbool resetEditor)
     tabbuttons->onUpdCurrentTab(this, 0, NULL);
     if (!RemoteDirectory::isServer(list->getDirectory()))
         pathlink->setPath(list->getDirectory());
-    if (!editingPath && (RemoteDirectory::isServer(list->getDirectory()) ||
-        !getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true)))
+    if (!editingPath && pathAlwaysEditable(getApp(), list->getDirectory()))
     {
+        pathlink->hide();
+        pathtext->hide();
+        if (!pathedit->shown())
+        {
+            pathedit->show();
+            pathedit->getParent()->recalc();
+        }
+    }
+    else if (!editingPath && (RemoteDirectory::isServer(list->getDirectory()) ||
+             !getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false)))
+    {
+        if (pathedit->shown())
+        {
+            pathedit->hide();
+            pathedit->getParent()->recalc();
+        }
         pathlink->hide();
         pathtext->show();
     }
     else if (!editingPath)
     {
+        if (pathedit->shown())
+        {
+            pathedit->hide();
+            pathedit->getParent()->recalc();
+        }
         pathlink->show();
         pathtext->hide();
     }
     pathtext->setText(RemoteDirectory::displayPath(list->getDirectory()));
-    if (!editingPath || resetEditor)
+    // Don't overwrite a path the user is typing in the always-editable field
+    if ((!editingPath && !pathedit->hasFocus()) || resetEditor)
     {
         pathedit->setText(list->getDirectory());
     }
@@ -8740,12 +9196,7 @@ long FilePanel::onUpdFileRestore(FXObject* sender, FXSelector sel, void*)
     // Enable restore from trash menu if we are in trash can
 
     FXbool restoreenable = false;
-    FXString curdir = current->list->getDirectory();
-
-    if (curdir.left(trashfileslocation.length()) == trashfileslocation)
-    {
-        restoreenable = true;
-    }
+    restoreenable = current->list->isInTrash();
 
     FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
     if (use_trash_can && restoreenable)
@@ -8770,6 +9221,34 @@ long FilePanel::onUpdFileRestore(FXObject* sender, FXSelector sel, void*)
     }
 
     return 1;
+}
+
+
+// Restore from the trash bar: act on this panel even if the other one was active
+long FilePanel::onCmdTrashbarRestore(FXObject* sender, FXSelector, void* ptr)
+{
+    if (current != this)
+    {
+        setActive();
+    }
+    return onCmdFileRestore(sender, FXSEL(SEL_COMMAND, ID_FILE_RESTORE), ptr);
+}
+
+
+long FilePanel::onUpdTrashbarRestore(FXObject* sender, FXSelector, void*)
+{
+    int num = list->getNumSelectedItems();
+    FXbool enable = (num > 1) || ((num == 1) && !list->isItemSelected(0));
+
+    sender->handle(this, FXSEL(SEL_COMMAND, enable ? FXWindow::ID_ENABLE : FXWindow::ID_DISABLE), NULL);
+    return 1;
+}
+
+
+// The main window does not exist yet when panels are built, so resolve it on click
+long FilePanel::onCmdTrashbarEmpty(FXObject*, FXSelector, void*)
+{
+    return mainWindow ? mainWindow->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_EMPTY_TRASH), NULL) : 0;
 }
 
 

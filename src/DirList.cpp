@@ -229,8 +229,8 @@ DirList::DirList(FXWindow* focuswin, FXComposite* p, FXObject* tgt, FXSelector s
 #endif
 
     // Trashcan location
-    trashfileslocation = xdgdatahome + PATHSEPSTRING TRASHFILESPATH;
-    trashinfolocation = xdgdatahome + PATHSEPSTRING TRASHINFOPATH;
+    trashfileslocation = xf_trashdatahome() + PATHSEPSTRING TRASHFILESPATH;
+    trashinfolocation = xf_trashdatahome() + PATHSEPSTRING TRASHINFOPATH;
 
     // Read settings
     file_tooltips = getApp()->reg().readUnsignedEntry("SETTINGS", "file_tooltips", true);
@@ -910,9 +910,7 @@ long DirList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
                 // Do it silently and don't report any error if it fails
                 if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
                 {
-                    FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) +
-                                                 ".trashinfo";
-                    unlink(trashinfopathname.text());
+                    xf_cleanuptrashinfo(source);
                 }
 
                 // An error has occurred
@@ -1059,6 +1057,7 @@ long DirList::onBeginDrag(FXObject* sender, FXSelector sel, void* ptr)
     }
     if (beginDrag(&urilistType, 1))
     {
+        xf_keepdraggrab(this);
         dragfiles = FXString::null;
         item = (TreeItem*)firstitem;
         while (item)
@@ -1127,6 +1126,7 @@ long DirList::onDragged(FXObject* sender, FXSelector sel, void* ptr)
     {
         action = DRAG_LINK;
     }
+    action = xf_dragaction(getApp(), event->root_x, event->root_y, action);
     handleDrag(event->root_x, event->root_y, action);
     if (didAccept() != DRAG_REJECT)
     {
@@ -1414,9 +1414,9 @@ long DirList::onExpanded(FXObject* sender, FXSelector sel, void* ptr)
         return 0;
     }
 
-    if (grabbed())
+    // Expansion can block on remote filesystems, but releasing the grab mid-drag would drop the drag
+    if (grabbed() && !isDragging())
     {
-        // Expansion can block on remote filesystems.
         ungrab();
         getApp()->flush();
     }

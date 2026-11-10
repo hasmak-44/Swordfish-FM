@@ -2543,16 +2543,22 @@ msgid "&Global Key Bindings"
 msgstr "Atalhos de Tecla &Globais"
 
 #: src/KeyBindings.cpp:100
+#, fuzzy
+#| msgid ""
+#| "These key bindings are common to all Xfe applications.\n"
+#| "Double click on an item to modify the selected key binding..."
 msgid ""
-"These key bindings are common to all Xfe applications.\n"
+"These key bindings are common to all Swordfish applications.\n"
 "Double click on an item to modify the selected key binding..."
 msgstr ""
 "Estes atalhos de tecla são comuns a todas aplicações do Xfe.\n"
 "Dê clique duplo em algum item para modificar o atalho selecionado..."
 
 #: src/KeyBindings.cpp:107
-msgid "Xf&e Key Bindings"
-msgstr "Atalho de Tecla Xf&e"
+#, fuzzy
+#| msgid "Xf&i Key Bindings"
+msgid "S&wordfish Key Bindings"
+msgstr "Atalhos de Tecla Xf&i"
 
 #: src/KeyBindings.cpp:114
 msgid ""
@@ -2641,12 +2647,15 @@ msgstr ""
 "Você deve apagar o atalho existente antes de atribuí-lo novamente."
 
 #: src/KeyBindings.cpp:998 src/KeyBindings.cpp:1150
-#, c-format
+#, fuzzy, c-format
+#| msgid ""
+#| "The key binding %s is already used in the Xfi section.\n"
+#| "You should erase the existing key binding before assigning it again."
 msgid ""
-"The key binding %s is already used in the Xfe section.\n"
+"The key binding %s is already used in the Swordfish section.\n"
 "You should erase the existing key binding before assigning it again."
 msgstr ""
-"O atalho de tecla %s já está em uso na seção Xfe.\n"
+"O atalho de tecla %s já está em uso na seção Xfi.\n"
 "Você deve apagar o atalho existente antes de atribuí-lo novamente."
 
 #: src/KeyBindings.cpp:1018 src/KeyBindings.cpp:1262
@@ -2672,7 +2681,9 @@ msgid "Select an Executable File"
 msgstr "Selecione um arquivo executável"
 
 #: src/MessageBox.cpp:102 src/XFileExplorer.cpp:1240
-msgid "Launch Xfe as root"
+#, fuzzy
+#| msgid "Launch Xfe as root"
+msgid "Launch Swordfish as root"
 msgstr "Lançar o Xfe como superusuário"
 
 #: src/MessageBox.cpp:124 src/MessageBox.cpp:142 src/MessageBox.cpp:178
@@ -3118,7 +3129,7 @@ msgstr ""
 #: src/Preferences.cpp:604
 #, fuzzy
 #| msgid "Start in home folder"
-msgid "Open new Xfe window when mounting"
+msgid "Open new Swordfish window when mounting"
 msgstr "Iniciar no diretório pessoal"
 
 #: src/Preferences.cpp:609
@@ -5230,7 +5241,9 @@ msgid "Restore Selected Files From Trash Can"
 msgstr "Restaurar os arquivos selecionados da lixeira"
 
 #: src/XFileExplorer.cpp:1236
-msgid "Launch Xfe"
+#, fuzzy
+#| msgid "Launch Xfe"
+msgid "Launch Swordfish"
 msgstr "Lançar o Xfe"
 
 #: src/XFileExplorer.cpp:1244
@@ -5514,7 +5527,9 @@ msgid "&About X File Explorer"
 msgstr "&Sobre X File Explorer"
 
 #: src/XFileExplorer.cpp:3498
-msgid "Running Xfe as root!"
+#, fuzzy
+#| msgid "Running Xfe as root!"
+msgid "Running Swordfish as root!"
 msgstr "Executando Xfe como superusuário!"
 
 #: src/XFileExplorer.cpp:3542
@@ -5538,7 +5553,9 @@ msgstr ""
 "configuração..."
 
 #: src/XFileExplorer.cpp:3573
-msgid "XFE configuration file"
+#, fuzzy
+#| msgid "XFE configuration file"
+msgid "Swordfish configuration file"
 msgstr "arquivo de configuração do XFE"
 
 #: src/XFileExplorer.cpp:3586
@@ -6072,7 +6089,8 @@ msgstr "Erro ao abrir os ícones"
 msgid ""
 "Icon path doesn't exist, default icon path was selected.\n"
 "\n"
-"From Xfe, please check your icon path in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon path in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "Caminho de ícones não existe, o tema de ícones foi configurado para o "
 "padrão. Por favor, verifique seu caminho de ícones!"
@@ -6086,7 +6104,8 @@ msgstr ""
 msgid ""
 "Unable to load some icons, default icon theme was selected.\n"
 "\n"
-"From Xfe, please check your icon theme in Edit / Preferences / Appearance..."
+"From Swordfish, please check your icon theme in Edit / Preferences / "
+"Appearance..."
 msgstr ""
 "Caminho de ícones não existe, o tema de ícones foi configurado para o "
 "padrão. Por favor, verifique seu caminho de ícones!"
@@ -6100,7 +6119,7 @@ msgstr ""
 msgid ""
 "Unable to load default icons, no icons can be shown.\n"
 "\n"
-"Please check your Xfe installation..."
+"Please check your Swordfish installation..."
 msgstr ""
 "Caminho de ícones não existe, o tema de ícones foi configurado para o "
 "padrão. Por favor, verifique seu caminho de ícones!"
@@ -7946,6 +7965,17 @@ msgstr "Um simples editor de texto para o Xfe"
 #: swfw.desktop.in:5
 msgid "editor;viewer;text"
 msgstr ""
+
+#~ msgid "Xf&e Key Bindings"
+#~ msgstr "Atalho de Tecla Xf&e"
+
+#, c-format
+#~ msgid ""
+#~ "The key binding %s is already used in the Xfe section.\n"
+#~ "You should erase the existing key binding before assigning it again."
+#~ msgstr ""
+#~ "O atalho de tecla %s já está em uso na seção Xfe.\n"
+#~ "Você deve apagar o atalho existente antes de atribuí-lo novamente."
 
 #~ msgid "Run Xfe as root"
 #~ msgstr "Execute Xfe como root"

@@ -18,7 +18,7 @@
 namespace
 {
 enum { ENTRY_SAVE = FXDialogBox::ID_LAST, ENTRY_BROWSE, ENTRY_INSERT, ENTRY_COMMAND, ENTRY_ICON,
-       ENTRY_CHANGED, ENTRY_MODE, ENTRY_PROGRAM, ENTRY_DIRECTORY, ENTRY_LEGEND, ENTRY_TEST, ENTRY_SUGGEST };
+       ENTRY_DIRECTORY, ENTRY_LEGEND, ENTRY_TEST, ENTRY_SUGGEST };
 
 bool discardChanges(FXWindow* owner)
 {
@@ -52,10 +52,10 @@ const char* parameterLegend = N_(
     "refer to the current folder. %d/%D still mean the current directory; %c remains 0.\n"
     "Without Folders, file parameters require selected files; %p and %d remain usable.\n\n"
     "Working directory accepts %p, %o, %d, %f and %%; it is one literal path,\n"
-    "not shell code. Leave it empty to use the active pane directory.\n"
-    "Program is one executable name or path; do not add arguments or shell quotes.\n"
-    "Use Parameters for arguments. Full command mode retains legacy shell syntax.\n"
-    "Use an external script for nested shell substitutions or here-documents.");
+    "not shell code. Leave it empty to use the active pane directory.\n\n"
+    "The command runs through /bin/sh. Quote a program path that contains spaces,\n"
+    "for example '/opt/My App/run' %F.\n"
+    "Use an external script for nested shell substitutions, comments or here-documents.");
 
 FXIcon* loadActionIcon(FXApp* app, const FXString& path, FXint size)
 {
@@ -304,9 +304,8 @@ class ActionProperties : public FXDialogBox
     FXCheckButton *toolbar, *files = NULL, *folders = NULL, *single = NULL, *multiple = NULL;
     FXCheckButton *background = NULL, *terminal = NULL, *confirm = NULL, *showOutput = NULL;
     FXComboBox* placeholders = NULL;
-    FXTextField *program = NULL, *parameters = NULL, *workingDirectory = NULL;
-    FXCheckButton* legacyMode = NULL;
-    FXText* preview = NULL;
+    FXTextField* workingDirectory = NULL;
+    FXString initialCommand;
     CustomActionContext previewContext;
     FXButton* iconPreview = NULL;
     FXIcon* previewIcon = NULL;
@@ -317,9 +316,13 @@ class ActionProperties : public FXDialogBox
         a.toolbar = toolbar->getCheck();
         if (command)
         {
-            a.command = command->getText(); a.patterns = patterns->getText().trim();
-            a.programMode = !legacyMode->getCheck();
-            a.program = program->getText(); a.parameters = parameters->getText();
+            a.patterns = patterns->getText().trim();
+            // An unedited older program/parameters action stays exactly as stored
+            if (!a.programMode || command->getText() != initialCommand)
+            {
+                a.command = command->getText(); a.programMode = false;
+                a.program.clear(); a.parameters.clear();
+            }
             a.workingDirectory = workingDirectory->getText();
             a.files = files->getCheck(); a.folders = folders->getCheck();
             a.single = single->getCheck(); a.multiple = multiple->getCheck(); a.background = background->getCheck();
@@ -329,8 +332,16 @@ class ActionProperties : public FXDialogBox
     }
     void suggestIcon()
     {
-        if (!program || program->getText().trim().empty()) { return; }
-        FXString executable = program->getText().trim();
+        if (!command) { return; }
+        FXString text = command->getText().trim(), executable;
+        if (!text.empty() && (text[0] == '\'' || text[0] == '"'))
+        {
+            int end = text.find(text[0], 1);
+            if (end > 0) { executable = text.mid(1, end - 1); }
+        }
+        else { executable = text.before(' '); }
+        executable.substitute("%%", "%");
+        if (executable.empty()) { return; }
         std::vector<DesktopApplication> applications = xf_installedApplications(true);
         for (size_t i = 0; i < applications.size(); ++i)
         {
@@ -365,38 +376,6 @@ class ActionProperties : public FXDialogBox
         MessageBox::information(this, BOX_OK, _("Application Icon"),
             _("No matching installed application with a loadable icon was found."));
     }
-    void updatePreview()
-    {
-        if (!preview) { return; }
-        bool legacy = legacyMode->getCheck();
-        if (legacy) { command->enable(); program->disable(); parameters->disable(); }
-        else { command->disable(); program->enable(); parameters->enable(); }
-        FXWindow* programRow = program->getParent();
-        FXWindow* commandRow = command->getParent();
-        if (legacy)
-        {
-            programRow->hide(); programRow->getPrev()->hide();
-            parameters->hide(); parameters->getPrev()->hide();
-            commandRow->show(); commandRow->getPrev()->show();
-        }
-        else
-        {
-            programRow->show(); programRow->getPrev()->show();
-            parameters->show(); parameters->getPrev()->show();
-            commandRow->hide(); commandRow->getPrev()->hide();
-        }
-        programRow->getParent()->recalc();
-        recalc();
-        CustomAction action = model.items[index];
-        action.programMode = !legacy;
-        action.program = program->getText(); action.parameters = parameters->getText();
-        action.command = command->getText(); action.workingDirectory = workingDirectory->getText();
-        if (folders) { action.folders = folders->getCheck(); }
-        FXString expanded, directory, error;
-        if (CustomActions::prepare(action, previewContext, expanded, directory, error, false))
-        { preview->setText(_("Directory: ") + directory + "\n" + expanded); }
-        else { preview->setText(_("Preview unavailable: ") + error); }
-    }
     void updateIcon()
     {
         FXIcon* replacement = loadActionIcon(getApp(), icon->getText().trim(), 48);
@@ -409,7 +388,7 @@ class ActionProperties : public FXDialogBox
 public:
     ActionProperties(FXWindow* owner, CustomActions& actions, unsigned n, const CustomActionContext& ctx) :
         FXDialogBox(owner, _("Custom Action Properties"),
-                    DECOR_TITLE | DECOR_BORDER | DECOR_RESIZE | DECOR_CLOSE, 0, 0, 720, 660),
+                    DECOR_TITLE | DECOR_BORDER | DECOR_RESIZE | DECOR_MAXIMIZE | DECOR_CLOSE, 0, 0, 720, 660),
         model(actions), index(n), previewContext(ctx)
     {
         const CustomAction& a = model.items[n];
@@ -429,35 +408,23 @@ public:
         description->setText(a.description);
         if (a.kind == CustomAction::ACTION)
         {
-            new FXLabel(form, _("Program:"), NULL, JUSTIFY_LEFT);
-            FXHorizontalFrame* programrow = new FXHorizontalFrame(form, LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 0, 0);
-            program = new FXTextField(programrow, 24, this, ENTRY_CHANGED, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
-            program->setText(a.program);
-            program->setTipText(_("One bare PATH executable or full executable path, without shell quotes or arguments."));
-            new FXButton(programrow, _("Browse...\tChoose an executable"), minifiledialogicon, this, ENTRY_PROGRAM, BUTTON_NORMAL);
-            new FXLabel(form, _("Parameters:"), NULL, JUSTIFY_LEFT);
-            parameters = new FXTextField(form, 24, this, ENTRY_CHANGED, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
-            parameters->setText(a.parameters);
-            new FXLabel(form, _("Full command:"), NULL, JUSTIFY_LEFT);
+            new FXLabel(form, _("Command:"), NULL, JUSTIFY_LEFT);
             FXHorizontalFrame* commandrow = new FXHorizontalFrame(form, LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 0, 0);
-            command = new FXTextField(commandrow, 24, this, ENTRY_CHANGED, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
-            command->setText(a.command);
+            command = new FXTextField(commandrow, 24, NULL, 0, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
+            initialCommand = CustomActions::commandText(a);
+            command->setText(initialCommand);
+            command->setTipText(_("Program followed by its arguments and placeholders, e.g. gimp %F"));
             new FXButton(commandrow, _("Browse...\tChoose a program or script (replaces the command)"),
                          minifiledialogicon, this, ENTRY_COMMAND, BUTTON_NORMAL);
             new FXLabel(form, _("Working directory:"), NULL, JUSTIFY_LEFT);
             FXHorizontalFrame* directoryrow = new FXHorizontalFrame(form, LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 0, 0);
-            workingDirectory = new FXTextField(directoryrow, 24, this, ENTRY_CHANGED, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
+            workingDirectory = new FXTextField(directoryrow, 24, NULL, 0, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
             workingDirectory->setText(a.workingDirectory);
             workingDirectory->setTipText(_("Empty uses the active folder. One literal path; %p, %o, %d, %f and %% are supported."));
             new FXButton(directoryrow, _("Browse...\tChoose a working directory"), minifoldericon, this, ENTRY_DIRECTORY, BUTTON_NORMAL);
-            legacyMode = new FXCheckButton(body, _("Advanced: full shell command"), this, ENTRY_MODE);
-            legacyMode->setCheck(!a.programMode);
-            new FXLabel(body, _("Enter the executable in Program and its arguments in Parameters.\n"
-                               "Advanced mode keeps an existing full command unchanged."),
+            new FXLabel(body, _("Enter the program followed by its arguments, as you would in a terminal.\n"
+                               "Browse inserts a program or script path; add placeholders after it."),
                         NULL, JUSTIFY_LEFT);
-            new FXLabel(body, _("Command preview (active pane context; does not execute):"), NULL, JUSTIFY_LEFT);
-            preview = new FXText(body, NULL, 0, TEXT_READONLY | FRAME_SUNKEN | LAYOUT_FILL_X);
-            preview->setVisibleRows(3); preview->setVisibleColumns(60);
         }
         new FXLabel(form, _("Icon:"), NULL, JUSTIFY_LEFT);
         FXHorizontalFrame* iconrow = new FXHorizontalFrame(form, LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 0, 0);
@@ -469,8 +436,11 @@ public:
         if (a.kind == CustomAction::ACTION)
             new FXButton(iconrow, _("Use Program Icon"), NULL, this, ENTRY_SUGGEST, BUTTON_NORMAL | LAYOUT_CENTER_Y);
         updateIcon();
-        toolbar = new FXCheckButton(body, _("Show on custom toolbar"));
-        toolbar->setCheck(a.toolbar);
+        if (a.kind != CustomAction::ACTION)
+        {
+            toolbar = new FXCheckButton(body, _("Show on custom toolbar"));
+            toolbar->setCheck(a.toolbar);
+        }
         if (a.kind == CustomAction::ACTION)
         {
             FXGroupBox* execution = new FXGroupBox(body, _("Execution"), GROUPBOX_NORMAL | LAYOUT_FILL_X);
@@ -482,7 +452,7 @@ public:
             confirm->setCheck(a.confirm);
             FXGroupBox* help = new FXGroupBox(body, _("Command parameters"), GROUPBOX_NORMAL | LAYOUT_FILL_X);
             FXHorizontalFrame* row = new FXHorizontalFrame(help, LAYOUT_FILL_X);
-            placeholders = new FXComboBox(row, 45, NULL, 0, COMBOBOX_STATIC | FRAME_SUNKEN | LAYOUT_FILL_X);
+            placeholders = new FXComboBox(row, 34, NULL, 0, COMBOBOX_STATIC | FRAME_SUNKEN);
             const char* labels[] = {
                 N_("%f  First selected path"), N_("%F  All selected paths"), N_("%n  First selected filename"),
                 N_("%N  All selected filenames"), N_("%d  First selected parent directory"),
@@ -495,9 +465,10 @@ public:
             placeholders->setNumVisible(11);
             placeholders->setCurrentItem(0);
             new FXButton(row, _("Insert"), NULL, this, ENTRY_INSERT, BUTTON_NORMAL);
-            new FXButton(row, _("Parameter Legend..."), NULL, this, ENTRY_LEGEND, BUTTON_NORMAL);
-            new FXButton(row, _("Test Action"), NULL, this, ENTRY_TEST, BUTTON_NORMAL);
-            new FXLabel(help, _("Test checks syntax, placeholders, program and directory without running the action.\n"
+            FXHorizontalFrame* tools = new FXHorizontalFrame(help, LAYOUT_FILL_X);
+            new FXButton(tools, _("Parameter Legend..."), NULL, this, ENTRY_LEGEND, BUTTON_NORMAL);
+            new FXButton(tools, _("Test Action"), NULL, this, ENTRY_TEST, BUTTON_NORMAL);
+            new FXLabel(help, _("Test checks syntax, placeholders and working directory without running the action.\n"
                                  "It cannot verify an application's supported options or guarantee runtime success."),
                         NULL, JUSTIFY_LEFT);
             new FXLabel(help, _("%f / %F  First / all selected paths    %n / %N  First / all filenames\n"
@@ -509,6 +480,9 @@ public:
             new FXTabItem(tabs, _("Appearance Conditions"));
             FXScrollWindow* appearance = new FXScrollWindow(tabs, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_THICK | FRAME_RAISED);
             FXVerticalFrame* conditions = new FXVerticalFrame(appearance, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+            FXGroupBox* placement = new FXGroupBox(conditions, _("Toolbar"), GROUPBOX_NORMAL | LAYOUT_FILL_X);
+            toolbar = new FXCheckButton(placement, _("Show on custom toolbar"));
+            toolbar->setCheck(a.toolbar);
             FXGroupBox* noSelection = new FXGroupBox(conditions, _("Without a selection"), GROUPBOX_NORMAL | LAYOUT_FILL_X);
             background = new FXCheckButton(noSelection, _("Show without selection (folder background)"));
             background->setCheck(a.background);
@@ -525,7 +499,6 @@ public:
             FXHorizontalFrame* types = new FXHorizontalFrame(conditions, LAYOUT_FILL_X);
             files = new FXCheckButton(types, _("Files")); files->setCheck(a.files);
             folders = new FXCheckButton(types, _("Folders")); folders->setCheck(a.folders);
-            folders->setTarget(this); folders->setSelector(ENTRY_CHANGED);
             FXHorizontalFrame* counts = new FXHorizontalFrame(conditions, LAYOUT_FILL_X);
             single = new FXCheckButton(counts, _("Single selection")); single->setCheck(a.single);
             multiple = new FXCheckButton(counts, _("Multiple selection")); multiple->setCheck(a.multiple);
@@ -539,7 +512,6 @@ public:
         {
             new FXLabel(body, _("Separators are displayed between visible entries, never at the edges."));
         }
-        updatePreview();
     }
 
     ~ActionProperties()
@@ -558,9 +530,6 @@ public:
             if (!(edited() == model.items[index]) && !discardChanges(this)) { return 1; }
             return FXDialogBox::handle(sender, FXSEL(SEL_COMMAND, ID_CANCEL), NULL);
         }
-        if ((FXSELTYPE(sel) == SEL_CHANGED || FXSELTYPE(sel) == SEL_COMMAND) &&
-            (FXSELID(sel) == ENTRY_CHANGED || FXSELID(sel) == ENTRY_MODE))
-        { updatePreview(); return 1; }
         if ((FXSELTYPE(sel) == SEL_CHANGED || FXSELTYPE(sel) == SEL_COMMAND) && FXSELID(sel) == ENTRY_ICON)
         { updateIcon(); return 1; }
         if (FXSELTYPE(sel) != SEL_COMMAND) { return FXDialogBox::handle(sender, sel, ptr); }
@@ -569,15 +538,11 @@ public:
         case ENTRY_SUGGEST: suggestIcon(); return 1;
         case ENTRY_TEST:
         {
-            CustomAction action = model.items[index];
-            action.programMode = !legacyMode->getCheck();
-            action.program = program->getText(); action.parameters = parameters->getText();
-            action.command = command->getText(); action.workingDirectory = workingDirectory->getText();
-            action.folders = folders->getCheck();
+            CustomAction action = edited();
             FXString error;
             if (CustomActions::check(action, previewContext, error))
                 MessageBox::information(this, BOX_OK, _("Checks Passed"),
-                    _("Checks passed: syntax, placeholders, program (Program mode), and working directory.\n"
+                    _("Checks passed: syntax, placeholders and working directory.\n"
                       "The action was not run. Application options and runtime success are not verified."));
             else
                 MessageBox::error(this, BOX_OK, _("Action Check Failed"), "%s", error.text());
@@ -590,12 +555,11 @@ public:
             int choice = placeholders->getCurrentItem();
             if (choice < 0 || choice >= (int)(sizeof(tokens) / sizeof(tokens[0]))) { return 1; }
             FXString token = tokens[choice];
-            FXTextField* destination = legacyMode->getCheck() ? command : parameters;
+            FXTextField* destination = command;
             FXString value = destination->getText();
             int position = destination->getCursorPos();
             value.insert(position, token);
             destination->setText(value); destination->setCursorPos(position + token.length()); destination->setFocus();
-            updatePreview();
             return 1;
         }
         case ENTRY_BROWSE:
@@ -605,16 +569,14 @@ public:
             return 1;
         }
         case ENTRY_COMMAND:
-        case ENTRY_PROGRAM:
         {
             FileDialog dialog(this, _("Select a Program or Script"));
             dialog.setSelectMode(SELECTFILE_EXISTING);
             if (dialog.execute())
             {
-                FXTextField* field = FXSELID(sel) == ENTRY_PROGRAM ? program : command;
-                field->setText(FXSELID(sel) == ENTRY_PROGRAM ? dialog.getFilename() : xf_quote(dialog.getFilename()));
-                legacyMode->setCheck(FXSELID(sel) != ENTRY_PROGRAM);
-                field->setCursorPos(field->getText().length()); field->setFocus(); updatePreview();
+                FXString path = xf_quote(dialog.getFilename()); path.substitute("%", "%%");
+                command->setText(path);
+                command->setCursorPos(path.length()); command->setFocus();
             }
             return 1;
         }
@@ -626,7 +588,7 @@ public:
             if (dialog.execute())
             {
                 FXString path = dialog.getFilename(); path.substitute("%", "%%");
-                workingDirectory->setText(path); updatePreview();
+                workingDirectory->setText(path);
             }
             return 1;
         }
@@ -806,7 +768,6 @@ public:
             { MessageBox::error(this, BOX_OK, _("Custom Actions"), _("At most 256 entries are supported.")); return 1; }
             CustomAction item;
             item.id = working.newId(); item.kind = command - ADD_ACTION;
-            if (item.kind == CustomAction::ACTION) { item.programMode = true; }
             item.parent = a ? (a->kind == CustomAction::FOLDER ? a->id : a->parent) : FXString::null;
             if (item.kind == CustomAction::SEPARATOR) { item.name = _("Separator"); }
             working.items.push_back(item);
@@ -968,6 +929,7 @@ CustomActionsUI::~CustomActionsUI()
     delete mainPane;
     delete mainMenu;
     for (unsigned i = 0; i < icons.size(); ++i) { delete icons[i]; }
+    for (unsigned i = 0; i < toolbarIcons.size(); ++i) { delete toolbarIcons[i]; }
 }
 
 FXIcon* CustomActionsUI::icon(unsigned n) const
@@ -984,6 +946,23 @@ void CustomActionsUI::rebuild()
     delete mainMenu; mainMenu = NULL;
     for (unsigned i = 0; i < icons.size(); ++i) { delete icons[i]; }
     icons.assign(model.items.size(), NULL);
+    for (unsigned i = 0; i < toolbarIcons.size(); ++i) { delete toolbarIcons[i]; }
+    toolbarIcons.clear();
+    const FXint toolbarIconSize = xf_toolbariconsize(owner->getApp(), "customtoolbariconsize");
+    // Toolbar buttons get their own enlarged icons; menus keep the normal ones.
+    auto toolbarIcon = [&](FXIcon* normal, const FXString& path) -> FXIcon*
+    {
+        if (toolbarIconSize <= 16) { return normal; }
+        FXIcon* enlarged = NULL;
+        if (!path.empty())
+        {
+            enlarged = loadActionIcon(owner->getApp(), path, minirunicon->getHeight() * toolbarIconSize / 16);
+        }
+        if (!enlarged) { enlarged = xf_toolbaricon(owner->getApp(), normal, toolbarIconSize); }
+        if (!enlarged) { return normal; }
+        toolbarIcons.push_back(enlarged);
+        return enlarged;
+    };
     std::vector<FXString> themeNames;
     for (unsigned n = 0; n < model.items.size(); ++n)
     {
@@ -1002,7 +981,7 @@ void CustomActionsUI::rebuild()
     toolbarMenu = new CustomActionMenu(this, true, CustomActionContext());
     std::vector<unsigned> nodes = model.toolbarItems();
     bool haveEntry = false, separator = false;
-    new FXButton(toolbar, _("\tEdit Custom Actions"), miniprefsicon, this, ID_EDIT,
+    new FXButton(toolbar, _("\tEdit Custom Actions"), toolbarIcon(miniprefsicon, ""), this, ID_EDIT,
                  BUTTON_TOOLBAR | LAYOUT_RIGHT);
     for (unsigned i = 0; i < nodes.size(); ++i)
     {
@@ -1012,25 +991,25 @@ void CustomActionsUI::rebuild()
         if (separator)
         {
             new FXFrame(toolbar, FRAME_SUNKEN | LAYOUT_CENTER_Y |
-                        LAYOUT_FIX_WIDTH | LAYOUT_FIX_HEIGHT, 0, 0, 2, 22);
+                        LAYOUT_FIX_WIDTH | LAYOUT_FIX_HEIGHT, 0, 0, 2, toolbarIconSize + 6);
             separator = false;
         }
         haveEntry = true;
         FXString text = label(a.name) + "\t" + label(a.description);
         FXString toolbarLabel = label(a.name);
-        FXIcon* toolbarIcon = icon(n);
+        FXIcon* buttonIcon = toolbarIcon(icon(n), icons[n] ? a.icon : FXString());
         if (a.kind == CustomAction::FOLDER)
         {
             FXMenuPane* menu = toolbarMenu->pane(owner);
             toolbarMenu->fill(menu, a.id, false);
-            FXMenuButton* button = new FXMenuButton(toolbar, text, toolbarIcon, menu,
+            FXMenuButton* button = new FXMenuButton(toolbar, text, buttonIcon, menu,
                                   MENUBUTTON_DOWN | BUTTON_TOOLBAR | ICON_BEFORE_TEXT);
             button->setTarget(toolbarMenu); button->setSelector(ID_ACTION + n);
             button->setTipText(toolbarLabel);
         }
         else
         {
-            FXButton* button = new FXButton(toolbar, text, toolbarIcon, toolbarMenu, ID_ACTION + n,
+            FXButton* button = new FXButton(toolbar, text, buttonIcon, toolbarMenu, ID_ACTION + n,
                                             BUTTON_TOOLBAR | ICON_BEFORE_TEXT);
             button->setTipText(toolbarLabel);
         }

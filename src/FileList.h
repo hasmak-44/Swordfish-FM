@@ -174,6 +174,7 @@ protected:
     double scalefrac = 1.0;                             // Icon scaling factor
     FXuint deldate_size = 0;
     FXuint origpath_size = 0;
+    std::map<FXuint, FXuint> normalColumnWidths;
     FXWindow* focuswindow = NULL;                       // Window used to test focus
     int renameClickIndex = -1;                          // Item clicked again while selected (slow click rename)
     FXbool panelActive = true;                          // The panel showing the list is the active one
@@ -513,6 +514,8 @@ public:
     void setDirectory(const FXString& path, const FXbool histupdate = true, FXString prevpath = "");
 
     // Return current directory
+    FXbool isInTrash() const { return inTrash; }
+
     FXString getDirectory() const
     {
         return directory;

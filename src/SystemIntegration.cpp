@@ -823,6 +823,22 @@ std::string desktopContents(const std::string& target, const std::string& icon, 
            "StartupNotify=true\n";
 }
 
+// Desktops and older builds may reformat a launcher, so ownership is the Swordfish marker or the recorded Exec line
+bool ownedDesktopContents(const Item& item, const std::string& contents)
+{
+    if (contents == desktopContents(item.target, item.icon, isDesktopShortcut(item)))
+    {
+        return true;
+    }
+    if (contents.find("[Desktop Entry]") == std::string::npos ||
+        contents.find("Name=Swordfish File Manager") == std::string::npos)
+    {
+        return false;
+    }
+    return contents.compare(0, 31, "# Swordfish System Integration ") == 0 ||
+           (!item.target.empty() && contents.find("Exec=\"" + execValue(item.target) + "\"") != std::string::npos);
+}
+
 bool readLinkAt(int dirfd, const std::string& name, std::string& target, bool& exists, std::string& error,
                 bool allowRoot = false)
 {
@@ -1004,7 +1020,7 @@ bool desktopMatches(const Item& item, bool& exists, std::string& error)
     {
         return false;
     }
-    return !exists || contents == desktopContents(item.target, item.icon, isDesktopShortcut(item));
+    return !exists || ownedDesktopContents(item, contents);
 }
 
 bool linkMatches(const Item& item, bool& exists, std::string& error)
@@ -1050,8 +1066,7 @@ bool replaceDesktop(Item& item, const std::string& path, const std::string& targ
         close(dirfd);
         return false;
     }
-    if (exists && (!item.owned || item.path != path ||
-                   existing != desktopContents(item.target, item.icon, isDesktopShortcut(item))))
+    if (exists && (!item.owned || item.path != path || !ownedDesktopContents(item, existing)))
     {
         error = "Refusing to overwrite an unrelated desktop entry: " + path;
         close(dirfd);
@@ -1102,11 +1117,8 @@ bool replaceDesktop(Item& item, const std::string& path, const std::string& targ
     else
     {
         const bool contentChanged = existing != contents;
-        int flags = O_WRONLY | O_NOFOLLOW | O_CLOEXEC;
-        if (contentChanged)
-        {
-            flags |= O_TRUNC;
-        }
+        // An unchanged launcher is opened read-only so desktops do not see a rewrite
+        int flags = contentChanged ? (O_WRONLY | O_TRUNC | O_NOFOLLOW | O_CLOEXEC) : (O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
         int fd = openat(dirfd, name.c_str(), flags);
         if (fd < 0)
         {
@@ -1127,7 +1139,13 @@ bool replaceDesktop(Item& item, const std::string& path, const std::string& targ
             }
             offset += (size_t)count;
         }
-        if (success && fchmod(fd, mode) < 0)
+        struct stat info;
+        if (success && fstat(fd, &info) < 0)
+        {
+            error = "Cannot inspect desktop entry " + path + ": " + strerror(errno);
+            success = false;
+        }
+        if (success && (info.st_mode & 07777) != mode && fchmod(fd, mode) < 0)
         {
             error = "Cannot set permissions on desktop entry " + path + ": " + strerror(errno);
             success = false;
@@ -1253,7 +1271,7 @@ bool removeDesktop(Item& item, std::string& error)
         close(dirfd);
         return true;
     }
-    if (contents != desktopContents(item.target, item.icon, isDesktopShortcut(item)))
+    if (!ownedDesktopContents(item, contents))
     {
         error = "Refusing to remove a changed or unrelated desktop entry: " + item.path;
         close(dirfd);
@@ -1609,6 +1627,9 @@ bool readSelection(Selection& selection, std::string& error)
     {
         return true;
     }
+    selection.desktopShortcut = state.desktop.owned;
+    selection.applicationsMenu = state.menu.owned;
+    selection.commandSymlink = state.command.owned;
     selection.commandPath = state.command.path;
     Item* items[] = { &state.desktop, &state.menu, &state.command };
     bool* selected[] = { &selection.desktopShortcut, &selection.applicationsMenu, &selection.commandSymlink };

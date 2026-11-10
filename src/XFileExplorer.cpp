@@ -1151,8 +1151,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     hotkey = xf_parseaccel(key);
     btn->addHotKey(hotkey);
 
-    btnbackhist = new FXArrowButton(generaltoolbar, this, XFileExplorer::ID_DIR_BACK_HIST,
-                                    LAYOUT_FILL_Y | FRAME_NONE | ARROW_DOWN | ARROW_TOOLBAR);
+    btnbackhist = xf_historybutton(generaltoolbar, this, XFileExplorer::ID_DIR_BACK_HIST, _("Back History"));
 
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "go_forward", "Shift-Backspace");
     btn = new FXButton(generaltoolbar, TAB + _("Go to Next Folder") + PARS(key), minidirforwardicon, this,
@@ -1160,8 +1159,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     hotkey = xf_parseaccel(key);
     btn->addHotKey(hotkey);
 
-    btnforwardhist = new FXArrowButton(generaltoolbar, this, XFileExplorer::ID_DIR_FORWARD_HIST,
-                                       LAYOUT_FILL_Y | FRAME_NONE | ARROW_DOWN | ARROW_TOOLBAR);
+    btnforwardhist = xf_historybutton(generaltoolbar, this, XFileExplorer::ID_DIR_FORWARD_HIST, _("Forward History"));
 
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "go_up", "Backspace");
     btn = new FXButton(generaltoolbar, TAB + _("Go to Parent Folder") + PARS(key), minidirupicon, this,
@@ -1276,13 +1274,13 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
 
     // Mount and unmount buttons
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "mount", "Ctrl-M");
-    btn = new FXButton(toolstoolbar, TAB + _("Mount") + PARS(key), minimounticon, lpanel, FilePanel::ID_MOUNT,
+    btn = new FXButton(toolstoolbar, TAB + _("Mount") + PARS(key), minidevicemounticon, lpanel, FilePanel::ID_MOUNT,
                        BUTTON_TOOLBAR | FRAME_NONE | LAYOUT_CENTER_Y | LAYOUT_LEFT);
     hotkey = xf_parseaccel(key);
     btn->addHotKey(hotkey);
 
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "unmount", "Ctrl-U");
-    btn = new FXButton(toolstoolbar, TAB + _("Unmount") + PARS(key), miniunmounticon, lpanel, FilePanel::ID_UMOUNT,
+    btn = new FXButton(toolstoolbar, TAB + _("Unmount") + PARS(key), minideviceunmounticon, lpanel, FilePanel::ID_UMOUNT,
                        BUTTON_TOOLBAR | FRAME_NONE | LAYOUT_CENTER_Y | LAYOUT_LEFT);
     hotkey = xf_parseaccel(key);
     btn->addHotKey(hotkey);
@@ -1737,6 +1735,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));
 
     new FXMenuCommand(toolsmenu, _("&Go to Script Folder"), minigotodiricon, lpanel, FilePanel::ID_GO_SCRIPTDIR);
+    new FXMenuCommand(toolsmenu, _("&Bulk Rename..."), minirenameicon, lpanel, FilePanel::ID_CONTEXT_BULK_RENAME);
 
     mc = new FXMenuCommand(toolsmenu, _("Search &Files..."), minisearchicon, this, XFileExplorer::ID_FILE_SEARCH);
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "search", "Ctrl-F");
@@ -1747,11 +1746,11 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
 #if defined(linux)
     new FXMenuSeparator(toolsmenu);
 
-    mc = new FXMenuCommand(toolsmenu, _("&Mount"), minimounticon, lpanel, FilePanel::ID_MOUNT);
+    mc = new FXMenuCommand(toolsmenu, _("&Mount"), minidevicemounticon, lpanel, FilePanel::ID_MOUNT);
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "mount", "Ctrl-M");
     mc->setAccelText(key);
 
-    mc = new FXMenuCommand(toolsmenu, _("&Unmount"), miniunmounticon, lpanel, FilePanel::ID_UMOUNT);
+    mc = new FXMenuCommand(toolsmenu, _("&Unmount"), minideviceunmounticon, lpanel, FilePanel::ID_UMOUNT);
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "unmount", "Ctrl-U");
     mc->setAccelText(key);
 
@@ -1790,6 +1789,25 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
 
     new FXMenuCommand(helpmenu, _("&About SwordFish"), NULL, this, ID_ABOUT);
     helpmenutitle = new FXMenuTitle(menubar, _("&Help"), NULL, helpmenu);
+
+    // A red menu bar makes a root window easy to tell apart from a normal one
+    if (getuid() == 0)
+    {
+        const FXColor rootcolor = FXRGB(178, 24, 24);
+        menubar->setBackColor(rootcolor);
+        for (FXWindow* child = menubar->getFirst(); child; child = child->getNext())
+        {
+            child->setBackColor(rootcolor);
+            if (FXMenuCaption* caption = dynamic_cast<FXMenuCaption*>(child))
+            {
+                caption->setTextColor(FXRGB(255, 255, 255));
+            }
+            else if (FXLabel* label = dynamic_cast<FXLabel*>(child))
+            {
+                label->setTextColor(FXRGB(255, 255, 255));
+            }
+        }
+    }
 
     // Other accelerators
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "edit", "F4");
@@ -1834,8 +1852,8 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     panelfocus = FILEPANEL_FOCUS;
 
     // Trashcan locations
-    trashfileslocation = xdgdatahome + PATHSEPSTRING TRASHFILESPATH;
-    trashinfolocation = xdgdatahome + PATHSEPSTRING TRASHINFOPATH;
+    trashfileslocation = xf_trashdatahome() + PATHSEPSTRING TRASHFILESPATH;
+    trashinfolocation = xf_trashdatahome() + PATHSEPSTRING TRASHINFOPATH;
 
     // Start location (we return to the start location after each chdir)
     startlocation = FXSystem::getCurrentDirectory();
@@ -4158,7 +4176,9 @@ long XFileExplorer::onCmdDirBackHist(FXObject* sender, FXSelector, void*)
         }
 
         // Display list box
-        int pos = DirHistBox::box(btnbackhist, DECOR_NONE, strlist, getX() + 40, getY() + 60);
+        int x, y;
+        btnbackhist->translateCoordinatesTo(x, y, getRoot(), 0, btnbackhist->getHeight());
+        int pos = DirHistBox::box(btnbackhist, DECOR_NONE, strlist, x, y);
 
         // If an item was selected
         if (pos != -1)
@@ -4260,7 +4280,9 @@ long XFileExplorer::onCmdDirForwardHist(FXObject* sender, FXSelector, void*)
         }
 
         // Display list box
-        int pos = DirHistBox::box(btnforwardhist, DECOR_NONE, strlist, getX() + 85, getY() + 60);
+        int x, y;
+        btnforwardhist->translateCoordinatesTo(x, y, getRoot(), 0, btnforwardhist->getHeight());
+        int pos = DirHistBox::box(btnforwardhist, DECOR_NONE, strlist, x, y);
 
         // If an item was selected
         if (pos != -1)
@@ -5752,43 +5774,61 @@ long XFileExplorer::onUpdFileSearch(FXObject* sender, FXSelector, void*)
 }
 
 
-// Empty trash can
+static FXbool trashTotals(const std::vector<TrashLocation>& locations, FXulong& bytes,
+                         FXuint& files, FXuint& folders, FXTime& modified, FXString& error)
+{
+    bytes = files = folders = modified = 0;
+    for (const TrashLocation& location : locations)
+    {
+        FXString path = location.directory + "/files";
+        struct stat info;
+        if (lstat(path.text(), &info) != 0)
+        {
+            if (errno == ENOENT) continue;
+            error = path + ": " + strerror(errno);
+            return false;
+        }
+        if (!S_ISDIR(info.st_mode) || info.st_uid != getuid())
+        {
+            error = _("Unsafe Trash folder: ") + path;
+            return false;
+        }
+        char buffer[MAXPATHLEN + 1];
+        xf_strlcpy(buffer, path.text(), sizeof(buffer));
+        FXuint entries = 0, directories = 0;
+        FXulong total = 0;
+        bytes += xf_pathsize(buffer, &entries, &directories, &total);
+        files += entries >= directories ? entries - directories : 0;
+        folders += directories > 0 ? directories - 1 : 0;
+        modified = FXMAX(modified, (FXTime)info.st_mtime);
+    }
+    return true;
+}
+
+
+// Empty Home Trash and the mounted volumes represented in the combined view
 long XFileExplorer::onCmdEmptyTrash(FXObject*, FXSelector, void*)
 {
-    // Wait cursor
+    const std::vector<TrashLocation> locations = xf_trashlocations();
+    FXulong bytes;
+    FXuint files, folders;
+    FXTime modified;
+    FXString error;
     getApp()->beginWaitCursor();
-
-    // Compute trash directory size
-    char buf[MAXPATHLEN + 1];
-    char size[64];
-    FXString hsize;
-    FXulong dirsize;
-    FXuint nbfiles = 0, nbsubfolders = 0;
-    FXulong totalsize = 0;
-
-    FXString dirpath = trashfileslocation;
-    xf_strlcpy(buf, dirpath.text(), dirpath.length() + 1);
-    dirsize = xf_pathsize(buf, &nbfiles, &nbsubfolders, &totalsize);
-
-#if __WORDSIZE == 64
-    snprintf(size, sizeof(size), "%lu", dirsize);
-#else
-    snprintf(size, sizeof(size), "%llu", dirsize);
-#endif
-    hsize = xf_humansize(size);
-#if __WORDSIZE == 64
-    snprintf(size, sizeof(size), _("%s (%lu bytes)"), hsize.text(), dirsize);
-#else
-    snprintf(size, sizeof(size), _("%s (%llu bytes)"), hsize.text(), dirsize);
-#endif
-    snprintf(size, sizeof(size), _("%u files, %u subfolders"), nbfiles - nbsubfolders, nbsubfolders - 1);
-
-    // Wait cursor
+    FXbool readable = trashTotals(locations, bytes, files, folders, modified, error);
     getApp()->endWaitCursor();
+    if (!readable)
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), "%s", error.text());
+        return 0;
+    }
+    FXString hsize = xf_humansize(FXStringVal(bytes).text());
+    FXString counts;
+    counts.format(_("%u files, %u subfolders"), files, folders);
 
-    // Confirmation message
     FXString message = _("Do you really want to empty the trash can?") + FXString(" (") + hsize + _(" in ") +
-                       FXString(size) + FXString(")")
+                       counts + FXString(")") +
+                       _("\n\nThis includes Home Trash and Trash on mounted drives.")
                        + _("\n\nAll items will be definitively lost!");
 
     MessageBox box(this, _("Empty trash can"), message, bigtrashfullicon, BOX_OK_CANCEL | DECOR_TITLE | DECOR_BORDER);
@@ -5797,105 +5837,76 @@ long XFileExplorer::onCmdEmptyTrash(FXObject*, FXSelector, void*)
         return 0;
     }
 
-    // Wait cursor
     getApp()->beginWaitCursor();
-
-    // Delete trash can files folder
-    File* f;
-    f = new File(this, _("Delete Files"), DELETE);
-    f->create();
-    f->remove(trashfileslocation);
-    delete f;
-
-    // Delete trash can info folder
-    f = new File(this, _("Delete Files"), DELETE);
-    f->create();
-    f->remove(trashinfolocation);
-    delete f;
-
-    // Re-create the trash can files directory
-    if (!xf_existfile(trashfileslocation))
+    FXbool success = true;
+    for (const TrashLocation& location : locations)
     {
-        errno = 0;
-        int ret = xf_mkpath(trashfileslocation.text(), 0755);
-        int errcode = errno;
-        if (ret == -1)
+        TrashLocation currentLocation;
+        if (!xf_trashlocation(location.directory + "/files", currentLocation))
         {
-            if (errcode)
+            MessageBox::error(this, BOX_OK, _("Error"), _("Trash location is no longer available: %s"),
+                              location.directory.text());
+            success = false;
+            break;
+        }
+        // Keep metadata if deleting the files fails or is cancelled.
+        for (const char* part : {"files", "info"})
+        {
+            FXString path = location.directory + "/" + part;
+            struct stat info;
+            const int status = lstat(path.text(), &info);
+            if (status != 0 && errno == ENOENT) continue;
+            if (status != 0 || !S_ISDIR(info.st_mode) || info.st_uid != getuid())
             {
-                MessageBox::error(this, BOX_OK, _("Error"), _("Can't create trash can 'files' folder %s: %s"),
-                                  trashfileslocation.text(), strerror(errcode));
+                MessageBox::error(this, BOX_OK, _("Error"), _("Unsafe or unreadable Trash folder: %s"), path.text());
+                success = false;
+                break;
             }
-            else
+            File* operation = new File(this, _("Delete Files"), DELETE);
+            operation->create();
+            int result = operation->remove(path);
+            delete operation;
+            if (result != 1)
             {
-                MessageBox::error(this, BOX_OK, _("Error"), _("Can't create trash can 'files' folder %s"),
-                                  trashfileslocation.text());
+                success = false;
+                break;
+            }
+            if (xf_mkpath(path.text(), 0700) != 0)
+            {
+                MessageBox::error(this, BOX_OK, _("Error"), _("Can't create folder %s: %s"),
+                                  path.text(), strerror(errno));
+                success = false;
+                break;
             }
         }
+        if (!success) break;
     }
-
-    // Re-create the trash can info directory
-    if (!xf_existfile(trashinfolocation))
-    {
-        errno = 0;
-        int ret = xf_mkpath(trashinfolocation.text(), 0755);
-        int errcode = errno;
-        if (ret == -1)
-        {
-            if (errcode)
-            {
-                MessageBox::error(this, BOX_OK, _("Error"), _("Can't create trash can 'info' folder %s: %s"),
-                                  trashinfolocation.text(), strerror(errcode));
-            }
-            else
-            {
-                MessageBox::error(this, BOX_OK, _("Error"), _("Can't create trash can 'info' folder %s"),
-                                  trashinfolocation.text());
-            }
-        }
-    }
-
-    // Wait cursor
     getApp()->endWaitCursor();
-
     onCmdRefresh(0, 0, 0);
-
-    return 1;
+    return success;
 }
 
 
 // Display trash size
 long XFileExplorer::onCmdTrashSize(FXObject*, FXSelector, void*)
 {
-    struct stat linfo;
-    FXString trashsize, trashmtime, trashnbfiles, trashnbfolders;
-
-    if (xf_lstat(trashfileslocation.text(), &linfo) == 0)
+    FXulong bytes;
+    FXuint files, folders;
+    FXTime modified;
+    FXString error;
+    if (trashTotals(xf_trashlocations(), bytes, files, folders, modified, error))
     {
         // Read time format
         FXString timeformat = getApp()->reg().readStringEntry("SETTINGS", "time_format", DEFAULT_TIME_FORMAT);
 
         // Trash files size
-        trashmtime = FXSystem::time(timeformat.text(), linfo.st_mtime);
-        char buf[MAXPATHLEN];
-        FXulong dirsize = 0;
-        FXuint nbfiles = 0, nbsubfolders = 0;
-        FXulong totalsize = 0;
-        xf_strlcpy(buf, trashfileslocation.text(), trashfileslocation.length() + 1);
-        dirsize = xf_pathsize(buf, &nbfiles, &nbsubfolders, &totalsize);
-#if __WORDSIZE == 64
-        snprintf(buf, sizeof(buf), "%lu", dirsize);
-#else
-        snprintf(buf, sizeof(buf), "%llu", dirsize);
-#endif
-        trashsize = xf_humansize(buf);
-        trashnbfiles = FXStringVal(nbfiles - nbsubfolders);
-        trashnbfolders = FXStringVal(nbsubfolders - 1);
+        FXString trashmtime = FXSystem::time(timeformat.text(), modified);
+        FXString trashsize = xf_humansize(FXStringVal(bytes).text());
 
         // Dialog box
         FXString msg;
         msg.format(_("Trash size: %s (%s files, %s subfolders)\n\nModified date: %s"),
-                   trashsize.text(), trashnbfiles.text(), trashnbfolders.text(), trashmtime.text());
+                   trashsize.text(), FXStringVal(files).text(), FXStringVal(folders).text(), trashmtime.text());
         MessageBox dialog(this, _("Trash size"), msg.text(), bigdeleteicon, BOX_OK | DECOR_TITLE | DECOR_BORDER,
                           JUSTIFY_LEFT | ICON_BEFORE_TEXT | LAYOUT_CENTER_Y | LAYOUT_LEFT | LAYOUT_FILL_X |
                           LAYOUT_FILL_Y);
@@ -5904,8 +5915,7 @@ long XFileExplorer::onCmdTrashSize(FXObject*, FXSelector, void*)
     else
     {
         // Error
-        MessageBox::error(this, BOX_OK, _("Error"), _("Trash can 'files' folder %s is not readable!"),
-                          trashfileslocation.text());
+        MessageBox::error(this, BOX_OK, _("Error"), "%s", error.text());
         return 0;
     }
 

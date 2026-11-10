@@ -9,10 +9,14 @@
 #include "TabButtons.h"
 #include "File.h"
 #include "MessageBox.h"
+#include "Properties.h"
+#include "HistInputDialog.h"
+#include "FileDict.h"
 #include "icons.h"
 #include <X11/Xlib.h>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -50,6 +54,19 @@ static FXString simulatedMount;
 static bool simulateStillMounted;
 static FXString simulatedGvfsDirectory;
 static FXString simulatedMountTable;
+static FXString failedUnlink;
+
+extern "C" int unlink(const char* path) noexcept
+{
+    if (!failedUnlink.empty() && failedUnlink == path)
+    {
+        errno = EACCES;
+        return -1;
+    }
+    typedef int (*Unlink)(const char*);
+    static Unlink realUnlink = reinterpret_cast<Unlink>(dlsym(RTLD_NEXT, "unlink"));
+    return realUnlink(path);
+}
 
 extern "C" FILE* fopen(const char* path, const char* mode)
 {
@@ -106,6 +123,15 @@ static bool measuredChild(const char* path)
     return measuring && std::strncmp(path, measuredDirectory.text(), measuredDirectory.length()) == 0 &&
            path[measuredDirectory.length()] == '/' &&
            std::strchr(path + measuredDirectory.length() + 1, '/') == NULL;
+}
+
+static bool hasLabel(FXWindow* window, const FXString& text)
+{
+    FXLabel* label = dynamic_cast<FXLabel*>(window);
+    if (label && label->getText() == text) return true;
+    for (FXWindow* child = window->getFirst(); child; child = child->getNext())
+        if (hasLabel(child, text)) return true;
+    return false;
 }
 
 extern "C" int stat(const char* path, struct stat* info) noexcept
@@ -172,6 +198,151 @@ public:
     }
 };
 
+struct SidebarPaint
+{
+    FXString text;
+    FXColor textColor = 0;
+    FXint textX = 0, textY = 0;
+    const FXIcon* icon = NULL;
+    FXint iconX = 0, iconY = 0;
+    bool focused = false, filled = false;
+    FXint focusX = 0, focusY = 0, focusW = 0, focusH = 0;
+    FXint fillX = 0, fillY = 0, fillW = 0, fillH = 0;
+    FXColor fillColor = 0;
+};
+
+class SidebarRecordingDC : public FXDC
+{
+    SidebarPaint& paint;
+    FXColor foreground = 0;
+public:
+    SidebarRecordingDC(FXApp* app, SidebarPaint& result) : FXDC(app), paint(result) {}
+    void setForeground(FXColor color) override { foreground = color; }
+    void drawIcon(const FXIcon* icon, FXint x, FXint y) override
+    {
+        paint.icon = icon; paint.iconX = x; paint.iconY = y;
+    }
+    void drawText(FXint x, FXint y, const FXString& text) override
+    {
+        paint.text = text; paint.textColor = foreground; paint.textX = x; paint.textY = y;
+    }
+    void drawText(FXint x, FXint y, const FXchar* text, FXuint length) override
+    {
+        drawText(x, y, FXString(text, length));
+    }
+    void drawFocusRectangle(FXint x, FXint y, FXint w, FXint h) override
+    {
+        paint.focused = true; paint.focusX = x; paint.focusY = y; paint.focusW = w; paint.focusH = h;
+    }
+    void fillRectangle(FXint x, FXint y, FXint w, FXint h) override
+    {
+        if (!paint.filled)
+        {
+            paint.filled = true; paint.fillX = x; paint.fillY = y;
+            paint.fillW = w; paint.fillH = h; paint.fillColor = foreground;
+        }
+    }
+    void drawRectangle(FXint, FXint, FXint, FXint) override {}
+    void fillPolygon(const FXPoint*, FXuint) override {}
+};
+
+static SidebarPaint recordSidebarPaint(const SidebarItem& item, const SidebarTree* tree)
+{
+    SidebarPaint result;
+    SidebarRecordingDC dc(tree->getApp(), result);
+    item.draw(tree, dc, 20, 10, item.getWidth(tree), item.getHeight(tree));
+    return result;
+}
+
+static FXdouble textContrast(FXColor foreground, FXColor background)
+{
+    auto luminance = [](FXColor color)
+    {
+        auto linear = [](FXuint component)
+        {
+            FXdouble value = component / 255.0;
+            return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+        };
+        return 0.2126 * linear(FXREDVAL(color)) + 0.7152 * linear(FXGREENVAL(color)) +
+               0.0722 * linear(FXBLUEVAL(color));
+    };
+    FXdouble fg = luminance(foreground), bg = luminance(background);
+    return (FXMAX(fg, bg) + 0.05) / (FXMIN(fg, bg) + 0.05);
+}
+
+static void checkSidebarDeviceText(const SidebarItem& item, const SidebarTree* tree, bool muted)
+{
+    const FXColor foreground = item.isSelected() ? tree->getSelTextColor() : tree->getTextColor();
+    const FXColor background = item.isSelected() ? tree->getSelBackColor() : tree->getBackColor();
+    const SidebarPaint paint = recordSidebarPaint(item, tree);
+    const FXString suffix = " (unmounted)";
+    if (muted && paint.textColor != foreground)
+        assert(paint.text + suffix == item.getText());
+    else
+        assert(paint.text == item.getText());
+    if (!muted || textContrast(foreground, background) < 4.5)
+        assert(paint.textColor == foreground);
+    else
+        assert(textContrast(paint.textColor, background) >= 4.5);
+    if (muted && textContrast(foreground, background) >= 7.0) assert(paint.textColor != foreground);
+}
+
+static void checkSidebarDeviceRendering(SidebarTree* tree)
+{
+    const FXColor oldBack = tree->getBackColor(), oldText = tree->getTextColor();
+    const FXColor oldSelBack = tree->getSelBackColor(), oldSelText = tree->getSelTextColor();
+    struct Theme { FXColor back, text, selectedBack, selectedText; };
+    const Theme themes[] = {
+        { FXRGB(255, 255, 255), FXRGB(0, 0, 0), FXRGB(30, 70, 130), FXRGB(255, 255, 255) },
+        { FXRGB(32, 32, 32), FXRGB(255, 255, 255), FXRGB(235, 235, 235), FXRGB(0, 0, 0) },
+        { FXRGB(255, 255, 255), FXRGB(0, 0, 0), FXRGB(82, 129, 148), FXRGB(255, 255, 255) }
+    };
+    SidebarItem mounted("Device (unmounted)", miniremovabledeviceicon, SidebarItem::DEVICE, "/dev/test");
+    SidebarItem unmounted("Device (unmounted)", miniremovabledeviceicon, SidebarItem::DEVICE, "/dev/test");
+    mounted.deviceAction = SidebarItem::UNMOUNT_DEVICE;
+    unmounted.deviceAction = SidebarItem::MOUNT_DEVICE;
+    mounted.canEject = unmounted.canEject = true;
+    mounted.setFocus(true); unmounted.setFocus(true);
+    for (const Theme& theme : themes)
+    {
+        tree->setBackColor(theme.back); tree->setTextColor(theme.text);
+        tree->setSelBackColor(theme.selectedBack); tree->setSelTextColor(theme.selectedText);
+        for (bool selected : {false, true})
+        {
+            mounted.setSelected(selected); unmounted.setSelected(selected);
+            SidebarPaint normal = recordSidebarPaint(mounted, tree);
+            SidebarPaint muted = recordSidebarPaint(unmounted, tree);
+            const FXColor background = selected ? theme.selectedBack : theme.back;
+            const FXColor foreground = selected ? theme.selectedText : theme.text;
+            const bool dimmed = muted.textColor != foreground;
+            assert(normal.text == mounted.getText());
+            assert(muted.text == (dimmed ? FXString("Device") : normal.text));
+            assert(normal.textColor == foreground && muted.icon == normal.icon);
+            assert(muted.textX == normal.textX && muted.textY == normal.textY);
+            assert(muted.iconX == normal.iconX && muted.iconY == normal.iconY);
+            assert(muted.focused && normal.focused && muted.focusX == normal.focusX &&
+                   muted.focusY == normal.focusY && muted.focusH == normal.focusH);
+            assert(dimmed ? muted.focusW < normal.focusW : muted.focusW == normal.focusW);
+            if (selected)
+                assert(muted.filled && normal.filled && muted.fillColor == normal.fillColor &&
+                       muted.fillX == normal.fillX && muted.fillY == normal.fillY &&
+                       muted.fillH == normal.fillH &&
+                       (dimmed ? muted.fillW < normal.fillW : muted.fillW == normal.fillW));
+            if (textContrast(foreground, background) >= 4.5)
+                assert(textContrast(muted.textColor, background) >= 4.5);
+            else
+                assert(muted.textColor == foreground);
+            if (textContrast(foreground, background) >= 7.0) assert(muted.textColor != foreground);
+        }
+    }
+    unmounted.setEnabled(false); mounted.setEnabled(false);
+    assert(recordSidebarPaint(unmounted, tree).textColor == recordSidebarPaint(mounted, tree).textColor);
+    unmounted.setEnabled(true); unmounted.kind = SidebarItem::PLACE;
+    assert(recordSidebarPaint(unmounted, tree).textColor == tree->getSelTextColor());
+    tree->setBackColor(oldBack); tree->setTextColor(oldText);
+    tree->setSelBackColor(oldSelBack); tree->setSelTextColor(oldSelText);
+}
+
 extern "C" DIR* opendir(const char* path)
 {
     checkRemote(path);
@@ -222,6 +393,17 @@ static SidebarTree* findSidebar(FXWindow* parent)
     for (FXWindow* child = parent->getFirst(); child; child = child->getNext())
     {
         if ((tree = findSidebar(child))) return tree;
+    }
+    return NULL;
+}
+
+static MountsList* findMounts(FXWindow* parent)
+{
+    MountsList* mounts = dynamic_cast<MountsList*>(parent);
+    if (mounts) return mounts;
+    for (FXWindow* child = parent->getFirst(); child; child = child->getNext())
+    {
+        if ((mounts = findMounts(child))) return mounts;
     }
     return NULL;
 }
@@ -288,6 +470,37 @@ public:
     }
 };
 
+class TrashConfirmation : public FXObject
+{
+public:
+    bool cancel = false;
+    bool expectError = false;
+    int answered = 0;
+    int errors = 0;
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        MessageBox* dialog = dynamic_cast<MessageBox*>(testApp->getModalWindow());
+        if (!dialog)
+        {
+            testApp->addTimeout(this, 1, 20);
+            return 1;
+        }
+        if (dialog->getTitle() == "Error")
+        {
+            assert(expectError);
+            ++errors;
+            dialog->handle(this, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_CANCEL), NULL);
+            return 1;
+        }
+        assert(dialog->getTitle() == "Empty trash can");
+        ++answered;
+        dialog->handle(this, FXSEL(SEL_COMMAND,
+                       cancel ? MessageBox::ID_CLICKED_CANCEL : MessageBox::ID_CLICKED_OK), NULL);
+        if (expectError) testApp->addTimeout(this, 1, 20);
+        return 1;
+    }
+};
+
 class ConnectCanceller : public FXObject
 {
 public:
@@ -319,6 +532,7 @@ public:
     int successes = 0;
     int alreadyMounted = 0;
     FXString message;
+    FXString title;
     long handle(FXObject*, FXSelector, void*) override
     {
         MessageBox* dialog = dynamic_cast<MessageBox*>(testApp->getModalWindow());
@@ -331,10 +545,108 @@ public:
         if (dialog->getTitle() == "Success") ++successes;
         if (dialog->getTitle() == "Already mounted") ++alreadyMounted;
         message = dialog->getText();
+        title = dialog->getTitle();
         dialog->handle(this, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_OK), NULL);
         return 1;
     }
 };
+
+// Records a context menu while it is open, then runs the entry named by choose
+class PopupMenuResponder : public FXObject
+{
+public:
+    FXString labels;
+    FXString choose;
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        FXMenuPane* menu = dynamic_cast<FXMenuPane*>(testApp->getModalWindow());
+        if (!menu)
+        {
+            testApp->addTimeout(this, 1, 20);
+            return 1;
+        }
+        FXMenuCommand* chosen = NULL;
+        labels.clear();
+        collect(menu, chosen);
+        menu->popdown();
+        if (chosen) chosen->getTarget()->handle(chosen, FXSEL(SEL_COMMAND, chosen->getSelector()), NULL);
+        return 1;
+    }
+    void collect(FXWindow* pane, FXMenuCommand*& chosen)
+    {
+        for (FXWindow* child = pane->getFirst(); child; child = child->getNext())
+        {
+            if (FXMenuCascade* cascade = dynamic_cast<FXMenuCascade*>(child))
+            {
+                labels += cascade->getText() + "[";
+                collect(cascade->getMenu(), chosen);
+                labels += "]";
+            }
+            else if (FXMenuCommand* command = dynamic_cast<FXMenuCommand*>(child))
+            {
+                labels += command->getText() + ";";
+                if (command->getText() == choose) chosen = command;
+            }
+        }
+    }
+};
+
+// Answers the Open With dialog with a command, optionally ticking "Remember"
+class OpenWithResponder : public FXObject
+{
+public:
+    FXString command;
+    FXbool remember = false;
+    FXbool showedType = false;
+    long handle(FXObject*, FXSelector, void*) override;
+};
+
+static FXWindow* findText(FXWindow* parent, const FXString& prefix);
+
+long OpenWithResponder::handle(FXObject*, FXSelector, void*)
+{
+    HistInputDialog* dialog = dynamic_cast<HistInputDialog*>(testApp->getModalWindow());
+    if (!dialog)
+    {
+        testApp->addTimeout(this, 1, 20);
+        return 1;
+    }
+    showedType = findText(dialog, "Open Song One.mp3 (audio/mpeg) with:") != NULL;
+    dialog->setText(command);
+    if (remember) dialog->handle(this, FXSEL(SEL_COMMAND, DialogBox::ID_TOGGLE_OPTION), NULL);
+    dialog->handle(this, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+    return 1;
+}
+
+static FXString popupMedia(FilePanel* panel, const FXString& choose)
+{
+    PopupMenuResponder responder;
+    responder.choose = choose;
+    testApp->addTimeout(&responder, 1, 20);
+    FXEvent event;
+    panel->onCmdPopupMenu(NULL, 0, &event);
+    testApp->removeTimeout(&responder, 1);
+    return responder.labels;
+}
+
+static DialogBox* downloadWindow()
+{
+    for (FXWindow* child = testApp->getRootWindow()->getFirst(); child; child = child->getNext())
+    {
+        DialogBox* dialog = dynamic_cast<DialogBox*>(child);
+        if (dialog && dialog->getTitle() == "Media Download") return dialog;
+    }
+    return NULL;
+}
+
+static FXWindow* findText(FXWindow* parent, const FXString& prefix)
+{
+    FXLabel* label = dynamic_cast<FXLabel*>(parent);
+    if (label && label->getText().left(prefix.length()) == prefix) return label;
+    for (FXWindow* child = parent->getFirst(); child; child = child->getNext())
+        if (FXWindow* found = findText(child, prefix)) return found;
+    return NULL;
+}
 
 static FXButton* projectLink(FXWindow* parent)
 {
@@ -439,6 +751,8 @@ int main(int argc, char** argv)
     DirList* tree = new DirList(shell, frame, NULL, 0);
     app.create();
     shell->show();
+    checkSidebarDeviceRendering(sidebar);
+    puts("PASS: unmounted device text follows light, dark and selected theme colors with readable contrast");
     simulatedMountTable = fixture + "/mount-table-regression";
     auto mountTable = [&](bool attached)
     {
@@ -718,11 +1032,186 @@ int main(int argc, char** argv)
 
     vector_FXString paths;
     paths.push_back(fixture);
+    const FXString trashData = fixture + "/trash-data";
+    setenv("SWORDFISH_HOST_XDG_DATA_HOME", trashData.text(), 1);
     mainWindow = NULL;
     XFileExplorer* window = new XFileExplorer(&app, paths, 3);
     mainWindow = window;
     window->create();
     window->show();
+    {
+        const FXString homeTrash = trashData + "/Trash";
+        const FXString volume = fixture + "/trash-volume";
+        const FXString sharedVolume = fixture + "/trash-shared-volume";
+        const FXString unsafeVolume = fixture + "/trash-unsafe-volume";
+        const FXString volumeTrash = volume + "/.Trash-" + FXStringVal((FXuint)getuid());
+        const FXString sharedTrash = sharedVolume + "/.Trash/" + FXStringVal((FXuint)getuid());
+        const FXString oldPortable = fixture + "/old-portable/data/Trash";
+        for (const FXString& root : {homeTrash, volumeTrash, sharedTrash, oldPortable})
+        {
+            assert(xf_mkpath((root + "/files").text(), 0700) == 0);
+            assert(xf_mkpath((root + "/info").text(), 0700) == 0);
+        }
+        assert(chmod((sharedVolume + "/.Trash").text(), 01777) == 0);
+        assert(xf_mkpath(unsafeVolume.text(), 0700) == 0);
+        assert(symlink(oldPortable.text(),
+                       (unsafeVolume + "/.Trash-" + FXStringVal((FXuint)getuid())).text()) == 0);
+        simulatedMountTable = fixture + "/trash-mount-table";
+        auto writeTrashMounts = [&](bool mounted)
+        {
+            std::ofstream output(simulatedMountTable.text());
+            output << "/dev/root / ext4 rw 0 0\n";
+            if (mounted)
+            {
+                for (const FXString& mount : {volume, sharedVolume, unsafeVolume})
+                    output << "/dev/fixture " << mount.text() << " ext4 rw 0 0\n";
+                output << "/dev/fixture " << volume.text() << " ext4 rw 0 0\n";
+            }
+        };
+        writeTrashMounts(true);
+        const FXString name = "same name%.txt";
+        const FXString homeOriginal = fixture + "/home restored%.txt";
+        const FXString volumeOriginal = volume + "/original folder/restored%.txt";
+        const FXString sharedOriginal = sharedVolume + "/restored-folder";
+        assert(xf_mkpath((volume + "/original folder").text(), 0700) == 0);
+        auto put = [](const FXString& path, const FXString& data)
+        {
+            std::ofstream output(path.text());
+            assert(output);
+            output << data.text();
+        };
+        auto metadata = [&](const FXString& root, const FXString& file, const FXString& original)
+        {
+            put(root + "/info/" + file + ".trashinfo",
+                "[Trash Info]\nDeletionDate=2026-11-10T08:00:00\nPath=" + FXURL::encode(original) + "\n");
+        };
+        put(homeTrash + "/files/" + name, "home contents");
+        put(volumeTrash + "/files/" + name, "volume contents");
+        assert(xf_mkpath((sharedTrash + "/files/.hidden-folder").text(), 0700) == 0);
+        put(sharedTrash + "/files/.hidden-folder/child.txt", "nested contents");
+        put(oldPortable + "/files/keep.txt", "legacy portable contents");
+        metadata(homeTrash, name, homeOriginal);
+        metadata(volumeTrash, name, "original folder/restored%.txt");
+        metadata(sharedTrash, ".hidden-folder", "restored-folder");
+        const std::vector<TrashLocation> locations = xf_trashlocations();
+        assert(locations.size() == 3);
+        TrashLocation location;
+        assert(xf_trashlocation(volumeTrash + "/files/" + name, location));
+        FXString original, deleted, infofile;
+        assert(xf_readtrashinfo(volumeTrash + "/files/" + name, location, original, deleted, infofile));
+        assert(original == volumeOriginal && deleted == "2026-11-10T08:00:00");
+        assert(xf_trashlocation(sharedTrash + "/files/.hidden-folder/child.txt", location));
+        assert(xf_readtrashinfo(sharedTrash + "/files/.hidden-folder/child.txt",
+                                location, original, deleted, infofile));
+        assert(original == sharedOriginal + "/child.txt");
+        metadata(sharedTrash, "bad", "../outside");
+        assert(!xf_readtrashinfo(sharedTrash + "/files/bad", location, original, deleted, infofile));
+        put(sharedTrash + "/info/bad.trashinfo", "[Trash Info]\nPath=bad%00path\n");
+        assert(!xf_readtrashinfo(sharedTrash + "/files/bad", location, original, deleted, infofile));
+        const FXString freshTrash = fixture + "/fresh-trash";
+        const FXString freshPath = freshTrash + "/files/fresh.txt";
+        assert(xf_create_trashinfo(homeOriginal, freshPath, freshTrash + "/files", freshTrash + "/info") == 0);
+        TrashLocation freshLocation = {freshTrash, FXString::null};
+        assert(xf_readtrashinfo(freshPath, freshLocation, original, deleted, infofile));
+        assert(original == homeOriginal && !deleted.empty());
+        FilePanel* panel = window->getCurrentPanel();
+        panel->setDirectory(homeTrash + "/files");
+        FileList* files = panel->getList();
+        files->setAllowRefresh(false);
+        assert(files->isInTrash());
+        auto pathIndex = [&](const FXString& path)
+        {
+            for (int i = 0; i < files->getNumItems(); ++i)
+                if (files->getItemFullPathname(i) == path) return i;
+            return -1;
+        };
+        assert(files->getNumItems() == 4);
+        int volumeIndex = pathIndex(volumeTrash + "/files/" + name);
+        assert(volumeIndex >= 0);
+        assert(files->getItemPathname(volumeIndex) == volumeTrash + "/files/" + name);
+        assert(files->getItemText(volumeIndex).contains(volumeOriginal));
+        assert(pathIndex(homeTrash + "/files/" + name) >= 0);
+        assert(pathIndex(sharedTrash + "/files/.hidden-folder") >= 0);
+        files->selectItem(volumeIndex);
+        files->onCmdRefresh(NULL, 0, NULL);
+        assert(files->isItemSelected(pathIndex(volumeTrash + "/files/" + name)));
+        panel->onCmdCopyCut(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_COPY_CLIPBOARD), NULL);
+        FXString clipboard;
+        assert(shell->getDNDData(FROM_CLIPBOARD, app.registerDragType("text/uri-list"), clipboard));
+        assert(FXURL::decode(FXURL::fileFromURL(clipboard)) == volumeTrash + "/files/" + name);
+        panel->onCmdProperties(NULL, 0, NULL);
+        PropertiesBox* properties = NULL;
+        for (FXWindow* child = app.getRootWindow()->getFirst(); child; child = child->getNext())
+        {
+            properties = dynamic_cast<PropertiesBox*>(child);
+            if (properties) break;
+        }
+        assert(properties && hasLabel(properties, volumeOriginal));
+        delete properties;
+        puts("PASS: clipboard and Properties use the selected volume item's physical path, not its same-named Home Trash counterpart");
+        writeTrashMounts(false);
+        files->onCmdRefresh(NULL, 0, NULL);
+        assert(files->getNumItems() == 2);
+        writeTrashMounts(true);
+        files->onCmdRefresh(NULL, 0, NULL);
+        assert(files->getNumItems() == 4);
+        puts("PASS: combined Trash includes Home and both volume layouts, duplicate names, hidden folders, metadata and unmount refresh; symlink roots and legacy portable Trash excluded");
+        app.reg().writeUnsignedEntry("OPTIONS", "confirm_trash", false);
+        for (const FXString& path : {homeTrash + "/files/" + name, volumeTrash + "/files/" + name,
+                                    sharedTrash + "/files/.hidden-folder"})
+        {
+            files->killSelection();
+            int index = pathIndex(path);
+            assert(index > 0);
+            files->selectItem(index);
+            panel->onCmdFileRestore(NULL, 0, NULL);
+            assert(!FXStat::exists(path));
+        }
+        assert(FXStat::exists(homeOriginal) && FXStat::exists(volumeOriginal));
+        assert(FXStat::exists(sharedOriginal + "/child.txt"));
+        assert(!FXStat::exists(homeTrash + "/info/" + name + ".trashinfo"));
+        assert(!FXStat::exists(volumeTrash + "/info/" + name + ".trashinfo"));
+        puts("PASS: actual Restore restores duplicate files and a nested folder to their correct Home/volume locations, decoding percent escapes once");
+        for (const FXString& root : {homeTrash, volumeTrash, sharedTrash})
+        {
+            put(root + "/files/empty-me.txt", "disposable");
+            metadata(root, "empty-me.txt", fixture + "/unused.txt");
+        }
+        TrashConfirmation answer;
+        answer.cancel = true;
+        app.addTimeout(&answer, 1, 20);
+        window->onCmdEmptyTrash(NULL, 0, NULL);
+        assert(answer.answered == 1);
+        for (const FXString& root : {homeTrash, volumeTrash, sharedTrash})
+            assert(FXStat::exists(root + "/files/empty-me.txt") &&
+                   FXStat::exists(root + "/info/empty-me.txt.trashinfo"));
+        answer.cancel = false;
+        answer.expectError = true;
+        failedUnlink = volumeTrash + "/files/empty-me.txt";
+        app.addTimeout(&answer, 1, 20);
+        assert(!window->onCmdEmptyTrash(NULL, 0, NULL));
+        assert(answer.answered == 2 && answer.errors == 1);
+        assert(!FXStat::exists(homeTrash + "/files/empty-me.txt"));
+        assert(FXStat::exists(failedUnlink));
+        assert(FXStat::exists(volumeTrash + "/info/empty-me.txt.trashinfo"));
+        assert(FXStat::exists(sharedTrash + "/files/empty-me.txt"));
+        failedUnlink.clear();
+        answer.expectError = false;
+        app.addTimeout(&answer, 1, 20);
+        assert(window->onCmdEmptyTrash(NULL, 0, NULL));
+        assert(answer.answered == 3);
+        for (const FXString& root : {homeTrash, volumeTrash, sharedTrash})
+        {
+            assert(FXStat::isDirectory(root + "/files") && FXStat::isDirectory(root + "/info"));
+            assert(!FXStat::exists(root + "/files/empty-me.txt"));
+            assert(!FXStat::exists(root + "/info/empty-me.txt.trashinfo"));
+        }
+        assert(FXStat::exists(oldPortable + "/files/keep.txt"));
+        puts("PASS: actual Empty Trash cancellation preserves all items; partial deletion failure preserves remaining restore metadata; success empties Home and mounted drives without touching old portable Trash");
+        files->setAllowRefresh(true);
+        panel->setDirectory(fixture);
+        simulatedMountTable.clear();
+    }
     {
         FilePanel* panel = window->getCurrentPanel();
         FileList* files = panel->getList();
@@ -737,12 +1226,35 @@ int main(int argc, char** argv)
             panel->handle(single, FXSEL(SEL_UPDATE, FilePanel::ID_CONTEXT_RENAME), NULL);
             panel->handle(bulk, FXSEL(SEL_UPDATE, FilePanel::ID_CONTEXT_BULK_RENAME), NULL);
             assert(single->isEnabled() == (count == 1));
-            assert(bulk->isEnabled() == (count > 1));
-            const FXuint disabled = count == 1 ? FilePanel::ID_CONTEXT_BULK_RENAME : FilePanel::ID_CONTEXT_RENAME;
-            panel->handle(single, FXSEL(SEL_COMMAND, disabled), NULL);
+            assert(bulk->isEnabled() == (count > 1 || (count == 1 && files->isItemDirectory(1))));
+            if (count != 1)
+                panel->handle(single, FXSEL(SEL_COMMAND, FilePanel::ID_CONTEXT_RENAME), NULL);
+        }
+        for (int i = 1; i < files->getNumItems(); ++i)
+        {
+            files->killSelection();
+            files->selectItem(i);
+            panel->handle(bulk, FXSEL(SEL_UPDATE, FilePanel::ID_CONTEXT_BULK_RENAME), NULL);
+            assert(bulk->isEnabled() == files->isItemDirectory(i));
         }
         files->killSelection();
-        puts("PASS: file-panel Rename and Bulk Rename are enabled only for their intended selection counts");
+        FilePanel* left = window->getLeftPanel();
+        FXMenuCommand* tools = new FXMenuCommand(&menu, "Bulk Rename...", NULL, left, FilePanel::ID_CONTEXT_BULK_RENAME);
+        window->getRightPanel()->setDirectory(fixture);
+        window->getRightPanel()->setActive();
+        for (int i = 1; i < window->getRightPanel()->getList()->getNumItems(); ++i)
+            if (window->getRightPanel()->getList()->isItemDirectory(i))
+            {
+                window->getRightPanel()->getList()->selectItem(i);
+                break;
+            }
+        left->handle(tools, FXSEL(SEL_UPDATE, FilePanel::ID_CONTEXT_BULK_RENAME), NULL);
+        assert(tools->isEnabled());
+        window->getRightPanel()->getList()->killSelection();
+        left->handle(tools, FXSEL(SEL_UPDATE, FilePanel::ID_CONTEXT_BULK_RENAME), NULL);
+        assert(!tools->isEnabled());
+        panel->setActive();
+        puts("PASS: Rename needs one item; Bulk Rename needs several items or one folder, and the Tools entry follows the active pane");
     }
     observedWindow = window->getCurrentPanel()->getList()->id();
     SidebarTree* navigation = findSidebar(window->getDirPanel());
@@ -758,6 +1270,93 @@ int main(int argc, char** argv)
     DirPanel* panel = window->getDirPanel();
     networkPanel = panel;
     panel->onSidebarRefresh(NULL, 0, NULL);
+    {
+        MountsList* mounts = findMounts(panel);
+        assert(mounts);
+        SidebarItem* root = static_cast<SidebarItem*>(navigation->getFirstItem()->getNext()->getNext());
+        assert(root && root->key == "mounts");
+        auto device = [root](const FXString& path) -> SidebarItem*
+        {
+            for (FXTreeItem* entry = root->getFirst(); entry; entry = entry->getNext())
+                if (static_cast<SidebarItem*>(entry)->path == path) return static_cast<SidebarItem*>(entry);
+            return NULL;
+        };
+        const FXString volumes = fixture + "/sidebar-color-volumes";
+        simulatedMountTable = fixture + "/sidebar-color-mtab";
+        auto writeVolumes = [&volumes](bool internal, bool usb)
+        {
+            std::ofstream output(volumes.text());
+            assert(output);
+            if (internal)
+                output << "PATH=\"/dev/test-internal1\" LABEL=\"Internal\" FSTYPE=\"ntfs\" "
+                          "MOUNTPOINT=\"\" HOTPLUG=\"0\" TYPE=\"part\"\n";
+            if (usb)
+                output << "PATH=\"/dev/test-usb1\" LABEL=\"USB\" FSTYPE=\"ext4\" "
+                          "MOUNTPOINT=\"\" HOTPLUG=\"1\" TYPE=\"part\"\n";
+        };
+        auto writeMounts = [](bool mounted)
+        {
+            std::ofstream output(simulatedMountTable.text());
+            assert(output);
+            output << "/dev/root / ext4 rw 0 0\n";
+            if (mounted)
+            {
+                output << "/dev/test-internal1 /run/media/test/Internal ntfs rw 0 0\n";
+                output << "/dev/test-usb1 /run/media/test/USB ext4 rw 0 0\n";
+            }
+        };
+        auto refresh = [&]()
+        {
+            mounts->invalidate();
+            mounts->onMountsRefresh(NULL, 0, NULL);
+            panel->onSidebarRefresh(NULL, 0, NULL);
+        };
+        setenv("SWORDFISH_TEST_VOLUMES", volumes.text(), 1);
+        writeVolumes(true, true); writeMounts(false); refresh();
+        SidebarItem* internal = device("/dev/test-internal1");
+        SidebarItem* usb = device("/dev/test-usb1");
+        assert(internal && usb && internal->isEnabled() && usb->isEnabled());
+        assert(internal->deviceAction == SidebarItem::MOUNT_DEVICE && !internal->canEject);
+        assert(usb->deviceAction == SidebarItem::MOUNT_DEVICE && usb->canEject);
+        assert(internal->getText() == "Internal (unmounted)" && usb->getText() == "USB (unmounted)");
+        checkSidebarDeviceText(*internal, navigation, true);
+        checkSidebarDeviceText(*usb, navigation, true);
+
+        writeVolumes(false, false); writeMounts(true); refresh();
+        internal = device("/run/media/test/Internal"); usb = device("/run/media/test/USB");
+        assert(internal && usb && internal->deviceAction == SidebarItem::UNMOUNT_DEVICE &&
+               usb->deviceAction == SidebarItem::UNMOUNT_DEVICE);
+        assert(internal->getText() == "Internal" && usb->getText() == "USB");
+        checkSidebarDeviceText(*internal, navigation, false);
+        checkSidebarDeviceText(*usb, navigation, false);
+
+        writeVolumes(true, true); writeMounts(false); refresh();
+        internal = device("/dev/test-internal1"); usb = device("/dev/test-usb1");
+        assert(internal && usb && internal->deviceAction == SidebarItem::MOUNT_DEVICE &&
+               usb->deviceAction == SidebarItem::MOUNT_DEVICE);
+        checkSidebarDeviceText(*internal, navigation, true);
+        checkSidebarDeviceText(*usb, navigation, true);
+        assert(access(getenv("SWORDFISH_TEST_MOUNT_LOG"), F_OK) != 0);
+        setenv("SWORDFISH_TEST_EJECT_VOLUMES", volumes.text(), 1);
+        SidebarDeviceRequest ejectUsb = {usb, SidebarItem::EJECT_DEVICE};
+        app.addSignal(SIGCHLD, window, XFileExplorer::ID_HARVEST);
+        panel->onSidebarDeviceAction(NULL, 0, &ejectUsb);
+        app.removeSignal(SIGCHLD);
+        unsetenv("SWORDFISH_TEST_EJECT_VOLUMES");
+        std::ifstream ejectLog(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+        std::string ejectCommand;
+        assert(std::getline(ejectLog, ejectCommand) && ejectCommand == "disk power-off");
+        assert(!std::getline(ejectLog, ejectCommand));
+        ejectLog.close();
+        assert(unlink(getenv("SWORDFISH_TEST_MOUNT_LOG")) == 0);
+        refresh();
+        assert(device("/dev/test-internal1") && !device("/dev/test-usb1"));
+        unsetenv("SWORDFISH_TEST_VOLUMES");
+        assert(unlink(volumes.text()) == 0 && unlink(simulatedMountTable.text()) == 0);
+        simulatedMountTable.clear();
+        refresh();
+        puts("PASS: internal and USB rows change color on mount/unmount; USB disappears after eject");
+    }
     SidebarItem* network = static_cast<SidebarItem*>(navigation->getLastItem());
     // A restored expanded Network root must not search on its own.
     assert(network->isExpanded() && network->getNumChildren() == 2);
@@ -887,6 +1486,241 @@ int main(int argc, char** argv)
     assert(network->getFirst()->getNext()->getText().find("Search stopped") == 0);
     pump(app, 200);
     puts("PASS: Network section searches only on demand, merges updates, sorts this computer last, ignores bad records, stops");
+    {
+        // Advertised devices: media servers, FTP/SFTP, printers and routers
+        setenv("SWORDFISH_TEST_SERVICES", "1", 1);
+        unlink(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+        panel->onCmdRefreshNetwork(NULL, 0, NULL);
+        panel->onSidebarRefresh(NULL, 0, NULL);
+        assert(network->getFirst()->getText() == "Stop");
+        for (int waited = 0; waited < 40 && network->getFirst()->getText() != "Refresh"; ++waited)
+        {
+            pump(app, 100);
+            panel->onSidebarRefresh(NULL, 0, NULL);
+        }
+        unsetenv("SWORDFISH_TEST_SERVICES");
+        FXTreeItem* row = network->getFirst()->getNext();
+        assert(row->getText() == "3 computer(s) sharing files and 5 other device(s) found. Click one to open it.");
+        for (int i = 0; i < 4; ++i) row = row->getNext();
+        const char* deviceNames[] = {"Living Room (media server)", "NAS (FTP)", "Office Laser (printer)",
+                                     "Home Router (router / access point)", "NAS (SFTP)"};
+        SidebarItem* devices[5];
+        for (int i = 0; i < 5; ++i)
+        {
+            assert(row && row->getText() == deviceNames[i]);
+            devices[i] = static_cast<SidebarItem*>(row);
+            assert(devices[i]->kind == SidebarItem::SERVICE && !row->hasItems());
+            row = row->getNext();
+        }
+        assert(!row);
+        assert(devices[2]->path == "http://192.168.1.50/" && devices[2]->key == "printer" &&
+               devices[2]->tip == "Address: 192.168.1.50\nOpens the settings page: http://192.168.1.50/\n"
+                                  "Found by: Zeroconf, UPnP");
+        assert(devices[0]->tip == "Address: 192.168.1.70\nBrowse music, videos and pictures (read-only)\n"
+                                  "Found by: UPnP");
+        assert(app.reg().readStringEntry("NETWORK MEDIA", "192.168.1.70:8200", "") ==
+               FXString("http://192.168.1.70:8200/rootDesc.xml\tLiving Room"));
+        puts("PASS: advertised devices are listed with their kind; bad or duplicate SERVICE records are ignored");
+
+        // Printers and routers open their web page in the desktop browser
+        app.addSignal(SIGCHLD, window, XFileExplorer::ID_HARVEST);
+        panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_SIDEBAR), devices[2]);
+        for (int waited = 0; waited < 40 && access(getenv("SWORDFISH_TEST_MOUNT_LOG"), F_OK) != 0; ++waited)
+            pump(app, 50);
+        pump(app, 100);
+        std::ifstream printerLog(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+        std::string line;
+        assert(std::getline(printerLog, line) && line == "website http://192.168.1.50/");
+        printerLog.close();
+        assert(unlink(getenv("SWORDFISH_TEST_MOUNT_LOG")) == 0);
+
+        // A media server is browsed read-only, like a folder
+        FilePanel* mediaPanel = window->getCurrentPanel();
+        panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_SIDEBAR), devices[0]);
+        assert(mediaPanel->getDirectory() == "dlna://192.168.1.70:8200");
+        pump(app, 450);
+        assert(mediaPanel->getTabButtons()->getLabel(mediaPanel->getTabButtons()->getCurrentTab()) == "Living Room");
+        assert(mediaPanel->getList()->getNumItems() == 2);
+        assert(mediaPanel->getList()->getItemFilename(0) == "Music");
+        mediaPanel->onCmdItemDoubleClicked(NULL, FXSEL(SEL_DOUBLECLICKED, FilePanel::ID_FILELIST), (void*)0);
+        assert(mediaPanel->getDirectory() == "dlna://192.168.1.70:8200/Music");
+        pump(app, 450);
+        FileList* media = mediaPanel->getList();
+        assert(media->getNumItems() == 3);
+        FXint song = -1, live = -1;
+        for (FXint i = 0; i < media->getNumItems(); ++i)
+        {
+            if (media->getItemFilename(i) == "Song One.mp3") song = i;
+            if (media->getItemFilename(i) == "Live 50%.flac") live = i;
+        }
+        assert(song >= 0 && live >= 0 && !media->isItemDirectory(song));
+        assert(media->getItemPathname(live) == "dlna://192.168.1.70:8200/Music/Live%2050%25.flac");
+        assert(RemoteDirectory::mediaLink(media->getItemPathname(live)) ==
+               "http://192.168.1.70:8200/MediaItems/2.flac");
+        assert(RemoteDirectory::displayPath(media->getItemPathname(live)) == "dlna://Living Room/Music/Live 50%.flac");
+        FXButton up(shell, "Up");
+        mediaPanel->handle(&up, FXSEL(SEL_UPDATE, FilePanel::ID_DIRECTORY_UP), NULL);
+        assert(up.isEnabled());
+        // Read-only: no editing commands
+        media->killSelection();
+        media->selectItem(song);
+        MountMessageResponder readOnly;
+        testApp->addTimeout(&readOnly, 1, 20);
+        mediaPanel->handle(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_CONTEXT_RENAME), NULL);
+        assert(readOnly.message.find("Media servers are read-only") == 0);
+        assert(media->getItemFilename(song) == "Song One.mp3");
+        // Double-clicking a file streams it (no player configured: the browser)
+        mediaPanel->onCmdItemDoubleClicked(NULL, FXSEL(SEL_DOUBLECLICKED, FilePanel::ID_FILELIST), (void*)(FXival)song);
+        for (int waited = 0; waited < 40 && access(getenv("SWORDFISH_TEST_MOUNT_LOG"), F_OK) != 0; ++waited)
+            pump(app, 50);
+        pump(app, 100);
+        std::ifstream streamLog(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+        assert(std::getline(streamLog, line) && line == "website http://192.168.1.70:8200/MediaItems/1.mp3");
+        streamLog.close();
+        assert(unlink(getenv("SWORDFISH_TEST_MOUNT_LOG")) == 0);
+        assert(mediaPanel->getDirectory() == "dlna://192.168.1.70:8200/Music");
+
+        // Context menu: play choices and the stream address for the selected file
+        extern FXString clipboard;
+        const FXString songUrl = "http://192.168.1.70:8200/MediaItems/1.mp3";
+        media->killSelection();
+        media->selectItem(song);
+        FXString menuLabels = popupMedia(mediaPanel, "Copy Stream Address");
+        assert(menuLabels == "Play;Play With[Web Browser;Other Application...;]Copy Stream Address;Download...;Refresh;");
+        assert(clipboard == songUrl);
+        // The desktop's default application for the type comes before the browser
+        const FXString scratch = FXPath::directory(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+        const char* dataHome = getenv("SWORDFISH_HOST_XDG_DATA_HOME");
+        const FXString applications = (dataHome ? FXString(dataHome) : FXString(getenv("HOME")) + "/.local/share") +
+                                      "/applications";
+        assert(system(("mkdir -p '" + applications + "' '" + FXString(getenv("HOME")) + "/.config'").text()) == 0);
+        {
+            std::ofstream desktop((applications + "/fake-player.desktop").text());
+            desktop << "[Desktop Entry]\nType=Application\nName=Fake Player\nExec=" << scratch.text()
+                    << "/fake-player %U\nMimeType=audio/mpeg;audio/flac;\nCategories=AudioVideo;Audio;Player;\n";
+            std::ofstream other((applications + "/other-player.desktop").text());
+            other << "[Desktop Entry]\nType=Application\nName=Another Player\nExec=" << scratch.text()
+                  << "/fake-player --other %U\nMimeType=audio/mpeg;\nCategories=AudioVideo;Video;TV;\n";
+            // Declare the type but are not stream players: an editor, and a player for local files only
+            std::ofstream editor((applications + "/fake-editor.desktop").text());
+            editor << "[Desktop Entry]\nType=Application\nName=Sound Editor\nExec=" << scratch.text()
+                   << "/fake-player --edit %U\nMimeType=audio/mpeg;\nCategories=AudioVideo;AudioVideoEditing;\n";
+            std::ofstream local((applications + "/local-player.desktop").text());
+            local << "[Desktop Entry]\nType=Application\nName=Local Player\nExec=" << scratch.text()
+                  << "/fake-player --local %F\nMimeType=audio/mpeg;\nCategories=AudioVideo;Player;\n";
+            std::ofstream defaults((FXString(getenv("HOME")) + "/.config/mimeapps.list").text());
+            defaults << "[Default Applications]\naudio/mpeg=fake-player.desktop\n";
+        }
+        auto launched = [&](const char* expected)
+        {
+            for (int waited = 0; waited < 40 && access(getenv("SWORDFISH_TEST_MOUNT_LOG"), F_OK) != 0; ++waited)
+                pump(app, 50);
+            pump(app, 100);
+            std::ifstream log(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+            std::string entry;
+            const bool matched = std::getline(log, entry) && entry == expected;
+            if (!matched) fprintf(stderr, "launched: got '%s', expected '%s'\n", entry.c_str(), expected);
+            log.close();
+            unlink(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+            return matched;
+        };
+        // The fake player never maps a window, so it could not end a startup notification
+        const FXuint notification = testApp->reg().readUnsignedEntry("OPTIONS", "use_startup_notification", true);
+        testApp->reg().writeUnsignedEntry("OPTIONS", "use_startup_notification", false);
+        mediaPanel->onCmdItemDoubleClicked(NULL, FXSEL(SEL_DOUBLECLICKED, FilePanel::ID_FILELIST), (void*)(FXival)song);
+        assert(launched("player http://192.168.1.70:8200/MediaItems/1.mp3"));
+        menuLabels = popupMedia(mediaPanel, "Another Player");
+        assert(menuLabels == "Play;Play With[Fake Player;Another Player;Web Browser;Other Application...;]"
+                             "Copy Stream Address;Download...;Refresh;");
+        assert(launched("player --other http://192.168.1.70:8200/MediaItems/1.mp3"));
+        popupMedia(mediaPanel, "Web Browser");
+        assert(launched("website http://192.168.1.70:8200/MediaItems/1.mp3"));
+        popupMedia(mediaPanel, "Play");
+        assert(launched("player http://192.168.1.70:8200/MediaItems/1.mp3"));
+        // Other Application... is the regular Open With dialog; Remember makes it the double-click choice
+        OpenWithResponder chooser;
+        chooser.command = scratch + "/fake-player --chosen";
+        testApp->addTimeout(&chooser, 1, 20);
+        popupMedia(mediaPanel, "Other Application...");
+        testApp->removeTimeout(&chooser, 1);
+        assert(chooser.showedType && launched("player --chosen http://192.168.1.70:8200/MediaItems/1.mp3"));
+        chooser.remember = true;
+        chooser.command = scratch + "/fake-player --remembered";
+        testApp->addTimeout(&chooser, 1, 20);
+        popupMedia(mediaPanel, "Other Application...");
+        testApp->removeTimeout(&chooser, 1);
+        assert(launched("player --remembered http://192.168.1.70:8200/MediaItems/1.mp3"));
+        mediaPanel->onCmdItemDoubleClicked(NULL, FXSEL(SEL_DOUBLECLICKED, FilePanel::ID_FILELIST), (void*)(FXival)song);
+        assert(launched("player --remembered http://192.168.1.70:8200/MediaItems/1.mp3"));
+        FileDict::setUserCommand(testApp->reg(), "mp3", "");
+        testApp->reg().writeUnsignedEntry("OPTIONS", "use_startup_notification", notification);
+        // Folders keep the plain menu
+        media->killSelection();
+        assert(popupMedia(mediaPanel, "") == "Open;Download...;Refresh;");
+        mediaPanel->onCmdDirectoryUp(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_DIRECTORY_UP), NULL);
+        assert(mediaPanel->getDirectory() == "dlna://192.168.1.70:8200");
+        puts("PASS: media servers browse read-only; files play with the Swordfish player, the desktop default or the browser; Play With and Copy Stream Address work");
+
+        // Downloads run in the background, never overwrite, and report failures once
+        const FXString saved = fixture + "/empty/Song One.mp3";
+        RemoteDirectory::download(mediaPanel, "http://192.168.1.70:8200/MediaItems/1.mp3", saved);
+        assert(RemoteDirectory::downloadsPending() == 1);
+        for (int waited = 0; waited < 60 && RemoteDirectory::downloadsPending(); ++waited) pump(app, 50);
+        assert(!RemoteDirectory::downloadsPending());
+        std::ifstream savedFile(saved.text());
+        std::string savedText;
+        assert(std::getline(savedFile, savedText) && savedText == "media:http://192.168.1.70:8200/MediaItems/1.mp3");
+        MountMessageResponder failure;
+        testApp->addTimeout(&failure, 1, 20);
+        RemoteDirectory::download(mediaPanel, "http://192.168.1.70:8200/MediaItems/missing.mp3", fixture + "/empty/missing.mp3");
+        for (int waited = 0; waited < 60 && (RemoteDirectory::downloadsPending() || failure.title.empty()); ++waited)
+            pump(app, 50);
+        testApp->removeTimeout(&failure, 1);
+        app.removeSignal(SIGCHLD);
+        assert(failure.title == "Download failed" &&
+               failure.message == "missing.mp3: The media server answered 404 Not Found\n");
+        assert(access((fixture + "/empty/missing.mp3").text(), F_OK) != 0);
+        assert(unlink(saved.text()) == 0);
+        // Slow downloads show progress; Cancel stops the queue and removes the unfinished file
+        const FXString slow = fixture + "/empty/slow.mp3";
+        RemoteDirectory::download(mediaPanel, "http://192.168.1.70:8200/MediaItems/slow.mp3", slow);
+        RemoteDirectory::download(mediaPanel, songUrl, fixture + "/empty/queued.mp3");
+        assert(RemoteDirectory::downloadsPending() == 2);
+        DialogBox* progress = NULL;
+        for (int waited = 0; waited < 60 && !(progress && progress->shown() &&
+                                              findText(progress, "512 B of 2")); ++waited)
+        {
+            pump(app, 50);
+            progress = downloadWindow();
+        }
+        assert(progress && progress->shown());
+        assert(findText(progress, "Downloading 1 of 2: slow.mp3"));
+        assert(access((slow + ".part").text(), F_OK) == 0);
+        FXButton* cancel = dynamic_cast<FXButton*>(findText(progress, "Cancel Downloads"));
+        assert(cancel);
+        cancel->getTarget()->handle(cancel, FXSEL(SEL_COMMAND, cancel->getSelector()), NULL);
+        assert(!RemoteDirectory::downloadsPending() && !progress->shown());
+        pump(app, 300);
+        assert(access((slow + ".part").text(), F_OK) != 0 && access(slow.text(), F_OK) != 0);
+        assert(access((fixture + "/empty/queued.mp3").text(), F_OK) != 0);
+        // Hide keeps the download running without the window coming back
+        RemoteDirectory::download(mediaPanel, "http://192.168.1.70:8200/MediaItems/slow.mp3", slow);
+        for (int waited = 0; waited < 60 && !progress->shown(); ++waited) pump(app, 50);
+        assert(progress->shown() && findText(progress, "Downloading 1 of 1: slow.mp3"));
+        FXButton* hide = dynamic_cast<FXButton*>(findText(progress, "Hide"));
+        assert(hide);
+        hide->getTarget()->handle(hide, FXSEL(SEL_COMMAND, hide->getSelector()), NULL);
+        pump(app, 800);
+        assert(!progress->shown() && RemoteDirectory::downloadsPending() == 1);
+        RemoteDirectory::cancelDownloads();
+        pump(app, 300);
+        assert(!RemoteDirectory::downloadsPending() && access((slow + ".part").text(), F_OK) != 0);
+        unlink(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+        assert(mediaPanel->navigatePane(fixture));
+        pump(app, 300);
+        assert(!RemoteDirectory::loading(mediaPanel->getList()));
+        puts("PASS: media downloads save local copies in the background, show progress, cancel cleanly and report failures once");
+    }
     assert(sharePanel->navigatePane(fixture + "/empty"));
     SidebarItem destination("mounted share", minifoldericon, SidebarItem::DEVICE, fixture + "/large");
     navigation->grab();
@@ -938,6 +1772,11 @@ int main(int argc, char** argv)
            "smb://MAKHLOUF;Hassanein@localhost/data/");
     assert(xf_gvfsmounturi(gvfsBase + "sftp:host=example.test,user=test,port=2222") ==
            "sftp://test@example.test:2222/");
+    assert(xf_gvfsmounturi(gvfsBase + "ftp:host=ftp.example.test") ==
+           "ftp://ftp.example.test/");
+    assert(xf_gvfsmounturi(gvfsBase + "ftp:host=ftp.example.test,user=test%40example,port=2121/nested") ==
+           "ftp://test%40example@ftp.example.test:2121/");
+    assert(xf_gvfsmounturi(gvfsBase + "ftp:user=test").empty());
     assert(xf_gvfsmounturi(gvfsBase + "mtp:host=%5Busb%3A001%2C002%5D") ==
            "mtp://%5Busb%3A001%2C002%5D/");
     assert(xf_gvfsmounturi(gvfsBase + "smb-share:share=data").empty());
@@ -1105,6 +1944,22 @@ int main(int argc, char** argv)
     assert(unmountCommands == 4);
     puts("PASS: GVFS unmount uses host gio, rejects failures and still-mounted results, closes active/inactive tabs");
 
+    app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", false);
+    File* ftpUnmount = new File(window, "FTP unmount regression", UNMOUNT);
+    ftpUnmount->create();
+    assert(ftpUnmount->mount(gvfsBase + "ftp:host=ftp.example.test", "FTP unmount regression", "exit 99") == 1);
+    assert(ftpUnmount->mount(gvfsBase + "ftp:host=ftp.example.test,user=test%40example,port=2121/nested",
+                             "FTP unmount regression", "exit 99") == 1);
+    delete ftpUnmount;
+    app.reg().writeUnsignedEntry("OPTIONS", "mount_messages", mountMessages);
+    std::ifstream ftpUnmountLog(getenv("SWORDFISH_TEST_MOUNT_LOG"));
+    int ftpUnmountCommands = 0;
+    while (std::getline(ftpUnmountLog, mountedUri))
+        if (mountedUri == "unmount ftp://ftp.example.test/" ||
+            mountedUri == "unmount ftp://test%40example@ftp.example.test:2121/") ++ftpUnmountCommands;
+    assert(ftpUnmountCommands == 2);
+    puts("PASS: FTP unmount invokes host gio with the mount URI, preserving encoded login and custom port");
+
     app.addTimeout(&mountMessagesResponder, 1, 20);
     FXString alreadyMountedPath;
     assert(sharePanel->resolveNetworkPath("smb://192.168.1.104/Team%20files", alreadyMountedPath) == 1);
@@ -1155,6 +2010,7 @@ int main(int argc, char** argv)
             assert(device->isEnabled());
             assert(device->deviceAction == SidebarItem::MOUNT_DEVICE && device->canEject);
             assert(panel->disconnectedDevice(device->path));
+            checkSidebarDeviceText(*device, navigation, true);
         }
     }
     assert(sharePanel->getTabButtons()->getNumActiveTabs() == beforeExternal);
@@ -1184,7 +2040,11 @@ int main(int argc, char** argv)
     assert(access(disk5.text(), F_OK) == 0 && deviceCount(label5) == 1);
     for (FXTreeItem* entry = devices->getFirst(); entry; entry = entry->getNext())
         if (static_cast<SidebarItem*>(entry)->key == label5)
-            assert(static_cast<SidebarItem*>(entry)->deviceAction == SidebarItem::UNMOUNT_DEVICE);
+        {
+            SidebarItem* device = static_cast<SidebarItem*>(entry);
+            assert(device->deviceAction == SidebarItem::UNMOUNT_DEVICE && device->getText() == label5);
+            checkSidebarDeviceText(*device, navigation, false);
+        }
     assert(rmdir(disk5.text()) == 0);
     pump(app, 1500);
     puts("PASS: the share go button remounts through the existing connection flow and returns to stop state");

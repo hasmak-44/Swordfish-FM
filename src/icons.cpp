@@ -4,6 +4,10 @@
 #include "i18n.h"
 
 #include <stdlib.h>
+#include <cmath>
+#include <cstring>
+#include <map>
+#include <vector>
 
 #include <fx.h>
 #include <FXPNGIcon.h>
@@ -174,6 +178,9 @@ FXIcon* minitreetwopanelsicon;
 FXIcon* minitwopanelsicon;
 FXIcon* miniundoicon;
 FXIcon* miniunmounticon;
+FXIcon* minidevicemounticon;
+FXIcon* minideviceunmounticon;
+FXIcon* minideviceejecticon;
 FXIcon* miniuppercaseicon;
 FXIcon* miniworkicon;
 FXIcon* miniwrapofficon;
@@ -241,6 +248,172 @@ static FXbool pathIsWithin(const FXString& path, const FXString& directory)
             path[directory.length()] == '/');
 }
 
+
+
+// Device symbol geometry in whole pixels: solid shapes inside a thin square frame,
+// centered so vertical and horizontal edges land exactly on pixel boundaries.
+struct DeviceShapes
+{
+    std::vector<std::vector<FXPoint> > polygons;
+    std::vector<FXRectangle> bars;
+};
+
+static DeviceShapes deviceSymbolShapes(DeviceSymbol symbol, FXint size)
+{
+    // Map a 16-unit design coordinate symmetrically around the icon center.
+    auto at = [size](FXdouble unit)
+    {
+        const FXdouble offset = (unit - 8.0) * size / 16.0;
+        return (FXshort)(size / 2 + (offset < 0 ? -(FXint)(0.5 - offset) : (FXint)(offset + 0.5)));
+    };
+    DeviceShapes shapes;
+    const FXshort frame = (FXshort)FXMAX(1, (size + 8) / 16);
+    shapes.bars.push_back(FXRectangle(0, 0, size, frame));
+    shapes.bars.push_back(FXRectangle(0, size - frame, size, frame));
+    shapes.bars.push_back(FXRectangle(0, frame, frame, size - 2 * frame));
+    shapes.bars.push_back(FXRectangle(size - frame, frame, frame, size - 2 * frame));
+    if (symbol == DEVICE_SYMBOL_MOUNT)
+        shapes.polygons.push_back({FXPoint(at(5), at(4)), FXPoint(at(12), at(8)), FXPoint(at(5), at(12))});
+    else if (symbol == DEVICE_SYMBOL_UNMOUNT)
+    {
+        shapes.bars.push_back(FXRectangle(at(4.5), at(4), at(7) - at(4.5), at(12) - at(4)));
+        shapes.bars.push_back(FXRectangle(at(9), at(4), at(11.5) - at(9), at(12) - at(4)));
+    }
+    else
+    {
+        shapes.polygons.push_back({FXPoint(at(4), at(9)), FXPoint(at(8), at(4)), FXPoint(at(12), at(9))});
+        shapes.bars.push_back(FXRectangle(at(4), at(10), at(12) - at(4), at(12) - at(10)));
+    }
+    return shapes;
+}
+
+static FXdouble symbolLuminance(FXColor color)
+{
+    auto linear = [](FXuint component)
+    {
+        const FXdouble value = component / 255.0;
+        return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * linear(FXREDVAL(color)) + 0.7152 * linear(FXGREENVAL(color)) +
+           0.0722 * linear(FXBLUEVAL(color));
+}
+
+static FXColor deviceSymbolColor(FXColor background)
+{
+    const FXdouble luminance = symbolLuminance(background);
+    // Choose whichever of black or white has the stronger contrast.
+    return (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05) ? FXRGB(0, 0, 0) : FXRGB(255, 255, 255);
+}
+
+static FXbool insidePolygon(FXdouble x, FXdouble y, const std::vector<FXPoint>& polygon)
+{
+    FXbool inside = false;
+    for (size_t i = 0, j = polygon.size() - 1; i < polygon.size(); j = i++)
+    {
+        const FXdouble ax = polygon[i].x, ay = polygon[i].y, bx = polygon[j].x, by = polygon[j].y;
+        if ((ay > y) != (by > y) && x < (bx - ax) * (y - ay) / (by - ay) + ax) inside = !inside;
+    }
+    return inside;
+}
+
+// Menu/toolbar icon blended over the theme color like loaded PNG icons. Straight
+// edges are pixel-exact; only the diagonal edges are smoothed.
+static FXIcon* makeDeviceIcon(FXApp* app, DeviceSymbol symbol, FXint size, FXColor background)
+{
+    const FXColor ink = deviceSymbolColor(background);
+    const DeviceShapes shapes = deviceSymbolShapes(symbol, size);
+    FXColor* pixels = NULL;
+    if (!FXMALLOC(&pixels, FXColor, size * size)) return NULL;
+    for (FXint py = 0; py < size; ++py)
+        for (FXint px = 0; px < size; ++px)
+        {
+            FXint covered = 0;
+            for (FXint sample = 0; sample < 16; ++sample)
+            {
+                const FXdouble sx = px + (sample % 4 + 0.5) / 4.0, sy = py + (sample / 4 + 0.5) / 4.0;
+                FXbool inside = false;
+                for (const FXRectangle& bar : shapes.bars)
+                    inside = inside || (sx >= bar.x && sx < bar.x + bar.w && sy >= bar.y && sy < bar.y + bar.h);
+                for (const std::vector<FXPoint>& polygon : shapes.polygons)
+                    inside = inside || insidePolygon(sx, sy, polygon);
+                if (inside) ++covered;
+            }
+            pixels[py * size + px] = FXRGBA(FXREDVAL(ink), FXGREENVAL(ink), FXBLUEVAL(ink), covered * 255 / 16);
+        }
+    FXIcon* icon = new FXIcon(app, pixels, 0, IMAGE_OWNED | IMAGE_KEEP, size, size);
+    icon->blend(background);
+    icon->create();
+    return icon;
+}
+
+void drawDeviceSymbol(FXDC& dc, FXApp* app, DeviceSymbol symbol, FXint x, FXint y, FXint size, FXColor background)
+{
+    // Sidebar rows reuse the smoothed menu rendering; icons are cached per row background.
+    static std::map<std::vector<FXuint>, FXIcon*> cache;
+    FXIcon*& icon = cache[{(FXuint)symbol, (FXuint)size, (FXuint)background}];
+    if (!icon) icon = makeDeviceIcon(app, symbol, size, background);
+    if (icon) dc.drawIcon(icon, x, y);
+}
+
+FXint xf_toolbariconsize(FXApp* app, const char* key)
+{
+    const FXint size = app->reg().readIntEntry("SETTINGS", key, 16);
+    return size == 24 || size == 32 ? size : 16;
+}
+
+FXIcon* xf_toolbaricon(FXApp* app, FXIcon* icon, FXint size)
+{
+    if (!icon || size <= 16) return NULL;
+    const FXint width = icon->getWidth() * size / 16, height = icon->getHeight() * size / 16;
+    // Device symbols are redrawn at the target size so they stay sharp.
+    if (icon == minidevicemounticon || icon == minideviceunmounticon || icon == minideviceejecticon)
+    {
+        const DeviceSymbol symbol = icon == minidevicemounticon ? DEVICE_SYMBOL_MOUNT :
+                                    icon == minideviceunmounticon ? DEVICE_SYMBOL_UNMOUNT : DEVICE_SYMBOL_EJECT;
+        return makeDeviceIcon(app, symbol, height, app->getBaseColor());
+    }
+    if (!icon->getData()) return NULL;
+    FXColor* pixels = NULL;
+    if (!FXMALLOC(&pixels, FXColor, icon->getWidth() * icon->getHeight())) return NULL;
+    memcpy(pixels, icon->getData(), sizeof(FXColor) * icon->getWidth() * icon->getHeight());
+    FXIcon* copy = new FXIcon(app, pixels, icon->getTransparentColor(), icon->getOptions() | IMAGE_OWNED | IMAGE_KEEP,
+                              icon->getWidth(), icon->getHeight());
+    // Exact doubling keeps edges crisp; other sizes are smoothed.
+    copy->scale(width, height, size == 32 ? 0 : 1);
+    copy->create();
+    return copy;
+}
+
+// Load an icon recolored red (blue and red channels swapped, red brightened) so
+// root actions stand out in any icon theme. Recoloring happens before blending
+// so the transparent background is left untouched.
+static FXIcon* loadRedIcon(FXApp* app, const FXString& iconpath, const FXString& iconname,
+                           double scale, FXColor blendcolor)
+{
+    FXString iconfile = FXPath::search(iconpath, iconname.text());
+    FXFileStream str;
+    if (iconfile.empty() || !str.open(iconfile, FXStreamLoad))
+    {
+        return NULL;
+    }
+    FXIcon* icon = new FXPNGIcon(app);
+    icon->loadPixels(str);
+    str.close();
+    icon->setOptions(IMAGE_KEEP);
+    FXColor* data = icon->getData();
+    if (data)
+    {
+        for (FXint i = 0; i < icon->getWidth() * icon->getHeight(); ++i)
+        {
+            FXColor c = data[i];
+            data[i] = FXRGBA(FXMIN(255, FXBLUEVAL(c) * 3 / 2), FXGREENVAL(c), FXREDVAL(c), FXALPHAVAL(c));
+        }
+    }
+    icon->scale(scale * icon->getWidth(), scale * icon->getHeight());
+    icon->blend(blendcolor);
+    icon->create();
+    return icon;
+}
 
 // Load all application icons as global variables
 FXbool loadAppIcons(FXApp* app, FXuint* iconpathstatus)
@@ -449,7 +622,7 @@ load:
     success = ((minitotrashicon = xf_loadiconfile(app, iconpath, "minitotrash.png", scalefrac, baseColor)) != NULL) & success;
     success = ((minidirbackicon = xf_loadiconfile(app, iconpath, "minidirback.png", scalefrac, baseColor)) != NULL) & success;
     success = ((minidirforwardicon = xf_loadiconfile(app, iconpath, "minidirforward.png", scalefrac, baseColor)) != NULL) & success;
-    success = ((minixferooticon = xf_loadiconfile(app, iconpath, "minixferoot.png", scalefrac, baseColor)) != NULL) & success;
+    success = ((minixferooticon = loadRedIcon(app, iconpath, "minixferoot.png", scalefrac, baseColor)) != NULL) & success;
     success = ((minixfeicon = xf_loadiconfile(app, iconpath, "minixfe.png", scalefrac, baseColor)) != NULL) & success;
     xfedockicon = xf_loadiconfile(app, defaulticonpath, "xfe-dock.png", scalefrac, baseColor, false);
     success = (xfedockicon != NULL) & success;
@@ -551,6 +724,12 @@ load:
         firstpass = false;
         goto load;
     }
-    
+
+    const FXint symbolSize = minimounticon ? minimounticon->getHeight() : (FXint)(20 * scalefrac);
+    minidevicemounticon = makeDeviceIcon(app, DEVICE_SYMBOL_MOUNT, symbolSize, baseColor);
+    minideviceunmounticon = makeDeviceIcon(app, DEVICE_SYMBOL_UNMOUNT, symbolSize, baseColor);
+    minideviceejecticon = makeDeviceIcon(app, DEVICE_SYMBOL_EJECT, symbolSize, baseColor);
+    success = minidevicemounticon && minideviceunmounticon && minideviceejecticon && success;
+
     return success;
 }

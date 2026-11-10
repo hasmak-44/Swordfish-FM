@@ -420,7 +420,13 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
 
     // Other default themes
     Theme theme;
-    
+
+    theme = Theme("MX Blues", _("A dark blue grey theme with teal lists and yellow selected text"),
+                      FXRGB(41, 53, 59), FXRGB(125, 125, 125), FXRGB(30, 36, 45), FXRGB(240, 248, 255),
+                      FXRGB(28, 69, 137), FXRGB(255, 255, 0), FXRGB(15, 53, 64), FXRGB(240, 248, 255),
+                      FXRGB(17, 61, 72), FXRGB(82, 129, 148), FXRGB(255, 0, 0), FXRGB(156, 186, 205));
+    Themes.push_back(theme);
+
     theme = Theme("Swordfish", _("The original theme"), FXRGB(237, 236, 235), FXRGB(125, 125, 125), FXRGB(255, 255, 255),
                       FXRGB(0, 0, 0),
                       FXRGB(10, 36, 106), FXRGB(255, 255, 255), FXRGB(255, 255, 255), FXRGB(0, 0, 0),
@@ -591,8 +597,14 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
                                      ID_FILE_TOOLTIPS);
     relativeresize = new FXCheckButton(group, _("Relative resizing of file lists") + FXString(" "), this,
                                        ID_RELATIVE_RESIZE);
-    showpathlink = new FXCheckButton(group, _("Display a path linker above file lists") + FXString(" "), this,
-                                     ID_SHOW_PATHLINK);
+    FXGroupBox* addressModeGroup = new FXGroupBox(group, _("Default address bar mode"),
+                                                   GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    FXHorizontalFrame* addressModeRow = new FXHorizontalFrame(addressModeGroup, LAYOUT_FILL_X | FRAME_NONE,
+                                                               0, 0, 0, 0, 0, 0, 0, 0);
+    addressbuttonmode = new FXRadioButton(addressModeRow, _("Button mode (breadcrumbs)") + FXString(" "),
+                                          &addressbarmodetarget, FXDataTarget::ID_OPTION + 1);
+    addresseditmode = new FXRadioButton(addressModeRow, _("Edit mode (text)") + FXString(" "),
+                                        &addressbarmodetarget, FXDataTarget::ID_OPTION + 0);
 #ifdef STARTUP_NOTIFICATION
     usesn = new FXCheckButton(group, _("Notify when applications start up") + FXString(" "));
 #endif
@@ -937,9 +949,11 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     FXbool restore_tabs = getApp()->reg().readUnsignedEntry("OPTIONS", "restore_tabs", false);
     restoretabs->setCheck(restore_tabs);
 
-    // Display path linker
-    FXbool show_pathlink = getApp()->reg().readUnsignedEntry("SETTINGS", "showpathlinker", true);
-    showpathlink->setCheck(show_pathlink);
+    // Address bar mode
+    addressbarmode = getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false) ? 1 : 0;
+    addressbarmodetarget.connect(addressbarmode);
+    addressbuttonmode->setCheck(addressbarmode == 1);
+    addresseditmode->setCheck(addressbarmode == 0);
 
 #ifdef STARTUP_NOTIFICATION
     FXbool use_sn = getApp()->reg().readUnsignedEntry("OPTIONS", "use_startup_notification", true);
@@ -1279,6 +1293,27 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
     spinshade->setValue(getApp()->reg().readUnsignedEntry("SETTINGS", "bar_shading", 7));
     spinshade->setTipText(_("Darkens (or lightens, with dark themes) the tool bars, address bars, tab bars and "
                             "status bars so they stand apart. 0 disables shading."));
+
+    // Icon size of the custom actions toolbar; the built-in toolbars keep the theme size
+    FXGroupBox* toolbaricons = new FXGroupBox(visual, _("Tool Bar Icon Size"),
+                                              GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    FXMatrix* toolbarmatrix = new FXMatrix(toolbaricons, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP);
+    new FXLabel(toolbarmatrix, _("Custom toolbar:") + FXString(" "), NULL,
+                JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
+    FXHorizontalFrame* toolbariconrow = new FXHorizontalFrame(toolbarmatrix, FRAME_NONE | LAYOUT_FILL_ROW,
+                                                               0, 0, 0, 0, 0, 0, 0, 0);
+    customtoolbariconsize = xf_toolbariconsize(getApp(), "customtoolbariconsize");
+    customtoolbariconsizetarget.connect(customtoolbariconsize);
+    const char* toolbariconlabels[] = { _("16 px"), _("24 px"), _("32 px") };
+    for (FXint i = 0; i < 3; ++i)
+    {
+        customtoolbariconsizebuttons[i] = new FXRadioButton(toolbariconrow, toolbariconlabels[i],
+                                                            &customtoolbariconsizetarget,
+                                                            FXDataTarget::ID_OPTION + 16 + i * 8);
+        customtoolbariconsizebuttons[i]->setCheck(customtoolbariconsize == 16 + i * 8);
+        customtoolbariconsizebuttons[i]->setTipText(
+            _("Custom actions toolbar only. Sizes are scaled with DPI and apply when Preferences is accepted."));
+    }
 
     // Monitor resolution
     FXGroupBox* ui = new FXGroupBox(visual, _("Screen Resolution"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
@@ -3286,50 +3321,61 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     {
         integrationSelection.commandPath = integrationCommandPaths[destinationIndex];
     }
-    if (integrationSelection.commandSymlink && integrationSelection.commandPath.empty())
+    const bool integrationChanged =
+        integrationSelection.desktopShortcut != integrationInitialSelection.desktopShortcut ||
+        integrationSelection.applicationsMenu != integrationInitialSelection.applicationsMenu ||
+        integrationSelection.commandSymlink != integrationInitialSelection.commandSymlink ||
+        (integrationSelection.commandSymlink &&
+         integrationSelection.commandPath != integrationInitialSelection.commandPath);
+    if (integrationChanged)
     {
-        MessageBox::error(this, BOX_OK, _("System Integration Error"),
-                          _("No usable command destination is available in the host PATH. PATH will not be modified."));
-        return 0;
-    }
-    if (integrationSelection.commandSymlink || !integrationPreviousCommand.empty())
-    {
-        FXString details;
-        if (!integrationPreviousCommand.empty() &&
-            (!integrationSelection.commandSymlink ||
-             integrationSelection.commandPath != integrationPreviousCommand))
+        if (integrationSelection.commandSymlink && integrationSelection.commandPath.empty())
         {
-            const SystemIntegration::CommandDestination previous =
-                SystemIntegration::commandDestinationInfo(integrationPreviousCommand);
-            details += FXString(_("Remove managed command link:\n")) + integrationPreviousCommand.c_str();
-            details += previous.shared ? _(" — shared") : _(" — your account");
-            details += previous.requiresAuthorization ? _("; administrator authorization required\n\n") :
-                                                         _("; no administrator authorization\n\n");
-        }
-        if (integrationSelection.commandSymlink)
-        {
-            details += FXString(_("Create/keep command link:\n")) + integrationDestination->getText() + "\n\n";
-        }
-        details += _("Shared locations make this command available to other users. Protected link creation/removal\n"
-                     "requires explicit system authorization to run the bundled/installed command-link helper;\n"
-                     "no password is collected by Swordfish.\n"
-                     "PATH is never changed. Continue?");
-        if (BOX_CLICKED_YES != MessageBox::question(this, BOX_YES_NO, _("Confirm Command Integration"),
-                                                    "%s", details.text()))
-        {
+            MessageBox::error(this, BOX_OK, _("System Integration Error"),
+                              _("No usable command destination is available in the host PATH. PATH will not be modified."));
             return 0;
         }
-    }
-    std::string integrationError;
-    std::string integrationWarning;
-    if (!SystemIntegration::applySelection(integrationSelection, integrationError, integrationWarning))
-    {
-        MessageBox::error(this, BOX_OK, _("System Integration Error"), "%s", integrationError.c_str());
-        return 0;
-    }
-    if (!integrationWarning.empty())
-    {
-        MessageBox::warning(this, BOX_OK, _("System Integration"), "%s", integrationWarning.c_str());
+        if (integrationSelection.commandSymlink || !integrationPreviousCommand.empty())
+        {
+            FXString details;
+            if (!integrationPreviousCommand.empty() &&
+                (!integrationSelection.commandSymlink ||
+                 integrationSelection.commandPath != integrationPreviousCommand))
+            {
+                const SystemIntegration::CommandDestination previous =
+                    SystemIntegration::commandDestinationInfo(integrationPreviousCommand);
+                details += FXString(_("Remove managed command link:\n")) + integrationPreviousCommand.c_str();
+                details += previous.shared ? _(" — shared") : _(" — your account");
+                details += previous.requiresAuthorization ? _("; administrator authorization required\n\n") :
+                                                             _("; no administrator authorization\n\n");
+            }
+            if (integrationSelection.commandSymlink)
+            {
+                details += FXString(_("Create/keep command link:\n")) + integrationDestination->getText() + "\n\n";
+            }
+            details += _("Shared locations make this command available to other users. Protected link creation/removal\n"
+                         "requires explicit system authorization to run the bundled/installed command-link helper;\n"
+                         "no password is collected by Swordfish.\n"
+                         "PATH is never changed. Continue?");
+            if (BOX_CLICKED_YES != MessageBox::question(this, BOX_YES_NO, _("Confirm Command Integration"),
+                                                        "%s", details.text()))
+            {
+                return 0;
+            }
+        }
+        std::string integrationError;
+        std::string integrationWarning;
+        if (!SystemIntegration::applySelection(integrationSelection, integrationError, integrationWarning))
+        {
+            MessageBox::error(this, BOX_OK, _("System Integration Error"), "%s", integrationError.c_str());
+            return 0;
+        }
+        integrationInitialSelection = integrationSelection;
+        integrationPreviousCommand = integrationSelection.commandSymlink ? integrationSelection.commandPath : "";
+        if (!integrationWarning.empty())
+        {
+            MessageBox::warning(this, BOX_OK, _("System Integration"), "%s", integrationWarning.c_str());
+        }
     }
 
     oldtimeformat = timeformat->getText();
@@ -3565,9 +3611,9 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     // Restore tabs
     getApp()->reg().writeUnsignedEntry("OPTIONS", "restore_tabs", (FXuint)restoretabs->getCheck());
 
-    // Path linker
-    FXbool show_pathlink = showpathlink->getCheck();
-    getApp()->reg().writeUnsignedEntry("SETTINGS", "showpathlinker", show_pathlink);
+    // Address bar mode
+    FXbool show_pathlink = addressbarmode == 1;
+    getApp()->reg().writeUnsignedEntry("SETTINGS", "show_pathlinker", show_pathlink);
     if (show_pathlink != show_pathlink_prev)
     {
         getApp()->reg().write();
@@ -3646,6 +3692,17 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
         restart_uidpi = true;
     }
 
+    // Custom toolbar icon size
+    if (customtoolbariconsize != xf_toolbariconsize(getApp(), "customtoolbariconsize"))
+    {
+        getApp()->reg().writeIntEntry("SETTINGS", "customtoolbariconsize", customtoolbariconsize);
+        CustomActionsUI* customactions = static_cast<XFileExplorer*>(mainWindow)->getCustomActions();
+        if (customactions)
+        {
+            customactions->refreshToolbarIcons();
+        }
+    }
+
     if (dirpanel_mode != dirpanel_mode_prev)
     {
         restart_dirpanel_mode = true;
@@ -3712,7 +3769,9 @@ long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
     relativeresize->setCheck(relativeresize_prev);
     alwaysshowtabbar->setCheck(alwaysshowtabbar_prev);
     restoretabs->setCheck(restoretabs_prev);
-    showpathlink->setCheck(show_pathlink_prev);
+    addressbarmode = show_pathlink_prev ? 1 : 0;
+    addressbuttonmode->setCheck(addressbarmode == 1);
+    addresseditmode->setCheck(addressbarmode == 0);
     dirpanel_mode = dirpanel_mode_prev;
     dirpanel_list_startup = dirpanel_list_startup_prev;
     copysuffix_pos = copysuffix_pos_prev;
@@ -3831,6 +3890,12 @@ long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
 // Execute dialog box modally
 FXuint PreferencesBox::execute(FXuint placement)
 {
+    // Show the saved toolbar icon size (also discards a choice from a cancelled session)
+    customtoolbariconsize = xf_toolbariconsize(getApp(), "customtoolbariconsize");
+    for (FXint i = 0; i < 3; ++i)
+    {
+        customtoolbariconsizebuttons[i]->setCheck(customtoolbariconsize == 16 + i * 8);
+    }
     SystemIntegration::Selection integrationSelection;
     std::string integrationError;
     integrationPreviousCommand.clear();
@@ -3851,7 +3916,8 @@ FXuint PreferencesBox::execute(FXuint placement)
     {
         integrationDestination->setCurrentItem(0);
     }
-    if (SystemIntegration::readSelection(integrationSelection, integrationError))
+    const bool integrationReadable = SystemIntegration::readSelection(integrationSelection, integrationError);
+    if (integrationReadable)
     {
         integrationDesktop->setCheck(integrationSelection.desktopShortcut);
         integrationMenu->setCheck(integrationSelection.applicationsMenu);
@@ -3875,12 +3941,29 @@ FXuint PreferencesBox::execute(FXuint placement)
     }
     else
     {
-        integrationDesktop->setCheck(false);
-        integrationMenu->setCheck(false);
-        integrationCommand->setCheck(false);
+        integrationDesktop->setCheck(integrationSelection.desktopShortcut);
+        integrationMenu->setCheck(integrationSelection.applicationsMenu);
+        integrationCommand->setCheck(integrationSelection.commandSymlink);
         integrationStatus->setText(FXString(_("Unable to read integration ownership state: ")) +
-                                   integrationError.c_str());
+                                   integrationError.c_str() +
+                                   _("\nIntegration controls are disabled to protect existing launchers.\nOther preferences can still be saved."));
     }
+    FXWindow* integrationControls[] = { integrationDesktop, integrationMenu, integrationCommand,
+                                        integrationDestination };
+    for (FXWindow* control : integrationControls)
+    {
+        if (integrationReadable)
+            control->enable();
+        else
+            control->disable();
+    }
+    integrationInitialSelection.desktopShortcut = integrationDesktop->getCheck();
+    integrationInitialSelection.applicationsMenu = integrationMenu->getCheck();
+    integrationInitialSelection.commandSymlink = integrationCommand->getCheck();
+    const FXint initialDestination = integrationDestination->getCurrentItem();
+    integrationInitialSelection.commandPath =
+        initialDestination >= 0 && (size_t)initialDestination < integrationCommandPaths.size() ?
+        integrationCommandPaths[initialDestination] : "";
 
     // Save current preferences to restore them if cancel is pressed
     associationoverrides.clear();
@@ -3896,7 +3979,11 @@ FXuint PreferencesBox::execute(FXuint placement)
     relativeresize_prev = relativeresize->getCheck();
     alwaysshowtabbar_prev = alwaysshowtabbar->getCheck();
     restoretabs_prev = restoretabs->getCheck();
-    show_pathlink_prev = showpathlink->getCheck();
+    // The address bar button can switch modes while this dialog is hidden
+    show_pathlink_prev = getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false);
+    addressbarmode = show_pathlink_prev ? 1 : 0;
+    addressbuttonmode->setCheck(addressbarmode == 1);
+    addresseditmode->setCheck(addressbarmode == 0);
     foldersizelist->setCurrentItem(FileList::getFolderSizeMode(getApp()));
     loglevellist->setCurrentItem(FXMIN(getApp()->reg().readUnsignedEntry("OPTIONS", "log_level", APP_LOG_LEVEL_NORMAL),
                                        (FXuint)APP_LOG_LEVEL_DEBUG));

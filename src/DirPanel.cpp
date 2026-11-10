@@ -74,6 +74,16 @@ static FXbool safeDiscoveredHost(const FXString& host)
     return true;
 }
 
+static FXString networkSourcesText(FXString sources)
+{
+    sources.substitute("ws-discovery", "WS-Discovery");
+    sources.substitute("gvfs", "GVFS");
+    sources.substitute("mdns", "Zeroconf");
+    sources.substitute("ssdp", "UPnP");
+    sources.substitute(",", ", ");
+    return sources;
+}
+
 static FXString networkServerTip(const FXString& key, const FXString& host, const FXString& group,
                                  const FXString& sources)
 {
@@ -86,11 +96,49 @@ static FXString networkServerTip(const FXString& key, const FXString& host, cons
     {
         tip += "\n" + (group.contains(':') ? group.before(':') + ": " + group.after(':') : group);
     }
-    FXString found = sources;
-    found.substitute("ws-discovery", "WS-Discovery");
-    found.substitute("gvfs", "GVFS");
-    found.substitute(",", ", ");
-    return tip + "\n" + _("Found by: ") + found;
+    return tip + "\n" + _("Found by: ") + networkSourcesText(sources);
+}
+
+static FXString networkServiceLabel(const FXString& kind)
+{
+    if (kind == "ftp") return _("FTP");
+    if (kind == "sftp") return _("SFTP");
+    if (kind == "media") return _("media server");
+    if (kind == "printer") return _("printer");
+    return _("router / access point");
+}
+
+static FXIcon* networkServiceIcon(const FXString& kind)
+{
+    if (kind == "ftp" || kind == "sftp") return mininetdriveicon;
+    if (kind == "media") return minifoldermusicicon;
+    if (kind == "printer") return miniprinticon;
+    return miniservericon;
+}
+
+static FXString networkServiceTip(const FXString& kind, const FXString& address, const FXString& url,
+                                  const FXString& sources)
+{
+    FXString tip = FXString(_("Address: ")) + address;
+    if (kind == "media")
+        tip += FXString("\n") + _("Browse music, videos and pictures (read-only)");
+    else if (kind == "printer" || kind == "router")
+        tip += FXString("\n") + _("Opens the settings page: ") + url;
+    else
+        tip += FXString("\n") + _("Connects to ") + url;
+    return tip + "\n" + _("Found by: ") + networkSourcesText(sources);
+}
+
+static FXbool safeServiceUrl(const FXString& kind, const FXString& url)
+{
+    for (FXint i = 0; i < url.length(); ++i)
+    {
+        if (static_cast<FXuchar>(url[i]) <= 0x20 || url[i] == 0x7f) return false;
+    }
+    if (kind == "ftp") return url.left(6) == "ftp://";
+    if (kind == "sftp") return url.left(7) == "sftp://";
+    if (kind == "media") return !RemoteDirectory::mediaRoot(url).empty();
+    return comparecase(url.left(7), "http://") == 0 || comparecase(url.left(8), "https://") == 0;
 }
 
 #if defined(linux)
@@ -451,6 +499,8 @@ FXDEFMAP(DirPanel) DirPanelMap[] =
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR_OPEN_TAB, DirPanel::onSidebarAction),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR_PROPERTIES, DirPanel::onSidebarAction),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR_OPEN_GROUP, DirPanel::onSidebarTabGroup),
+    FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR_OPEN_SERVICE, DirPanel::onCmdSidebarService),
+    FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR_PRINTER_SETTINGS, DirPanel::onCmdSidebarService),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR_RENAME_GROUP, DirPanel::onSidebarTabGroup),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_SIDEBAR_REMOVE_GROUP, DirPanel::onSidebarTabGroup),
     FXMAPFUNC(SEL_COMMAND, DirPanel::ID_PROPERTIES, DirPanel::onCmdProperties),
@@ -579,6 +629,16 @@ void DirPanel::createPlaces(FXWindow* owner, FXComposite* parent, FXColor back, 
             RemoteDirectory::setHostName(names->key(i), names->data(i));
         }
     }
+    // Media servers found earlier ("host:port = location<TAB>name"), for restored dlna:// tabs
+    FXStringDict* media = getApp()->reg().find("NETWORK MEDIA");
+    if (media)
+    {
+        for (FXint i = media->first(); i < media->size(); i = media->next(i))
+        {
+            const FXString value = media->data(i);
+            RemoteDirectory::addMediaServer(value.before('\t'), value.after('\t'));
+        }
+    }
 }
 
 // Names of the tab groups saved from the Bookmarks menu ("groupN = name;id" in [TAB GROUPS])
@@ -618,6 +678,11 @@ void DirPanel::syncSidebar()
             {
                 signature += "\n" + server.key + "\t" + server.host + "\t" + server.name + "\t" +
                              server.group + "\t" + server.sources + (server.local ? "\t1" : "\t0");
+            }
+            for (const NetworkService& service : networkServices)
+            {
+                signature += "\nservice\t" + service.kind + "\t" + service.key + "\t" + service.address + "\t" +
+                             service.name + "\t" + service.url + "\t" + service.sources;
             }
         }
         for (FXint i = 0; group < 3 && i < sources[group]->getNumItems(); ++i)
@@ -691,6 +756,15 @@ void DirPanel::syncSidebar()
                 SidebarItem* item = new SidebarItem(label, miniservericon, SidebarItem::SERVER,
                                                     server.host, server.key);
                 item->tip = networkServerTip(server.key, server.host, server.group, server.sources);
+                item->setHasItems(false);
+                sidebar->appendItem(root, item);
+            }
+            for (const NetworkService& service : networkServices)
+            {
+                SidebarItem* item = new SidebarItem(service.name + " (" + networkServiceLabel(service.kind) + ")",
+                                                    networkServiceIcon(service.kind), SidebarItem::SERVICE,
+                                                    service.url, service.kind);
+                item->tip = networkServiceTip(service.kind, service.address, service.url, service.sources);
                 item->setHasItems(false);
                 sidebar->appendItem(root, item);
             }
@@ -787,6 +861,16 @@ void DirPanel::highlightLocation()
                 (path.length() == prefix.length() || path[prefix.length()] == '/'))
             {
                 return 2 * prefix.length() + (path.length() == prefix.length());
+            }
+            return 0;
+        }
+        if (item->kind == SidebarItem::SERVICE)
+        {
+            const FXString root = item->key == "media" ? RemoteDirectory::mediaRoot(location) : FXString::null;
+            if (!root.empty() && comparecase(path.left(root.length()), root) == 0 &&
+                (path.length() == root.length() || path[root.length()] == '/'))
+            {
+                return 2 * root.length() + (path.length() == root.length());
             }
             return 0;
         }
@@ -957,6 +1041,15 @@ long DirPanel::onSidebarActivate(FXObject*, FXSelector sel, void* ptr)
         getApp()->flush();
         window->getCurrentPanel()->openServerShares(host);
     }
+    else if (item->kind == SidebarItem::SERVICE)
+    {
+        const FXString kind = item->key, url = item->path;
+        FXString name = item->getText();
+        if (sidebar->grabbed()) sidebar->ungrab();
+        getApp()->flush();
+        if (name.rfind(" (") > 0) name.trunc(name.rfind(" ("));
+        openNetworkService(kind, url, name);
+    }
 #if defined(linux)
     else if (item->kind == SidebarItem::DEVICE &&
              (item->path.left(5) == "/dev/" || mountslist->disconnected(item->path)))
@@ -1005,7 +1098,8 @@ long DirPanel::onSidebarPopup(FXObject*, FXSelector, void* ptr)
     FXMenuPane menu(this);
     const FXbool unmountedDrive = sidebarContext->kind == SidebarItem::DEVICE &&
                                   (sidebarContext->path.left(5) == "/dev/" || mountslist->disconnected(sidebarContext->path));
-    if (!sidebarContext->path.empty() && sidebarContext->kind != SidebarItem::SERVER && !unmountedDrive)
+    if (!sidebarContext->path.empty() && sidebarContext->kind != SidebarItem::SERVER &&
+        sidebarContext->kind != SidebarItem::SERVICE && !unmountedDrive)
     {
         new FXMenuCommand(&menu, _("New &Tab"), mininewtabicon, this, ID_SIDEBAR_OPEN_TAB);
         if (sidebarContext->kind == SidebarItem::PLACE || sidebarContext->kind == SidebarItem::BOOKMARK ||
@@ -1017,6 +1111,11 @@ long DirPanel::onSidebarPopup(FXObject*, FXSelector, void* ptr)
             new FXMenuCommand(&menu, _("New &Window"), minixfeicon, this, action);
         }
         new FXMenuCommand(&menu, _("&Properties"), miniattribicon, this, ID_SIDEBAR_PROPERTIES);
+    }
+    if ((sidebarContext->kind == SidebarItem::PLACE) && (sidebarContext->path == trashfileslocation))
+    {
+        new FXMenuSeparator(&menu);
+        new FXMenuCommand(&menu, _("&Empty Trash"), minitrashfullicon, mainWindow, XFileExplorer::ID_EMPTY_TRASH);
     }
     if (sidebarContext->kind == SidebarItem::BOOKMARK)
     {
@@ -1039,13 +1138,24 @@ long DirPanel::onSidebarPopup(FXObject*, FXSelector, void* ptr)
 #if defined(linux)
     if (sidebarContext->kind == SidebarItem::DEVICE)
     {
-        new FXMenuCommand(&menu, _("M&ount"), minimounticon, this, ID_MOUNT);
-        new FXMenuCommand(&menu, _("&Unmount"), miniunmounticon, this, ID_UMOUNT);
-        new FXMenuCommand(&menu, _("&Eject (Safely Remove)"), miniunmounticon, this, ID_EJECT);
+        new FXMenuCommand(&menu, _("M&ount"), minidevicemounticon, this, ID_MOUNT);
+        new FXMenuCommand(&menu, _("&Unmount"), minideviceunmounticon, this, ID_UMOUNT);
+        new FXMenuCommand(&menu, _("&Eject (Safely Remove)"), minideviceejecticon, this, ID_EJECT);
     }
 #endif
+    if (sidebarContext->kind == SidebarItem::SERVICE)
+    {
+        new FXMenuCommand(&menu, sidebarContext->key == "media" ? _("&Browse") :
+                          sidebarContext->key == "ftp" || sidebarContext->key == "sftp" ? _("&Connect") :
+                          _("Open &Settings Page"), NULL, this, ID_SIDEBAR_OPEN_SERVICE);
+    }
+    if (sidebarContext->kind == SidebarItem::SERVICE && sidebarContext->key == "printer")
+    {
+        new FXMenuCommand(&menu, _("&Printer Settings on This Computer"), miniprinticon, this,
+                          ID_SIDEBAR_PRINTER_SETTINGS);
+    }
     if (sidebarContext == sidebarRoots[3] || sidebarContext->kind == SidebarItem::SERVER ||
-        sidebarContext->kind == SidebarItem::REFRESH || sidebarContext->kind == SidebarItem::NOTICE)
+        sidebarContext->kind == SidebarItem::SERVICE || sidebarContext->kind == SidebarItem::REFRESH || sidebarContext->kind == SidebarItem::NOTICE)
     {
         new FXMenuCommand(&menu, networkRefresh->getText(), minireloadicon, this, ID_REFRESH_NETWORK);
     }
@@ -1254,9 +1364,9 @@ DirPanel::DirPanel(FXWindow* owner, FXComposite* p, FXColor listbackcolor, FXCol
     xf_shadebar(statusbar, xf_barcolor(getApp(), 1));
 
     // Home and trahscan locations
-    trashlocation = xdgdatahome + PATHSEPSTRING TRASHPATH;
-    trashfileslocation = xdgdatahome + PATHSEPSTRING TRASHFILESPATH;
-    trashinfolocation = xdgdatahome + PATHSEPSTRING TRASHINFOPATH;
+    trashlocation = xf_trashdatahome() + PATHSEPSTRING TRASHPATH;
+    trashfileslocation = xf_trashdatahome() + PATHSEPSTRING TRASHFILESPATH;
+    trashinfolocation = xf_trashdatahome() + PATHSEPSTRING TRASHINFOPATH;
 
     // Start location (we return to the start location after each chdir)
     startlocation = FXSystem::getCurrentDirectory();
@@ -1454,6 +1564,13 @@ long DirPanel::onCmdGotoPlace(FXObject*, FXSelector, void*)
 
     // Place location
     FXString directory = placeslist->getItemPathname(key);
+
+    // The trash folders only exist after a first deletion; create them on demand like other file managers
+    if ((directory == trashfileslocation) && !xf_existfile(directory))
+    {
+        xf_mkpath(trashfileslocation.text(), 0700);
+        xf_mkpath(trashinfolocation.text(), 0700);
+    }
 
     // Permission problem or does not exist
     if (!xf_existfile(directory))
@@ -2007,6 +2124,7 @@ void DirPanel::startNetworkDiscovery()
     }
 
     networkServers.clear();
+    networkServices.clear();
     networkLineBuffer.clear();
     networkError.clear();
     networkWarning.clear();
@@ -2082,6 +2200,46 @@ void DirPanel::appendNetworkResult(FXString line)
         {
             networkWarning = message.left(300);
         }
+        return;
+    }
+    if (record == "SERVICE")
+    {
+        NetworkService service;
+        service.kind = line.section('\t', 1);
+        service.key = line.section('\t', 2);
+        service.address = line.section('\t', 3);
+        service.name = line.section('\t', 4);
+        service.url = line.section('\t', 5);
+        service.sources = line.section('\t', 6);
+        if (line.contains('\t') != 6 || service.key.empty() || !safeDiscoveredHost(service.address) ||
+            (service.kind != "ftp" && service.kind != "sftp" && service.kind != "media" &&
+             service.kind != "printer" && service.kind != "router") || !safeServiceUrl(service.kind, service.url))
+        {
+            appLog(APP_LOG_ERRORS, "network-discovery-invalid-record", line.left(300));
+            networkInvalidEntries = true;
+            return;
+        }
+        if (service.name.empty()) service.name = service.address;
+        if (service.kind == "media")
+        {
+            const FXString root = RemoteDirectory::addMediaServer(service.url, service.name);
+            const FXString authority = root.after('/', 2);
+            const FXString saved = service.url + "\t" + service.name;
+            if (getApp()->reg().readStringEntry("NETWORK MEDIA", authority.text(), "") != saved)
+                getApp()->reg().writeStringEntry("NETWORK MEDIA", authority.text(), saved.text());
+        }
+        std::vector<NetworkService>::iterator existing = networkServices.begin();
+        while (existing != networkServices.end() && existing->key != service.key) ++existing;
+        if (existing != networkServices.end())
+            *existing = service;
+        else if (networkServices.size() < 256)
+            networkServices.push_back(service);
+        std::stable_sort(networkServices.begin(), networkServices.end(),
+                         [](const NetworkService& a, const NetworkService& b) -> bool
+        {
+            if (a.kind != b.kind) return a.kind == "media" || (b.kind != "media" && a.kind < b.kind);
+            return comparecase(a.name, b.name) < 0;
+        });
         return;
     }
     NetworkServer server;
@@ -2235,10 +2393,9 @@ void DirPanel::finishNetworkDiscovery()
     {
         networkStatus->setText(_("SMB discovery ended unexpectedly."));
     }
-    else if (!networkServers.empty())
+    else if (!networkServers.empty() || !networkServices.empty())
     {
-        networkStatus->setText(FXStringVal((FXint)networkServers.size()) +
-                               _(" computer(s) sharing files found. Click a computer to view its shares."));
+        networkStatus->setText(networkFoundText());
     }
     else if (!networkWarning.empty())
     {
@@ -2254,6 +2411,98 @@ void DirPanel::finishNetworkDiscovery()
     }
     appLog(networkError.empty() && WIFEXITED(networkExitStatus) && WEXITSTATUS(networkExitStatus) == 0 ?
            APP_LOG_UI : APP_LOG_ERRORS, "network-discovery-finished", networkStatus->getText());
+}
+
+FXString DirPanel::networkFoundText() const
+{
+    if (networkServices.empty())
+        return FXStringVal((FXint)networkServers.size()) +
+               _(" computer(s) sharing files found. Click a computer to view its shares.");
+    if (networkServers.empty())
+        return FXStringVal((FXint)networkServices.size()) + _(" network device(s) found. Click one to open it.");
+    return FXStringVal((FXint)networkServers.size()) + _(" computer(s) sharing files and ") +
+           FXStringVal((FXint)networkServices.size()) + _(" other device(s) found. Click one to open it.");
+}
+
+// Opens a web page with the desktop's browser (outside the portable bundle's environment).
+static FXbool openHostUrl(FXWindow* owner, const FXString& url, const FXString& startlocation)
+{
+    const char* hostPath = getenv("SWORDFISH_HOST_PATH");
+    FXString opener = FXPath::search(hostPath ? FXString(hostPath) : FXSystem::getExecPath(), "xdg-open");
+    if (opener.empty() || !FXStat::isExecutable(opener))
+    {
+        MessageBox::error(owner, BOX_OK, _("Error"), _("Please install xdg-utils to open %s"), url.text());
+        return false;
+    }
+    const FXString cmd = xf_hostcommand(xf_quote(opener) + " " + xf_quote(url));
+#ifdef STARTUP_NOTIFICATION
+    const int result = runcmd(cmd, "xdg-open", ROOTDIR, startlocation, false, "");
+#else
+    const int result = runcmd(cmd, ROOTDIR, startlocation);
+#endif
+    if (result < 0)
+    {
+        MessageBox::error(owner, BOX_OK, _("Error"), _("Unable to launch the browser for %s"), url.text());
+        return false;
+    }
+    return true;
+}
+
+void DirPanel::openNetworkService(const FXString& kind, const FXString& url, const FXString& name)
+{
+    appLog(APP_LOG_UI, "network-service-open", "kind=" + kind + " url=\"" + url + "\"");
+    FilePanel* panel = static_cast<XFileExplorer*>(mainWindow)->getCurrentPanel();
+    if (kind == "media")
+    {
+        const FXString root = RemoteDirectory::addMediaServer(url, name);
+        if (root.empty()) return;
+        if (panel->getDirectory() == root)
+        {
+            RemoteDirectory::refresh(root);
+            return;
+        }
+        panel->navigatePane(root);
+    }
+    else if (kind == "ftp" || kind == "sftp")
+    {
+        FXString mounted;
+        if (panel->resolveNetworkPath(url, mounted) == 1)
+        {
+            panel->navigatePane(mounted);
+        }
+    }
+    else
+    {
+        openHostUrl(this, url, startlocation);
+    }
+}
+
+long DirPanel::onCmdSidebarService(FXObject*, FXSelector sel, void*)
+{
+    if (!sidebarContext || sidebarContext->kind != SidebarItem::SERVICE) return 1;
+    const FXString kind = sidebarContext->key, url = sidebarContext->path;
+    FXString name = sidebarContext->getText();
+    if (name.rfind(" (") > 0) name.trunc(name.rfind(" ("));
+    if (FXSELID(sel) == ID_SIDEBAR_OPEN_SERVICE)
+    {
+        openNetworkService(kind, url, name);
+        return 1;
+    }
+    // Local print settings: the desktop's printer tool, else the CUPS web page
+    const char* hostPath = getenv("SWORDFISH_HOST_PATH");
+    const FXString tool = FXPath::search(hostPath ? FXString(hostPath) : FXSystem::getExecPath(),
+                                         "system-config-printer");
+    if (!tool.empty() && FXStat::isExecutable(tool))
+    {
+        const FXString cmd = xf_hostcommand(xf_quote(tool));
+#ifdef STARTUP_NOTIFICATION
+        if (runcmd(cmd, "system-config-printer", ROOTDIR, startlocation, false, "") >= 0) return 1;
+#else
+        if (runcmd(cmd, ROOTDIR, startlocation) >= 0) return 1;
+#endif
+    }
+    openHostUrl(this, "http://localhost:631/printers/", startlocation);
+    return 1;
 }
 
 void DirPanel::stopNetworkDiscovery()
@@ -2277,9 +2526,11 @@ long DirPanel::onNetworkTimeout(FXObject*, FXSelector, void*)
 {
     stopNetworkDiscovery();
     networkRefresh->setText(_("Refresh"));
-    networkStatus->setText(networkServers.empty() ? _("Search timed out. Click Refresh to try again.") :
-                           FXStringVal((FXint)networkServers.size()) +
-                           _(" computer(s) sharing files found; the search timed out."));
+    networkStatus->setText(networkServers.empty() && networkServices.empty() ?
+                           _("Search timed out. Click Refresh to try again.") :
+                           networkServices.empty() ? FXStringVal((FXint)networkServers.size()) +
+                           _(" computer(s) sharing files found; the search timed out.") :
+                           networkFoundText() + _(" (the search timed out)"));
     appLog(APP_LOG_UI, "network-discovery-timeout", "protocol=smb");
     return 1;
 }
@@ -2541,8 +2792,8 @@ long DirPanel::onCmdPopupMenuDirList(FXObject* sender, FXSelector sel, void* ptr
         }
         if (fsdevices->find(dir.text()) || mtdevices->find(dir.text()))
         {
-            new FXMenuCommand(menu, _("M&ount"), minimounticon, this, ID_MOUNT);
-            new FXMenuCommand(menu, _("Unmoun&t"), miniunmounticon, this, ID_UMOUNT);
+            new FXMenuCommand(menu, _("M&ount"), minidevicemounticon, this, ID_MOUNT);
+            new FXMenuCommand(menu, _("Unmoun&t"), minideviceunmounticon, this, ID_UMOUNT);
             new FXMenuSeparator(menu);
         }
 #endif
@@ -2586,6 +2837,12 @@ long DirPanel::onCmdPopupMenuPlaces(FXObject* sender, FXSelector sel, void* ptr)
     {
         FXString key = placeslist->getItemText(item);
         FXString directory = placeslist->getItemPathname(key);
+
+        if ((directory == trashfileslocation) && !xf_existfile(directory))
+        {
+            xf_mkpath(trashfileslocation.text(), 0700);
+            xf_mkpath(trashinfolocation.text(), 0700);
+        }
 
         // Permission problem or does not exist
         if (!xf_existfile(directory))
@@ -2674,9 +2931,9 @@ long DirPanel::onCmdPopupMenuMounts(FXObject* sender, FXSelector sel, void* ptr)
     new FXMenuCommand(menu, _("New &Window"), minixfeicon, this, DirPanel::ID_OPEN_MOUNT_NEW_WINDOW);
     new FXMenuSeparator(menu);
 #if defined(linux)
-    new FXMenuCommand(menu, _("M&ount"), minimounticon, this, DirPanel::ID_MOUNT);
-    new FXMenuCommand(menu, _("&Unmount"), miniunmounticon, this, DirPanel::ID_UMOUNT);
-    new FXMenuCommand(menu, _("&Eject (Safely Remove)"), miniunmounticon, this, DirPanel::ID_EJECT);
+    new FXMenuCommand(menu, _("M&ount"), minidevicemounticon, this, DirPanel::ID_MOUNT);
+    new FXMenuCommand(menu, _("&Unmount"), minideviceunmounticon, this, DirPanel::ID_UMOUNT);
+    new FXMenuCommand(menu, _("&Eject (Safely Remove)"), minideviceejecticon, this, DirPanel::ID_EJECT);
     new FXMenuSeparator(menu);
 #endif
     new FXMenuCommand(menu, _("&Properties"), miniattribicon, this, DirPanel::ID_MOUNT_PROPERTIES);
@@ -3940,8 +4197,7 @@ long DirPanel::onCmdDirMan(FXObject* sender, FXSelector sel, void* ptr)
             FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
             if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
             {
-                FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) + ".trashinfo";
-                unlink(trashinfopathname.text());
+                xf_cleanuptrashinfo(source);
             }
         }
         else if (command == "move")
@@ -3988,8 +4244,7 @@ long DirPanel::onCmdDirMan(FXObject* sender, FXSelector sel, void* ptr)
             // Do it silently and don't report any error if it fails
             if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
             {
-                FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) + ".trashinfo";
-                unlink(trashinfopathname.text());
+                xf_cleanuptrashinfo(source);
             }
 
             // An error has occurred
@@ -4199,9 +4454,7 @@ long DirPanel::onCmdDirMan(FXObject* sender, FXSelector sel, void* ptr)
                     // Do it silently and don't report any error if it fails
                     if (use_trash_can && ret && (source.left(trashfileslocation.length()) == trashfileslocation))
                     {
-                        FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(source) +
-                                                     ".trashinfo";
-                        unlink(trashinfopathname.text());
+                        xf_cleanuptrashinfo(source);
                     }
 
                     // An error has occurred
@@ -4358,8 +4611,7 @@ long DirPanel::onCmdDirDelete(FXObject*, FXSelector, void*)
         FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
         if (use_trash_can && (pathname.left(trashfileslocation.length()) == trashfileslocation))
         {
-            FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + FXPath::name(pathname) + ".trashinfo";
-            unlink(trashinfopathname.text());
+            xf_cleanuptrashinfo(pathname);
         }
 
         // If action is cancelled in progress dialog
@@ -4513,43 +4765,11 @@ long DirPanel::onCmdDirRestore(FXObject*, FXSelector, void*)
 
     f->create();
 
-    // Obtain trash base name and sub path
-    FXString subpath = pathname;
-    subpath.erase(0, trashfileslocation.length() + 1);
-    FXString trashbasename = subpath.before('/');
-    if (trashbasename == "")
-    {
-        trashbasename = FXPath::name(pathname);
-    }
-    subpath.erase(0, trashbasename.length());
-
-    // Read the .trashinfo file
-    FILE* fp;
-    char line[1024];
-    FXbool success = true;
-    FXString trashinfopathname = trashinfolocation + PATHSEPSTRING + trashbasename + ".trashinfo";
+    TrashLocation trashLocation;
+    FXString trashinfopathname, deleted;
     FXString origpathname = "";
-
-    if ((fp = fopen(trashinfopathname.text(), "r")) != NULL)
-    {
-        // Read the first two lines and get the strings
-        if (fgets(line, sizeof(line), fp) == NULL)
-        {
-            success = false;
-        }
-        if (fgets(line, sizeof(line), fp) == NULL)
-        {
-            success = false;
-        }
-        if (success)
-        {
-            origpathname = line;
-            origpathname = origpathname.after('=');
-            origpathname = origpathname.before('\n');
-        }
-        fclose(fp);
-        origpathname = origpathname + subpath;
-    }
+    if (xf_trashlocation(pathname, trashLocation))
+        xf_readtrashinfo(pathname, trashLocation, origpathname, deleted, trashinfopathname);
 
     // Confirm restore dialog
     if (confirm_trash)
@@ -4626,12 +4846,7 @@ long DirPanel::onCmdDirRestore(FXObject*, FXSelector, void*)
             goto end;
         }
 
-        // Silently remove trashinfo file
-        FXString trashfilespathname = trashfileslocation + PATHSEPSTRING + trashbasename;
-        if ((pathname == trashfilespathname) && !xf_existfile(trashfilespathname))
-        {
-            unlink(trashinfopathname.text());
-        }
+        xf_cleanuptrashinfo(pathname);
 
         // If action is cancelled in progress dialog
         if (f->isCancelled())
@@ -5689,11 +5904,8 @@ long DirPanel::onUpdDirRestore(FXObject* sender, FXSelector, void*)
     FXString dir = dirlist->getItemPathname(item);
 
     // Enable restore from trash menu if we are in trash can
-    FXbool restoreenable = false;
-    if (dir.left(trashfileslocation.length() + 1) == trashfileslocation + PATHSEPSTRING)
-    {
-        restoreenable = true;
-    }
+    TrashLocation location;
+    FXbool restoreenable = xf_trashlocation(dir, location) && dir != location.directory + "/files";
 
     FXbool use_trash_can = getApp()->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
     if (use_trash_can && restoreenable)

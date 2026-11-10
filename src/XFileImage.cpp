@@ -2691,7 +2691,7 @@ void XFileImage::create()
     pathtext->setText(FXSystem::getCurrentDirectory());
 
     // Display or hide path linker and path text
-    FXbool show_pathlink = getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true);
+    FXbool show_pathlink = getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false);
     if (show_pathlink)
     {
         pathtext->hide();
@@ -3309,7 +3309,7 @@ int main(int argc, char* argv[])
     application->reg().writeUnsignedEntry("SETTINGS", "relative_resize", relative_resize);
 
     // Set display pathlinker flag according to the Xfe registry
-    FXbool show_pathlink = reg_xfe->readUnsignedEntry("SETTINGS", "show_pathlinker", true);
+    FXbool show_pathlink = reg_xfe->readUnsignedEntry("SETTINGS", "show_pathlinker", false);
     application->reg().writeUnsignedEntry("SETTINGS", "show_pathlinker", show_pathlink);
 
     // Get value of the window position flag
