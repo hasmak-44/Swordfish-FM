@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 16 November 2026, through fixed dialog rules and built-in theme
-updates (sections 3.70-3.71).
+Last updated: 16 November 2026, through tab-group layout snapshots
+(sections 3.70-3.72).
 Latest release: `swordfish-0.0.3-beta2`.
 Stable fallback: `swordfish-0.0.2`.
 
@@ -40,7 +40,7 @@ Historical implementation details below do not override the current code.
    automated tests but still need the user's real-machine testing.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.70-3.71. Older beta and RC notes are
+9. For the latest state, read sections 3.70-3.72. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide is a documentation addition after the frozen RC4 application commit.
@@ -3040,6 +3040,23 @@ These are local codespace checks. The group-3 commit and subsequent groups are
 not pushed or released. Themes were tested through the Theme Workflow harness;
 real desktop visual acceptance remains pending.
 
+### 3.72. Tab groups restore complete panel layout (16 November 2026)
+
+Local commit `2913124` extends the existing Bookmarks > Tab Groups snapshot.
+Saving a group now includes the panel layout (tree with one/two panels), panel
+orientation and the four splitter proportions, in addition to the already
+saved pane tabs and each tab's path, view type, column widths and selected tab.
+Opening a group restores the layout first, then both panes' tab states and
+active pane. Groups saved by older builds lack layout metadata and continue to
+open using the current layout. Invalid orientation, panel modes and splitter
+ratios are logged and do not replace the current values.
+
+The Theme Workflow regression saved and reopened a group after changing from
+one horizontal pane to a vertical tree-plus-two-panel layout. It verified the
+restored layout, orientation, both panes' tab paths, selected tabs and
+per-tab Details/Icons modes. The native build and regression passed. No
+desktop acceptance has been performed.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -3590,8 +3607,8 @@ Do not amend published commits/tags as an automatic workaround.
 ### Durable starting point
 
 0.0.2 remains the frozen stable fallback; 0.0.3 beta 2 is the latest published
-test release. Sections 3.70-3.71 record the current implementation state.
-Groups 2 and 3 are committed locally; neither is pushed or released. Start
+test release. Sections 3.70-3.72 record the current implementation state.
+Groups 2, 3 and 4 are committed locally; none is pushed or released. Start
 from the current branch and worktree, not from an old experimental ZIP,
 obsolete roadmap or incomplete chat summary. Do not publish local work
 without the user's permission.
