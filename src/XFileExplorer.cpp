@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <vector>
 #include <algorithm>
+#include <cmath>
 
 #include <fx.h>
 #include <fxkeys.h>
@@ -6823,8 +6824,8 @@ long XFileExplorer::onUpdBookmarkSelected(FXObject* sender, FXSelector, void*)
 }
 
 
-// Tab groups are listed in [TAB GROUPS] as "groupN = name;id" and each pane is saved
-// in its own section ([TAB GROUP id LEFT] and [TAB GROUP id RIGHT]) like the session tabs
+// Tab groups are listed in [TAB GROUPS] as "groupN = name;id". Layout metadata
+// and each pane's tabs are stored in [TAB GROUP id] and its LEFT/RIGHT sections.
 int XFileExplorer::getNumTabGroups(void)
 {
     int n = 0;
@@ -6924,6 +6925,13 @@ long XFileExplorer::onCmdAddTabGroup(FXObject*, FXSelector, void*)
         getApp()->reg().writeStringEntry(section.text(), "dir", panels[pane]->getDirectory().text());
         getApp()->reg().writeUnsignedEntry(section.text(), "active", getCurrentPanel() == panels[pane]);
     }
+    FXString layoutSection = "TAB GROUP " + id;
+    getApp()->reg().writeUnsignedEntry(layoutSection.text(), "panel_view", panel_view);
+    getApp()->reg().writeUnsignedEntry(layoutSection.text(), "vert_panels", vertpanels);
+    getApp()->reg().writeRealEntry(layoutSection.text(), "twopanels_lpanel_pct", twopanels_lpanel_pct);
+    getApp()->reg().writeRealEntry(layoutSection.text(), "treepanel_tree_pct", treepanel_tree_pct);
+    getApp()->reg().writeRealEntry(layoutSection.text(), "treetwopanels_tree_pct", treetwopanels_tree_pct);
+    getApp()->reg().writeRealEntry(layoutSection.text(), "treetwopanels_lpanel_pct", treetwopanels_lpanel_pct);
     getApp()->reg().writeStringEntry("TAB GROUPS", ("group" + FXStringVal(index)).text(), (name + ";" + id).text());
     getApp()->reg().write();
     rebuildTabGroupsMenu();
@@ -6940,6 +6948,55 @@ FXbool XFileExplorer::openTabGroup(int index)
         return false;
     }
     FXString id = tabGroupId(getApp(), index);
+    FXString layoutSection = "TAB GROUP " + id;
+    FXRegistry& registry = getApp()->reg();
+    if (registry.existingEntry(layoutSection.text(), "panel_view"))
+    {
+        FXuint savedView = registry.readUnsignedEntry(layoutSection.text(), "panel_view", panel_view);
+        if (savedView <= TREE_TWO_PANELS)
+        {
+            auto restoreRatio = [&](const char* key, FXdouble& current)
+            {
+                if (!registry.existingEntry(layoutSection.text(), key)) return;
+                FXdouble saved = registry.readRealEntry(layoutSection.text(), key, current);
+                if (!std::isfinite(saved) || saved <= 0.0 || saved >= 1.0)
+                {
+                    appLog(APP_LOG_ERRORS, "tab-group-layout-invalid", FXString("key=") + key);
+                    return;
+                }
+                current = saved;
+            };
+            restoreRatio("twopanels_lpanel_pct", twopanels_lpanel_pct);
+            restoreRatio("treepanel_tree_pct", treepanel_tree_pct);
+            restoreRatio("treetwopanels_tree_pct", treetwopanels_tree_pct);
+            restoreRatio("treetwopanels_lpanel_pct", treetwopanels_lpanel_pct);
+
+            FXuint savedOrientation = registry.readUnsignedEntry(layoutSection.text(), "vert_panels", vertpanels);
+            if (savedOrientation > 1)
+            {
+                appLog(APP_LOG_ERRORS, "tab-group-layout-invalid", "vert_panels is not a boolean");
+            }
+            else if (static_cast<FXbool>(savedOrientation) != vertpanels)
+            {
+                onCmdHorzVertPanels(this, FXSEL(SEL_COMMAND, savedOrientation ? ID_VERT_PANELS : ID_HORZ_PANELS),
+                                    NULL);
+            }
+            FXuint command = ID_SHOW_FOLDERS_ONE_PANEL;
+            switch (savedView)
+            {
+            case ONE_PANEL: command = ID_SHOW_ONE_PANEL; break;
+            case TWO_PANELS: command = ID_SHOW_TWO_PANELS; break;
+            case TREE_TWO_PANELS: command = ID_SHOW_FOLDERS_TWO_PANELS; break;
+            }
+            onCmdShowPanels(this, FXSEL(SEL_COMMAND, command), NULL);
+        }
+        else
+        {
+            appLog(APP_LOG_ERRORS, "tab-group-layout-invalid",
+                   FXString("panel_view=") + FXStringVal(savedView) + " group=\"" + getTabGroupName(index) + "\"");
+        }
+    }
+
     FilePanel* panels[] = {lpanel, rpanel};
     const char* sides[] = {"LEFT", "RIGHT"};
     FilePanel* active = NULL;
@@ -6973,6 +7030,7 @@ FXbool XFileExplorer::openTabGroup(int index)
     }
     if (active)
     {
+        if (!active->shown()) active = lpanel;
         active->setActive();
         dirpanel->setDirectory(active->getDirectory(), true);
     }

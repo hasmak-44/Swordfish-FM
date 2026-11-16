@@ -8,6 +8,7 @@
 #include "ColorTools.h"
 #include "BackgroundEffect.h"
 #include "FileDialog.h"
+#include "InputDialog.h"
 #include "SearchWindow.h"
 #include "icons.h"
 #include <cassert>
@@ -38,6 +39,25 @@ class ActionTimer : public FXObject
 public:
     explicit ActionTimer(std::function<void()> callback) : action(callback) {}
     long handle(FXObject*, FXSelector, void*) override { action(); return 1; }
+};
+
+class TabGroupNameResponder : public FXObject
+{
+    FXApp& app;
+public:
+    explicit TabGroupNameResponder(FXApp& application) : app(application) {}
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        InputDialog* dialog = dynamic_cast<InputDialog*>(app.getModalWindow());
+        if (!dialog || dialog->getTitle() != "Bookmark All Tabs as Group")
+        {
+            app.addTimeout(this, 1, 20);
+            return 1;
+        }
+        dialog->setText("Regression tab group");
+        dialog->handle(this, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+        return 1;
+    }
 };
 
 static void pump(FXApp& app)
@@ -419,6 +439,54 @@ public:
         assert(!paletteTheme.properties.count("palette.Shared colours"));
         picker.hide();
         puts("PASS: file chooser stays fixed and effect-free; native picker rejects incomplete values and accepts format autodetection");
+
+        FXString fixture = window.getLeftPanel()->getDirectory();
+        TabButtons* leftTabs = window.getLeftPanel()->getTabButtons();
+        TabButtons* rightTabs = window.getRightPanel()->getTabButtons();
+        leftTabs->clearTabs();
+        leftTabs->addTab(fixture);
+        window.getLeftPanel()->getList()->setViewMode(FileList::VIEW_ICONS);
+        leftTabs->addTab(homedir);
+        window.getLeftPanel()->getList()->setViewMode(FileList::VIEW_DETAILS);
+        rightTabs->clearTabs();
+        rightTabs->addTab(homedir);
+        window.getRightPanel()->getList()->setViewMode(FileList::VIEW_DETAILS);
+        rightTabs->addTab(fixture);
+        window.getRightPanel()->getList()->setViewMode(FileList::VIEW_ICONS);
+        window.onCmdHorzVertPanels(&window, FXSEL(SEL_COMMAND, XFileExplorer::ID_VERT_PANELS), NULL);
+        window.onCmdShowPanels(&window, FXSEL(SEL_COMMAND, XFileExplorer::ID_SHOW_FOLDERS_TWO_PANELS), NULL);
+        TabGroupNameResponder groupName(app);
+        app.addTimeout(&groupName, 1, 20);
+        assert(window.onCmdAddTabGroup(NULL, 0, NULL) == 1);
+        assert(window.getNumTabGroups() == 1);
+        FXString groupData = app.reg().readStringEntry("TAB GROUPS", "group0", "");
+        FXString groupId = groupData.rafter(';');
+        FXString groupLayout = "TAB GROUP " + groupId;
+        assert(app.reg().readUnsignedEntry(groupLayout.text(), "panel_view", 99) == 3);
+        assert(app.reg().readUnsignedEntry(groupLayout.text(), "vert_panels", 0) == 1);
+        for (const char* key : {"twopanels_lpanel_pct", "treepanel_tree_pct",
+                                "treetwopanels_tree_pct", "treetwopanels_lpanel_pct"})
+            assert(app.reg().existingEntry(groupLayout.text(), key));
+        window.onCmdShowPanels(&window, FXSEL(SEL_COMMAND, XFileExplorer::ID_SHOW_ONE_PANEL), NULL);
+        window.onCmdHorzVertPanels(&window, FXSEL(SEL_COMMAND, XFileExplorer::ID_HORZ_PANELS), NULL);
+        assert(window.openTabGroup(0));
+        pump(app);
+        assert(window.getDirPanel()->shown() && window.getRightPanel()->shown());
+        FXSplitter* panelSplitter = dynamic_cast<FXSplitter*>(window.getLeftPanel()->getParent());
+        assert(panelSplitter && !(panelSplitter->getSplitterStyle() & SPLITTER_VERTICAL));
+        assert(leftTabs->getNumActiveTabs() == 2 && rightTabs->getNumActiveTabs() == 2);
+        assert(leftTabs->getCurrentTab() == 1 && rightTabs->getCurrentTab() == 1);
+        assert(leftTabs->getPath(0) == fixture && leftTabs->getPath(1) == homedir);
+        assert(rightTabs->getPath(0) == homedir && rightTabs->getPath(1) == fixture);
+        leftTabs->setCurrentTab(0);
+        assert(window.getLeftPanel()->getList()->getViewMode() == FileList::VIEW_ICONS);
+        leftTabs->setCurrentTab(1);
+        assert(window.getLeftPanel()->getList()->getViewMode() == FileList::VIEW_DETAILS);
+        rightTabs->setCurrentTab(0);
+        assert(window.getRightPanel()->getList()->getViewMode() == FileList::VIEW_DETAILS);
+        rightTabs->setCurrentTab(1);
+        assert(window.getRightPanel()->getList()->getViewMode() == FileList::VIEW_ICONS);
+        puts("PASS: tab groups restore panel layout/orientation and every tab's view type");
     }
 };
 
