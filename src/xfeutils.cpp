@@ -2819,6 +2819,8 @@ FXString xf_gvfsmounturi(const FXString& path)
                (port.empty() ? FXString::null : ":" + port) + "/";
     }
     if (type == "mtp" && !attributes.empty()) return "mtp://" + attributes.after('=') + "/";
+    if (type == "afc" && !server.empty())
+        return "afc://" + server + (port.empty() ? FXString::null : ":" + port) + "/";
     return FXString::null;
 }
 

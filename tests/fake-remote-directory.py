@@ -106,18 +106,23 @@ if os.path.basename(sys.argv[0]) == "gio":
     gvfs = os.environ.get("SWORDFISH_TEST_GVFS_ROOT")
     remount = os.environ.get("SWORDFISH_TEST_REMOUNT_DIR")
     mtp_root = os.environ.get("SWORDFISH_TEST_MTP_ROOT")
-    if mtp_root and sys.argv[-1] == "mtp://first/":
+    afc_root = os.environ.get("SWORDFISH_TEST_AFC_ROOT")
+    portable_uri = sys.argv[-1]
+    portable_root = mtp_root if portable_uri == "mtp://first/" else \
+                    afc_root if portable_uri == "afc://first:3/" else None
+    portable_scheme = urlsplit(portable_uri).scheme
+    if portable_root:
         if sys.argv[1] == "mount":
             with open(state, "a") as log:
-                log.write("mtp mount\n")
-            if os.environ.get("SWORDFISH_TEST_MTP_FAIL"):
+                log.write(portable_scheme + " mount\n")
+            if os.environ.get("SWORDFISH_TEST_" + portable_scheme.upper() + "_FAIL"):
                 print("gio: simulated device unavailable")
                 sys.exit(1)
-            os.mkdir(mtp_root)
+            os.mkdir(portable_root)
             sys.exit(0)
         if sys.argv[1] == "info":
-            if os.path.isdir(mtp_root):
-                print("local path: " + os.environ["SWORDFISH_TEST_MTP_PATH"])
+            if os.path.isdir(portable_root):
+                print("local path: " + os.environ["SWORDFISH_TEST_" + portable_scheme.upper() + "_PATH"])
                 sys.exit(0)
             print("gio: location is not mounted")
             sys.exit(1)

@@ -859,6 +859,7 @@ void MountsList::stopUsbMonitor()
     }
     usbBuffer.clear();
     pendingUsbVolumes.clear();
+    pendingMountedUsbVolumes.clear();
     usbSnapshotInvalid = false;
 }
 
@@ -895,12 +896,15 @@ long MountsList::onUsbRead(FXObject*, FXSelector, void*)
         usbBuffer = usbBuffer.mid(newline + 1, usbBuffer.length());
         if (line == "DONE")
         {
-            if (!usbSnapshotInvalid && usbVolumes != pendingUsbVolumes)
+            if (!usbSnapshotInvalid &&
+                (usbVolumes != pendingUsbVolumes || mountedUsbVolumes != pendingMountedUsbVolumes))
             {
                 usbVolumes.swap(pendingUsbVolumes);
+                mountedUsbVolumes.swap(pendingMountedUsbVolumes);
                 scan();
             }
             pendingUsbVolumes.clear();
+            pendingMountedUsbVolumes.clear();
             usbSnapshotInvalid = false;
         }
         else if (line.left(7) == "STATUS\t")
@@ -912,16 +916,22 @@ long MountsList::onUsbRead(FXObject*, FXSelector, void*)
             appLog(APP_LOG_ERRORS, "usb-monitor-error", line.mid(6, line.length()));
             usbSnapshotInvalid = true;
         }
-        else if (line.left(4) == "USB\t" && line.contains('\t') == 2)
+        else if (line.left(7) == "DEVICE\t" && line.contains('\t') == 3)
         {
             gsize nameLength = 0, uriLength = 0;
             guchar* name = g_base64_decode(line.section('\t', 1).text(), &nameLength);
             guchar* uri = g_base64_decode(line.section('\t', 2).text(), &uriLength);
             FXString label(reinterpret_cast<char*>(name), nameLength);
             FXString location(reinterpret_cast<char*>(uri), uriLength);
-            if (!label.empty() && location.left(6) == "mtp://" &&
+            if (!label.empty() && (location.left(6) == "mtp://" || location.left(6) == "afc://") &&
                 strlen(label.text()) == nameLength && strlen(location.text()) == uriLength)
+            {
                 pendingUsbVolumes[location] = label;
+                if (line.section('\t', 3) == "mounted")
+                    pendingMountedUsbVolumes.insert(location);
+                else if (line.section('\t', 3) != "unmounted")
+                    usbSnapshotInvalid = true;
+            }
             else
             {
                 appLog(APP_LOG_ERRORS, "usb-monitor-invalid-output", line);
@@ -1047,7 +1057,8 @@ void MountsList::scan()
     }
 
     for (const auto& device : usbVolumes)
-        addMount(device.second, device.first, miniremovabledeviceicon);
+        if (mountedUsbVolumes.find(device.first) == mountedUsbVolumes.end())
+            addMount(device.second, device.first, miniremovabledeviceicon);
 
     // GVFS mount points
     FXString gvfspath = "/run/user/" + FXStringVal(FXSystem::user()) + "/gvfs";
@@ -1073,18 +1084,20 @@ void MountsList::scan()
             {
                 addMount(RemoteDirectory::mountLabel(gvfsname), pathname, mininetdriveicon);
             }
-            if (!xf_gvfsmounturi(pathname).empty() && mounttype != "mtp")
+            if (!xf_gvfsmounturi(pathname).empty() && mounttype != "mtp" && mounttype != "afc")
             {
                 knownRemotes[pathname] = RemoteDirectory::mountLabel(gvfsname);
                 mountedRemotes.insert(pathname);
             }
 
             // MTP device
-            if (mounttype == "mtp")
+            if (mounttype == "mtp" || mounttype == "afc")
             {
-                FXString name = gvfsname.after('_');
-                name = name.before('_', 2);
-                addMount(name.empty() ? _("MTP device") : name, pathname, miniremovabledeviceicon);
+                FXString uri = xf_gvfsmounturi(pathname);
+                auto volume = usbVolumes.find(uri);
+                FXString name = volume != usbVolumes.end() ? volume->second :
+                                mounttype == "afc" ? _("iOS device") : _("MTP device");
+                addMount(name, pathname, miniremovabledeviceicon);
             }
         }
         closedir(dirp);
@@ -1098,7 +1111,8 @@ void MountsList::scan()
 
 FXbool MountsList::disconnected(const FXString& path) const
 {
-    if (usbVolumes.find(path) != usbVolumes.end()) return true;
+    if (usbVolumes.find(path) != usbVolumes.end())
+        return mountedUsbVolumes.find(path) == mountedUsbVolumes.end();
     return knownRemotes.find(path) != knownRemotes.end() &&
            mountedRemotes.find(path) == mountedRemotes.end();
 }

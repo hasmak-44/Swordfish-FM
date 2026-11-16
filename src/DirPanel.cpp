@@ -788,7 +788,9 @@ void DirPanel::syncSidebar()
                 item->deviceAction = path.left(5) == "/dev/" || mountslist->disconnected(path) ?
                                      SidebarItem::MOUNT_DEVICE : SidebarItem::UNMOUNT_DEVICE;
                 item->canEject = xf_hotplugdevice(device) ||
-                                (!xf_gvfsmounturi(path).empty() && FXPath::name(path).before(':') != "mtp");
+                                (!xf_gvfsmounturi(path).empty() &&
+                                 FXPath::name(path).before(':') != "mtp" &&
+                                 FXPath::name(path).before(':') != "afc");
                 if (item->deviceAction == SidebarItem::MOUNT_DEVICE)
                     item->setText(name + _(" (unmounted)"));
             }
@@ -5180,12 +5182,9 @@ long DirPanel::onCmdMount(FXObject*, FXSelector sel, void*)
         }
 
         // MTP device
-        if (mounttype == "mtp")
+        if (mounttype == "mtp" || mounttype == "afc")
         {
-            FXString name = gvfsname.after('=');
-
-            // BUILD mount URI
-            mounturi = "'mtp://" + name + "/'";
+            mounturi = "'" + xf_gvfsmounturi(dir) + "'";
         }
 
         // Select command and set appropriate message
@@ -5456,7 +5455,7 @@ static int runDiskCommand(FXWindow* owner, FXuint op, const FXString& title, con
 // Mount a plugged-in drive or reconnect a remembered share, then open it.
 FXbool DirPanel::openDevice(const FXString& device)
 {
-    if (device.left(6) == "mtp://")
+    if (device.left(6) == "mtp://" || device.left(6) == "afc://")
     {
         FXString output;
         int status = -1;
@@ -5478,7 +5477,7 @@ FXbool DirPanel::openDevice(const FXString& device)
             output.trim();
             if (output.empty()) output = info;
             if (output.empty()) output = _("The device did not provide an accessible GVFS mount.");
-            appLog(APP_LOG_ERRORS, "mtp-mount-failed", device + ": " + output);
+            appLog(APP_LOG_ERRORS, "portable-device-mount-failed", device + ": " + output);
             MessageBox::error(this, BOX_OK, _("Error"), _("Can't open %s:\n\n%s"), device.text(), output.text());
             return false;
         }
@@ -5678,7 +5677,20 @@ long DirPanel::onCmdEject(FXObject*, FXSelector, void*)
     FXString path = sidebarContext && sidebarContext->kind == SidebarItem::DEVICE ?
                     sidebarContext->path : focusedDevice();
     if (path.empty()) path = dirlist->getItemPathname(static_cast<TreeItem*>(dirlist->getCurrentItem()));
-    if (!xf_gvfsmounturi(path).empty() && FXPath::name(path).before(':') != "mtp")
+    FXString mountedUri = xf_gvfsmounturi(path);
+    FXString mountedType = FXPath::name(xf_gvfsmount(path)).before(':');
+    if (mountedType == "afc")
+    {
+        if (!mountslist->disconnected(path))
+        {
+            File operation(this, _("Unmount device..."), UNMOUNT);
+            operation.create();
+            if (operation.mount(path, _("Please wait..."), "") != 1) return 0;
+        }
+        if (mountslist) mountslist->invalidate();
+        return 1;
+    }
+    if (!mountedUri.empty() && mountedType != "mtp")
     {
         if (!mountslist->disconnected(path))
         {
@@ -5709,7 +5721,8 @@ long DirPanel::onUpdEject(FXObject* sender, FXSelector, void*)
     if (path.empty()) path = dirlist->getItemPathname(static_cast<TreeItem*>(dirlist->getCurrentItem()));
     if (!xf_protectedmount(path))
     {
-        if (!xf_gvfsmounturi(path).empty() && FXPath::name(path).before(':') != "mtp")
+        FXString mountType = FXPath::name(xf_gvfsmount(path)).before(':');
+        if (!xf_gvfsmounturi(path).empty() && mountType != "mtp" && mountType != "afc")
         {
             enable = true;
         }

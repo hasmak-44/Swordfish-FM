@@ -148,6 +148,8 @@ protected:
     std::set<FXString> mountedRemotes;
     std::map<FXString, FXString> usbVolumes;
     std::map<FXString, FXString> pendingUsbVolumes;
+    std::set<FXString> mountedUsbVolumes;
+    std::set<FXString> pendingMountedUsbVolumes;
     FXString usbBuffer;
     FXbool usbSnapshotInvalid = false;
     int usbFd = -1;

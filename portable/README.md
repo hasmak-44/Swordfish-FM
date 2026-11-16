@@ -271,6 +271,21 @@ directly. Devices not advertised by that stack, or using another USB protocol,
 are not detected by this MTP mechanism. Mount errors are shown to the user;
 host monitor/backend errors are recorded in the application log.
 
+iOS devices are discovered through the host GVFS AFC volume monitor and appear
+in Devices when that monitor exposes an available file-sharing volume. Unlock
+the iPhone or iPad, connect it over USB, and approve **Trust This Computer**
+when prompted. This requires the host's GVFS AFC support and libimobiledevice,
+as well as the desktop session bus and GVFS FUSE support. Swordfish relies on
+the host's AFC implementation; it does not implement the iOS protocol itself.
+
+AFC does not provide general access to the iOS filesystem. Typically, only
+documents belonging to apps that enable file sharing are visible, and the
+available content depends on the iOS version and host GVFS backend. It is not
+a replacement for a full-device backup or a guarantee of photo access. If the
+device is locked, untrusted, or unsupported by the host backend, it may not
+appear or mounting may fail; host monitor/backend errors are recorded in the
+application log.
+
 Device rows have separate controls at the right:
 
 - The pause button unmounts the selected filesystem. When it is unmounted but

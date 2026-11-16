@@ -58,6 +58,8 @@ static FXString simulatedMountTable;
 static FXString failedUnlink;
 static FXString simulatedMtpPath;
 static FXString simulatedMtpRoot;
+static FXString simulatedAfcPath;
+static FXString simulatedAfcRoot;
 
 extern "C" int unlink(const char* path) noexcept
 {
@@ -145,6 +147,7 @@ extern "C" int stat(const char* path, struct stat* info) noexcept
     checkBusy(path);
     if (measuredChild(path)) { ++stats; usleep(1000); }
     if (!simulatedMtpPath.empty() && simulatedMtpPath == path) return realStat(simulatedMtpRoot.text(), info);
+    if (!simulatedAfcPath.empty() && simulatedAfcPath == path) return realStat(simulatedAfcRoot.text(), info);
     return realStat(path, info);
 }
 
@@ -162,6 +165,7 @@ extern "C" int lstat(const char* path, struct stat* info) noexcept
     checkBusy(path);
     if (measuredChild(path)) { ++lstats; usleep(1000); }
     if (!simulatedMtpPath.empty() && simulatedMtpPath == path) return realStat(simulatedMtpRoot.text(), info);
+    if (!simulatedAfcPath.empty() && simulatedAfcPath == path) return realStat(simulatedAfcRoot.text(), info);
     return realStat(path, info);
 }
 
@@ -357,6 +361,8 @@ extern "C" DIR* opendir(const char* path)
     FXString gvfsRoot = "/run/user/" + FXStringVal(getuid()) + "/gvfs";
     if (!simulatedGvfsDirectory.empty() && gvfsRoot == path)
         return realOpen(simulatedGvfsDirectory.text());
+    if (!simulatedMtpPath.empty() && simulatedMtpPath == path) return realOpen(simulatedMtpRoot.text());
+    if (!simulatedAfcPath.empty() && simulatedAfcPath == path) return realOpen(simulatedAfcRoot.text());
     if (expanding) assert(busyCursor && busyFlushed);
     if (measuring && std::strncmp(path, measuredDirectory.text(), measuredDirectory.length()) == 0 &&
         path[measuredDirectory.length()] == '/' && path[measuredDirectory.length() + 1])
@@ -809,24 +815,36 @@ int main(int argc, char** argv)
         }
         assert(false && "USB monitor did not update the device list");
     };
-    usbSnapshot("USB\tUGhvbmU=\tbXRwOi8vZmlyc3Qv\n"
-                "USB\tUGhvbmU=\tbXRwOi8vc2Vjb25kLw==\n");
+    usbSnapshot("DEVICE\tUGhvbmU=\tbXRwOi8vZmlyc3Qv\tunmounted\n"
+                "DEVICE\tUGhvbmU=\tbXRwOi8vc2Vjb25kLw==\tunmounted\n"
+                "DEVICE\tRG9jdW1lbnRzIG9uIGlQaG9uZQ==\tYWZjOi8vZmlyc3Q6My8=\tunmounted\n");
     setenv("SWORDFISH_TEST_USB_STATE", usbState.text(), 1);
     deviceModel->create();
     waitForUsb("mtp://first/", true);
     waitForUsb("mtp://second/", true);
+    waitForUsb("afc://first:3/", true);
     assert(deviceModel->disconnected("mtp://first/") && deviceModel->disconnected("mtp://second/"));
+    assert(deviceModel->getItemPathname("Documents on iPhone") == "afc://first:3/");
+    assert(deviceModel->disconnected("afc://first:3/"));
     setenv("SWORDFISH_TEST_LSBLK_FAIL", "1", 1);
     deviceModel->invalidate();
     deviceModel->onMountsRefresh(NULL, 0, NULL);
     assert(deviceModel->getItemPathname("Phone") == "mtp://first/");
     unsetenv("SWORDFISH_TEST_LSBLK_FAIL");
-    usbSnapshot("USB\t!!!!\t!!!!\n");
+    usbSnapshot("DEVICE\t!!!!\t!!!!\tunmounted\n");
     for (int i = 0; i < 50; ++i) deviceModel->readUsb();
     assert(deviceModel->disconnected("mtp://first/") && deviceModel->disconnected("mtp://second/"));
-    usbSnapshot("USB\tUGhvbmU=\tbXRwOi8vc2Vjb25kLw==\n");
+    usbSnapshot("DEVICE\tUGhvbmU=\tbXRwOi8vc2Vjb25kLw==\tunmounted\n"
+                "DEVICE\tRG9jdW1lbnRzIG9uIGlQaG9uZQ==\tYWZjOi8vZmlyc3Q6My8=\tunmounted\n");
     waitForUsb("mtp://first/", false);
     waitForUsb("mtp://second/", true);
+    assert(deviceModel->disconnected("afc://first:3/"));
+    usbSnapshot("DEVICE\tRG9jdW1lbnRzIG9uIGlQaG9uZQ==\tYWZjOi8vZmlyc3Q6My8=\tmounted\n");
+    waitForUsb("afc://first:3/", false);
+    assert(!deviceModel->disconnected("afc://first:3/"));
+    usbSnapshot("");
+    waitForUsb("afc://first:3/", false);
+    usbSnapshot("DEVICE\tUGhvbmU=\tbXRwOi8vc2Vjb25kLw==\tunmounted\n");
     usbSnapshot("");
     waitForUsb("mtp://second/", false);
     unsetenv("SWORDFISH_TEST_USB_STATE");
@@ -1132,7 +1150,7 @@ int main(int argc, char** argv)
     paths.push_back(fixture);
     const FXString trashData = fixture + "/trash-data";
     setenv("SWORDFISH_HOST_XDG_DATA_HOME", trashData.text(), 1);
-    usbSnapshot("USB\tUGhvbmU=\tbXRwOi8vZmlyc3Qv\n");
+    usbSnapshot("DEVICE\tUGhvbmU=\tbXRwOi8vZmlyc3Qv\tunmounted\n");
     setenv("SWORDFISH_TEST_USB_STATE", usbState.text(), 1);
     mainWindow = NULL;
     XFileExplorer* window = new XFileExplorer(&app, paths, 3);
@@ -1498,10 +1516,43 @@ int main(int argc, char** argv)
         usbSnapshot("");
         for (int i = 0; i < 50 && mounts->disconnected("mtp://first/"); ++i) pump(app, 100);
         assert(!mounts->disconnected("mtp://first/"));
+        usbSnapshot("DEVICE\tRG9jdW1lbnRzIG9uIGlQaG9uZQ==\tYWZjOi8vZmlyc3Q6My8=\tunmounted\n");
+        for (int i = 0; i < 50 && !mounts->disconnected("afc://first:3/"); ++i) pump(app, 100);
+        assert(mounts->disconnected("afc://first:3/"));
+        panel->onSidebarRefresh(NULL, 0, NULL);
+        SidebarItem* iphone = NULL;
+        for (FXTreeItem* item = navigation->getFirstItem()->getNext()->getNext()->getFirst();
+             item; item = item->getNext())
+            if (static_cast<SidebarItem*>(item)->path == "afc://first:3/")
+                iphone = static_cast<SidebarItem*>(item);
+        assert(iphone && iphone->deviceAction == SidebarItem::MOUNT_DEVICE && !iphone->canEject);
+        simulatedAfcPath = "/run/user/" + FXStringVal(getuid()) + "/gvfs/afc:host=first,port=3";
+        simulatedAfcRoot = fixture + "/afc-device";
+        setenv("SWORDFISH_TEST_AFC_PATH", simulatedAfcPath.text(), 1);
+        setenv("SWORDFISH_TEST_AFC_ROOT", simulatedAfcRoot.text(), 1);
+        app.addSignal(SIGCHLD, window, XFileExplorer::ID_HARVEST);
+        MountMessageResponder afcFailure;
+        setenv("SWORDFISH_TEST_AFC_FAIL", "1", 1);
+        app.addTimeout(&afcFailure, 1, 20);
+        assert(!panel->openDevice("afc://first:3/"));
+        assert(afcFailure.errors == 1 && afcFailure.message.contains("simulated device unavailable"));
+        unsetenv("SWORDFISH_TEST_AFC_FAIL");
+        panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, 0), iphone);
+        assert(window->getCurrentPanel()->getDirectory() == simulatedAfcPath);
+        assert(window->getCurrentPanel()->navigatePane(fixture));
+        app.removeSignal(SIGCHLD);
+        unsetenv("SWORDFISH_TEST_AFC_PATH");
+        unsetenv("SWORDFISH_TEST_AFC_ROOT");
+        assert(rmdir(simulatedAfcRoot.text()) == 0);
+        simulatedAfcPath.clear();
+        simulatedAfcRoot.clear();
+        usbSnapshot("");
+        for (int i = 0; i < 50 && mounts->disconnected("afc://first:3/"); ++i) pump(app, 100);
+        assert(!mounts->disconnected("afc://first:3/"));
         unsetenv("SWORDFISH_TEST_USB_STATE");
         assert(unlink(usbState.text()) == 0);
         assert(unlink(getenv("SWORDFISH_TEST_MOUNT_LOG")) == 0);
-        puts("PASS: MTP mount failures are reported; successful mounts open the host GVFS path");
+        puts("PASS: MTP and AFC mount failures are reported; successful mounts open their host GVFS paths");
     }
     {
         MountsList* mounts = findMounts(panel);
@@ -2012,6 +2063,8 @@ int main(int argc, char** argv)
     assert(xf_gvfsmounturi(gvfsBase + "ftp:user=test").empty());
     assert(xf_gvfsmounturi(gvfsBase + "mtp:host=%5Busb%3A001%2C002%5D") ==
            "mtp://%5Busb%3A001%2C002%5D/");
+    assert(xf_gvfsmounturi(gvfsBase + "afc:host=00008020-001C2D1234567890,port=3") ==
+           "afc://00008020-001C2D1234567890:3/");
     assert(xf_gvfsmounturi(gvfsBase + "smb-share:share=data").empty());
     const FXString beforeDeviceControls = sharePanel->getDirectory();
     sharePanel->setDirectory(simulatedMount);

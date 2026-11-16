@@ -3152,6 +3152,24 @@ portable launcher regression. The real helper starts, but no USB device or
 desktop session is available here. Physical Android testing, including unlock,
 plug/unplug, mount/unmount and comparison with Thunar/Caja, remains pending.
 
+### 3.78. iOS AFC device discovery (16 November 2026)
+
+The host GVFS volume monitor now reports supported AFC volumes alongside MTP
+devices. Swordfish lists the host-provided device name, opens and unmounts AFC
+mounts through host `gio`, and keeps a connected device available after
+unmounting. Mounted AFC volumes are represented by their GVFS path rather than
+duplicated as an unmounted activation entry; AFC is not treated as an ejectable
+USB disk.
+
+This depends on the host's GVFS AFC/libimobiledevice support, a trusted and
+unlocked iOS device, and GVFS FUSE. AFC exposes only the content made available
+by iOS and the host backend (typically app file-sharing documents), not the
+general iOS filesystem. Physical iPhone/iPad acceptance remains pending.
+
+Validation in the codespace: clean native build and folder/device integration
+regression covering AFC inventory, mounted/unmounted transitions, mount error
+and success flows, sidebar behavior, and GVFS URI reconstruction.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

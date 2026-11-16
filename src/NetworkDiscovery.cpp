@@ -2257,34 +2257,34 @@ void usbVolumeSnapshot(GVolumeMonitor* monitor)
         GVolume* volume = G_VOLUME(node->data);
         GFile* root = g_volume_get_activation_root(volume);
         if (!root) continue;
-        if (g_file_has_uri_scheme(root, "mtp") && g_volume_can_mount(volume))
+        const gboolean mtp = g_file_has_uri_scheme(root, "mtp");
+        const gboolean afc = g_file_has_uri_scheme(root, "afc");
+        if ((mtp || afc) && g_volume_can_mount(volume))
         {
             GError* error = NULL;
             GMount* mount = g_file_find_enclosing_mount(root, NULL, &error);
-            if (!mount)
+            if (!mount && error && !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_MOUNTED))
             {
-                if (error && !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_MOUNTED))
+                gchar* detail = g_strescape(error->message, NULL);
+                std::printf("ERROR\tUnable to check portable device mount: %s\n", detail);
+                g_free(detail);
+            }
+            else
+            {
+                char* name = g_volume_get_name(volume);
+                char* uri = g_file_get_uri(root);
+                if (name && uri)
                 {
-                    gchar* detail = g_strescape(error->message, NULL);
-                    std::printf("ERROR\tUnable to check MTP mount: %s\n", detail);
-                    g_free(detail);
+                    char* encodedName = g_base64_encode(reinterpret_cast<const guchar*>(name), strlen(name));
+                    char* encodedUri = g_base64_encode(reinterpret_cast<const guchar*>(uri), strlen(uri));
+                    std::printf("DEVICE\t%s\t%s\t%s\n", encodedName, encodedUri,
+                                mount ? "mounted" : "unmounted");
+                    g_free(encodedName);
+                    g_free(encodedUri);
                 }
-                else
-                {
-                    char* name = g_volume_get_name(volume);
-                    char* uri = g_file_get_uri(root);
-                    if (name && uri)
-                    {
-                        char* encodedName = g_base64_encode(reinterpret_cast<const guchar*>(name), strlen(name));
-                        char* encodedUri = g_base64_encode(reinterpret_cast<const guchar*>(uri), strlen(uri));
-                        std::printf("USB\t%s\t%s\n", encodedName, encodedUri);
-                        g_free(encodedName);
-                        g_free(encodedUri);
-                    }
-                    else std::puts("ERROR\tUnable to identify an MTP volume");
-                    g_free(name);
-                    g_free(uri);
-                }
+                else std::puts("ERROR\tUnable to identify a portable device volume");
+                g_free(name);
+                g_free(uri);
             }
             if (mount) g_object_unref(mount);
             g_clear_error(&error);
@@ -2336,14 +2336,20 @@ gboolean refreshUsbVolumesPeriodically(gpointer data)
 int monitorUsbVolumes()
 {
     bool mtpAvailable = false;
+    bool afcAvailable = false;
     const gchar* const* schemes = g_vfs_get_supported_uri_schemes(g_vfs_get_default());
     for (const gchar* const* scheme = schemes; scheme && *scheme; ++scheme)
+    {
         if (strcmp(*scheme, "mtp") == 0) mtpAvailable = true;
+        if (strcmp(*scheme, "afc") == 0) afcAvailable = true;
+    }
     if (!mtpAvailable)
     {
         std::puts("STATUS\tHost GVFS MTP backend is unavailable; install the desktop GVFS MTP backend.");
-        std::fflush(stdout);
     }
+    if (!afcAvailable)
+        std::puts("STATUS\tHost GVFS AFC backend is unavailable; install the desktop GVFS AFC support and libimobiledevice.");
+    std::fflush(stdout);
     GVolumeMonitor* monitor = g_volume_monitor_get();
     UsbMonitorState state;
     state.monitor = monitor;
