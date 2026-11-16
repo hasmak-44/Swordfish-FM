@@ -23,6 +23,9 @@ struct BackgroundEffect
     static BackgroundEffect parse(const FXString&);
     FXString serialize() const;
     static FXbool validTextureName(const FXString&);
+    static FXString textureReference(const FXString&);
+    static FXbool textureRelativePath(const FXString&, FXString&);
+    static FXbool prepareTextureDestination(const FXString&, const FXString&, FXString&, FXString&);
     static FXString texturePath(const FXString&, const FXString& = FXString::null);
     static FXbool validateTexture(FXApp*, const FXString&, FXString&);
     static FXbool importTexture(FXApp*, const FXString&, const FXString&, FXbool, FXString&);

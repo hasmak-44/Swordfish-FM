@@ -22,6 +22,8 @@
 - Import theme… can import several theme files at once. A theme's own
   `textures/` folder takes precedence over same-named shared or bundled
   textures; legacy textures in `~/.config/swordfish/textures/` remain readable.
+- The texture gallery scans category subfolders and can filter and import
+  textures by category, retaining those paths when themes are shared.
 - Custom themes are saved in per-theme folders under
   `$XDG_DATA_HOME/swordfish/themes/colors/` (or
   `portable-data/themes/colors/` in a portable run), with a theme file and

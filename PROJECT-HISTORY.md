@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 16 November 2026, through rounded tab corners
-(sections 3.70-3.73).
+Last updated: 16 November 2026, through categorized theme textures
+(section 3.86).
 Latest release: `swordfish-0.0.3-beta2`.
 Stable fallback: `swordfish-0.0.2`.
 
@@ -40,7 +40,7 @@ Historical implementation details below do not override the current code.
    automated tests but still need the user's real-machine testing.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.70-3.73. Older beta and RC notes are
+9. For the latest state, read sections 3.70-3.86. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide is a documentation addition after the frozen RC4 application commit.
@@ -3280,6 +3280,19 @@ Validation in the codespace: clean native rebuild and theme workflow regression
 covering same-named textures, live rendering, imports, copied folders, portable
 relocation and linked destinations. Desktop acceptance remains pending.
 
+### 3.86. Categorized theme textures
+
+The texture gallery scans nested category folders and can import tiles into
+them. References preserve spaces and non-ASCII names safely, distinguish
+same-named tiles in different categories, and reject traversal. Saving and
+exporting a theme retains the category hierarchy with its local graphics.
+Export now asks for a parent directory and creates a theme-named folder.
+
+Validation in the codespace: native rebuild and theme workflow regression
+covering rendered thumbnails, live backgrounds, reload, export, category
+collisions, unsafe paths and symbolic links. Desktop acceptance remains pending.
+Categories for patterns and background images remain separate future work.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -3831,7 +3844,7 @@ Do not amend published commits/tags as an automatic workaround.
 ### Durable starting point
 
 0.0.2 remains the frozen stable fallback; 0.0.3 beta 2 is the latest published
-test release. Sections 3.70-3.73 record the current implementation state.
+test release. Sections 3.70-3.86 record the current implementation state.
 Groups 2 through 5 are committed locally; none is pushed or released. Generated
 autotools files may remain modified after local builds and must not be included
 in feature commits. Start from the current branch and worktree, not from an old

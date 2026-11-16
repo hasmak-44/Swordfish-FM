@@ -1683,10 +1683,9 @@ EffectSpec parseEffect(const FXString& spec)
         else if (key == "texture")
         {
             // Names only: textures are looked up in known folders, never by arbitrary path
-            if (BackgroundEffect::validTextureName(value))
-            {
-                effect.texture = value;
-            }
+            FXString relative;
+            if (BackgroundEffect::textureRelativePath(value, relative))
+                effect.texture = BackgroundEffect::textureReference(relative);
         }
         else if (key == "strength")
         {
@@ -1749,20 +1748,32 @@ FXbool patternCovers(int pattern, double x, double y, double s)
 // A theme's own copy takes precedence; otherwise bundled tiles precede user tiles.
 FXString findTexture(const FXString& name, const FXString& assetRoot)
 {
+    FXString relative;
+    if (!BackgroundEffect::textureRelativePath(name, relative)) return FXString::null;
     FXString candidates[] =
     {
-        assetRoot.empty() ? FXString::null : assetRoot + PATHSEPSTRING "textures" PATHSEPSTRING + name + ".png",
-        assetRoot.empty() ? FXString::null : assetRoot + PATHSEPSTRING + name + ".png",
-        FXPath::directory(execpath) + "/../share/swordfish/textures/" + name + ".png",
-        xf_userdatahome() + PATHSEPSTRING "textures" PATHSEPSTRING + name + ".png",
-        xdgconfighome + PATHSEPSTRING XFECONFIGPATH "/textures/" + name + ".png"
+        assetRoot.empty() ? FXString::null : assetRoot + PATHSEPSTRING "textures" PATHSEPSTRING + relative,
+        assetRoot.empty() ? FXString::null : assetRoot + PATHSEPSTRING + relative,
+        FXPath::directory(execpath) + "/../share/swordfish/textures/" + relative,
+        xf_userdatahome() + PATHSEPSTRING "textures" PATHSEPSTRING + relative,
+        xdgconfighome + PATHSEPSTRING XFECONFIGPATH "/textures/" + relative
     };
-    for (const FXString& path : candidates)
+    for (const FXString& candidate : candidates)
     {
-        if (!path.empty() && xf_existfile(path))
+        if (candidate.empty()) continue;
+        FXString path = candidate + ".png";
+        if (xf_existfile(path)) return FXPath::absolute(path);
+        FXDir directory;
+        if (!directory.open(FXPath::directory(candidate))) continue;
+        FXString match;
+        while (directory.next())
         {
-            return FXPath::absolute(path);
+            FXString entry = directory.name();
+            if (FXPath::title(entry) == FXPath::name(candidate) && FXPath::extension(entry).lower() == "png" &&
+                (match.empty() || entry < match))
+                match = entry;
         }
+        if (!match.empty()) return FXPath::absolute(FXPath::directory(candidate) + PATHSEPSTRING + match);
     }
     return "";
 }
@@ -1819,9 +1830,92 @@ FXString BackgroundEffect::serialize() const
 
 FXbool BackgroundEffect::validTextureName(const FXString& name)
 {
-    if (name.empty()) return false;
-    for (FXint i = 0; i < name.length(); ++i)
-        if (!isalnum(static_cast<unsigned char>(name[i])) && name[i] != '-' && name[i] != '_') return false;
+    FXString relative;
+    return textureRelativePath(name, relative);
+}
+
+FXString BackgroundEffect::textureReference(const FXString& relative)
+{
+    FXString result;
+    for (FXint i = 0; i < relative.length(); ++i)
+    {
+        unsigned char c = static_cast<unsigned char>(relative[i]);
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '/')
+            result += c;
+        else
+            result += FXString().format("%%%02X", c);
+    }
+    FXString checked;
+    return textureRelativePath(result, checked) ? result : FXString::null;
+}
+
+FXbool BackgroundEffect::textureRelativePath(const FXString& reference, FXString& relative)
+{
+    relative.clear();
+    if (reference.empty() || reference.length() > 4096) return false;
+    FXString component;
+    FXint depth = 0;
+    for (FXint i = 0; i <= reference.length(); ++i)
+    {
+        if (i == reference.length() || reference[i] == '/')
+        {
+            if (component.empty() || component == "." || component == ".." ||
+                component.length() > 255 || ++depth > 9)
+                return false;
+            if (!relative.empty()) relative += '/';
+            relative += component;
+            component.clear();
+            continue;
+        }
+        unsigned char c = static_cast<unsigned char>(reference[i]);
+        if (c == '%')
+        {
+            if (i + 2 >= reference.length() || !isxdigit(static_cast<unsigned char>(reference[i + 1])) ||
+                !isxdigit(static_cast<unsigned char>(reference[i + 2])))
+                return false;
+            c = static_cast<unsigned char>(strtoul(reference.mid(i + 1, 2).text(), NULL, 16));
+            i += 2;
+        }
+        else if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+                   c == '-' || c == '_' || c == '.'))
+            return false;
+        if (c < 32 || c == 127 || c == '/' || c == '\\') return false;
+        component += static_cast<FXchar>(c);
+    }
+    return true;
+}
+
+FXbool BackgroundEffect::prepareTextureDestination(const FXString& base, const FXString& reference,
+                                                    FXString& destination, FXString& error)
+{
+    FXString relative;
+    if (!textureRelativePath(reference, relative))
+    {
+        error = _("Invalid texture name or category.");
+        return false;
+    }
+    FXString directory = FXPath::absolute(base);
+    if (xf_islink(directory) || xf_mkpath(directory.text(), 0755) != 0 || !xf_isdirectory(directory))
+    {
+        error = _("Cannot create texture folder: ") + directory;
+        return false;
+    }
+    for (FXint i = 0; i < relative.contains('/'); ++i)
+    {
+        directory += PATHSEPSTRING + relative.section('/', i);
+        if (xf_islink(directory) || xf_mkpath(directory.text(), 0755) != 0 || !xf_isdirectory(directory))
+        {
+            error = _("Cannot create texture folder: ") + directory;
+            return false;
+        }
+    }
+    destination = directory + PATHSEPSTRING + relative.rafter('/') + ".png";
+    if (xf_islink(destination))
+    {
+        error = _("Texture destination is a symbolic link: ") + destination;
+        return false;
+    }
     return true;
 }
 
@@ -1876,7 +1970,7 @@ FXbool BackgroundEffect::importTexture(FXApp* app, const FXString& source, const
 {
     if (!validTextureName(name))
     {
-        error = _("Use only letters, numbers, hyphens and underscores in a texture name.");
+        error = _("Invalid texture name or category.");
         return false;
     }
     if (!validateTexture(app, source, error)) return false;
@@ -1905,8 +1999,9 @@ FXbool BackgroundEffect::importTexture(FXApp* app, const FXString& source, const
         return false;
     }
     FXString directory = xf_userdatahome() + PATHSEPSTRING "textures";
-    if ((!xf_existfile(directory) && xf_mkpath(directory.text(), 0755) != 0) ||
-        !FXFile::copyFiles(source, directory + PATHSEPSTRING + name + ".png", false))
+    FXString destination;
+    if (!prepareTextureDestination(directory, name, destination, error)) return false;
+    if (!FXFile::copyFiles(source, destination, false))
     {
         error = _("Cannot copy texture into ") + directory + ": " + strerror(errno);
         return false;

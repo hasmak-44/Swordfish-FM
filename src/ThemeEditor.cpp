@@ -22,6 +22,7 @@
 #include "AppLogger.h"
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <memory>
 #include <set>
 #include <utility>
@@ -752,6 +753,8 @@ class BackgroundEditor : public DialogBox
     FXRealSpinner* position = NULL;
     FXIconList* patterns = NULL;
     FXIconList* textures = NULL;
+    FXListBox* textureCategory = NULL;
+    FXTextField* textureTargetCategory = NULL;
     FXSpinner* patternSize = NULL;
     FXSpinner* strength = NULL;
     FXCheckButton* originalColors = NULL;
@@ -760,7 +763,9 @@ class BackgroundEditor : public DialogBox
     FXListBox* presets = NULL;
     FXLabel* status = NULL;
     std::vector<FXString> textureNames, presetEffects;
+    std::vector<FXString> textureCategories;
     std::vector<FXIcon*> icons;
+    std::vector<FXIcon*> textureIcons;
     FXString gradientBefore;
     FXbool syncing = false;
     BackgroundEditor() {}
@@ -821,9 +826,61 @@ class BackgroundEditor : public DialogBox
     static constexpr FXColor previewLight = FXRGB(0xD5, 0xDA, 0xDF);
     static constexpr FXColor previewDark = FXRGB(0x6E, 0x77, 0x80);
     static constexpr FXint previewSize = 64;
+
+    void collectTextures(const FXString& root, const FXString& category, FXbool recursive,
+                         std::map<FXString, FXString>& entries, FXString& rejected)
+    {
+        FXString path = category.empty() ? root : root + PATHSEPSTRING + category;
+        FXDir directory;
+        if (!directory.open(path))
+        {
+            if (xf_existfile(path))
+            {
+                rejected += path + ": " + strerror(errno) + "\n";
+                appLog(APP_LOG_ERRORS, "texture-directory-unreadable", path);
+            }
+            return;
+        }
+        while (directory.next())
+        {
+            FXString filename = directory.name();
+            if (filename.empty() || filename[0] == '.') continue;
+            FXString file = path + PATHSEPSTRING + filename;
+            FXString relative = category.empty() ? filename : category + "/" + filename;
+            if (recursive && xf_isdirectory(file) && !xf_islink(file))
+            {
+                if (relative.contains('/') < 8) collectTextures(root, relative, true, entries, rejected);
+                else
+                {
+                    rejected += relative + ": " + _("Too many nested texture categories.") + "\n";
+                    appLog(APP_LOG_ERRORS, "texture-category-too-deep", file);
+                }
+            }
+            else if (FXPath::extension(filename).lower() == "png" && xf_isfile(file))
+            {
+                FXString title = category.empty() ? FXPath::title(filename) : category + "/" + FXPath::title(filename);
+                FXString reference = BackgroundEffect::textureReference(title);
+                if (reference.empty())
+                {
+                    rejected += relative + ": " + _("Invalid texture name or category.") + "\n";
+                    appLog(APP_LOG_ERRORS, "texture-rejected", file);
+                }
+                else if (!entries.count(reference))
+                    entries[reference] = file;
+                else if (FXPath::directory(entries[reference]) == path && FXPath::extension(filename) == "png")
+                    entries[reference] = file;
+            }
+        }
+    }
+
     void loadTextures()
     {
+        FXint previousCategory = textureCategory->getCurrentItem();
+        FXbool all = previousCategory <= 0 || previousCategory >= static_cast<FXint>(textureCategories.size());
+        FXString selectedCategory = all ? FXString::null : textureCategories[previousCategory];
         textures->clearItems();
+        for (FXIcon* icon : textureIcons) delete icon;
+        textureIcons.clear();
         textureNames.clear();
         textures->appendItem(_("No texture"));
         textureNames.push_back("");
@@ -834,53 +891,65 @@ class BackgroundEditor : public DialogBox
                                     FXPath::directory(execpath) + "/../share/swordfish/textures",
                                     xf_userdatahome() + PATHSEPSTRING "textures",
                                     xdgconfighome + PATHSEPSTRING XFECONFIGPATH "/textures"};
-        std::set<FXString> names;
+        std::map<FXString, FXString> entries;
         FXString rejected;
         for (FXint folder = 0; folder < static_cast<FXint>(ARRAYNUMBER(directories)); ++folder)
         {
             if (directories[folder].empty()) continue;
-            FXDir directory;
-            if (!directory.open(directories[folder]))
+            collectTextures(directories[folder], "", folder != 1, entries, rejected);
+        }
+
+        std::set<FXString> categories;
+        for (const auto& entry : entries)
+        {
+            FXString relative;
+            if (!BackgroundEffect::textureRelativePath(entry.first, relative)) continue;
+            FXint slash = relative.rfind('/');
+            if (slash >= 0) categories.insert(relative.left(slash));
+        }
+        textureCategory->clearItems();
+        textureCategories.clear();
+        textureCategory->appendItem(_("All categories"));
+        textureCategories.push_back("");
+        textureCategory->appendItem(_("Uncategorized"));
+        textureCategories.push_back("");
+        FXint categoryIndex = all ? 0 : 1;
+        for (const FXString& category : categories)
+        {
+            textureCategory->appendItem(category);
+            textureCategories.push_back(category);
+            if (!all && category == selectedCategory) categoryIndex = textureCategories.size() - 1;
+        }
+        textureCategory->setCurrentItem(categoryIndex);
+
+        for (const auto& entry : entries)
+        {
+            FXString relative;
+            if (!BackgroundEffect::textureRelativePath(entry.first, relative)) continue;
+            FXint slash = relative.rfind('/');
+            FXString category = slash >= 0 ? relative.left(slash) : FXString::null;
+            if (categoryIndex != 0 && category != textureCategories[categoryIndex]) continue;
+            FXString error;
+            if (!BackgroundEffect::validateTexture(getApp(), entry.second, error))
             {
-                if (xf_existfile(directories[folder]))
-                {
-                    rejected += directories[folder] + ": " + strerror(errno) + "\n";
-                    appLog(APP_LOG_ERRORS, "texture-directory-unreadable", directories[folder]);
-                }
+                rejected += relative + ": " + error + "\n";
+                appLog(APP_LOG_ERRORS, "texture-rejected", entry.second + ": " + error);
                 continue;
             }
-            while (directory.next())
-            {
-                FXString filename = directory.name();
-                if (FXPath::extension(filename).lower() != "png") continue;
-                FXString name = FXPath::title(filename);
-                FXString error, path = directories[folder] + PATHSEPSTRING + filename;
-                if (!BackgroundEffect::validTextureName(name))
-                    error = _("Use only letters, numbers, hyphens and underscores in a texture name.");
-                else if (names.count(name))
-                    continue;
-                else
-                    BackgroundEffect::validateTexture(getApp(), path, error);
-                if (!error.empty())
-                {
-                    rejected += filename + ": " + error + "\n";
-                    appLog(APP_LOG_ERRORS, "texture-rejected", path + ": " + error);
-                    continue;
-                }
-                names.insert(name);
-                BackgroundEffect preview = effect;
-                preview.fill = "solid";
-                preview.colors = {previewLight};
-                preview.texture = name;
-                preview.strength = 80;
-                preview.rows = false;
-                FXIcon* icon = BackgroundEffect::preview(this, preview.serialize(), previewLight, previewSize,
-                                                          editor->getDraft().assetRoot);
-                icons.push_back(icon);
-                textures->appendItem(name, icon, icon);
-                textureNames.push_back(name);
-                if (name == effect.texture) textures->setCurrentItem(textureNames.size() - 1);
-            }
+            BackgroundEffect preview = effect;
+            preview.fill = "solid";
+            preview.colors = {previewLight};
+            preview.texture = entry.first;
+            preview.strength = 80;
+            preview.rows = false;
+            FXIcon* icon = BackgroundEffect::preview(this, preview.serialize(), previewLight, previewSize,
+                                                      editor->getDraft().assetRoot);
+            textureIcons.push_back(icon);
+            FXString label = slash < 0 ? relative : relative.rafter('/');
+            if (categoryIndex == 0 && !category.empty()) label += " (" + category + ")";
+            textures->appendItem(label, icon, icon);
+            textureNames.push_back(entry.first);
+            if (entry.first == effect.texture) textures->setCurrentItem(textureNames.size() - 1);
         }
         status->setText(rejected.empty() ? _("PNG tiles: at most 1024 x 1024 pixels. Originals are never moved.") :
                                            _("Some textures were excluded:\n") + rejected);
@@ -899,6 +968,7 @@ public:
         ID_TEXTURE,
         ID_ADD_TEXTURE,
         ID_REFRESH,
+        ID_TEXTURE_CATEGORY,
         ID_PRESET,
         ID_SAVE_PRESET,
         ID_RANDOM,
@@ -1000,11 +1070,19 @@ public:
         new FXButton(patternControls, _("Second colour..."), NULL, this, ID_STOP_COLOR + 100, BUTTON_NORMAL);
         new DialogTabItem(pages, _("Texture"));
         FXVerticalFrame* texturePage = new FXVerticalFrame(pages, FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        FXHorizontalFrame* categoryControls = new FXHorizontalFrame(texturePage, LAYOUT_FILL_X);
+        new FXLabel(categoryControls, _("Category:"));
+        textureCategory = new FXListBox(categoryControls, this, ID_TEXTURE_CATEGORY,
+                                         FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X);
+        textureCategory->setNumVisible(10);
         textures = new FXIconList(texturePage, this, ID_TEXTURE,
                                    ICONLIST_BIG_ICONS | ICONLIST_BROWSESELECT | LAYOUT_FILL_X | LAYOUT_FILL_Y);
         FXHorizontalFrame* textureControls = new FXHorizontalFrame(texturePage, LAYOUT_FILL_X);
         new FXButton(textureControls, _("Add PNG..."), NULL, this, ID_ADD_TEXTURE, BUTTON_NORMAL);
         new FXButton(textureControls, _("Refresh"), NULL, this, ID_REFRESH, BUTTON_NORMAL);
+        new FXLabel(textureControls, _("Save in category:"));
+        textureTargetCategory = new FXTextField(textureControls, 14, NULL, 0, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
+        textureTargetCategory->setTipText(_("Optional category; use / for subcategories."));
         new FXLabel(texturePage, _("User textures are stored in:") + FXString("\n") +
                                   xf_userdatahome() + PATHSEPSTRING "textures",
                     NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
@@ -1019,6 +1097,7 @@ public:
     }
     ~BackgroundEditor()
     {
+        for (FXIcon* icon : textureIcons) delete icon;
         for (FXIcon* icon : icons) delete icon;
     }
     long onLive(FXObject* sender, FXSelector, void*)
@@ -1177,6 +1256,12 @@ public:
     }
     long onTextureFiles(FXObject*, FXSelector selector, void*)
     {
+        if (FXSELID(selector) == ID_TEXTURE_CATEGORY)
+        {
+            FXint index = textureCategory->getCurrentItem();
+            textureTargetCategory->setText(index > 0 && index < static_cast<FXint>(textureCategories.size()) ?
+                                           textureCategories[index] : FXString::null);
+        }
         if (FXSELID(selector) == ID_ADD_TEXTURE)
         {
             FileDialog file(this, _("Add PNG texture"));
@@ -1185,18 +1270,31 @@ public:
             file.setSelectMode(SELECT_FILE_EXISTING);
             if (!file.execute()) return 1;
             FXString name = FXPath::title(file.getFilename());
-            InputDialog naming(this, "", _("Name (letters, numbers, hyphens and underscores):"), _("Texture name"));
+            InputDialog naming(this, "", _("Texture name (without a slash):"), _("Texture name"));
             naming.setText(name);
             if (!naming.execute()) return 1;
             name = naming.getText().trim();
+            FXString category = textureTargetCategory->getText().trim();
+            FXString reference = name.find_first_of("/\\") >= 0 ? FXString::null :
+                BackgroundEffect::textureReference(category.empty() ? name : category + "/" + name);
             FXString error;
-            if (!BackgroundEffect::importTexture(getApp(), file.getFilename(), name, false, error))
+            FXString local = BackgroundEffect::texturePath(reference, editor->getDraft().assetRoot);
+            if (!editor->getDraft().assetRoot.empty() && !local.empty() &&
+                local != BackgroundEffect::texturePath(reference))
             {
-                MessageBox::error(this, BOX_OK, _("Texture"), "%s", error.text());
+                MessageBox::error(this, BOX_OK, _("Texture"),
+                                  _("This name is already used by the current theme. Please use another name."));
                 return 1;
             }
-            effect.texture = name;
+            if (reference.empty() || !BackgroundEffect::importTexture(getApp(), file.getFilename(), reference, false, error))
+            {
+                MessageBox::error(this, BOX_OK, _("Texture"), "%s",
+                                  error.empty() ? _("Invalid texture name or category.") : error.text());
+                return 1;
+            }
+            effect.texture = reference;
             changed();
+            textureCategory->setCurrentItem(0);
         }
         loadTextures();
         return 1;
@@ -1257,6 +1355,7 @@ FXDEFMAP(BackgroundEditor) BackgroundEditorMap[] = {
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_TEXTURE, BackgroundEditor::onTexture),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_ADD_TEXTURE, BackgroundEditor::onTextureFiles),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_REFRESH, BackgroundEditor::onTextureFiles),
+    FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_TEXTURE_CATEGORY, BackgroundEditor::onTextureFiles),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_PRESET, BackgroundEditor::onPreset),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_SAVE_PRESET, BackgroundEditor::onPreset),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_RANDOM, BackgroundEditor::onPreset)

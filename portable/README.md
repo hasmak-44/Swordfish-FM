@@ -755,8 +755,9 @@ Custom color themes are saved in the user data directory:
 folder containing `theme.swordfish-theme` and any texture images it uses.
 Imported themes and textures remain available after restarting Swordfish.
 
-In Preferences → Appearance, use **Export theme** to create a shareable theme
-folder containing a `*.swordfish-theme` file and its `textures/` assets.
+In Preferences → Appearance, use **Export theme** and choose a parent
+directory. Swordfish creates a shareable theme-named folder containing
+`theme.swordfish-theme` and its `textures/` assets.
 Import that file on another machine with **Import theme**; keep the adjacent
 `textures/` folder with it when sharing themes that use custom textures.
 Alternatively, copy the complete theme folder into `portable-data/themes/colors/`.
@@ -764,3 +765,6 @@ Each theme's own textures take precedence over same-named shared or bundled
 textures. Swordfish resolves their absolute paths at runtime, so the folder
 can be moved between machines. Legacy custom textures in
 `~/.config/swordfish/textures/` remain readable.
+Texture PNGs can also be organized into category subfolders under
+`portable-data/textures/`; the editor can filter categories and copy new
+textures into them. Textures in the folder root are uncategorized.

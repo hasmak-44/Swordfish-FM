@@ -85,6 +85,43 @@ static FXButton* findButton(FXWindow* parent, const FXString& text)
     return NULL;
 }
 
+static FXListBox* findListBoxWithItem(FXWindow* parent, const FXString& text)
+{
+    FXListBox* list = dynamic_cast<FXListBox*>(parent);
+    if (list && list->findItem(text) >= 0) return list;
+    for (FXWindow* child = parent->getFirst(); child; child = child->getNext())
+        if (FXListBox* result = findListBoxWithItem(child, text)) return result;
+    return NULL;
+}
+
+static FXbool itemShowsPixel(FXIconList* list, FXint index, FXColor color)
+{
+    Display* display = static_cast<Display*>(list->getApp()->getDisplay());
+    XWindowAttributes attributes;
+    if (!XGetWindowAttributes(display, list->id(), &attributes) || attributes.map_state != IsViewable)
+        return false;
+    XImage* image = XGetImage(display, list->id(), 0, 0, list->getWidth(), list->getHeight(), AllPlanes, ZPixmap);
+    if (!image) return false;
+    auto channel = [](unsigned long pixel, unsigned long mask) -> FXuint
+    {
+        unsigned int shift = 0;
+        while (!(mask & 1)) { mask >>= 1; ++shift; }
+        return ((pixel >> shift) & mask) * 255 / mask;
+    };
+    FXbool found = false;
+    for (FXint y = 0; y < list->getHeight() && !found; ++y)
+        for (FXint x = 0; x < list->getWidth() && !found; ++x)
+            if (list->getItemAt(x, y) == index)
+            {
+                unsigned long pixel = XGetPixel(image, x, y);
+                found = channel(pixel, image->red_mask) == FXREDVAL(color) &&
+                        channel(pixel, image->green_mask) == FXGREENVAL(color) &&
+                        channel(pixel, image->blue_mask) == FXBLUEVAL(color);
+            }
+    XDestroyImage(image);
+    return found;
+}
+
 static void checkManual(FXApp& app, FXObject* target, FXSelector selector, FXObject* sender, bool theme)
 {
     const char* oldPath = getenv("SWORDFISH_HOST_PATH");
@@ -147,6 +184,19 @@ static void solidPng(FXApp& app, const FXString& path, FXColor color)
     FXColor* pixels = NULL;
     assert(FXMALLOC(&pixels, FXColor, 4));
     for (FXint i = 0; i < 4; ++i) pixels[i] = color;
+    FXPNGImage image(&app);
+    image.setData(pixels, IMAGE_KEEP | IMAGE_OWNED, 2, 2);
+    FXFileStream output;
+    assert(output.open(path, FXStreamSave));
+    assert(image.savePixels(output));
+}
+
+static void checkerPng(FXApp& app, const FXString& path)
+{
+    FXColor* pixels = NULL;
+    assert(FXMALLOC(&pixels, FXColor, 4));
+    pixels[0] = pixels[3] = FXRGB(0, 0, 0);
+    pixels[1] = pixels[2] = FXRGB(255, 255, 255);
     FXPNGImage image(&app);
     image.setData(pixels, IMAGE_KEEP | IMAGE_OWNED, 2, 2);
     FXFileStream output;
@@ -390,11 +440,21 @@ public:
             for (FXint tab = 1; tab <= 2; ++tab)
             {
                 effectTabs->setCurrent(tab, true);
+                effectTabs->layout();
                 pump(app);
+                FXWindow* page = effectTabs->childAtIndex(tab * 2 + 1);
+                FXIconList* samples = static_cast<FXIconList*>(findClass(page, "FXIconList"));
+                assert(page->shown() && samples && samples->shown() && samples->getNumItems() > 1);
+                FXint sampleIndex = tab == 1 ? 0 : 1;
+                FXint otherIndex = tab == 1 ? 1 : 0;
+                samples->setCurrentItem(otherIndex);
+                samples->selectItem(otherIndex);
+                samples->makeItemVisible(sampleIndex);
+                pump(app);
+                FXIcon* visibleSample = samples->getItemBigIcon(sampleIndex);
+                assert(visibleSample && visibleSample->getData() &&
+                       itemShowsPixel(samples, sampleIndex, visibleSample->getData()[0]));
                 screenshot(dialog, tabShots[tab - 1]);
-                FXIconList* samples = static_cast<FXIconList*>(findClass(effectTabs->childAtIndex(tab * 2 + 1),
-                                                                         "FXIconList"));
-                assert(samples && samples->getNumItems() > 0);
                 FXint checked = 0;
                 for (FXint item = 0; item < samples->getNumItems(); ++item)
                 {
@@ -742,6 +802,109 @@ public:
         assert(BackgroundEffect::texturePath("shared", moved.assetRoot) == relocated + "/textures/shared.png");
         if (previousPortable) assert(setenv("SWORDFISH_PORTABLE_DATA", previousValue.text(), 1) == 0);
         else assert(unsetenv("SWORDFISH_PORTABLE_DATA") == 0);
+
+        FXString categoryName = "Natural Stone/River 1";
+        FXString categoryReference = BackgroundEffect::textureReference(categoryName);
+        assert(categoryReference == "Natural%20Stone/River%201");
+        FXString decodedCategory;
+        assert(BackgroundEffect::textureRelativePath(categoryReference, decodedCategory) &&
+               decodedCategory == categoryName);
+        for (const char* invalid : {"../tile", "/absolute", "a//tile", "a/%2E%2E", "a/%2Ftile",
+                                    "a/%5Ctile", "a/%00", "a/%0Atile", "a/%zz"})
+            assert(!BackgroundEffect::validTextureName(invalid));
+        FXString unicode = FXString("Colors/caf") + "\xC3\xA9";
+        assert(BackgroundEffect::textureRelativePath(BackgroundEffect::textureReference(unicode), decodedCategory));
+        assert(decodedCategory == unicode);
+        checkerPng(app, redSource + "/textures/checker.png");
+        FXString textureError;
+        assert(BackgroundEffect::importTexture(&app, redSource + "/textures/checker.png",
+                                                categoryReference, false, textureError));
+        assert(xf_existfile(globalTextures + "/Natural Stone/River 1.png"));
+        FXString secondReference = BackgroundEffect::textureReference("Paint/River 1");
+        assert(BackgroundEffect::importTexture(&app, blueSource + "/textures/shared.png",
+                                                secondReference, false, textureError));
+        assert(BackgroundEffect::texturePath(categoryReference) == globalTextures + "/Natural Stone/River 1.png");
+        assert(BackgroundEffect::texturePath(secondReference) == globalTextures + "/Paint/River 1.png");
+        assert(xf_mkpath((globalTextures + "/Uppercase").text(), 0755) == 0);
+        solidPng(app, globalTextures + "/Uppercase/Tile.PnG", FXRGB(10, 20, 30));
+        assert(BackgroundEffect::texturePath("Uppercase/Tile") == globalTextures + "/Uppercase/Tile.PnG");
+        assert(symlink(outsideFolder.text(), (globalTextures + "/linked-category").text()) == 0);
+        textureError.clear();
+        assert(!BackgroundEffect::importTexture(&app, redSource + "/textures/checker.png",
+                                                 "linked-category/escape", false, textureError));
+        assert(!textureError.empty() && !xf_existfile(outsideFolder + "/escape.png"));
+
+        Theme categorized = Theme::current(&app);
+        categorized.name = "Categorized pack";
+        categorized.effect = "fill=solid colors=#808080 texture=" + categoryReference +
+                             " strength=100 texture_colors=original rows=off";
+        assert(imported.saveEditedTheme(categorized, -1));
+        assert(xf_existfile(categorized.assetRoot + "/textures/Natural Stone/River 1.png"));
+        assert(BackgroundEffect::texturePath(categoryReference, categorized.assetRoot) ==
+               categorized.assetRoot + "/textures/Natural Stone/River 1.png");
+        assert(liveBackground() == FXRGB(0, 0, 0));
+        PreferencesBox reloadedCategories(&window, app.getBackColor(), app.getForeColor(), app.getBackColor(),
+                                          app.getSelbackColor(), FXRGB(255, 0, 0), app.getBaseColor());
+        FXbool foundCategorized = false;
+        for (const Theme& theme : reloadedCategories.Themes)
+            if (theme.name == categorized.name)
+                foundCategorized = theme.assetRoot == categorized.assetRoot &&
+                                   BackgroundEffect::parse(theme.effect).texture == categoryReference;
+        assert(foundCategorized);
+
+        FXString exportParent = data + "/exports";
+        assert(xf_mkpath(exportParent.text(), 0755) == 0);
+        ActionTimer chooseExport([&] {
+            FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+            assert(chooser && chooser->getTitle() == "Choose where to export the theme folder");
+            chooser->setFilename(exportParent);
+            chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+        });
+        app.addTimeout(&chooseExport, 1, 150);
+        imported.onCmdThemeExport(NULL, 0, NULL);
+        FXString exported = exportParent + "/Categorized pack";
+        assert(xf_existfile(exported + "/theme.swordfish-theme"));
+        assert(xf_existfile(exported + "/textures/Natural Stone/River 1.png"));
+        assert(BackgroundEffect::texturePath(categoryReference, exported) ==
+               exported + "/textures/Natural Stone/River 1.png");
+
+        editor.draft = editor.applied = editor.saved = categorized;
+        editor.selectElement("list");
+        editor.show(PLACEMENT_SCREEN);
+        pump(app);
+        ActionTimer categoryDialog([&] {
+            FXWindow* dialog = app.getModalWindow();
+            assert(dialog);
+            FXTabBook* pages = static_cast<FXTabBook*>(findClass(dialog, "FXTabBook"));
+            assert(pages);
+            pages->setCurrent(2, true);
+            pump(app);
+            FXWindow* page = pages->childAtIndex(5);
+            FXListBox* categories = findListBoxWithItem(page, "Natural Stone");
+            FXIconList* gallery = static_cast<FXIconList*>(findClass(page, "FXIconList"));
+            assert(page->shown() && categories && gallery && gallery->shown());
+            categories->setCurrentItem(categories->findItem("Natural Stone"));
+            categories->getTarget()->handle(categories, FXSEL(SEL_COMMAND, categories->getSelector()), NULL);
+            pump(app);
+            assert(gallery->getNumItems() == 2);
+            assert(gallery->getItemText(1) == "River 1");
+            FXIcon* sample = gallery->getItemBigIcon(1);
+            assert(sample && sample->getData());
+            gallery->setCurrentItem(0);
+            gallery->selectItem(0);
+            pump(app);
+            screenshot(page, "categorized-textures");
+            assert(itemShowsPixel(gallery, 1, sample->getData()[0]));
+            gallery->setCurrentItem(1);
+            gallery->getTarget()->handle(gallery, FXSEL(SEL_COMMAND, gallery->getSelector()), NULL);
+            assert(BackgroundEffect::parse(editor.getDraft().effect).texture == categoryReference);
+            dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
+        });
+        app.addTimeout(&categoryDialog, 1, 150);
+        editor.properties->setCurrentItem(editor.propertyKeys.size() - 1);
+        editor.onEditProperty(NULL, 0, NULL);
+        editor.hide();
+        puts("PASS: categorized texture import, safe references, theme copies and visible gallery thumbnails");
 
         assert(unlink((copied + "/textures/shared.png").text()) == 0);
         assert(symlink(outsideFile.text(), (copied + "/textures/shared.png").text()) == 0);

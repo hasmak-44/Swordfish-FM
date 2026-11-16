@@ -240,19 +240,15 @@ static FXbool copyThemeTextures(const Theme& theme, const FXString& folder, FXSt
     if (names.empty()) return true;
 
     FXString textureFolder = folder + PATHSEPSTRING "textures";
-    if (xf_islink(textureFolder) || xf_mkpath(textureFolder.text(), 0755) != 0)
-    {
-        error = _("Cannot create theme texture folder: ") + textureFolder;
-        return false;
-    }
     for (const FXString& name : names)
     {
         FXString source = BackgroundEffect::texturePath(name, theme.assetRoot);
-        FXString destination = textureFolder + PATHSEPSTRING + name + ".png";
-        if (source.empty() || xf_islink(destination) || (xf_realpath(source) != xf_realpath(destination) &&
+        FXString destination;
+        if (source.empty() || !BackgroundEffect::prepareTextureDestination(textureFolder, name, destination, error) ||
+            (xf_realpath(source) != xf_realpath(destination) &&
                                !FXFile::copyFiles(source, destination, true)))
         {
-            error = _("Cannot include texture in theme folder: ") + name;
+            if (error.empty()) error = _("Cannot include texture in theme folder: ") + name;
             return false;
         }
     }
@@ -2044,7 +2040,7 @@ long PreferencesBox::onUpdThemeExport(FXObject* sender, FXSelector, void*)
 }
 
 
-// Export the selected custom theme to a text file
+// Export the selected custom theme and its graphics to a named folder.
 long PreferencesBox::onCmdThemeExport(FXObject*, FXSelector, void*)
 {
     int index = themesList->getCurrentItem();
@@ -2055,30 +2051,32 @@ long PreferencesBox::onCmdThemeExport(FXObject*, FXSelector, void*)
     }
     const Theme& theme = Themes[index];
 
-    FileDialog savedialog(this, _("Export color theme"));
-    const char* patterns[] =
-    {
-        _("Swordfish themes"), "*.swordfish-theme", _("All Files"), "*", NULL
-    };
+    FileDialog savedialog(this, _("Choose where to export the theme folder"));
     FXString safe = themeFolderName(theme.name);
-    savedialog.setPatternList(patterns);
-    savedialog.setSelectMode(SELECT_FILE_ANY);
-    savedialog.setFilename(FXSystem::getHomeDirectory() + PATHSEPSTRING + safe + PATHSEPSTRING
-                            "theme.swordfish-theme");
+    savedialog.setSelectMode(SELECT_FILE_DIRECTORY);
+    savedialog.setDirectory(FXSystem::getHomeDirectory());
     if (!savedialog.execute())
     {
         return 1;
     }
-    FXString file = savedialog.getFilename();
-    if (xf_existfile(file) &&
-        BOX_CLICKED_NO == MessageBox::question(this, BOX_YES_NO, _("Overwrite"), _("Overwrite existing file: %s?"), file.text()))
+    FXString folder = FXPath::absolute(savedialog.getFilename()) + PATHSEPSTRING + safe;
+    FXString file = folder + PATHSEPSTRING "theme.swordfish-theme";
+    if (xf_islink(folder) || (xf_existfile(folder) && !xf_isdirectory(folder)))
+    {
+        MessageBox::error(this, BOX_OK, _("Export theme"), _("The export folder is not a regular directory: %s"),
+                          folder.text());
+        return 1;
+    }
+    if (xf_existfile(folder) &&
+        MessageBox::question(this, BOX_YES_NO, _("Export theme"),
+                             _("The folder already exists. Export into %s?"), folder.text()) != BOX_CLICKED_YES)
     {
         return 1;
     }
-    if (xf_mkpath(FXPath::directory(file).text(), 0755) != 0)
+    if (xf_mkpath(folder.text(), 0755) != 0)
     {
         MessageBox::error(this, BOX_OK, _("Export theme"), _("Cannot create export folder: %s"),
-                          FXPath::directory(file).text());
+                          folder.text());
         return 1;
     }
 
@@ -2094,14 +2092,19 @@ long PreferencesBox::onCmdThemeExport(FXObject*, FXSelector, void*)
     for (const FXString& name : textureNames)
     {
         FXString source = BackgroundEffect::texturePath(name, theme.assetRoot);
-        FXString directory = FXPath::directory(file) + PATHSEPSTRING "textures";
-        FXString destination = directory + PATHSEPSTRING + name + ".png";
+        FXString directory = folder + PATHSEPSTRING "textures";
+        FXString relative, error;
+        if (!BackgroundEffect::textureRelativePath(name, relative))
+        {
+            MessageBox::error(this, BOX_OK, _("Export theme"), _("Invalid texture name: %s"), name.text());
+            return 1;
+        }
+        FXString destination = directory + PATHSEPSTRING + relative + ".png";
         if (xf_existfile(destination) && xf_realpath(source) != xf_realpath(destination) &&
             MessageBox::question(this, BOX_YES_NO, _("Replace texture"),
                 _("Texture \"%s\" already exists in the export folder. Replace it?"), name.text()) != BOX_CLICKED_YES)
             return 1;
-        if (source.empty() || xf_islink(directory) || xf_islink(destination) ||
-            ((!xf_existfile(directory) && xf_mkpath(directory.text(), 0755) != 0)) ||
+        if (source.empty() || !BackgroundEffect::prepareTextureDestination(directory, name, destination, error) ||
             (xf_realpath(source) != xf_realpath(destination) &&
              !FXFile::copyFiles(source, destination, true)))
         {
