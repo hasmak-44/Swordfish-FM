@@ -3388,6 +3388,21 @@ Validation in the codespace: clean native rebuild and theme workflow regression
 (folder order, grid fill and resize, keyboard and Up navigation, imports into
 the current folder). Desktop acceptance and the portable build remain pending.
 
+### 3.94. 16 November task list closed for desktop testing
+
+`build/feedback and tasks.txt` (16 November) superseded the earlier
+discussion and road-map documents. Every error, user-feedback item and task in
+it is now done and committed locally (sections 3.70-3.93), apart from four
+open items: shred/encrypt in the context menu (needs discussion of
+implications), periodic update checks, tray options, and the .deb installer
+(after desktop testing). The obsolete `build/for discussion.txt` and
+`build/road map.txt` were removed. Their icon-theme plan (multi-size icons,
+bundled FOSS themes, device-control icons) and archive-as-folder notes were
+kept in `build/retained notes - icon themes and archive folders.txt`, as the
+task list requires. A single portable test build of this state was made for
+desktop acceptance of the keyboard shortcuts, USB/network discovery and theme
+work.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
