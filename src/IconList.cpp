@@ -1749,9 +1749,10 @@ FXbool patternCovers(int pattern, double x, double y, double s)
 // Bundled tiles take precedence, so a user tile can never silently replace a built-in name
 FXString findTexture(const FXString& name)
 {
-    FXString candidates[2] =
+    FXString candidates[3] =
     {
         FXPath::directory(execpath) + "/../share/swordfish/textures/" + name + ".png",
+        xf_userdatahome() + PATHSEPSTRING "textures" PATHSEPSTRING + name + ".png",
         xdgconfighome + PATHSEPSTRING XFECONFIGPATH "/textures/" + name + ".png"
     };
     for (const FXString& path : candidates)
@@ -1895,7 +1896,7 @@ FXbool BackgroundEffect::importTexture(FXApp* app, const FXString& source, const
         error = _("Texture name already exists. Please use another name.");
         return false;
     }
-    FXString directory = xdgconfighome + PATHSEPSTRING XFECONFIGPATH "/textures";
+    FXString directory = xf_userdatahome() + PATHSEPSTRING "textures";
     if ((!xf_existfile(directory) && xf_mkpath(directory.text(), 0755) != 0) ||
         !FXFile::copyFiles(source, directory + PATHSEPSTRING + name + ".png", false))
     {

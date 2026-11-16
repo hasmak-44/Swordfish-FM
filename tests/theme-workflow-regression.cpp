@@ -351,6 +351,28 @@ public:
         saved.setProperty("main", "font", font.getFont());
         preferences.copysuffix->setText("unsaved suffix");
         assert(preferences.saveEditedTheme(saved, -1));
+        FXString savedThemeFile = xf_userdatahome() + "/themes/colors/Regression theme/theme.swordfish-theme";
+        assert(xf_existfile(savedThemeFile));
+        {
+            FILE* file = fopen(savedThemeFile.text(), "r");
+            assert(file);
+            char line[512];
+            FXbool foundName = false, foundDetails = false;
+            while (fgets(line, sizeof(line), file))
+            {
+                if (FXString(line).trim() == "name=Regression theme") foundName = true;
+                if (FXString(line).trim() == "theme_details=" + saved.encodeProperties()) foundDetails = true;
+            }
+            fclose(file);
+            assert(foundName && foundDetails);
+        }
+        PreferencesBox loadedPreferences(&window, app.getBackColor(), app.getForeColor(), app.getBackColor(),
+                                        app.getSelbackColor(), FXRGB(255, 0, 0), app.getBaseColor());
+        bool foundReloadedTheme = false;
+        for (const Theme& theme : loadedPreferences.Themes)
+            if (theme.name == saved.name && theme.encodeProperties() == saved.encodeProperties())
+                foundReloadedTheme = true;
+        assert(foundReloadedTheme);
         FXRegistry disk(app.getAppName(), app.getVendorName());
         assert(disk.read());
         assert(disk.readStringEntry("SETTINGS", "theme_name", "") == saved.name);

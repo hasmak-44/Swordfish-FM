@@ -52,7 +52,7 @@ private:
     void selectCategory(FXint);
     void rememberNavigation();
     void rememberPreferences();
-    void saveCustomThemes(const vector_Theme&);
+    FXbool saveCustomThemes(const vector_Theme&);
     vector_Theme themesPrevious;
     friend class ThemeWorkflowRegression;
     FXList* themesList = NULL;

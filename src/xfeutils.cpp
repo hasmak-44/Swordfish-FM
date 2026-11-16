@@ -1318,6 +1318,18 @@ FXString xf_realpath(const FXString path)
 
 
 // Return the custom-script directory for the current run mode.
+FXString xf_userdatahome()
+{
+    const char* portabledata = getenv("SWORDFISH_PORTABLE_DATA");
+    if (portabledata && *portabledata)
+    {
+        return portabledata;
+    }
+
+    extern FXString xdgdatahome;
+    return xdgdatahome + PATHSEPSTRING "swordfish";
+}
+
 FXString xf_scriptpath()
 {
     const char* portabledata = getenv("SWORDFISH_PORTABLE_DATA");

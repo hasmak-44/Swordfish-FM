@@ -3225,6 +3225,21 @@ Validation in the codespace: native build, network-discovery regression and
 folder/device integration regression (heading order and texts, inert heading
 click, computers-only list without headings).
 
+### 3.82. Persistent custom theme library (16 November 2026)
+
+- Custom themes are saved as `theme.swordfish-theme` in per-theme folders under
+  `$XDG_DATA_HOME/swordfish/themes/colors/`; portable runs use
+  `portable-data/themes/colors/`. Referenced textures are copied alongside
+  each theme.
+- Export creates a folder containing the theme file and texture assets. Imports
+  and the Theme Editor now use the user data texture directory, while retaining
+  fallback lookup for textures in the legacy config directory.
+- Existing custom themes stored in the settings registry are loaded for
+  migration and saved to the file library; subsequent loads use the files.
+
+Validation in the codespace: native build and theme workflow regression,
+including custom-theme save and reload.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

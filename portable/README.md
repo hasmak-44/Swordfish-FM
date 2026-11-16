@@ -746,6 +746,15 @@ Click an entry to open that folder; hover it to see the full path.
 
 ## Sharing color themes
 
-In Settings → Appearance, custom color themes can be exported to a
-`*.swordfish-theme` text file (name, tip and 12 `#RRGGBB` colors) and imported
-on another machine with the Import/Export buttons or the theme context menu.
+Custom color themes are saved in the user data directory:
+`$XDG_DATA_HOME/swordfish/themes/colors/` (or
+`portable-data/themes/colors/` in a portable run). Each theme has its own
+folder containing `theme.swordfish-theme` and any texture images it uses.
+Imported themes and textures remain available after restarting Swordfish.
+
+In Preferences → Appearance, use **Export theme** to create a shareable theme
+folder containing a `*.swordfish-theme` file and its `textures/` assets.
+Import that file on another machine with **Import theme**; keep the adjacent
+`textures/` folder with it when sharing themes that use custom textures.
+Textures already in the installed theme or user data are reused, and legacy
+custom textures in `~/.config/swordfish/textures/` remain readable.

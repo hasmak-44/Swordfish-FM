@@ -825,11 +825,12 @@ class BackgroundEditor : public DialogBox
         textures->appendItem(_("No texture"));
         textureNames.push_back("");
         extern FXString execpath, xdgconfighome;
-        FXString directories[2] = {FXPath::directory(execpath) + "/../share/swordfish/textures",
+        FXString directories[3] = {FXPath::directory(execpath) + "/../share/swordfish/textures",
+                                    xf_userdatahome() + PATHSEPSTRING "textures",
                                     xdgconfighome + PATHSEPSTRING XFECONFIGPATH "/textures"};
         std::set<FXString> names;
         FXString rejected;
-        for (FXint folder = 0; folder < 2; ++folder)
+        for (FXint folder = 0; folder < 3; ++folder)
         {
             FXDir directory;
             if (!directory.open(directories[folder]))
@@ -995,6 +996,9 @@ public:
         FXHorizontalFrame* textureControls = new FXHorizontalFrame(texturePage, LAYOUT_FILL_X);
         new FXButton(textureControls, _("Add PNG..."), NULL, this, ID_ADD_TEXTURE, BUTTON_NORMAL);
         new FXButton(textureControls, _("Refresh"), NULL, this, ID_REFRESH, BUTTON_NORMAL);
+        new FXLabel(texturePage, _("User textures are stored in:") + FXString("\n") +
+                                  xf_userdatahome() + PATHSEPSTRING "textures",
+                    NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
         originalColors = new FXCheckButton(texturePage, _("Use original PNG colours (including transparency)"),
                                               this, ID_LIVE);
         FXHorizontalFrame* opacity = new FXHorizontalFrame(texturePage, LAYOUT_FILL_X);
