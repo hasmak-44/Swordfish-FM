@@ -42,6 +42,8 @@
   texture in its own colours instead of tinting it with the theme colour.
 
 ### Changed
+- Unused saved themes retain only list details in memory; their full settings
+  are loaded when needed.
 - The Network sidebar groups discovered devices under headings: Media
   servers, File servers (FTP/SFTP), Printers and Routers / access points.
 - Preferences uses scrolling icon categories on the left and tabbed settings

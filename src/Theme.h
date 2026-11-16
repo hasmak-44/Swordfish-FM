@@ -16,6 +16,7 @@ struct Theme
     FXString effect;
     FXString assetRoot;
     std::map<FXString, FXString> properties;
+    FXbool deferred = false;
 
     Theme() {}
     Theme(const char*, const char*, FXColor = 0, FXColor = 0, FXColor = 0, FXColor = 0,
@@ -33,6 +34,7 @@ struct Theme
     FXString encodeProperties() const;
     FXbool decodeProperties(const FXString&, FXString&);
     FXString serialize() const;
+    Theme libraryReference() const;
     static Theme current(FXApp*);
     void writeActive(FXSettings&) const;
 };

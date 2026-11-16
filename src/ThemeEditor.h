@@ -70,6 +70,7 @@ public:
     void previewEffect(const FXString&, FXbool stopEdit = false, const FXString& previous = "");
     void previewImage(const FXString&, const FXString&, const FXString&);
     void setGradientPreset(const FXString&, const FXString&);
+    FXbool isReady() const { return ready; }
     const Theme& getDraft() const { return draft; }
     const Theme& getApplied() const { return applied; }
     Theme* paletteTheme() { return &draft; }
@@ -81,8 +82,10 @@ private:
     vector_Theme choices;
     Theme original, applied, draft, saved;
     std::vector<Theme> undoStates, redoStates, pendingSteps;
+    FXbool ready = false;
     FXbool newTheme = false;
     FXint replaceIndex = -1;
+    FXint currentBase = 0;
     FXString area = "list";
     std::vector<FXString> propertyKeys;
     FXTreeList* elements = NULL;
@@ -101,7 +104,7 @@ private:
     FXButton* contrastFix = NULL;
     ThemeMockup* mockup = NULL;
     FXColor suggestedColor = 0;
-    void start(FXint, StartMode);
+    FXbool start(FXint, StartMode);
     FXbool settleProperty();
     void refreshProperties();
     void refreshPreview();

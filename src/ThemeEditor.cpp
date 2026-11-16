@@ -1999,8 +1999,8 @@ ThemeEditor::ThemeEditor(PreferencesBox* owner, XFileExplorer* source, const vec
                          "Alpha colours blend over the\ninherited colour. Window opacity\n"
                          "also requires an X11 compositor."),
                   NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
-    start(selected, mode);
-    onPreview(NULL, 0, NULL);
+    ready = start(selected, mode);
+    if (ready) onPreview(NULL, 0, NULL);
 }
 
 ThemeEditor::~ThemeEditor()
@@ -2010,7 +2010,7 @@ ThemeEditor::~ThemeEditor()
     mockup = NULL;
 }
 
-void ThemeEditor::start(FXint index, StartMode mode)
+FXbool ThemeEditor::start(FXint index, StartMode mode)
 {
     if (mode == EDIT_CURRENT) index = 0;
     if (mode == NEW_THEME)
@@ -2020,7 +2020,13 @@ void ThemeEditor::start(FXint index, StartMode mode)
             if (choices[i].name == "Ocean Depth") index = i;
     }
     index = FXCLAMP(0, index, static_cast<FXint>(choices.size()) - 1);
-    original = choices[index];
+    Theme selected;
+    if (!preferences->resolveTheme(choices[index], selected))
+    {
+        baseTheme->setCurrentItem(currentBase);
+        return false;
+    }
+    original = selected;
     newTheme = mode != EDIT_CURRENT;
     replaceIndex = -1;
     if (mode == EDIT_CURRENT)
@@ -2039,11 +2045,13 @@ void ThemeEditor::start(FXint index, StartMode mode)
     undoStates.clear();
     redoStates.clear();
     pendingSteps.clear();
+    currentBase = index;
     baseTheme->setCurrentItem(index);
     compare->setCheck(false);
     refreshProperties();
     refreshPreview();
     setTitle(FXString(_("Theme Editor")) + " - " + original.name);
+    return true;
 }
 
 FXString ThemeEditor::currentProperty() const
@@ -2491,8 +2499,8 @@ FXbool ThemeEditor::save(FXbool copy)
         copy = true;
     }
     if (!preferences->saveEditedTheme(result, copy ? -1 : replaceIndex)) return false;
-    if (copy) { choices.push_back(result); replaceIndex = choices.size() - 1; baseTheme->appendItem(result.name); }
-    else choices[replaceIndex] = result;
+    if (copy) { choices.push_back(result.libraryReference()); replaceIndex = choices.size() - 1; baseTheme->appendItem(result.name); }
+    else choices[replaceIndex] = result.libraryReference();
     newTheme = false;
     applied = draft = saved = result;
     setTitle(FXString(_("Theme Editor")) + " - " + result.name);

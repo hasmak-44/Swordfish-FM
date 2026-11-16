@@ -146,7 +146,18 @@ FXbool Theme::operator!=(const Theme& other) const
 {
     for (FXint i = 0; i < NUM_COLORS; ++i)
         if (color[i] != other.color[i]) return true;
-    return effect != other.effect || assetRoot != other.assetRoot || properties != other.properties;
+    return effect != other.effect || assetRoot != other.assetRoot || properties != other.properties ||
+           deferred != other.deferred;
+}
+
+Theme Theme::libraryReference() const
+{
+    Theme reference;
+    reference.name = name;
+    reference.tip = tip;
+    reference.assetRoot = assetRoot;
+    reference.deferred = true;
+    return reference;
 }
 
 FXString Theme::property(const FXString& area, const FXString& key) const

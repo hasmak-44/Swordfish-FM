@@ -12,6 +12,7 @@
 #include "FileDialog.h"
 #include "FontDialog.h"
 #include "InputDialog.h"
+#include "MessageBox.h"
 #include "SearchWindow.h"
 #include "icons.h"
 #include <cassert>
@@ -681,11 +682,185 @@ public:
         assert(symlink(outsideFolder.text(), linkedFolder.text()) == 0);
         PreferencesBox loadedPreferences(&window, app.getBackColor(), app.getForeColor(), app.getBackColor(),
                                         app.getSelbackColor(), FXRGB(255, 0, 0), app.getBaseColor());
-        bool foundReloadedTheme = false;
-        for (const Theme& theme : loadedPreferences.Themes)
-            if (theme.name == saved.name && theme.encodeProperties() == saved.encodeProperties())
-                foundReloadedTheme = true;
-        assert(foundReloadedTheme);
+        FXint savedIndex = -1;
+        for (FXint i = NUM_DEFAULT_THEMES; i < static_cast<FXint>(loadedPreferences.Themes.size()); ++i)
+            if (loadedPreferences.Themes[i].name == saved.name) savedIndex = i;
+        assert(savedIndex >= NUM_DEFAULT_THEMES);
+        const Theme& savedReference = loadedPreferences.Themes[savedIndex];
+        assert(savedReference.deferred && savedReference.properties.empty() && savedReference.effect.empty());
+        Theme loadedTheme;
+        assert(loadedPreferences.resolveTheme(savedReference, loadedTheme));
+        assert(loadedTheme.encodeProperties() == saved.encodeProperties() && loadedTheme.effect == saved.effect);
+        assert(loadedPreferences.Themes[savedIndex].deferred);
+        {
+            ThemeEditor duplicate(&loadedPreferences, &window, loadedPreferences.Themes, savedIndex, ThemeEditor::DUPLICATE);
+            assert(duplicate.getDraft().name == saved.name + " copy");
+            assert(duplicate.getDraft().encodeProperties() == saved.encodeProperties());
+            assert(loadedPreferences.Themes[savedIndex].deferred);
+        }
+        loadedPreferences.create();
+        loadedPreferences.rememberPreferences();
+        loadedPreferences.themesList->setCurrentItem(savedIndex);
+        assert(loadedPreferences.onCmdTheme(NULL, 0, NULL));
+        assert(loadedPreferences.currTheme.encodeProperties() == saved.encodeProperties());
+        assert(loadedPreferences.Themes[savedIndex].deferred);
+        loadedPreferences.themesList->setCurrentItem(1);
+        assert(loadedPreferences.onCmdTheme(NULL, 0, NULL));
+        assert(loadedPreferences.currTheme.name == loadedPreferences.Themes[1].name &&
+               loadedPreferences.Themes[savedIndex].properties.empty());
+        loadedPreferences.themesList->setCurrentItem(savedIndex);
+        assert(loadedPreferences.onCmdTheme(NULL, 0, NULL));
+        ActionTimer renameTheme([&] {
+            InputDialog* dialog = dynamic_cast<InputDialog*>(app.getModalWindow());
+            assert(dialog && dialog->getTitle() == "Rename theme");
+            dialog->setText("Renamed regression");
+            dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+        });
+        app.addTimeout(&renameTheme, 1, 150);
+        assert(loadedPreferences.onCmdThemeRename(NULL, 0, NULL));
+        assert(!loadedPreferences.Themes[savedIndex].deferred &&
+               loadedPreferences.Themes[savedIndex].encodeProperties() == saved.encodeProperties());
+        loadedPreferences.onCmdCancel(NULL, FXSEL(SEL_COMMAND, PreferencesBox::ID_CANCEL), NULL);
+        assert(loadedPreferences.Themes[savedIndex].deferred &&
+               loadedPreferences.Themes[savedIndex].name == saved.name);
+        FXString movedThemeFile = savedThemeFile + ".held";
+        assert(rename(savedThemeFile.text(), movedThemeFile.text()) == 0);
+        Theme previousTheme = loadedPreferences.currTheme;
+        FXString loadError;
+        ActionTimer missingTheme([&] {
+            MessageBox* message = dynamic_cast<MessageBox*>(app.getModalWindow());
+            assert(message && message->getTitle() == "Load theme");
+            loadError = message->getText();
+            message->handle(message, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_OK), NULL);
+        });
+        loadedPreferences.themesList->setCurrentItem(savedIndex);
+        app.addTimeout(&missingTheme, 1, 150);
+        assert(!loadedPreferences.onCmdTheme(NULL, 0, NULL));
+        assert(loadedPreferences.currTheme == previousTheme &&
+               loadedPreferences.themesList->getCurrentItem() != savedIndex);
+        assert(!loadError.empty());
+        {
+            ThemeEditor switching(&loadedPreferences, &window, loadedPreferences.Themes, 0, ThemeEditor::EDIT_CURRENT);
+            assert(switching.isReady());
+            switching.draft.setProperty("list", "foreground", "#123456");
+            Theme pending = switching.draft;
+            switching.baseTheme->setCurrentItem(savedIndex);
+            app.addTimeout(&missingTheme, 1, 150);
+            assert(!switching.start(savedIndex, ThemeEditor::DUPLICATE));
+            assert(switching.draft == pending && switching.baseTheme->getCurrentItem() == switching.currentBase);
+        }
+        FXbool unexpectedEditor = false;
+        ActionTimer closeUnexpectedEditor([&] {
+            ThemeEditor* fallback = dynamic_cast<ThemeEditor*>(app.getModalWindow());
+            assert(fallback);
+            unexpectedEditor = true;
+            fallback->handle(fallback, FXSEL(SEL_COMMAND, ThemeEditor::ID_CLOSE), NULL);
+        });
+        ActionTimer editorLoadError([&] {
+            MessageBox* message = dynamic_cast<MessageBox*>(app.getModalWindow());
+            assert(message && message->getTitle() == "Load theme");
+            app.addTimeout(&closeUnexpectedEditor, 1, 150);
+            message->handle(message, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_OK), NULL);
+        });
+        loadedPreferences.themesList->setCurrentItem(savedIndex);
+        app.addTimeout(&editorLoadError, 1, 150);
+        loadedPreferences.onCmdThemeEditor(NULL, FXSEL(SEL_COMMAND, PreferencesBox::ID_THEME_DUPLICATE), NULL);
+        app.removeTimeout(&closeUnexpectedEditor, 1);
+        assert(!unexpectedEditor);
+        copyThemeWithName(movedThemeFile, savedThemeFile, "Externally changed");
+        loadedPreferences.themesList->setCurrentItem(savedIndex);
+        app.addTimeout(&missingTheme, 1, 150);
+        assert(!loadedPreferences.onCmdTheme(NULL, 0, NULL));
+        assert(loadError.contains("name no longer matches"));
+        assert(unlink(savedThemeFile.text()) == 0);
+        assert(symlink(outsideFile.text(), savedThemeFile.text()) == 0);
+        loadedPreferences.themesList->setCurrentItem(savedIndex);
+        app.addTimeout(&missingTheme, 1, 150);
+        assert(!loadedPreferences.onCmdTheme(NULL, 0, NULL));
+        assert(loadError.contains("no longer safe"));
+        assert(unlink(savedThemeFile.text()) == 0);
+        assert(rename(movedThemeFile.text(), savedThemeFile.text()) == 0);
+
+        Theme updated = saved;
+        updated.setProperty("list", "foreground", "#123456");
+        assert(loadedPreferences.saveEditedTheme(updated, savedIndex));
+        Theme updatedFromDisk;
+        assert(loadedPreferences.Themes[savedIndex].deferred &&
+               loadedPreferences.resolveTheme(loadedPreferences.Themes[savedIndex], updatedFromDisk));
+        assert(updatedFromDisk.property("list", "foreground") == "#123456" &&
+               Theme::current(&app).property("list", "foreground") == "#123456");
+        assert(loadedPreferences.saveEditedTheme(saved, savedIndex));
+        ActionTimer replaceTheme([&] {
+            MessageBox* message = dynamic_cast<MessageBox*>(app.getModalWindow());
+            assert(message && message->getTitle() == "Replace theme");
+            message->handle(message, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_YES), NULL);
+        });
+        app.addTimeout(&replaceTheme, 1, 150);
+        assert(loadedPreferences.importThemeFile(outsideFile));
+        assert(!loadedPreferences.Themes[savedIndex].deferred &&
+               loadedPreferences.Themes[savedIndex].assetRoot == outsideFolder);
+        loadedPreferences.onCmdCancel(NULL, FXSEL(SEL_COMMAND, PreferencesBox::ID_CANCEL), NULL);
+        assert(loadedPreferences.Themes[savedIndex].deferred &&
+               loadedPreferences.Themes[savedIndex].assetRoot == FXPath::directory(savedThemeFile));
+
+        FXString blockerFolder = xf_userdatahome() + "/themes/colors/zz-rollback-blocker";
+        FXString blockerFile = blockerFolder + "/theme.swordfish-theme";
+        assert(xf_mkpath(blockerFolder.text(), 0755) == 0);
+        copyThemeWithName(savedThemeFile, blockerFile, "Rollback blocker");
+        PreferencesBox rollbackPreferences(&window, app.getBackColor(), app.getForeColor(), app.getBackColor(),
+                                           app.getSelbackColor(), FXRGB(255, 0, 0), app.getBaseColor());
+        rollbackPreferences.create();
+        rollbackPreferences.rememberPreferences();
+        FXint rollbackIndex = -1, blockerIndex = -1;
+        for (FXint i = NUM_DEFAULT_THEMES; i < static_cast<FXint>(rollbackPreferences.Themes.size()); ++i)
+        {
+            if (rollbackPreferences.Themes[i].name == saved.name) rollbackIndex = i;
+            if (rollbackPreferences.Themes[i].name == "Rollback blocker") blockerIndex = i;
+        }
+        assert(rollbackIndex >= NUM_DEFAULT_THEMES && blockerIndex >= NUM_DEFAULT_THEMES);
+        FXString heldBlocker = blockerFile + ".held";
+        assert(rename(blockerFile.text(), heldBlocker.text()) == 0);
+        Theme attempted = saved;
+        attempted.setProperty("list", "foreground", "#123456");
+        Theme activeBeforeFailure = Theme::current(&app);
+        ActionTimer failedSave([&] {
+            MessageBox* message = dynamic_cast<MessageBox*>(app.getModalWindow());
+            assert(message && message->getTitle() == "Save theme");
+            message->handle(message, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_OK), NULL);
+        });
+        app.addTimeout(&failedSave, 1, 150);
+        assert(!rollbackPreferences.saveEditedTheme(attempted, rollbackIndex));
+        Theme restored;
+        assert(rollbackPreferences.resolveTheme(rollbackPreferences.Themes[rollbackIndex], restored));
+        assert(restored.encodeProperties() == saved.encodeProperties() &&
+               Theme::current(&app) == activeBeforeFailure);
+        assert(rename(heldBlocker.text(), blockerFile.text()) == 0);
+        ActionTimer renameSavedTheme([&] {
+            InputDialog* dialog = dynamic_cast<InputDialog*>(app.getModalWindow());
+            assert(dialog && dialog->getTitle() == "Rename theme");
+            dialog->setText("Renamed deferred fixture");
+            dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+        });
+        rollbackPreferences.themesList->setCurrentItem(blockerIndex);
+        app.addTimeout(&renameSavedTheme, 1, 150);
+        assert(rollbackPreferences.onCmdThemeRename(NULL, 0, NULL));
+        assert(!rollbackPreferences.Themes[blockerIndex].deferred &&
+               rollbackPreferences.saveCustomThemes(rollbackPreferences.Themes));
+        FXString renamedFile = xf_userdatahome() + "/themes/colors/Renamed deferred fixture/theme.swordfish-theme";
+        assert(xf_existfile(renamedFile) && !xf_existfile(blockerFile));
+        PreferencesBox renamedPreferences(&window, app.getBackColor(), app.getForeColor(), app.getBackColor(),
+                                          app.getSelbackColor(), FXRGB(255, 0, 0), app.getBaseColor());
+        FXint renamedIndex = -1;
+        for (FXint i = NUM_DEFAULT_THEMES; i < static_cast<FXint>(renamedPreferences.Themes.size()); ++i)
+            if (renamedPreferences.Themes[i].name == "Renamed deferred fixture") renamedIndex = i;
+        assert(renamedIndex >= NUM_DEFAULT_THEMES && renamedPreferences.Themes[renamedIndex].deferred);
+        Theme renamedFromDisk;
+        assert(renamedPreferences.resolveTheme(renamedPreferences.Themes[renamedIndex], renamedFromDisk) &&
+               renamedFromDisk.encodeProperties() == saved.encodeProperties());
+        vector_Theme withoutFixture = renamedPreferences.Themes;
+        withoutFixture.erase(withoutFixture.begin() + renamedIndex);
+        assert(renamedPreferences.saveCustomThemes(withoutFixture) && !xf_existfile(renamedFile));
+        puts("PASS: deferred themes load on demand; switching, overwrite, import, rename, stale files and rollback are safe");
         vector_Theme withoutCustom = loadedPreferences.Themes;
         withoutCustom.erase(withoutCustom.begin() + NUM_DEFAULT_THEMES, withoutCustom.end());
         assert(loadedPreferences.saveCustomThemes(withoutCustom));
@@ -998,8 +1173,12 @@ public:
         FXbool foundCategorized = false;
         for (const Theme& theme : reloadedCategories.Themes)
             if (theme.name == categorized.name)
-                foundCategorized = theme.assetRoot == categorized.assetRoot &&
-                                   BackgroundEffect::parse(theme.effect).texture == categoryReference;
+            {
+                Theme loaded;
+                assert(theme.deferred && reloadedCategories.resolveTheme(theme, loaded));
+                foundCategorized = loaded.assetRoot == categorized.assetRoot &&
+                                   BackgroundEffect::parse(loaded.effect).texture == categoryReference;
+            }
         assert(foundCategorized);
 
         FXString exportParent = data + "/exports";
@@ -1125,8 +1304,12 @@ public:
         FXbool foundPattern = false;
         for (const Theme& theme : reloadedPatterns.Themes)
             if (theme.name == patterned.name)
-                foundPattern = theme.assetRoot == patterned.assetRoot &&
-                               BackgroundEffect::parse(theme.effect).patternImage == patternReference;
+            {
+                Theme loaded;
+                assert(theme.deferred && reloadedPatterns.resolveTheme(theme, loaded));
+                foundPattern = loaded.assetRoot == patterned.assetRoot &&
+                               BackgroundEffect::parse(loaded.effect).patternImage == patternReference;
+            }
         assert(foundPattern);
 
         ActionTimer choosePatternExport([&] {
@@ -1466,9 +1649,13 @@ public:
         FXbool foundImages = false;
         for (const Theme& theme : reloadedImages.Themes)
             if (theme.name == imageTheme.name)
-                foundImages = theme.assetRoot == imageTheme.assetRoot &&
-                              theme.property("toolbars", "background_image") == imageReference &&
-                              theme.property("list", "image_mode") == "tile";
+            {
+                Theme loaded;
+                assert(theme.deferred && reloadedImages.resolveTheme(theme, loaded));
+                foundImages = loaded.assetRoot == imageTheme.assetRoot &&
+                              loaded.property("toolbars", "background_image") == imageReference &&
+                              loaded.property("list", "image_mode") == "tile";
+            }
         assert(foundImages);
         ActionTimer chooseImageExport([&] {
             FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());

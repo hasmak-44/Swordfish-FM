@@ -754,7 +754,8 @@ Custom color themes are saved in the user data directory:
 `portable-data/themes/colors/` in a portable run). Each theme has its own
 folder containing `theme.swordfish-theme` and any textures, patterns or
 background images it uses. Imported themes and graphics remain available
-after restarting Swordfish.
+after restarting Swordfish. Unused saved themes keep only their list details
+in memory; their full settings are loaded when needed.
 
 In Preferences → Appearance, use **Export theme** and choose a parent
 directory. Swordfish creates a shareable theme-named folder containing

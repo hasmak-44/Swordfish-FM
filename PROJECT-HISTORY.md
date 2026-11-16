@@ -3344,6 +3344,18 @@ including compositing pixels, gallery import, preview and cancel, active tabs,
 resize, theme-local paths, reload, sharing and portable-data relocation.
 Desktop acceptance and the portable build remain pending.
 
+### 3.91. Load saved themes when needed
+
+The custom theme list retains only names, tips and folder references for
+unused saved themes. Full settings are loaded as needed for selection, editing
+and library operations, then released; unsaved edits remain in memory until
+saved or cancelled. Files that disappear, change their theme name or become
+symlinks are reported instead of silently opening another theme.
+
+Validation in the codespace: clean native rebuild and theme workflow regression
+covering switching, duplication, cancellation, stale files and save rollback.
+Desktop acceptance and the portable build remain pending.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

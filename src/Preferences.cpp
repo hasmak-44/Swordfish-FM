@@ -362,7 +362,7 @@ static void loadCustomThemeFolders(vector_Theme& themes, std::map<FXString, FXSt
             continue;
         }
         theme.assetRoot = folder;
-        themes.push_back(theme);
+        themes.push_back(theme.libraryReference());
         libraryFiles[theme.name] = file;
     }
 }
@@ -1865,8 +1865,41 @@ long PreferencesBox::onCmdThemeEditor(FXObject*, FXSelector selector, void*)
     ThemeEditor::StartMode mode = FXSELID(selector) == ID_THEME_NEW ? ThemeEditor::NEW_THEME :
         FXSELID(selector) == ID_THEME_DUPLICATE ? ThemeEditor::DUPLICATE : ThemeEditor::EDIT_CURRENT;
     ThemeEditor editor(this, window, Themes, selected, mode);
-    editor.execute(PLACEMENT_OWNER);
+    if (editor.isReady()) editor.execute(PLACEMENT_OWNER);
     return 1;
+}
+
+FXbool PreferencesBox::resolveTheme(const Theme& reference, Theme& resolved)
+{
+    if (!reference.deferred)
+    {
+        resolved = reference;
+        return true;
+    }
+    FXString error, file;
+    auto tracked = themeLibraryFiles.find(reference.name);
+    if (tracked == themeLibraryFiles.end())
+        error = _("The theme is no longer in the library.");
+    else
+    {
+        file = tracked->second;
+        FXString folder = FXPath::directory(file);
+        if (folder != reference.assetRoot || xf_islink(folder) || xf_islink(file))
+            error = _("The theme file or folder is no longer safe.");
+        else if (loadThemeFile(file, resolved, error))
+        {
+            if (resolved.name == reference.name)
+            {
+                resolved.assetRoot = folder;
+                return true;
+            }
+            error = _("The theme file name no longer matches the library entry.");
+        }
+    }
+    appLog(APP_LOG_ERRORS, "theme-library-load-failed", file + ": " + error);
+    MessageBox::error(this, BOX_OK, _("Load theme"), _("Cannot load theme \"%s\": %s"),
+                      reference.name.text(), error.text());
+    return false;
 }
 
 FXbool PreferencesBox::saveEditedTheme(Theme& theme, FXint replace)
@@ -1891,6 +1924,13 @@ FXbool PreferencesBox::saveEditedTheme(Theme& theme, FXint replace)
     if (replace >= NUM_DEFAULT_THEMES)
         for (size_t i = NUM_DEFAULT_THEMES; i < persistent.size(); ++i)
             if (persistent[i].name == Themes[replace].name) persistentIndex = i;
+    vector_Theme rollback = themesPrevious;
+    if (persistentIndex >= 0 && rollback[persistentIndex].deferred)
+    {
+        Theme previousTheme;
+        if (!resolveTheme(rollback[persistentIndex], previousTheme)) return false;
+        rollback[persistentIndex] = previousTheme;
+    }
     if (persistentIndex < 0)
     {
         persistentIndex = persistent.size();
@@ -1910,14 +1950,14 @@ FXbool PreferencesBox::saveEditedTheme(Theme& theme, FXint replace)
     }
     if (!saveCustomThemes(persistent))
     {
-        if (!saveCustomThemes(themesPrevious))
+        if (!saveCustomThemes(rollback))
             appLog(APP_LOG_ERRORS, "theme-save-rollback-failed", theme.name);
         MessageBox::error(this, BOX_OK, _("Save theme"), _("The custom theme library could not be written."));
         return false;
     }
     FXString previousRoot = theme.assetRoot;
     theme.assetRoot = FXPath::directory(themeLibraryFiles[theme.name]);
-    persistent[persistentIndex] = theme;
+    persistent[persistentIndex] = theme.libraryReference();
     theme.writeActive(getApp()->reg());
     getApp()->reg().writeStringEntry("SETTINGS", "theme_name", theme.name.text());
     if (!getApp()->reg().write())
@@ -1927,7 +1967,7 @@ FXbool PreferencesBox::saveEditedTheme(Theme& theme, FXint replace)
             if (existed[i]) getApp()->reg().writeStringEntry("SETTINGS", keys[i], previous[i].text());
             else getApp()->reg().deleteEntry("SETTINGS", keys[i]);
         }
-        if (!saveCustomThemes(themesPrevious))
+        if (!saveCustomThemes(rollback))
             appLog(APP_LOG_ERRORS, "theme-save-rollback-failed", theme.name);
         theme.assetRoot = previousRoot;
         appLog(APP_LOG_ERRORS, "theme-save-failed", theme.name);
@@ -1935,8 +1975,8 @@ FXbool PreferencesBox::saveEditedTheme(Theme& theme, FXint replace)
         return false;
     }
     window->applyTheme(theme);
-    if (replace < 0) { replace = Themes.size(); Themes.push_back(theme); themesList->appendItem(theme.name); }
-    else { Themes[replace] = theme; themesList->setItemText(replace, theme.name); }
+    if (replace < 0) { replace = Themes.size(); Themes.push_back(theme.libraryReference()); themesList->appendItem(theme.name); }
+    else { Themes[replace] = theme.libraryReference(); themesList->setItemText(replace, theme.name); }
     currTheme = currTheme_prev = theme;
     themesList->setCurrentItem(replace);
     themesList->selectItem(replace);
@@ -2096,7 +2136,8 @@ long PreferencesBox::onCmdThemeExport(FXObject*, FXSelector, void*)
         MessageBox::warning(this, BOX_OK, _("Warning"), _("Select a custom theme to export"));
         return 1;
     }
-    const Theme& theme = Themes[index];
+    Theme theme;
+    if (!resolveTheme(Themes[index], theme)) return 1;
 
     FileDialog savedialog(this, _("Choose where to export the theme folder"));
     FXString safe = themeFolderName(theme.name);
@@ -2368,9 +2409,13 @@ long PreferencesBox::onCmdThemeRename(FXObject* sender, FXSelector sel, void* pt
                 return 0;            
             }
 
+            Theme renamed;
+            if (!resolveTheme(Themes[index], renamed)) return 0;
+
             // Rename theme
             if (currTheme.name == Themes[index].name) currTheme.name = name;
-            Themes[index].name = name;
+            renamed.name = name;
+            Themes[index] = renamed;
             themesList->setItemText(index, name);
         }
 
@@ -2417,7 +2462,23 @@ long PreferencesBox::onCmdThemeRemove(FXObject* sender, FXSelector sel, void* pt
 // Select theme
 long PreferencesBox::onCmdTheme(FXObject* sender, FXSelector sel, void* ptr)
 {
-    currTheme = Themes[themesList->getCurrentItem()];
+    FXint index = themesList->getCurrentItem();
+    if (index < 0 || index >= static_cast<FXint>(Themes.size()))
+    {
+        appLog(APP_LOG_ERRORS, "theme-selection-invalid", FXStringVal(index));
+        return 0;
+    }
+    Theme selected;
+    if (!resolveTheme(Themes[index], selected))
+    {
+        FXint previous = 0;
+        for (FXint i = 0; i < static_cast<FXint>(Themes.size()); ++i)
+            if (Themes[i].name == currTheme.name) previous = i;
+        themesList->setCurrentItem(previous);
+        themesList->selectItem(previous);
+        return 0;
+    }
+    currTheme = selected;
     return 1;
 }
 
@@ -4169,7 +4230,10 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
         return 1;
     }
     for (FXuint i = NUM_DEFAULT_THEMES; i < Themes.size(); ++i)
+    {
         Themes[i].assetRoot = FXPath::directory(themeLibraryFiles[Themes[i].name]);
+        Themes[i] = Themes[i].libraryReference();
+    }
     FXint selectedTheme = themesList->getCurrentItem();
     if (selectedTheme >= NUM_DEFAULT_THEMES && selectedTheme < static_cast<FXint>(Themes.size()) &&
         currTheme.name == Themes[selectedTheme].name)
@@ -4617,13 +4681,13 @@ FXbool PreferencesBox::saveCustomThemes(const vector_Theme& themes)
     for (FXuint i = NUM_DEFAULT_THEMES; i < themes.size(); ++i)
     {
         const Theme& theme = themes[i];
+        Theme existing;
         FXString folder, file;
         auto tracked = themeLibraryFiles.find(theme.name);
         if (tracked != themeLibraryFiles.end())
         {
             file = tracked->second;
             folder = FXPath::directory(file);
-            Theme existing;
             FXString error;
             if (FXPath::directory(folder) != root || xf_islink(folder) || xf_islink(file) ||
                 !loadThemeFile(file, existing, error) || existing.name != theme.name)
@@ -4632,9 +4696,16 @@ FXbool PreferencesBox::saveCustomThemes(const vector_Theme& themes)
                        file + ": " + _("The theme file or folder no longer matches the loaded theme."));
                 return false;
             }
+            existing.assetRoot = folder;
         }
         else
         {
+            if (theme.deferred)
+            {
+                appLog(APP_LOG_ERRORS, "theme-library-save-failed",
+                       theme.name + ": " + _("The theme is no longer in the library."));
+                return false;
+            }
             FXString base = themeFolderName(theme.name);
             folder = root + PATHSEPSTRING + base;
             for (FXuint suffix = 2; xf_existfile(folder); ++suffix)
@@ -4647,10 +4718,11 @@ FXbool PreferencesBox::saveCustomThemes(const vector_Theme& themes)
             return false;
         }
         FXString error;
-        if (!copyThemeTiles(getApp(), theme, folder, false, error) ||
-            !copyThemeTiles(getApp(), theme, folder, true, error) ||
-            !copyThemeImages(getApp(), theme, folder, error) ||
-            !writeThemeFile(file, theme, error))
+        const Theme& contents = theme.deferred ? existing : theme;
+        if (!copyThemeTiles(getApp(), contents, folder, false, error) ||
+            !copyThemeTiles(getApp(), contents, folder, true, error) ||
+            !copyThemeImages(getApp(), contents, folder, error) ||
+            !writeThemeFile(file, contents, error))
         {
             appLog(APP_LOG_ERRORS, "theme-library-save-failed", error);
             return false;
