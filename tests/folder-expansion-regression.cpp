@@ -1813,12 +1813,22 @@ int main(int argc, char** argv)
         unsetenv("SWORDFISH_TEST_SERVICES");
         FXTreeItem* row = network->getFirst()->getNext();
         assert(row->getText() == "3 computer(s) sharing files and 5 other device(s) found. Click one to open it.");
+        row = row->getNext();
+        assert(row->getText() == "Computers sharing files" && static_cast<SidebarItem*>(row)->kind == SidebarItem::NOTICE);
         for (int i = 0; i < 4; ++i) row = row->getNext();
-        const char* deviceNames[] = {"Living Room (media server)", "NAS (FTP)", "Office Laser (printer)",
-                                     "Home Router (router / access point)", "NAS (SFTP)"};
+        const char* deviceNames[] = {"Living Room (media server)", "NAS (FTP)", "NAS (SFTP)", "Office Laser (printer)",
+                                     "Home Router (router / access point)"};
+        const char* headings[] = {"Media servers", "File servers (FTP/SFTP)", NULL, "Printers",
+                                  "Routers / access points"};
         SidebarItem* devices[5];
         for (int i = 0; i < 5; ++i)
         {
+            if (headings[i])
+            {
+                assert(row && row->getText() == headings[i] &&
+                       static_cast<SidebarItem*>(row)->kind == SidebarItem::NOTICE);
+                row = row->getNext();
+            }
             assert(row && row->getText() == deviceNames[i]);
             devices[i] = static_cast<SidebarItem*>(row);
             assert(devices[i]->kind == SidebarItem::SERVICE && !row->hasItems());
@@ -1827,18 +1837,26 @@ int main(int argc, char** argv)
         assert(!row);
         for (row = network->getFirst()->getNext()->getNext(); row; row = row->getNext())
             assert(!static_cast<SidebarItem*>(row)->muted);
-        assert(devices[2]->path == "http://192.168.1.50/" && devices[2]->key == "printer" &&
-               devices[2]->tip == "Address: 192.168.1.50\nOpens the settings page: http://192.168.1.50/\n"
+        assert(devices[3]->path == "http://192.168.1.50/" && devices[3]->key == "printer" &&
+               devices[3]->tip == "Address: 192.168.1.50\nOpens the settings page: http://192.168.1.50/\n"
                                   "Found by: Zeroconf, UPnP");
         assert(devices[0]->tip == "Address: 192.168.1.70\nBrowse music, videos and pictures (read-only)\n"
                                   "Found by: UPnP");
         assert(app.reg().readStringEntry("NETWORK MEDIA", "192.168.1.70:8200", "") ==
                FXString("http://192.168.1.70:8200/rootDesc.xml\tLiving Room"));
         puts("PASS: advertised devices are listed with their kind; bad or duplicate SERVICE records are ignored");
+        {
+            // Headings are inert: clicking one neither navigates nor searches
+            FilePanel* current = window->getCurrentPanel();
+            const FXString before = current->getDirectory();
+            panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_SIDEBAR), devices[0]->getPrev());
+            assert(current->getDirectory() == before && network->getFirst()->getText() == "Refresh");
+            puts("PASS: devices are grouped under Computers, Media servers, File servers, Printers and Routers headings");
+        }
 
         // Printers and routers open their web page in the desktop browser
         app.addSignal(SIGCHLD, window, XFileExplorer::ID_HARVEST);
-        panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_SIDEBAR), devices[2]);
+        panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, DirPanel::ID_SIDEBAR), devices[3]);
         for (int waited = 0; waited < 40 && access(getenv("SWORDFISH_TEST_MOUNT_LOG"), F_OK) != 0; ++waited)
             pump(app, 50);
         pump(app, 100);

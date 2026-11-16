@@ -112,6 +112,26 @@ static FXString networkServiceLabel(const FXString& kind)
     return _("router / access point");
 }
 
+// Sidebar heading order of advertised devices: media, file servers, printers, routers
+static FXint networkServiceRank(const FXString& kind)
+{
+    if (kind == "media") return 0;
+    if (kind == "ftp" || kind == "sftp") return 1;
+    if (kind == "printer") return 2;
+    return 3;
+}
+
+static FXString networkServiceHeading(const FXString& kind)
+{
+    switch (networkServiceRank(kind))
+    {
+    case 0: return _("Media servers");
+    case 1: return _("File servers (FTP/SFTP)");
+    case 2: return _("Printers");
+    default: return _("Routers / access points");
+    }
+}
+
 static FXIcon* networkServiceIcon(const FXString& kind)
 {
     if (kind == "ftp" || kind == "sftp") return mininetdriveicon;
@@ -776,6 +796,11 @@ void DirPanel::syncSidebar()
             }
             sidebar->appendItem(root, notice);
             const FXString staleTip = FXString("\n") + _("Not found by the latest search; it may be offline.");
+            // Headings only when other devices are listed; a computers-only list looks as before
+            if (!networkServices.empty() && !networkServers.empty())
+            {
+                sidebar->appendItem(root, new SidebarItem(_("Computers sharing files"), NULL, SidebarItem::NOTICE));
+            }
             for (const NetworkServer& server : networkServers)
             {
                 FXString label = server.local ? server.name + _(" (this computer)") : server.name;
@@ -790,8 +815,15 @@ void DirPanel::syncSidebar()
                 item->setHasItems(false);
                 sidebar->appendItem(root, item);
             }
+            FXint heading = -1;
             for (const NetworkService& service : networkServices)
             {
+                if (networkServiceRank(service.kind) != heading)
+                {
+                    heading = networkServiceRank(service.kind);
+                    sidebar->appendItem(root, new SidebarItem(networkServiceHeading(service.kind), NULL,
+                                                              SidebarItem::NOTICE));
+                }
                 SidebarItem* item = new SidebarItem(service.name + " (" + networkServiceLabel(service.kind) + ")",
                                                     networkServiceIcon(service.kind), SidebarItem::SERVICE,
                                                     service.url, service.kind);
@@ -2397,8 +2429,10 @@ void DirPanel::appendNetworkResult(FXString line)
         std::stable_sort(networkServices.begin(), networkServices.end(),
                          [](const NetworkService& a, const NetworkService& b) -> bool
         {
-            if (a.kind != b.kind) return a.kind == "media" || (b.kind != "media" && a.kind < b.kind);
-            return comparecase(a.name, b.name) < 0;
+            const FXint rankA = networkServiceRank(a.kind), rankB = networkServiceRank(b.kind);
+            if (rankA != rankB) return rankA < rankB;
+            const FXint byName = comparecase(a.name, b.name);
+            return byName != 0 ? byName < 0 : a.kind < b.kind;
         });
         return;
     }

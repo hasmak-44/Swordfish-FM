@@ -466,7 +466,10 @@ instead of issuing another mount command.
 Network discovery also lists other devices that announce themselves on the
 local network (UPnP/SSDP, Zeroconf/mDNS and WS-Discovery; nothing is
 port-scanned): media servers, FTP and SFTP servers, printers and routers /
-access points. Devices on this computer itself are not listed. Clicking a
+access points, each kind under its own heading (Media servers, File servers,
+Printers, Routers / access points; computers sharing files get a heading only
+when other devices are also listed). Devices on this computer itself are not
+listed. Clicking a
 media server browses its folders read-only (`dlna://` paths in the address
 bar); double-clicking a file streams it to the audio or video player set in
 Swordfish, else to the desktop's default application for the file type

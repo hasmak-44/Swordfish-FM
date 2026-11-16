@@ -3209,6 +3209,22 @@ Validation in the codespace: clean native build, network-discovery regression
 greyed results after Stop, settled-change auto-search, no search on
 disconnect). Real Wi-Fi switching remains to be checked on a desktop.
 
+### 3.81. Network device headings (16 November 2026)
+
+Display-only change; discovery, records and clicks are unchanged.
+
+- Other devices are sorted by kind, then name, under inert NOTICE headings:
+  Media servers, File servers (FTP/SFTP), Printers, Routers / access points.
+  FTP and SFTP entries for the same host now sit together.
+- A "Computers sharing files" heading appears only when other devices are
+  also listed, so a computers-only Network list looks exactly as before.
+- Clicking a heading does nothing; its context menu offers Refresh like the
+  status line.
+
+Validation in the codespace: native build, network-discovery regression and
+folder/device integration regression (heading order and texts, inert heading
+click, computers-only list without headings).
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -3574,12 +3590,13 @@ Current validated scope:
 - Linux/Samba hosts from host GVFS (`network:///` and `dns-sd://local/`).
 - Windows hosts from WS-Discovery + metadata Get + TCP 445 open check.
 - Only file-sharing machines (port 445 open) are shown.
+- Printers, media servers, FTP/SFTP servers and routers are listed under
+  separate headings (section 3.81).
 - Local machine is labelled "(this computer)" and listed last.
 - Sidebar tooltips include address, workgroup (when available) and discovery
   source(s).
 
 Still pending by design:
-- Printers and media servers under separate headings.
 - Real LAN validation of the new share-tab and selected-share mounting flow.
 - Windows 10/11 confirmation on real LAN runs.
 
