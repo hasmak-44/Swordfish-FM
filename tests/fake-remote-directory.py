@@ -6,6 +6,23 @@ import sys
 import time
 from urllib.parse import unquote, urlsplit
 
+if sys.argv[1:] == ["--usb-monitor"]:
+    assert not os.environ.get("LD_LIBRARY_PATH")
+    assert not os.environ.get("GIO_MODULE_DIR")
+    state = os.environ.get("SWORDFISH_TEST_USB_STATE")
+    previous = None
+    while True:
+        try:
+            with open(state, encoding="utf-8") as source:
+                data = source.read()
+        except (FileNotFoundError, TypeError):
+            data = ""
+        if data != previous:
+            print(data, end="")
+            print("DONE", flush=True)
+            previous = data
+        time.sleep(0.1)
+
 if os.path.basename(sys.argv[0]) == "udisksctl":
     assert not os.environ.get("LD_LIBRARY_PATH")
     assert not os.environ.get("GIO_MODULE_DIR")
@@ -52,6 +69,9 @@ if os.path.basename(sys.argv[0]) == "lsblk":
     assert not ("-l" in sys.argv and "-P" in sys.argv), "lsblk --list and --pairs are mutually exclusive"
     assert not os.environ.get("LD_LIBRARY_PATH")
     assert not os.environ.get("GIO_MODULE_DIR")
+    if os.environ.get("SWORDFISH_TEST_LSBLK_FAIL") and "PATH,LABEL,FSTYPE,MOUNTPOINT,HOTPLUG,TYPE" in sys.argv:
+        print("simulated lsblk failure")
+        sys.exit(1)
     if "HOTPLUG" in sys.argv:
         print("1" if sys.argv[-1] == "/dev/test-usb1" else "0")
     elif "NAME,TYPE" in sys.argv:
@@ -85,6 +105,22 @@ if os.path.basename(sys.argv[0]) == "gio":
     state = os.environ["SWORDFISH_TEST_MOUNT_LOG"]
     gvfs = os.environ.get("SWORDFISH_TEST_GVFS_ROOT")
     remount = os.environ.get("SWORDFISH_TEST_REMOUNT_DIR")
+    mtp_root = os.environ.get("SWORDFISH_TEST_MTP_ROOT")
+    if mtp_root and sys.argv[-1] == "mtp://first/":
+        if sys.argv[1] == "mount":
+            with open(state, "a") as log:
+                log.write("mtp mount\n")
+            if os.environ.get("SWORDFISH_TEST_MTP_FAIL"):
+                print("gio: simulated device unavailable")
+                sys.exit(1)
+            os.mkdir(mtp_root)
+            sys.exit(0)
+        if sys.argv[1] == "info":
+            if os.path.isdir(mtp_root):
+                print("local path: " + os.environ["SWORDFISH_TEST_MTP_PATH"])
+                sys.exit(0)
+            print("gio: location is not mounted")
+            sys.exit(1)
     if remount and sys.argv[1] == "info":
         if os.path.isdir(remount):
             print("local path: " + os.environ["SWORDFISH_TEST_MOUNT_PATH"])

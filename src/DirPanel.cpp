@@ -813,7 +813,8 @@ void DirPanel::syncSidebar()
                     }
                 }
             }
-            item->setHasItems(kind != SidebarItem::DEVICE || path.left(5) != "/dev/");
+            item->setHasItems(kind != SidebarItem::DEVICE ||
+                              (path.left(5) != "/dev/" && !mountslist->disconnected(path)));
             sidebar->appendItem(root, item);
         }
         if (group == 1)
@@ -5455,6 +5456,35 @@ static int runDiskCommand(FXWindow* owner, FXuint op, const FXString& title, con
 // Mount a plugged-in drive or reconnect a remembered share, then open it.
 FXbool DirPanel::openDevice(const FXString& device)
 {
+    if (device.left(6) == "mtp://")
+    {
+        FXString output;
+        int status = -1;
+        FXString command = xf_hostcommand("timeout -k 2 30 gio mount " + xf_quote(device) + " </dev/null") + " 2>&1";
+        File* file = new File(this, _("Mount device..."), MOUNT);
+        file->create();
+        getApp()->beginWaitCursor();
+        file->mount(device, _("Please wait..."), command, &output, &status);
+        getApp()->endWaitCursor();
+        delete file;
+
+        FXString info;
+        FXbool queried = xf_hostcommandoutput("timeout -k 2 10 env LC_ALL=C gio info -a standard::name " +
+                                              xf_quote(device) + " </dev/null", info);
+        FXint pos = info.find("local path: ");
+        FXString localpath = pos < 0 ? FXString::null : info.mid(pos + 12, info.length()).before('\n').trim();
+        if (!queried || xf_gvfsmount(localpath) != localpath || !xf_isdirectory(localpath))
+        {
+            output.trim();
+            if (output.empty()) output = info;
+            if (output.empty()) output = _("The device did not provide an accessible GVFS mount.");
+            appLog(APP_LOG_ERRORS, "mtp-mount-failed", device + ": " + output);
+            MessageBox::error(this, BOX_OK, _("Error"), _("Can't open %s:\n\n%s"), device.text(), output.text());
+            return false;
+        }
+        mountslist->invalidate();
+        return static_cast<XFileExplorer*>(mainWindow)->getCurrentPanel()->navigatePane(localpath);
+    }
     if (disconnectedDevice(device))
     {
         FilePanel* panel = static_cast<XFileExplorer*>(mainWindow)->getCurrentPanel();

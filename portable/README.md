@@ -260,6 +260,17 @@ entry instead. Mount-table changes are polled, including
 disks unmounted by another application. Unknown filesystems, locked encrypted
 volumes and swap are not offered as new mountable volumes.
 
+Android and other MTP devices advertised by the host desktop also appear in
+Devices before they are mounted. Open the device or use its mount button to
+connect it; unlock the device and select USB file transfer if necessary.
+Mounted MTP devices can be unmounted from Devices. This requires the host
+GVFS MTP backend, its volume monitor and GVFS FUSE support (commonly supplied
+by `gvfs-backends` and `gvfs-fuse`), as well as a desktop session bus.
+Swordfish uses the host's GVFS/libmtp stack rather than accessing the phone
+directly. Devices not advertised by that stack, or using another USB protocol,
+are not detected by this MTP mechanism. Mount errors are shown to the user;
+host monitor/backend errors are recorded in the application log.
+
 Device rows have separate controls at the right:
 
 - The pause button unmounts the selected filesystem. When it is unmounted but

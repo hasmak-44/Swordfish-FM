@@ -29,6 +29,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <mntent.h>
+#include <poll.h>
 
 extern FXMainWindow* mainWindow;
 extern FXString execpath, homedir, xdgdatahome, xdgconfighome;
@@ -55,6 +56,8 @@ static bool simulateStillMounted;
 static FXString simulatedGvfsDirectory;
 static FXString simulatedMountTable;
 static FXString failedUnlink;
+static FXString simulatedMtpPath;
+static FXString simulatedMtpRoot;
 
 extern "C" int unlink(const char* path) noexcept
 {
@@ -141,6 +144,7 @@ extern "C" int stat(const char* path, struct stat* info) noexcept
     static Stat realStat = reinterpret_cast<Stat>(dlsym(RTLD_NEXT, "stat"));
     checkBusy(path);
     if (measuredChild(path)) { ++stats; usleep(1000); }
+    if (!simulatedMtpPath.empty() && simulatedMtpPath == path) return realStat(simulatedMtpRoot.text(), info);
     return realStat(path, info);
 }
 
@@ -157,6 +161,7 @@ extern "C" int lstat(const char* path, struct stat* info) noexcept
     static Stat realStat = reinterpret_cast<Stat>(dlsym(RTLD_NEXT, "lstat"));
     checkBusy(path);
     if (measuredChild(path)) { ++lstats; usleep(1000); }
+    if (!simulatedMtpPath.empty() && simulatedMtpPath == path) return realStat(simulatedMtpRoot.text(), info);
     return realStat(path, info);
 }
 
@@ -405,8 +410,21 @@ static MountsList* findMounts(FXWindow* parent)
     {
         if ((mounts = findMounts(child))) return mounts;
     }
+
     return NULL;
 }
+
+class TestMountsList : public MountsList
+{
+public:
+    using MountsList::MountsList;
+    pid_t monitorPid() const { return usbPid; }
+    void readUsb()
+    {
+        struct pollfd descriptor = {usbFd, POLLIN, 0};
+        if (usbFd >= 0 && poll(&descriptor, 1, 10) > 0) onUsbRead(NULL, 0, NULL);
+    }
+};
 
 static int pump(FXApp& app, int milliseconds)
 {
@@ -766,7 +784,54 @@ int main(int argc, char** argv)
             output << "/dev/sdb1 /run/media/test/USB vfat rw 0 0\n";
     };
     mountTable(false);
-    MountsList* deviceModel = new MountsList(shell, frame, NULL, 0);
+    TestMountsList* deviceModel = new TestMountsList(shell, frame, NULL, 0);
+    const FXString usbState = fixture + "/usb-monitor-state";
+    auto usbSnapshot = [&](const char* records)
+    {
+        FXString temporary = usbState + ".new";
+        {
+            std::ofstream output(temporary.text());
+            assert(output);
+            output << records;
+        }
+        assert(rename(temporary.text(), usbState.text()) == 0);
+    };
+    auto waitForUsb = [&](const FXString& path, bool present)
+    {
+        const FXTime deadline = FXThread::time() + 5000000000LL;
+        while (FXThread::time() < deadline)
+        {
+            bool found = false;
+            for (FXint i = 0; i < deviceModel->getNumItems(); ++i)
+                if (deviceModel->getItemPathname(deviceModel->getItemText(i)) == path) found = true;
+            if (found == present) return;
+            deviceModel->readUsb();
+        }
+        assert(false && "USB monitor did not update the device list");
+    };
+    usbSnapshot("USB\tUGhvbmU=\tbXRwOi8vZmlyc3Qv\n"
+                "USB\tUGhvbmU=\tbXRwOi8vc2Vjb25kLw==\n");
+    setenv("SWORDFISH_TEST_USB_STATE", usbState.text(), 1);
+    deviceModel->create();
+    waitForUsb("mtp://first/", true);
+    waitForUsb("mtp://second/", true);
+    assert(deviceModel->disconnected("mtp://first/") && deviceModel->disconnected("mtp://second/"));
+    setenv("SWORDFISH_TEST_LSBLK_FAIL", "1", 1);
+    deviceModel->invalidate();
+    deviceModel->onMountsRefresh(NULL, 0, NULL);
+    assert(deviceModel->getItemPathname("Phone") == "mtp://first/");
+    unsetenv("SWORDFISH_TEST_LSBLK_FAIL");
+    usbSnapshot("USB\t!!!!\t!!!!\n");
+    for (int i = 0; i < 50; ++i) deviceModel->readUsb();
+    assert(deviceModel->disconnected("mtp://first/") && deviceModel->disconnected("mtp://second/"));
+    usbSnapshot("USB\tUGhvbmU=\tbXRwOi8vc2Vjb25kLw==\n");
+    waitForUsb("mtp://first/", false);
+    waitForUsb("mtp://second/", true);
+    usbSnapshot("");
+    waitForUsb("mtp://second/", false);
+    unsetenv("SWORDFISH_TEST_USB_STATE");
+    assert(unlink(usbState.text()) == 0);
+    puts("PASS: host MTP inventory adds duplicate-named phones and removes them on disconnect");
     assert(deviceModel->findItem("USB") == -1);
     mountTable(true);
     assert(xf_mountroot("/run/media/test/USB/folder") == "/run/media/test/USB");
@@ -800,7 +865,10 @@ int main(int argc, char** argv)
     deviceModel->onMountsRefresh(NULL, 0, NULL);
     assert(deviceModel->findItem("USB") == -1 && deviceModel->findItem("Internal data") == -1);
     assert(unlink(volumesFixture.text()) == 0);
+    const pid_t monitorPid = deviceModel->monitorPid();
     delete deviceModel;
+    int monitorStatus = 0;
+    assert(waitpid(monitorPid, &monitorStatus, 0) == monitorPid || errno == ECHILD);
     assert(unlink(simulatedMountTable.text()) == 0);
     simulatedMountTable.clear();
     puts("PASS: /run/media device appears on mount and disappears after external unmount");
@@ -1064,6 +1132,8 @@ int main(int argc, char** argv)
     paths.push_back(fixture);
     const FXString trashData = fixture + "/trash-data";
     setenv("SWORDFISH_HOST_XDG_DATA_HOME", trashData.text(), 1);
+    usbSnapshot("USB\tUGhvbmU=\tbXRwOi8vZmlyc3Qv\n");
+    setenv("SWORDFISH_TEST_USB_STATE", usbState.text(), 1);
     mainWindow = NULL;
     XFileExplorer* window = new XFileExplorer(&app, paths, 3);
     mainWindow = window;
@@ -1392,6 +1462,47 @@ int main(int argc, char** argv)
     DirPanel* panel = window->getDirPanel();
     networkPanel = panel;
     panel->onSidebarRefresh(NULL, 0, NULL);
+    {
+        MountsList* mounts = findMounts(panel);
+        assert(mounts);
+        for (int i = 0; i < 50 && !mounts->disconnected("mtp://first/"); ++i) pump(app, 100);
+        assert(mounts->disconnected("mtp://first/"));
+        panel->onSidebarRefresh(NULL, 0, NULL);
+        SidebarItem* phone = NULL;
+        FXTreeItem* devices = navigation->getFirstItem()->getNext()->getNext();
+        for (FXTreeItem* item = devices->getFirst(); item; item = item->getNext())
+            if (static_cast<SidebarItem*>(item)->path == "mtp://first/")
+                phone = static_cast<SidebarItem*>(item);
+        assert(phone && phone->deviceAction == SidebarItem::MOUNT_DEVICE && !phone->canEject);
+        assert(!phone->hasItems());
+        simulatedMtpPath = "/run/user/" + FXStringVal(getuid()) + "/gvfs/mtp:host=first";
+        simulatedMtpRoot = fixture + "/mtp-device";
+        setenv("SWORDFISH_TEST_MTP_PATH", simulatedMtpPath.text(), 1);
+        setenv("SWORDFISH_TEST_MTP_ROOT", simulatedMtpRoot.text(), 1);
+        app.addSignal(SIGCHLD, window, XFileExplorer::ID_HARVEST);
+        MountMessageResponder failure;
+        setenv("SWORDFISH_TEST_MTP_FAIL", "1", 1);
+        app.addTimeout(&failure, 1, 20);
+        assert(!panel->openDevice("mtp://first/"));
+        assert(failure.errors == 1 && failure.message.contains("simulated device unavailable"));
+        unsetenv("SWORDFISH_TEST_MTP_FAIL");
+        panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, 0), phone);
+        assert(window->getCurrentPanel()->getDirectory() == simulatedMtpPath);
+        assert(window->getCurrentPanel()->navigatePane(fixture));
+        app.removeSignal(SIGCHLD);
+        unsetenv("SWORDFISH_TEST_MTP_PATH");
+        unsetenv("SWORDFISH_TEST_MTP_ROOT");
+        assert(rmdir(simulatedMtpRoot.text()) == 0);
+        simulatedMtpPath.clear();
+        simulatedMtpRoot.clear();
+        usbSnapshot("");
+        for (int i = 0; i < 50 && mounts->disconnected("mtp://first/"); ++i) pump(app, 100);
+        assert(!mounts->disconnected("mtp://first/"));
+        unsetenv("SWORDFISH_TEST_USB_STATE");
+        assert(unlink(usbState.text()) == 0);
+        assert(unlink(getenv("SWORDFISH_TEST_MOUNT_LOG")) == 0);
+        puts("PASS: MTP mount failures are reported; successful mounts open the host GVFS path");
+    }
     {
         MountsList* mounts = findMounts(panel);
         assert(mounts);

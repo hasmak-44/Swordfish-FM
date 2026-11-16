@@ -2247,8 +2247,123 @@ int download(const std::string& address, const std::string& destination)
 }
 }
 
+namespace
+{
+void usbVolumeSnapshot(GVolumeMonitor* monitor)
+{
+    GList* volumes = g_volume_monitor_get_volumes(monitor);
+    for (GList* node = volumes; node; node = node->next)
+    {
+        GVolume* volume = G_VOLUME(node->data);
+        GFile* root = g_volume_get_activation_root(volume);
+        if (!root) continue;
+        if (g_file_has_uri_scheme(root, "mtp") && g_volume_can_mount(volume))
+        {
+            GError* error = NULL;
+            GMount* mount = g_file_find_enclosing_mount(root, NULL, &error);
+            if (!mount)
+            {
+                if (error && !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_MOUNTED))
+                {
+                    gchar* detail = g_strescape(error->message, NULL);
+                    std::printf("ERROR\tUnable to check MTP mount: %s\n", detail);
+                    g_free(detail);
+                }
+                else
+                {
+                    char* name = g_volume_get_name(volume);
+                    char* uri = g_file_get_uri(root);
+                    if (name && uri)
+                    {
+                        char* encodedName = g_base64_encode(reinterpret_cast<const guchar*>(name), strlen(name));
+                        char* encodedUri = g_base64_encode(reinterpret_cast<const guchar*>(uri), strlen(uri));
+                        std::printf("USB\t%s\t%s\n", encodedName, encodedUri);
+                        g_free(encodedName);
+                        g_free(encodedUri);
+                    }
+                    else std::puts("ERROR\tUnable to identify an MTP volume");
+                    g_free(name);
+                    g_free(uri);
+                }
+            }
+            if (mount) g_object_unref(mount);
+            g_clear_error(&error);
+        }
+        g_object_unref(root);
+    }
+    g_list_free_full(volumes, g_object_unref);
+    std::puts("DONE");
+    std::fflush(stdout);
+}
+
+struct UsbMonitorState
+{
+    GVolumeMonitor* monitor;
+    bool scanning = false;
+    bool pending = false;
+};
+
+void refreshUsbVolumes(UsbMonitorState* state)
+{
+    state->pending = true;
+    if (state->scanning) return;
+    state->scanning = true;
+    while (state->pending)
+    {
+        state->pending = false;
+        usbVolumeSnapshot(state->monitor);
+    }
+    state->scanning = false;
+}
+
+void usbVolumeChanged(GVolumeMonitor*, gpointer, gpointer data)
+{
+    refreshUsbVolumes(static_cast<UsbMonitorState*>(data));
+}
+
+gboolean initialUsbVolumes(gpointer data)
+{
+    refreshUsbVolumes(static_cast<UsbMonitorState*>(data));
+    return G_SOURCE_REMOVE;
+}
+
+gboolean refreshUsbVolumesPeriodically(gpointer data)
+{
+    refreshUsbVolumes(static_cast<UsbMonitorState*>(data));
+    return G_SOURCE_CONTINUE;
+}
+
+int monitorUsbVolumes()
+{
+    bool mtpAvailable = false;
+    const gchar* const* schemes = g_vfs_get_supported_uri_schemes(g_vfs_get_default());
+    for (const gchar* const* scheme = schemes; scheme && *scheme; ++scheme)
+        if (strcmp(*scheme, "mtp") == 0) mtpAvailable = true;
+    if (!mtpAvailable)
+    {
+        std::puts("STATUS\tHost GVFS MTP backend is unavailable; install the desktop GVFS MTP backend.");
+        std::fflush(stdout);
+    }
+    GVolumeMonitor* monitor = g_volume_monitor_get();
+    UsbMonitorState state;
+    state.monitor = monitor;
+    const char* signals[] = {"volume-added", "volume-removed", "volume-changed",
+                             "mount-added", "mount-removed", "mount-changed"};
+    for (const char* signal : signals)
+        g_signal_connect(monitor, signal, G_CALLBACK(usbVolumeChanged), &state);
+    GMainLoop* loop = g_main_loop_new(NULL, FALSE);
+    g_timeout_add(500, initialUsbVolumes, &state);
+    g_timeout_add_seconds(10, refreshUsbVolumesPeriodically, &state);
+    g_main_loop_run(loop);
+    g_main_loop_unref(loop);
+    g_object_unref(monitor);
+    return 0;
+}
+}
+
 int main(int argc, char** argv)
 {
+    if (argc == 2 && strcmp(argv[1], "--usb-monitor") == 0) return monitorUsbVolumes();
     if (argc == 3 && strcmp(argv[1], "--list") == 0) return listDirectory(argv[2]);
     if (argc == 3 && strcmp(argv[1], "--shares") == 0)
     {

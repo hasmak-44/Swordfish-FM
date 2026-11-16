@@ -4,14 +4,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <cmath>
 #include <set>
 #include <string>
+#include <glib.h>
 
 #if defined(linux)
 #include <mntent.h>
+#include <sys/prctl.h>
 #endif
 
 #include <fx.h>
@@ -723,6 +726,8 @@ FXDEFMAP(MountsList) MountsListMap[] =
 {
 #if defined(linux)
     FXMAPFUNC(SEL_TIMEOUT, MountsList::ID_MOUNTS_REFRESH, MountsList::onMountsRefresh),
+    FXMAPFUNC(SEL_IO_READ, MountsList::ID_USB_READ, MountsList::onUsbRead),
+    FXMAPFUNC(SEL_TIMEOUT, MountsList::ID_USB_RESTART, MountsList::onUsbRestart),
 #endif
     FXMAPFUNC(SEL_QUERY_TIP, 0, MountsList::onQueryTip)
 };
@@ -758,6 +763,7 @@ void MountsList::create()
 {
 #if defined(linux)
     getApp()->addTimeout(this, ID_MOUNTS_REFRESH, MTAB_POLL_INTERVAL);
+    startUsbMonitor();
 #endif
     FXList::create();
 }
@@ -768,6 +774,8 @@ MountsList::~MountsList()
 {
 #if defined(linux)
     getApp()->removeTimeout(this, ID_MOUNTS_REFRESH);
+    getApp()->removeTimeout(this, ID_USB_RESTART);
+    stopUsbMonitor();
 #endif
     delete mounts;
 }
@@ -789,6 +797,147 @@ void MountsList::setMount(FXString& key)
 
 
 #if defined(linux)
+
+void MountsList::startUsbMonitor()
+{
+    if (usbFd >= 0) return;
+    int pipefd[2];
+    if (pipe2(pipefd, O_CLOEXEC) != 0)
+    {
+        appLog(APP_LOG_ERRORS, "usb-monitor-start-failed", strerror(errno));
+        getApp()->addTimeout(this, ID_USB_RESTART, 10000);
+        return;
+    }
+    char executable[4096];
+    ssize_t length = readlink("/proc/self/exe", executable, sizeof(executable) - 1);
+    FXString helper = "swordfish-network";
+    if (length > 0)
+    {
+        executable[length] = '\0';
+        helper = FXPath::directory(executable) + "/swordfish-network";
+    }
+    FXString command = "exec " + xf_hostcommand(xf_quote(helper) + " --usb-monitor");
+    const pid_t parent = getpid();
+    usbPid = fork();
+    if (usbPid == 0)
+    {
+        ::close(pipefd[0]);
+        if (prctl(PR_SET_PDEATHSIG, SIGTERM) != 0 || getppid() != parent) _exit(126);
+        if (dup2(pipefd[1], STDOUT_FILENO) < 0) _exit(126);
+        ::close(pipefd[1]);
+        execl("/bin/sh", "sh", "-c", command.text(), static_cast<char*>(NULL));
+        _exit(127);
+    }
+    ::close(pipefd[1]);
+    if (usbPid < 0)
+    {
+        appLog(APP_LOG_ERRORS, "usb-monitor-start-failed", strerror(errno));
+        ::close(pipefd[0]);
+        getApp()->addTimeout(this, ID_USB_RESTART, 10000);
+        return;
+    }
+    usbFd = pipefd[0];
+    getApp()->addInput(usbFd, INPUT_READ, this, ID_USB_READ);
+}
+
+void MountsList::stopUsbMonitor()
+{
+    if (usbFd >= 0)
+    {
+        getApp()->removeInput(usbFd, INPUT_READ);
+        ::close(usbFd);
+        usbFd = -1;
+    }
+    if (usbPid > 0)
+    {
+        pid_t result = waitpid(usbPid, NULL, WNOHANG);
+        if (result == 0 && kill(usbPid, SIGTERM) != 0 && errno != ESRCH)
+            appLog(APP_LOG_ERRORS, "usb-monitor-stop-failed", strerror(errno));
+        else if (result < 0 && errno != ECHILD)
+            appLog(APP_LOG_ERRORS, "usb-monitor-stop-failed", strerror(errno));
+        usbPid = -1;
+    }
+    usbBuffer.clear();
+    pendingUsbVolumes.clear();
+    usbSnapshotInvalid = false;
+}
+
+long MountsList::onUsbRestart(FXObject*, FXSelector, void*)
+{
+    startUsbMonitor();
+    return 1;
+}
+
+long MountsList::onUsbRead(FXObject*, FXSelector, void*)
+{
+    char buffer[4096];
+    ssize_t count = read(usbFd, buffer, sizeof(buffer));
+    if (count <= 0)
+    {
+        if (count < 0 && errno == EINTR) return 1;
+        appLog(APP_LOG_ERRORS, "usb-monitor-stopped", count < 0 ? strerror(errno) : "unexpected end of output");
+        stopUsbMonitor();
+        getApp()->addTimeout(this, ID_USB_RESTART, 10000);
+        return 1;
+    }
+    usbBuffer.append(buffer, count);
+    if (usbBuffer.length() > 65536)
+    {
+        appLog(APP_LOG_ERRORS, "usb-monitor-invalid-output", "record too long");
+        stopUsbMonitor();
+        getApp()->addTimeout(this, ID_USB_RESTART, 10000);
+        return 1;
+    }
+    FXint newline;
+    while ((newline = usbBuffer.find('\n')) >= 0)
+    {
+        FXString line = usbBuffer.left(newline);
+        usbBuffer = usbBuffer.mid(newline + 1, usbBuffer.length());
+        if (line == "DONE")
+        {
+            if (!usbSnapshotInvalid && usbVolumes != pendingUsbVolumes)
+            {
+                usbVolumes.swap(pendingUsbVolumes);
+                scan();
+            }
+            pendingUsbVolumes.clear();
+            usbSnapshotInvalid = false;
+        }
+        else if (line.left(7) == "STATUS\t")
+        {
+            appLog(APP_LOG_ERRORS, "usb-monitor-status", line.mid(7, line.length()));
+        }
+        else if (line.left(6) == "ERROR\t")
+        {
+            appLog(APP_LOG_ERRORS, "usb-monitor-error", line.mid(6, line.length()));
+            usbSnapshotInvalid = true;
+        }
+        else if (line.left(4) == "USB\t" && line.contains('\t') == 2)
+        {
+            gsize nameLength = 0, uriLength = 0;
+            guchar* name = g_base64_decode(line.section('\t', 1).text(), &nameLength);
+            guchar* uri = g_base64_decode(line.section('\t', 2).text(), &uriLength);
+            FXString label(reinterpret_cast<char*>(name), nameLength);
+            FXString location(reinterpret_cast<char*>(uri), uriLength);
+            if (!label.empty() && location.left(6) == "mtp://" &&
+                strlen(label.text()) == nameLength && strlen(location.text()) == uriLength)
+                pendingUsbVolumes[location] = label;
+            else
+            {
+                appLog(APP_LOG_ERRORS, "usb-monitor-invalid-output", line);
+                usbSnapshotInvalid = true;
+            }
+            g_free(name);
+            g_free(uri);
+        }
+        else
+        {
+            appLog(APP_LOG_ERRORS, "usb-monitor-invalid-output", line);
+            usbSnapshotInvalid = true;
+        }
+    }
+    return 1;
+}
 
 // Names in a directory, concatenated (cheap change detection)
 static FXString directoryNames(const FXString& path)
@@ -828,6 +977,9 @@ void MountsList::addMount(FXString name, const FXString& pathname, FXIcon* icon)
     {
         name += " (" + FXPath::name(pathname) + ")";
     }
+    FXString base = name;
+    for (FXint number = 2; mounts->find(name.text()); ++number)
+        name = base + " " + FXStringVal(number);
     mounts->insert(name.text(), pathname.text());
     FXList::appendItem(name, icon);
 }
@@ -891,7 +1043,11 @@ void MountsList::scan()
             if (label.empty() && previousLabel) label = previousLabel;
             addMount(label.empty() ? FXPath::name(device) : label, device, miniremovabledeviceicon);
         }
+
     }
+
+    for (const auto& device : usbVolumes)
+        addMount(device.second, device.first, miniremovabledeviceicon);
 
     // GVFS mount points
     FXString gvfspath = "/run/user/" + FXStringVal(FXSystem::user()) + "/gvfs";
@@ -927,7 +1083,8 @@ void MountsList::scan()
             if (mounttype == "mtp")
             {
                 FXString name = gvfsname.after('_');
-                addMount(name.before('_', 2), pathname, miniremovabledeviceicon);
+                name = name.before('_', 2);
+                addMount(name.empty() ? _("MTP device") : name, pathname, miniremovabledeviceicon);
             }
         }
         closedir(dirp);
@@ -941,6 +1098,7 @@ void MountsList::scan()
 
 FXbool MountsList::disconnected(const FXString& path) const
 {
+    if (usbVolumes.find(path) != usbVolumes.end()) return true;
     return knownRemotes.find(path) != knownRemotes.end() &&
            mountedRemotes.find(path) == mountedRemotes.end();
 }

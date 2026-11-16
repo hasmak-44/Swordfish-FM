@@ -3128,6 +3128,30 @@ even at its end, so the page around it never scrolled.
 
 Desktop acceptance pending: wheel over Preferences/Theme Editor lists and pages.
 
+### 3.77. USB MTP discovery (16 November 2026)
+
+The Devices list previously discovered MTP devices only after another desktop
+application had mounted them. Unlike USB disks, MTP phones are not block
+devices, so `lsblk` cannot find them. A host-side GIO volume monitor now reports
+advertised MTP volumes asynchronously, including phones that are not mounted.
+Opening such an entry mounts it with host `gio` and opens its GVFS FUSE path.
+Existing mounted MTP entries and ordinary disk handling remain in place.
+
+The monitor runs through `swordfish-network` with the host's GIO environment,
+restarts after failure, and stops when Swordfish exits. Incomplete or invalid
+inventory snapshots do not erase the previous inventory. The host GVFS MTP
+backend itself uses libmtp; no competing direct USB mount is created. GVFS
+MTP, its volume monitor, FUSE, a desktop session bus and the phone's USB file
+transfer permission remain necessary. Other protocols such as iOS AFC are
+not covered by this change.
+
+Validation in the codespace: native build, folder-expansion/device integration
+regression (mocked MTP connect/disconnect, duplicate names, malformed snapshots,
+sidebar activation, mount failure and success), network helper regression and
+portable launcher regression. The real helper starts, but no USB device or
+desktop session is available here. Physical Android testing, including unlock,
+plug/unplug, mount/unmount and comparison with Thunar/Caja, remains pending.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

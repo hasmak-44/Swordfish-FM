@@ -146,11 +146,19 @@ protected:
     FXStringDict knownDevices;            // Block devices seen mounted on /media in this session
     std::map<FXString, FXString> knownRemotes;
     std::set<FXString> mountedRemotes;
+    std::map<FXString, FXString> usbVolumes;
+    std::map<FXString, FXString> pendingUsbVolumes;
+    FXString usbBuffer;
+    FXbool usbSnapshotInvalid = false;
+    int usbFd = -1;
+    pid_t usbPid = -1;
 
     void scan();
     void addMount(FXString, const FXString&, FXIcon*);
     static FXString gvfsMounts();
     static FXString blockDevices();
+    void startUsbMonitor();
+    void stopUsbMonitor();
 
 public:
     MountsList(FXWindow*, FXComposite*, FXObject*, FXSelector, FXColor listbackcolor = FXRGB(255, 255, 255),
@@ -164,6 +172,8 @@ public:
     enum
     {
         ID_MOUNTS_REFRESH=FXList::ID_LAST,
+        ID_USB_READ,
+        ID_USB_RESTART,
         ID_LAST
     };
 
@@ -195,6 +205,8 @@ public:
 
     // Refresh mount points
     long onMountsRefresh(FXObject*, FXSelector, void*);
+    long onUsbRead(FXObject*, FXSelector, void*);
+    long onUsbRestart(FXObject*, FXSelector, void*);
 
     // Display tooltip
     long onQueryTip(FXObject*, FXSelector, void*);
