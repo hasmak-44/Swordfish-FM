@@ -180,6 +180,7 @@ private:
     FXCheckButton* overwrite = NULL;
     FXCheckButton* exec = NULL;
     FXCheckButton* ask = NULL;
+    FXCheckButton* verify_copy = NULL;
     FXCheckButton* folder_warning = NULL;
     FXCheckButton* preserve_date_warning = NULL;
     FXCheckButton* root_warning = NULL;
@@ -265,6 +266,7 @@ private:
     FXuint wheellines_prev = 0;
     FXint scrollbarsize_prev = 0;
     FXbool ask_prev = false;
+    FXbool verify_copy_prev = false;
     FXbool dnd_prev = false;
     FXbool trashmv_prev = false;
     FXbool del_prev = false;

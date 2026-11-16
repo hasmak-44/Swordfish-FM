@@ -46,6 +46,23 @@ extern "C" int rename(const char* source, const char* destination) noexcept
     return realRename(source, destination);
 }
 
+static int corruptVerifiedCopies;
+static int verifiedCopySyncs;
+
+// Copy verification flushes the new file before re-reading it; corrupting it here simulates bad storage
+extern "C" int fdatasync(int fd)
+{
+    ++verifiedCopySyncs;
+    if (corruptVerifiedCopies > 0)
+    {
+        --corruptVerifiedCopies;
+        assert(pwrite(fd, "X", 1, 0) == 1);
+    }
+    typedef int (*Sync)(int);
+    static Sync realSync = reinterpret_cast<Sync>(dlsym(RTLD_NEXT, "fdatasync"));
+    return realSync(fd);
+}
+
 static void checkPreferencesScrolling(FXApp& app, FXWindow* window)
 {
     if (!window->shown()) return;
@@ -517,6 +534,89 @@ static std::string readConflictFile(const FXString& path)
     return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 }
 
+class ErrorResponder : public FXObject
+{
+    FXApp& app;
+public:
+    FXString text;
+    int shown = 0;
+    explicit ErrorResponder(FXApp& application) : app(application) {}
+    ~ErrorResponder() { app.removeTimeout(this, 1); }
+    void start() { app.addTimeout(this, 1, 10); }
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        if (MessageBox* box = dynamic_cast<MessageBox*>(app.getModalWindow()))
+        {
+            ++shown;
+            text = box->getText();
+            box->handle(this, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_OK), NULL);
+        }
+        app.addTimeout(this, 1, 10);
+        return 1;
+    }
+};
+
+static void checkCopyVerification(FXApp& app, FXWindow* owner, const FXString& fixture)
+{
+    const FXString source = fixture + "/verify-source", destination = fixture + "/verify-destination";
+    assert(mkdir(source.text(), 0700) == 0 && mkdir(destination.text(), 0700) == 0);
+    const FXulong start = xf_getcurrenttime() - 1;
+    std::string large(3 * 1024 * 1024 + 17, 'a');
+    for (size_t i = 0; i < large.size(); ++i) large[i] = static_cast<char>('a' + i % 23);
+    std::ofstream(source.text() + std::string("/large.bin")) << large;
+    writeConflictFile(source + "/move.txt", "moved");
+    writeConflictFile(source + "/bad-copy.txt", "precious");
+    writeConflictFile(source + "/bad-move.txt", "precious");
+    writeConflictFile(source + "/unverified.txt", "fast");
+
+    app.reg().writeUnsignedEntry("OPTIONS", "verify_copy", false);
+    verifiedCopySyncs = 0;
+    corruptVerifiedCopies = 1;
+    {
+        File operation(owner, "Unverified copy regression", COPY);
+        operation.create();
+        assert(operation.copy(source + "/unverified.txt", destination, "1 kB", 1024, start) == 1);
+    }
+    assert(verifiedCopySyncs == 0 && readConflictFile(destination + "/unverified.txt") == "fast");
+    corruptVerifiedCopies = 0;
+
+    app.reg().writeUnsignedEntry("OPTIONS", "verify_copy", true);
+    {
+        File operation(owner, "Verified copy regression", COPY);
+        operation.create();
+        ErrorResponder errors(app);
+        errors.start();
+        assert(operation.copy(source + "/large.bin", destination, "3 MB", large.size(), start) == 1);
+        crossDeviceSource = source + "/";
+        assert(operation.fmove(source + "/move.txt", destination, "1 kB", 1024, start) == 1);
+        crossDeviceSource.clear();
+        assert(errors.shown == 0);
+    }
+    assert(verifiedCopySyncs == 2);
+    assert(readConflictFile(destination + "/large.bin") == large);
+    assert(readConflictFile(destination + "/move.txt") == "moved" && !xf_existfile(source + "/move.txt"));
+
+    {
+        File operation(owner, "Failed copy verification regression", COPY);
+        operation.create();
+        ErrorResponder errors(app);
+        errors.start();
+        corruptVerifiedCopies = 1;
+        assert(operation.copy(source + "/bad-copy.txt", destination, "1 kB", 1024, start) == -2);
+        assert(errors.shown == 1 && errors.text.contains("Verification failed"));
+        corruptVerifiedCopies = 1;
+        crossDeviceSource = source + "/";
+        assert(operation.fmove(source + "/bad-move.txt", destination, "1 kB", 1024, start) == -1);
+        crossDeviceSource.clear();
+        assert(errors.shown == 2 && errors.text.contains("Verification failed"));
+    }
+    assert(corruptVerifiedCopies == 0);
+    assert(readConflictFile(source + "/bad-copy.txt") == "precious" && !xf_existfile(destination + "/bad-copy.txt"));
+    assert(readConflictFile(source + "/bad-move.txt") == "precious" && !xf_existfile(destination + "/bad-move.txt"));
+    app.reg().writeUnsignedEntry("OPTIONS", "verify_copy", false);
+    puts("PASS: copy verification is skipped when disabled; when enabled, copies and cross-device moves are MD5-checked, and a damaged copy is reported, removed and never replaces the move source");
+}
+
 static void checkFileConflicts(FXApp& app, FXWindow* owner, const FXString& fixture)
 {
     const FXString root = fixture + "/conflicts";
@@ -747,6 +847,7 @@ int main(int argc, char** argv)
     mainWindow = new FXMainWindow(&app, "Main regression");
     app.create();
     checkFileConflicts(app, mainWindow, fixture);
+    checkCopyVerification(app, mainWindow, fixture);
     TestSearch* search = new TestSearch(&app);
     search->create();
     search->show(PLACEMENT_SCREEN);

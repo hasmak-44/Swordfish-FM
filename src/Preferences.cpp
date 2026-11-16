@@ -795,7 +795,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     FXVerticalFrame* addressAndScripts = addPage(GENERAL, _("Address bar and scripts"));
     FXVerticalFrame* folderPanel = addPage(PANELS, _("Folder panel view"));
     FXVerticalFrame* startupList = addPage(PANELS, _("Startup list"));
-    FXVerticalFrame* copyOptions = addPage(FILE_OPERATIONS, _("Copy suffix"));
+    FXVerticalFrame* copyOptions = addPage(FILE_OPERATIONS, _("Copy and move"));
 
     FXGroupBox* group = new FXGroupBox(general, _("Starting"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE |
                                        LAYOUT_FILL_X | LAYOUT_FILL_Y);
@@ -920,6 +920,11 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
         copysuffix_before->setCheck(false);
         copysuffix_after->setCheck(true);
     }
+
+    group = new FXGroupBox(copyOptions, _("Verification"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    verify_copy = new FXCheckButton(group, _("Verify copied and moved files with MD5 checksums (slower)") +
+                                    FXString(" "));
+    verify_copy->setCheck(getApp()->reg().readUnsignedEntry("OPTIONS", "verify_copy", false));
 
     FXVerticalFrame* dialogs = addPage(FILE_OPERATIONS, _("Confirmations"));
     group = new FXGroupBox(dialogs, _("Confirmations"),
@@ -3868,6 +3873,7 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     getApp()->reg().writeUnsignedEntry("OPTIONS", "use_trash_can", trashcan->getCheck());
     getApp()->reg().writeUnsignedEntry("OPTIONS", "use_trash_bypass", trashbypass->getCheck());
     getApp()->reg().writeUnsignedEntry("OPTIONS", "ask_before_copy", ask->getCheck());
+    getApp()->reg().writeUnsignedEntry("OPTIONS", "verify_copy", verify_copy->getCheck());
     getApp()->reg().writeStringEntry("SETTINGS", "time_format", timeformat->getText().text());
     getApp()->reg().writeStringEntry("OPTIONS", "copysuffix", copysuffix->getText().text());
     getApp()->reg().writeUnsignedEntry("OPTIONS", "copysuffix_pos", copysuffix_pos);
@@ -4147,6 +4153,7 @@ long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
 
     // Third tab - Dialogs
     ask->setCheck(ask_prev);
+    verify_copy->setCheck(verify_copy_prev);
     dnd->setCheck(dnd_prev);
     trashmv->setCheck(trashmv_prev);
     del->setCheck(del_prev);
@@ -4375,6 +4382,7 @@ void PreferencesBox::rememberPreferences()
 
     // Third tab - Dialogs
     ask_prev = ask->getCheck();
+    verify_copy_prev = verify_copy->getCheck();
     dnd_prev = dnd->getCheck();
     trashmv_prev = trashmv->getCheck();
     del_prev = del->getCheck();

@@ -3082,6 +3082,27 @@ right-click multi-selection assertion, and the Theme Workflow regression
 passed. The automated checks do not exercise a real native right-button
 drag/drop or archive operation; desktop interaction testing remains pending.
 
+### 3.75. Optional copy/move checksum verification (16 November 2026)
+
+Preferences > File operations > Copy and move (renamed from Copy suffix) has a
+new option, off by default because it slows operations: "Verify copied and
+moved files with MD5 checksums (slower)" (`OPTIONS/verify_copy`). When enabled,
+each copied file's MD5 is computed while it is read; the new copy is flushed to
+storage, its cached pages are dropped and it is read back and compared. MTP
+copies made through `gio copy` hash both files afterwards. Same-drive moves
+are renames and need no check; cross-device moves are verified before the
+source is deleted. A mismatch is logged and reported, the damaged copy is
+removed, the source is kept and date preservation is skipped. Cancel works
+during verification.
+
+The search-window regression interposes `fdatasync` to corrupt a copy on
+demand. It checks that verification is skipped when disabled, that verified
+multi-megabyte copies and cross-device moves succeed, and that damaged copies
+and moves are reported once, removed and never replace their source. The
+native clean build and Theme Workflow regression passed. The search-window
+runner's later Preferences wheel-scrolling assertion also fails on the
+previous commit and was not changed here. Desktop testing remains pending.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

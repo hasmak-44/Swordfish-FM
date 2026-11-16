@@ -16,6 +16,10 @@
 #include <alloca.h>
 #endif
 
+#include <glib.h>
+#include <memory>
+#include <vector>
+
 
 #include <fx.h>
 #include <fxkeys.h>
@@ -552,6 +556,120 @@ int File::resolveConflict(const FXString& source, FXString& destination, FXbool 
 }
 
 
+// Compute the MD5 digest of a file, reading it from storage rather than the page cache when possible
+// Return true on success, false if cancelled, -2 on read error (errcode is set)
+int File::md5file(const FXString& path, FXString& digest, int& errcode)
+{
+    errcode = 0;
+    int fd = ::open(path.text(), O_RDONLY);
+    if (fd < 0)
+    {
+        errcode = errno;
+        return -2;
+    }
+    posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+
+    std::unique_ptr<GChecksum, decltype(&g_checksum_free)> sum(g_checksum_new(G_CHECKSUM_MD5), g_checksum_free);
+    std::vector<FXuchar> buffer(BUFFER_COPY_SIZE);
+    while (1)
+    {
+        errno = 0;
+        FXlong nread = File::fullread(fd, buffer.data(), buffer.size());
+        if (nread < 0)
+        {
+            errcode = errno ? errno : EIO;
+            ::close(fd);
+            return -2;
+        }
+        if (nread == 0)
+        {
+            break;
+        }
+        g_checksum_update(sum.get(), buffer.data(), nread);
+
+        if (uiUpdateDue())
+        {
+            if (cancelButton)
+            {
+                getApp()->runModalWhileEvents(cancelButton);
+            }
+            if (uplabel)
+            {
+                uplabel->setText(xf_truncline(_("Verifying: ") + path, MAX_MESSAGE_LENGTH));
+            }
+            getApp()->repaint();
+        }
+        if (cancelled)
+        {
+            ::close(fd);
+            return false;
+        }
+    }
+    ::close(fd);
+    digest = g_checksum_get_string(sum.get());
+    return true;
+}
+
+
+// Compare a copied file with its source. sourcedigest may be empty, in which case the source is read again.
+// A copy that does not match is removed so it cannot be mistaken for a good one.
+// Return true when identical, false if cancelled, -2 when verification failed
+int File::verifycopy(const FXString& source, const FXString& target, const FXString& sourcedigest)
+{
+    FXString srcdigest = sourcedigest, dstdigest;
+    int errcode = 0;
+    int ret = true;
+    FXString failedpath;
+
+    if (srcdigest.empty())
+    {
+        ret = md5file(source, srcdigest, errcode);
+        failedpath = source;
+    }
+    if (ret == true)
+    {
+        ret = md5file(target, dstdigest, errcode);
+        failedpath = target;
+    }
+    if (ret == false)
+    {
+        return false;
+    }
+
+    FXString str;
+    if (ret == -2)
+    {
+        str.format(_("Can't verify file %s: %s"), failedpath.text(), strerror(errcode));
+    }
+    else if (srcdigest != dstdigest)
+    {
+        str.format(_("Verification failed: %s does not match %s\nThe damaged copy has been removed."),
+                   target.text(), source.text());
+        ret = -2;
+    }
+    else
+    {
+        return true;
+    }
+
+    appLog(APP_LOG_ERRORS, "copy-verification-failed", source + " -> " + target + ": " + str);
+    if (srcdigest != dstdigest && !dstdigest.empty())
+    {
+        ::unlink(target.text());
+    }
+    forceTimeout();
+    mbox->setText(str);
+    FXuint answer = mbox->execute(PLACEMENT_OWNER);
+    restartTimeout();
+    if (answer == BOX_CLICKED_CANCEL)
+    {
+        cancelled = true;
+        return false;
+    }
+    return -2;
+}
+
+
 // Copy ordinary file
 // Return  0 to allow displaying an error message in the calling function
 // Return -1 to prevent displaying an error message in the calling function
@@ -568,6 +686,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
     int ok = false;
     
     FXbool warn = getApp()->reg().readUnsignedEntry("OPTIONS", "preserve_date_warn", true);
+    FXbool verify = getApp()->reg().readUnsignedEntry("OPTIONS", "verify_copy", false);
 
     // Needed by onCopySpeed()
     copyspeedSourcesize = sourcesize;
@@ -665,7 +784,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                 }
                 else
                 {
-                    ok = true;
+                    ok = verify ? verifycopy(source, destfile, "") : true;
                 }
             }
     
@@ -682,6 +801,8 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                 if ((dst = ::open(destfile.text(), O_WRONLY | O_CREAT | O_TRUNC, info.st_mode)) >= 0)
                 {
                     int error = false;
+                    std::unique_ptr<GChecksum, decltype(&g_checksum_free)> srcsum(
+                        verify ? g_checksum_new(G_CHECKSUM_MD5) : NULL, g_checksum_free);
 
                     while (1)
                     {
@@ -722,6 +843,11 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                         if (nread == 0)
                         {
                             break;
+                        }
+
+                        if (srcsum)
+                        {
+                            g_checksum_update(srcsum.get(), buffer, nread);
                         }
 
                         // Set percentage value for progress dialog
@@ -809,10 +935,40 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                         ok = true;
                     }
 
+                    if (ok == true && srcsum && fdatasync(dst) != 0)
+                    {
+                        int errcode = errno;
+                        ::close(dst);
+                        ::close(src);
+                        forceTimeout();
+                        FXString str;
+                        str.format(_("Can't copy file %s: %s"), target.text(), strerror(errcode));
+                        mbox->setText(str);
+                        FXuint answer = mbox->execute(PLACEMENT_OWNER);
+                        restartTimeout();
+                        if (answer == BOX_CLICKED_CANCEL)
+                        {
+                            cancelled = true;
+                            return false;
+                        }
+                        return -2;
+                    }
                     ::close(dst);
 
+                    FXbool verifyfailed = false;
+                    if (ok == true && srcsum)
+                    {
+                        ok = verifycopy(source, destfile, g_checksum_get_string(srcsum.get()));
+                        if (ok == false)
+                        {
+                            ::close(src);
+                            return false;
+                        }
+                        verifyfailed = (ok != true);
+                    }
+
                     // Keep original date if asked
-                    if (preserve_date)
+                    if (preserve_date && !verifyfailed)
                     {
                         timbuf.actime = info.st_atime;
                         timbuf.modtime = info.st_mtime;

@@ -84,6 +84,8 @@ protected:
     int resolveConflict(const FXString&, FXString&, FXbool merge = true,
                         FXbool restart_timeout = true, FXbool confirm = true);
     int copyfile(const FXString&, const FXString&, const FXString&, const FXulong, const FXulong, const FXbool);
+    int md5file(const FXString&, FXString&, int&);
+    int verifycopy(const FXString&, const FXString&, const FXString&);
     int copyrec(const FXString&, const FXString&, const FXString&, const FXulong, const FXulong, inodelist*,
                 const FXbool, const FXbool confirm = true);
     int copydir(const FXString&, const FXString&, const FXString&, const FXulong, const FXulong, struct stat&,
