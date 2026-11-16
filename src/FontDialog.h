@@ -145,6 +145,8 @@ public:
     // Get the current font selection
     void getFontSelection(FXFontDesc& fontdesc) const;
 
+    void addHelpButton(FXObject*, FXSelector);
+
     // Destructor
     virtual ~FontDialog();
 };

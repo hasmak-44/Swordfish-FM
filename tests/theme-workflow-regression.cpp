@@ -8,10 +8,12 @@
 #include "ColorTools.h"
 #include "BackgroundEffect.h"
 #include "FileDialog.h"
+#include "FontDialog.h"
 #include "InputDialog.h"
 #include "SearchWindow.h"
 #include "icons.h"
 #include <cassert>
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -328,6 +330,64 @@ public:
         });
         app.addTimeout(&editorPickerHelp, 1, 150);
         editor.onEditProperty(NULL, 0, NULL);
+        editor.selectElement("main");
+        auto selectProperty = [&](const char* key)
+        {
+            auto item = std::find(editor.propertyKeys.begin(), editor.propertyKeys.end(), key);
+            assert(item != editor.propertyKeys.end());
+            editor.properties->setCurrentItem(item - editor.propertyKeys.begin());
+        };
+        ActionTimer fontHelp([&]()
+        {
+            FontDialog* dialog = dynamic_cast<FontDialog*>(app.getModalWindow());
+            assert(dialog);
+            FXButton* help = findButton(dialog, "User Manual");
+            assert(help);
+            checkManual(app, help->getTarget(), help->getSelector(), help, true);
+            assert(app.getModalWindow() == dialog);
+            dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
+        });
+        selectProperty("font");
+        app.addTimeout(&fontHelp, 1, 150);
+        editor.onEditProperty(NULL, 0, NULL);
+        ActionTimer percentageHelp([&]()
+        {
+            InputDialog* dialog = dynamic_cast<InputDialog*>(app.getModalWindow());
+            assert(dialog && dialog->getTitle() == "Bar shading");
+            FXButton* help = findButton(dialog, "User Manual");
+            assert(help);
+            checkManual(app, help->getTarget(), help->getSelector(), help, true);
+            dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
+        });
+        selectProperty("shading");
+        app.addTimeout(&percentageHelp, 1, 150);
+        editor.onEditProperty(NULL, 0, NULL);
+        ActionTimer namingHelp([&]()
+        {
+            InputDialog* dialog = dynamic_cast<InputDialog*>(app.getModalWindow());
+            assert(dialog && dialog->getTitle() == "Save theme");
+            FXButton* help = findButton(dialog, "User Manual");
+            assert(help);
+            checkManual(app, help->getTarget(), help->getSelector(), help, true);
+            dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
+        });
+        app.addTimeout(&namingHelp, 1, 150);
+        editor.onSave(NULL, FXSEL(SEL_COMMAND, ThemeEditor::ID_SAVE_AS), NULL);
+        editor.previewEffect("fill=solid colors=#123456", false);
+        ActionTimer decisionHelp([&]()
+        {
+            FXWindow* dialog = app.getModalWindow();
+            assert(dialog && FXString(dialog->getClassName()) == "ThemeDecision");
+            FXButton* help = findButton(dialog, "User Manual");
+            assert(help);
+            checkManual(app, help->getTarget(), help->getSelector(), help, true);
+            dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
+        });
+        app.addTimeout(&decisionHelp, 1, 150);
+        editor.selectElement("tree");
+        assert(editor.area == "main");
+        editor.onDiscard(NULL, 0, NULL);
+        editor.selectElement("list");
         assert(findClass(&editor, "ThemeMockup"));
         assert(!findClass(&editor, "FilePanel") && !findClass(&editor, "FileList"));
         assert(editor.getBackColor() == DialogColors::background);
@@ -476,6 +536,27 @@ public:
                 }
                 assert(checked >= 8);
             }
+            ActionTimer textureNamingHelp([&]()
+            {
+                InputDialog* naming = dynamic_cast<InputDialog*>(app.getModalWindow());
+                assert(naming && naming->getTitle() == "Texture name");
+                FXButton* help = findButton(naming, "User Manual");
+                assert(help);
+                checkManual(app, help->getTarget(), help->getSelector(), help, true);
+                naming->handle(naming, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
+            });
+            ActionTimer chooseTexture([&]()
+            {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser && chooser->getTitle() == "Add PNG texture");
+                chooser->setFilename(FXPath::directory(execpath) + "/../share/swordfish/textures/brick.png");
+                app.addTimeout(&textureNamingHelp, 1, 150);
+                chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            });
+            FXButton* addTexture = findButton(dialog, "Add PNG...");
+            assert(addTexture);
+            app.addTimeout(&chooseTexture, 1, 150);
+            addTexture->getTarget()->handle(addTexture, FXSEL(SEL_COMMAND, addTexture->getSelector()), NULL);
             dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
         });
         app.addTimeout(&background, 1, 150);

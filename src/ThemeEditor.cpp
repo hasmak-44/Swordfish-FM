@@ -1271,6 +1271,7 @@ public:
             if (!file.execute()) return 1;
             FXString name = FXPath::title(file.getFilename());
             InputDialog naming(this, "", _("Texture name (without a slash):"), _("Texture name"));
+            naming.addHelpButton(editor, ThemeEditor::ID_MANUAL);
             naming.setText(name);
             if (!naming.execute()) return 1;
             name = naming.getText().trim();
@@ -1368,7 +1369,7 @@ class ThemeDecision : public DialogBox
     ThemeDecision() {}
 public:
     enum { ID_FIRST = DialogBox::ID_LAST, ID_SECOND };
-    ThemeDecision(FXWindow* owner, const FXString& title, const FXString& question,
+    ThemeDecision(ThemeEditor* owner, const FXString& title, const FXString& question,
                   const FXString& first, const FXString& second) : DialogBox(owner, title)
     {
         new FXLabel(this, question, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
@@ -1376,6 +1377,7 @@ public:
         new FXButton(buttons, first, NULL, this, ID_FIRST, BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT | FRAME_GROOVE);
         new FXButton(buttons, second, NULL, this, ID_SECOND, BUTTON_NORMAL | LAYOUT_RIGHT);
         new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("User Manual"), NULL, owner, ThemeEditor::ID_MANUAL, BUTTON_NORMAL | LAYOUT_LEFT);
     }
     long onChoice(FXObject*, FXSelector selector, void*)
     {
@@ -1752,6 +1754,7 @@ long ThemeEditor::onEditProperty(FXObject*, FXSelector, void*)
         FXFontDesc description;
         candidate.getFontDesc(description);
         FontDialog dialog(this, _("Element font"));
+        dialog.addHelpButton(this, ID_MANUAL);
         dialog.setFontSelection(description);
         if (dialog.execute(PLACEMENT_OWNER))
         {
@@ -1771,6 +1774,7 @@ long ThemeEditor::onEditProperty(FXObject*, FXSelector, void*)
         }
         InputDialog dialog(this, "", key == "opacity" ? _("Window opacity (20-100%):") :
                                                           _("Bar shading (0-20%):"), propertyName(key));
+        dialog.addHelpButton(this, ID_MANUAL);
         FXString initial = draft.property("main", key);
         dialog.setText(initial.empty() ? (key == "opacity" ? "100" : "0") : initial);
         if (dialog.execute(PLACEMENT_OWNER))
@@ -1958,6 +1962,7 @@ FXbool ThemeEditor::save(FXbool copy)
     if (copy || newTheme || replaceIndex < NUM_DEFAULT_THEMES)
     {
         InputDialog naming(this, "", _("Theme name:"), _("Save theme"));
+        naming.addHelpButton(this, ID_MANUAL);
         naming.setText(result.name + (copy ? _(" copy") : ""));
         if (!naming.execute(PLACEMENT_OWNER)) return false;
         result.name = naming.getText().trim();

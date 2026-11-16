@@ -26,8 +26,8 @@ InputDialog::InputDialog(FXWindow* win, FXString inp, FXString message, FXString
     DialogBox(win, title, DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE | DECOR_MAXIMIZE | DECOR_CLOSE)
 {
     // Buttons
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(this, PACK_UNIFORM_WIDTH | LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0,
-                                                       0, 0, 0, 10, 10, 5, 5);
+    buttons = new FXHorizontalFrame(this, PACK_UNIFORM_WIDTH | LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0,
+                                     0, 0, 0, 10, 10, 5, 5);
 
     // Accept
     new FXButton(buttons, _("&Accept"), NULL, this, ID_ACCEPT, FRAME_GROOVE | LAYOUT_RIGHT, 0, 0, 0, 0, 20, 20);
@@ -59,6 +59,11 @@ InputDialog::InputDialog(FXWindow* win, FXString inp, FXString message, FXString
                             LAYOUT_CENTER_Y | LAYOUT_CENTER_X | TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN |
                             LAYOUT_FILL_ROW | LAYOUT_FILL_X);
     input->setText(inp);
+}
+
+void InputDialog::addHelpButton(FXObject* target, FXSelector selector)
+{
+    new FXButton(buttons, _("User Manual"), NULL, target, selector, BUTTON_NORMAL | LAYOUT_LEFT);
 }
 
 

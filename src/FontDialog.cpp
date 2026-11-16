@@ -820,6 +820,12 @@ FontDialog::FontDialog(FXWindow* owner, const FXString& name, FXuint opts, int x
     fontbox->cancelButton()->setSelector(DialogBox::ID_CANCEL);
 }
 
+void FontDialog::addHelpButton(FXObject* target, FXSelector selector)
+{
+    new FXButton(static_cast<FXComposite*>(fontbox->acceptButton()->getParent()), _("User Manual"), NULL,
+                 target, selector, BUTTON_NORMAL | LAYOUT_LEFT);
+}
+
 
 // Save data
 void FontDialog::save(FXStream& store) const

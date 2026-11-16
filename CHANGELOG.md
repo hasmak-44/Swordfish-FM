@@ -30,7 +30,7 @@
   copies of referenced textures. Export creates the same self-contained folder
   layout for sharing.
 - The bundled manual has a Theme Editor guide, accessible from the editor,
-  background editor and colour picker on every tab.
+  background, colour, font, percentage and naming tools.
 - `texture_colors=original` in `list_background_effect` shows a colour
   texture in its own colours instead of tinting it with the theme colour.
 

@@ -10,6 +10,7 @@ class InputDialog : public DialogBox
     FXDECLARE(InputDialog)
 protected:
     FXTextField* input = NULL;
+    FXHorizontalFrame* buttons = NULL;
     FXHorizontalFrame* checkbutton = NULL;
     FXLabel* msg = NULL;
 private:
@@ -20,6 +21,7 @@ public:
     InputDialog(FXWindow*, FXString, FXString, FXString, FXString label = "", FXIcon* icon = NULL,
                 FXbool option = false, FXString = FXString::null);
     virtual void create();
+    void addHelpButton(FXObject*, FXSelector);
 
     long onCmdKeyPress(FXObject*, FXSelector, void*);
     FXString getText()
