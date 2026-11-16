@@ -195,6 +195,7 @@ FXDEFMAP(XFileExplorer) XFileExplorerMap[] =
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_EDIT_ADDRESS, XFileExplorer::onCmdEditAddress),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_PREFS, XFileExplorer::onCmdPrefs),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_USER_MANUAL, XFileExplorer::onCmdUserManual),
+    FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_THEME_MANUAL, XFileExplorer::onCmdUserManual),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_INTEGRATION, XFileExplorer::onCmdIntegration),
     FXMAPFUNC(SEL_TIMEOUT, XFileExplorer::ID_WELCOME, XFileExplorer::onWelcome),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_HORZ_PANELS, XFileExplorer::onCmdHorzVertPanels),
@@ -4779,7 +4780,7 @@ long XFileExplorer::onCmdProjectWebsite(FXObject*, FXSelector, void*)
 }
 
 
-long XFileExplorer::onCmdUserManual(FXObject*, FXSelector, void*)
+long XFileExplorer::onCmdUserManual(FXObject*, FXSelector selector, void*)
 {
     char executable[MAXPATHLEN];
     ssize_t size = readlink("/proc/self/exe", executable, sizeof(executable) - 1);
@@ -4805,7 +4806,9 @@ long XFileExplorer::onCmdUserManual(FXObject*, FXSelector, void*)
                           manual.text());
         return 0;
     }
-    FXString command = xf_hostcommand(xf_quote(opener) + " " + xf_quote("file://" + xf_encodeuripath(manual)));
+    FXString uri = "file://" + xf_encodeuripath(manual);
+    if (FXSELID(selector) == ID_THEME_MANUAL) uri += "#theme-editor";
+    FXString command = xf_hostcommand(xf_quote(opener) + " " + xf_quote(uri));
 #ifdef STARTUP_NOTIFICATION
     int result = runcmd(command, "xdg-open", ROOTDIR, startlocation, false, "");
 #else

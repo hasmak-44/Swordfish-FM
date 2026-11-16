@@ -1084,6 +1084,7 @@ public:
 
     virtual void create();
     void setTheme(Theme*);
+    void addHelpButton(FXObject*, FXSelector);
 
     // Set the color
     void setRGBA(FXColor clr);

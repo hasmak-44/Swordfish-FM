@@ -27,6 +27,8 @@
   `portable-data/themes/colors/` in a portable run), with a theme file and
   copies of referenced textures. Export creates the same self-contained folder
   layout for sharing.
+- The bundled manual has a Theme Editor guide, accessible from the editor,
+  background editor and colour picker on every tab.
 - `texture_colors=original` in `list_background_effect` shows a colour
   texture in its own colours instead of tinting it with the theme colour.
 

@@ -746,6 +746,9 @@ Click an entry to open that folder; hover it to see the full path.
 
 ## Sharing color themes
 
+The bundled **User Manual** includes a Theme Editor guide. Its button is
+available in the Theme Editor and its background and colour tools.
+
 Custom color themes are saved in the user data directory:
 `$XDG_DATA_HOME/swordfish/themes/colors/` (or
 `portable-data/themes/colors/` in a portable run). Each theme has its own

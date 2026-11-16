@@ -76,6 +76,37 @@ static FXWindow* findClass(FXWindow* parent, const FXString& name)
     return NULL;
 }
 
+static FXButton* findButton(FXWindow* parent, const FXString& text)
+{
+    FXButton* button = dynamic_cast<FXButton*>(parent);
+    if (button && button->getText() == text) return button;
+    for (FXWindow* child = parent->getFirst(); child; child = child->getNext())
+        if (FXButton* result = findButton(child, text)) return result;
+    return NULL;
+}
+
+static void checkManual(FXApp& app, FXObject* target, FXSelector selector, FXObject* sender, bool theme)
+{
+    const char* oldPath = getenv("SWORDFISH_HOST_PATH");
+    const bool hadPath = oldPath != NULL;
+    FXString previous = oldPath ? oldPath : "";
+    FXString path = FXString(getenv("SWORDFISH_TEST_MANUAL_LAUNCHER")) + ":/usr/bin:/bin";
+    assert(setenv("SWORDFISH_HOST_PATH", path.text(), 1) == 0);
+    assert(target->handle(sender, FXSEL(SEL_COMMAND, selector), NULL));
+    pump(app);
+    if (hadPath) assert(setenv("SWORDFISH_HOST_PATH", previous.text(), 1) == 0);
+    else assert(unsetenv("SWORDFISH_HOST_PATH") == 0);
+    static int calls = 0;
+    std::ifstream input(getenv("SWORDFISH_TEST_MANUAL_CAPTURE"));
+    std::string line, last;
+    int lines = 0;
+    while (std::getline(input, line)) { last = line; ++lines; }
+    assert(lines == ++calls);
+    std::string suffix = theme ? "/share/swordfish/manual/index.html#theme-editor" :
+                                 "/share/swordfish/manual/index.html";
+    assert(last.size() >= suffix.size() && last.compare(last.size() - suffix.size(), suffix.size(), suffix) == 0);
+}
+
 static void screenshot(FXWindow* window, const char* name)
 {
     const char* directory = getenv("SWORDFISH_THEME_SCREENSHOTS");
@@ -209,6 +240,21 @@ public:
         editor.zoom->setCurrentItem(0);
         editor.onPreview(NULL, 0, NULL);
         pump(app);
+        FXButton* editorManual = findButton(&editor, "User Manual");
+        assert(editorManual);
+        checkManual(app, editorManual->getTarget(), editorManual->getSelector(), editorManual, true);
+        checkManual(app, &window, XFileExplorer::ID_USER_MANUAL, &window, false);
+        ActionTimer editorPickerHelp([&]()
+        {
+            ColorDialog* picker = dynamic_cast<ColorDialog*>(app.getModalWindow());
+            assert(picker);
+            FXButton* help = findButton(picker, "User Manual");
+            assert(help);
+            checkManual(app, help->getTarget(), help->getSelector(), help, true);
+            picker->handle(picker, FXSEL(SEL_COMMAND, FXDialogBox::ID_CANCEL), NULL);
+        });
+        app.addTimeout(&editorPickerHelp, 1, 150);
+        editor.onEditProperty(NULL, 0, NULL);
         assert(findClass(&editor, "ThemeMockup"));
         assert(!findClass(&editor, "FilePanel") && !findClass(&editor, "FileList"));
         assert(editor.getBackColor() == DialogColors::background);
@@ -276,6 +322,22 @@ public:
         {
             FXWindow* dialog = findClass(app.getRootWindow(), "BackgroundEditor");
             assert(dialog && dialog->getBackColor() == DialogColors::background);
+            FXButton* backgroundManual = findButton(dialog, "User Manual");
+            assert(backgroundManual);
+            checkManual(app, backgroundManual->getTarget(), backgroundManual->getSelector(), backgroundManual, true);
+            ActionTimer backgroundPickerHelp([&]()
+            {
+                ColorDialog* picker = dynamic_cast<ColorDialog*>(app.getModalWindow());
+                assert(picker);
+                FXButton* help = findButton(picker, "User Manual");
+                assert(help);
+                checkManual(app, help->getTarget(), help->getSelector(), help, true);
+                picker->handle(picker, FXSEL(SEL_COMMAND, FXDialogBox::ID_CANCEL), NULL);
+            });
+            FXButton* colour = findButton(dialog, "First colour...");
+            assert(colour);
+            app.addTimeout(&backgroundPickerHelp, 1, 150);
+            colour->getTarget()->handle(colour, FXSEL(SEL_COMMAND, colour->getSelector()), NULL);
             FXGradientBar* gradient = static_cast<FXGradientBar*>(findClass(dialog, "FXGradientBar"));
             assert(gradient && gradient->getNumSegments() == 2);
             gradient->moveSegmentMiddle(0, 0.06);

@@ -904,6 +904,7 @@ public:
         new FXButton(buttons, _("Apply to mockup"), NULL, this, ID_ACCEPT,
                        BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT | FRAME_GROOVE);
         new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("User Manual"), NULL, editor, ThemeEditor::ID_MANUAL, BUTTON_NORMAL | LAYOUT_LEFT);
         status = new FXLabel(this, "", NULL, JUSTIFY_LEFT | LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
         FXHorizontalFrame* common = new FXHorizontalFrame(this, LAYOUT_FILL_X);
         new FXLabel(common, _("Fill:"));
@@ -1095,6 +1096,7 @@ public:
         FXint index = FXCLAMP(0, stops->getCurrentItem(), static_cast<FXint>(effect.colors.size()) - 1);
         FXString previous = effect.serialize();
         ColorDialog picker(this, _("Background colour"));
+        picker.addHelpButton(editor, ThemeEditor::ID_MANUAL);
         picker.setRGBA(effect.colors[index]);
         picker.setTheme(editor->paletteTheme());
         picker.setOpaqueOnly(false);
@@ -1315,6 +1317,7 @@ FXDEFMAP(ThemeEditor) ThemeEditorMap[] = {
     FXMAPFUNC(SEL_COMMAND, ThemeEditor::ID_CANCEL, ThemeEditor::onCloseEditor),
     FXMAPFUNC(SEL_CLOSE, 0, ThemeEditor::onCloseEditor),
     FXMAPFUNC(SEL_TIMEOUT, ThemeEditor::ID_READABILITY, ThemeEditor::onReadability),
+    FXMAPFUNC(SEL_COMMAND, ThemeEditor::ID_MANUAL, ThemeEditor::onManual),
     FXMAPFUNCS(SEL_UPDATE, ThemeEditor::ID_EDIT_PROPERTY, ThemeEditor::ID_REDO, ThemeEditor::onUpdate)
 };
 FXIMPLEMENT(ThemeEditor, DialogBox, ThemeEditorMap, ARRAYNUMBER(ThemeEditorMap))
@@ -1327,6 +1330,7 @@ ThemeEditor::ThemeEditor(PreferencesBox* owner, XFileExplorer* source, const vec
     new FXButton(footer, _("Close"), NULL, this, ID_CLOSE, BUTTON_NORMAL | LAYOUT_RIGHT);
     new FXButton(footer, _("Save As..."), NULL, this, ID_SAVE_AS, BUTTON_NORMAL | LAYOUT_RIGHT);
     new FXButton(footer, _("Save"), NULL, this, ID_SAVE, BUTTON_DEFAULT | LAYOUT_RIGHT | FRAME_GROOVE);
+    new FXButton(footer, _("User Manual"), NULL, this, ID_MANUAL, BUTTON_NORMAL | LAYOUT_LEFT);
     new FXLabel(footer, _("Apply changes the mockup only. Save activates all cumulative changes."),
                   NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
     FXHorizontalFrame* startup = new FXHorizontalFrame(this, LAYOUT_FILL_X);
@@ -1676,6 +1680,7 @@ long ThemeEditor::onEditProperty(FXObject*, FXSelector, void*)
     else
     {
         ColorDialog picker(this, propertyName(key));
+        picker.addHelpButton(this, ID_MANUAL);
         FXColor color = draft.colorFor(area, key);
         if (draft.overrides(area, key)) themeColorParse(draft.property(area, key), color);
         picker.setRGBA(color);
@@ -1688,6 +1693,17 @@ long ThemeEditor::onEditProperty(FXObject*, FXSelector, void*)
     }
     refreshPreview();
     return 1;
+}
+
+long ThemeEditor::onManual(FXObject* sender, FXSelector, void*)
+{
+    XFileExplorer* window = dynamic_cast<XFileExplorer*>(preferences->getOwner());
+    if (!window)
+    {
+        MessageBox::error(this, BOX_OK, _("User Manual"), _("The main window is unavailable."));
+        return 0;
+    }
+    return window->handle(sender, FXSEL(SEL_COMMAND, XFileExplorer::ID_THEME_MANUAL), NULL);
 }
 
 long ThemeEditor::onColor(FXObject*, FXSelector, void* pointer)

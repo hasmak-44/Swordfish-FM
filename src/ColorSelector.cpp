@@ -1913,6 +1913,12 @@ void ColorDialog::create()
 
 void ColorDialog::setTheme(Theme* theme) { colorbox->setTheme(theme); }
 
+void ColorDialog::addHelpButton(FXObject* target, FXSelector selector)
+{
+    new FXButton(static_cast<FXComposite*>(colorbox->acceptButton()->getParent()), _("User Manual"), NULL, target, selector,
+                 BUTTON_NORMAL | LAYOUT_LEFT);
+}
+
 long ColorDialog::onAcceptColor(FXObject* sender, FXSelector selector, void* pointer)
 {
     if (!colorbox->validInput())

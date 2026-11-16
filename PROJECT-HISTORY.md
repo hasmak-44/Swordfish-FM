@@ -3240,6 +3240,22 @@ click, computers-only list without headings).
 Validation in the codespace: native build and theme workflow regression,
 including custom-theme save and reload.
 
+### 3.83. Theme Editor user manual (16 November 2026)
+
+- Added a beginner-oriented Theme Editor guide to the bundled offline manual,
+  covering the mockup, edits and saving, colour tools, background effects,
+  storage and sharing. It identifies bundled texture locations and explains
+  that patterns are generated in code and category subfolders are not yet
+  scanned.
+- User Manual buttons in the editor, file-list background dialog and colour
+  dialogs opened from the editor reach this guide from every tab. The main
+  Help menu continues to open the beginning of the manual.
+
+Validation in the codespace: clean native rebuild, manual anchor check and
+theme workflow regression with a fake browser launcher checking both the
+theme guide and the original manual URL. Desktop browser behavior remains
+to be checked.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

@@ -43,6 +43,7 @@ public:
         ID_SAVE_AS,
         ID_CLOSE,
         ID_READABILITY,
+        ID_MANUAL,
         ID_LAST
     };
 
@@ -65,6 +66,7 @@ public:
     long onCloseEditor(FXObject*, FXSelector, void*);
     long onUpdate(FXObject*, FXSelector, void*);
     long onReadability(FXObject*, FXSelector, void*);
+    long onManual(FXObject*, FXSelector, void*);
     void previewEffect(const FXString&, FXbool stopEdit = false, const FXString& previous = "");
     void setGradientPreset(const FXString&, const FXString&);
     const Theme& getDraft() const { return draft; }

@@ -240,6 +240,7 @@ public:
         ID_MENU_OPEN,
         ID_MENU_CLOSE,
         ID_THEME_REQUEST,
+        ID_THEME_MANUAL,
         ID_LAST
     };
 
