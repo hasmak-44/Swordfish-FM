@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Ocean Depth
+tip=Teal to black gradient with coral selection
+base=#0F2E36
+border=#071519
+background=#0C252C
+foreground=#E2F4F6
+selected_background=#BF432A
+selected_foreground=#FFFFFF
+list_background=#0D2A31
+list_foreground=#E2F4F6
+highlight=#11333B
+progress_bar=#F4845F
+attention=#FF5A5A
+scrollbar=#2F6A75
+list_background_effect=fill=gradient colors=#135563,#0A2A33,#05141A direction=vertical

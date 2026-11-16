@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Red-Green Accessible Light
+tip=Light blue and indigo palette designed to avoid red-green colour confusion
+base=#DDE6EE
+border=#64748B
+background=#F8FAFC
+foreground=#1E293B
+selected_background=#005A9C
+selected_foreground=#FFFFFF
+list_background=#FFFFFF
+list_foreground=#1E293B
+highlight=#E9F1F7
+progress_bar=#0077B6
+attention=#7A5195
+scrollbar=#7C93A8
+list_background_effect=fill=gradient colors=#FFFFFF,#E9F1F7 direction=vertical

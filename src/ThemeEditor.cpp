@@ -1413,9 +1413,9 @@ void ThemeEditor::start(FXint index, StartMode mode)
     if (mode == EDIT_CURRENT) index = 0;
     if (mode == NEW_THEME)
     {
-        index = 6;
+        index = 1;
         for (size_t i = 1; i < choices.size(); ++i)
-            if (choices[i].name == "Slate Blue") index = i;
+            if (choices[i].name == "Ocean Depth") index = i;
     }
     index = FXCLAMP(0, index, static_cast<FXint>(choices.size()) - 1);
     original = choices[index];
@@ -1761,7 +1761,7 @@ long ThemeEditor::onReset(FXObject*, FXSelector selector, void*)
                        scope == ID_RESET_ELEMENT ? _("Reset only this element to its original values?") :
                        scope == ID_RESET_THEME ? _("Reset every element to inherited colours and remove all effects and overrides?") :
                        scope == ID_ORIGINAL ? _("Discard all edits and restore this theme's original appearance?") :
-                                              _("Reset the whole theme to the built-in Slate Blue defaults?");
+                                              _("Reset the whole theme to the built-in Ocean Depth defaults?");
     if (MessageBox::question(this, BOX_YES_NO, _("Reset appearance"), "%s", message.text()) != BOX_CLICKED_YES) return 1;
     if (scope == ID_RESET_PROPERTY)
     {
@@ -1786,7 +1786,7 @@ long ThemeEditor::onReset(FXObject*, FXSelector selector, void*)
     else
     {
         for (const Theme& theme : choices)
-            if (theme.name == "Slate Blue") { FXString name = draft.name; draft = theme; draft.name = name; break; }
+            if (theme.name == "Ocean Depth") { FXString name = draft.name; draft = theme; draft.name = name; break; }
     }
     pendingSteps.clear();
     applyDraft();

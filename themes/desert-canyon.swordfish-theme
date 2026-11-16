@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Desert Canyon
+tip=Red rock canyon with sandstone strata
+base=#6B2E1E
+border=#34140C
+background=#5A2618
+foreground=#F7E6D6
+selected_background=#17707D
+selected_foreground=#FFFFFF
+list_background=#E2B98E
+list_foreground=#2E160C
+highlight=#D9AE82
+progress_bar=#2AA3B3
+attention=#A93226
+scrollbar=#A86A48
+list_background_effect=fill=solid colors=#E2B98E texture=canyon-strata texture_colors=original strength=45 rows=off

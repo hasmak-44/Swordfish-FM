@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 12 November 2026, through beta 2 ZIP repair and new feedback
-(sections 3.57-3.58).
+Last updated: 16 November 2026, through fixed dialog rules and built-in theme
+updates (sections 3.70-3.71).
 Latest release: `swordfish-0.0.3-beta2`.
 Stable fallback: `swordfish-0.0.2`.
 
@@ -40,8 +40,8 @@ Historical implementation details below do not override the current code.
    automated tests but still need the user's real-machine testing.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.56-3.58. The RC4-RC6 notes are
-   historical context, not the current release or pending-work status.
+9. For the latest state, read sections 3.70-3.71. Older beta and RC notes are
+   historical context, not the current local development status.
 
 This guide is a documentation addition after the frozen RC4 application commit.
 It is not part of the already-published RC4 source archive.
@@ -3000,6 +3000,46 @@ extracted bundle folder, and this build's Docker image and cache were removed
 to free disk space (about 2.3 GB). Keep the new archive and its `.sha256`
 until the user finishes testing.
 
+### 3.71. Fixed dialog rules and built-in themes (16 November 2026)
+
+The user supplied a new master task list and requested related work be grouped,
+tested locally and committed one group at a time. The baseline and shortcut
+work are recorded in the preceding commits; desktop confirmation of the
+shortcuts is still pending.
+
+**Fixed-dialog rules** (local commit `9ca0552`):
+
+- Fixed-palette dialogs are resizable, maximizable and wrapped in a scroll
+  area so their contents remain reachable in small windows.
+- Checkboxes and radio buttons have larger controls inside a framed,
+  hover-highlighted clickable area. Active tabs use the accent fill.
+- Buttons use the field colour; sibling buttons and check/radio controls
+  receive equalized widths without fixed sizing.
+- The Theme Workflow regression checks the decorations, scroll wrapper,
+  control size and equal button widths. Theme Workflow, Custom Actions and
+  folder-expansion regressions passed. Dialog hover and maximize still require
+  desktop confirmation.
+
+**Built-in themes** (completed in the current local group-3 changes):
+
+- Removed the Swordfish, GNOME, KDE, XFCE and Gray On Blue colour themes.
+- Promoted the 14 previously importable sample themes to built-ins, including
+  Ocean Depth, Autumn Leaves and Desert Canyon, and added dark/light
+  red-green-accessible palettes. New themes and custom texture PNGs install
+  under `share/swordfish/themes` and `share/swordfish/textures`.
+- Ocean Depth is the first-run colour and list-background default. Existing
+  per-user settings remain authoritative.
+- Built-in entries are protected from rename/remove; the default theme editor
+  basis and whole-theme reset now use Ocean Depth.
+- Theme Workflow regression checks the full built-in set, removed names,
+  Ocean Depth defaults and built-in protection. All theme text/selection
+  pairs exceed WCAG AA contrast; the regression, native build and staged
+  install passed.
+
+These are local codespace checks. The group-3 commit and subsequent groups are
+not pushed or released. Themes were tested through the Theme Workflow harness;
+real desktop visual acceptance remains pending.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -3549,9 +3589,10 @@ Do not amend published commits/tags as an automatic workaround.
 
 ### Durable starting point
 
-0.0.2 is the current frozen stable release; 0.0.3 beta 1 is published.
-Sections 3.40-3.42 record the latest state: the user-tested startup fix is
-local and unpushed; the subsequent dialog and device-label changes are
-uncommitted and await real-machine testing. Start there, not from an old
-experimental ZIP, an obsolete roadmap or an incomplete chat summary. Do not
-publish local work without the user's permission.
+0.0.2 remains the frozen stable fallback; 0.0.3 beta 2 is the latest published
+test release. Sections 3.70-3.71 record the current implementation state.
+Group 2 is committed locally; group 3 is being committed locally before work
+continues. Nothing from this task is pushed or released. Start from the
+current branch and worktree, not from an old experimental ZIP, obsolete
+roadmap or incomplete chat summary. Do not publish local work without the
+user's permission.

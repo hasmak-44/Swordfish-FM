@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Graphite Copper
+tip=Graphite with brushed metal and copper accents
+base=#2E3135
+border=#17191C
+background=#25282B
+foreground=#ECE7E2
+selected_background=#A5501E
+selected_foreground=#FFFFFF
+list_background=#26292D
+list_foreground=#ECE7E2
+highlight=#2D3135
+progress_bar=#E07B45
+attention=#FF5A5A
+scrollbar=#6B6F75
+list_background_effect=fill=solid colors=#26292D texture=brushed-metal strength=40

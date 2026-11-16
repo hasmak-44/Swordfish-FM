@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Midnight Tide
+tip=Deep navy and teal, vertical gradient
+base=#10283A
+border=#08131C
+background=#0C1E2C
+foreground=#E3F2F8
+selected_background=#16728E
+selected_foreground=#FFFFFF
+list_background=#0D2433
+list_foreground=#E3F2F8
+highlight=#12304A
+progress_bar=#3CC6D8
+attention=#FF6B6B
+scrollbar=#2D6E8A
+list_background_effect=fill=gradient colors=#0F2D44,#0A1A28 direction=vertical

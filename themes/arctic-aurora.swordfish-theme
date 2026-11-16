@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Arctic Aurora
+tip=Blue-black with an aurora gradient
+base=#0E1424
+border=#060A14
+background=#0B1020
+foreground=#E6F4FF
+selected_background=#1FC8D8
+selected_foreground=#06121C
+list_background=#0B1222
+list_foreground=#E6F4FF
+highlight=#111A2E
+progress_bar=#4FE3C1
+attention=#FF6B8A
+scrollbar=#3A4E7A
+list_background_effect=fill=gradient colors=#0B1E2E,#0E3B3A,#1D2B55,#2A1B4A direction=diagonal

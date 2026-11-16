@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Autumn Leaves
+tip=Chestnut brown with scattered autumn leaves
+base=#4A2418
+border=#24100A
+background=#3A1C12
+foreground=#F6E7D8
+selected_background=#B8481A
+selected_foreground=#FFFFFF
+list_background=#3B1D13
+list_foreground=#F8EADB
+highlight=#44231A
+progress_bar=#E5932E
+attention=#FF5A4E
+scrollbar=#8A4A2E
+list_background_effect=fill=solid colors=#3B1D13 texture=autumn-leaves texture_colors=original strength=30 rows=off

@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Red-Green Accessible Dark
+tip=Dark blue and gold palette designed to avoid red-green colour confusion
+base=#1B263B
+border=#697A91
+background=#101820
+foreground=#F2F4F8
+selected_background=#F2C14E
+selected_foreground=#111827
+list_background=#172A3A
+list_foreground=#F2F4F8
+highlight=#233D54
+progress_bar=#4EA5D9
+attention=#FFD166
+scrollbar=#486581
+list_background_effect=fill=gradient colors=#172A3A,#101820 direction=vertical

@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Indigo Weave
+tip=Indigo with woven canvas texture
+base=#26245A
+border=#12112E
+background=#1E1C48
+foreground=#ECEAFF
+selected_background=#7B5CF0
+selected_foreground=#FFFFFF
+list_background=#211F4E
+list_foreground=#ECEAFF
+highlight=#29275C
+progress_bar=#9B84FF
+attention=#FF7675
+scrollbar=#5A55A8
+list_background_effect=fill=solid colors=#211F4E texture=canvas strength=45

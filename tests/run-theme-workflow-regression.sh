@@ -9,6 +9,7 @@ mkdir -p "$scratch/usr/bin" "$scratch/usr/share/swordfish/icons" \
 ln -s "$root/icons/default-theme" "$scratch/usr/share/swordfish/icons/default-theme"
 ln -s "$root/icons/preferences" "$scratch/usr/share/swordfish/icons/preferences"
 ln -s "$root/textures" "$scratch/usr/share/swordfish/textures"
+ln -s "$root/themes" "$scratch/usr/share/swordfish/themes"
 printf 'preview fixture\n' > "$scratch/fixture/real-preview-file.txt"
 objcopy --redefine-sym main=swordfish_main "$root/src/main.o" "$scratch/main.o"
 objects=()
@@ -32,5 +33,5 @@ runner=()
 if [[ ${SWORDFISH_TEST_DEBUG:-0} == 1 ]]; then
     runner=(gdb --batch -ex run -ex bt --args)
 fi
-HOME="$scratch/home" timeout 90s xvfb-run -a -s '-screen 0 1600x1100x24' \
+HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/home/.config" timeout 90s xvfb-run -a -s '-screen 0 1600x1100x24' \
     "${runner[@]}" "$scratch/usr/bin/swordfish" "$scratch/usr" "$scratch/fixture"

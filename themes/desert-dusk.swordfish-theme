@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Desert Dusk
+tip=Warm sand, diagonal sandstone gradient
+base=#E8C9A8
+border=#9A6E4E
+background=#F1DCC4
+foreground=#3A2418
+selected_background=#A8505C
+selected_foreground=#FFFFFF
+list_background=#F0D5B8
+list_foreground=#3A2418
+highlight=#EAC9A8
+progress_bar=#C9774F
+attention=#A93226
+scrollbar=#C49A7A
+list_background_effect=fill=gradient colors=#F6E0C6,#E6B894 direction=diagonal texture=concrete strength=20

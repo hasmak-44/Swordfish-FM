@@ -537,13 +537,13 @@ int main(int argc, char* argv[])
     application->setDefaultCursor(DEF_HAND_CURSOR, hand);
 
     // Set base and border colors (to change the default colors at first run)
-    FXColor basecolor = application->reg().readColorEntry("SETTINGS", "basecolor", FXRGB(156, 186, 205));
-    FXColor bordercolor = application->reg().readColorEntry("SETTINGS", "bordercolor", FXRGB(125, 125, 125));
+    FXColor basecolor = application->reg().readColorEntry("SETTINGS", "basecolor", FXRGB(15, 46, 54));
+    FXColor bordercolor = application->reg().readColorEntry("SETTINGS", "bordercolor", FXRGB(7, 21, 25));
     application->setBaseColor(basecolor);
     application->setBorderColor(bordercolor);
-    application->setBackColor(application->reg().readColorEntry("SETTINGS", "backcolor", FXRGB(197, 194, 197)));
-    application->setForeColor(application->reg().readColorEntry("SETTINGS", "forecolor", FXRGB(0, 0, 0)));
-    application->setSelbackColor(application->reg().readColorEntry("SETTINGS", "selbackcolor", FXRGB(82, 129, 148)));
+    application->setBackColor(application->reg().readColorEntry("SETTINGS", "backcolor", FXRGB(12, 37, 44)));
+    application->setForeColor(application->reg().readColorEntry("SETTINGS", "forecolor", FXRGB(226, 244, 246)));
+    application->setSelbackColor(application->reg().readColorEntry("SETTINGS", "selbackcolor", FXRGB(191, 67, 42)));
     application->setSelforeColor(application->reg().readColorEntry("SETTINGS", "selforecolor", FXRGB(255, 255, 255)));
 
     // Load all application icons

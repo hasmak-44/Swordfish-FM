@@ -11,6 +11,20 @@ scrollbarsize=12
 # Where to search for icons
 #
 iconpath = @prefix@/share/swordfish/icons/default-theme
+basecolor=4279184950
+bordercolor=4278654233
+backcolor=4278986028
+forecolor=4293063926
+selbackcolor=4290724650
+selforecolor=4294967295
+listbackcolor=4279052849
+listforecolor=4293063926
+highlightcolor=4279317307
+pbarcolor=4294214751
+attentioncolor=4294924890
+scrollbarcolor=4281297525
+theme_name=Ocean Depth
+list_background_effect=fill=gradient colors=#135563,#0A2A33,#05141A direction=vertical
 
 
 [KEYBINDINGS]

@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Linen Sage
+tip=Linen texture with sage green
+base=#E3E2D3
+border=#8E9480
+background=#EFEEE3
+foreground=#2F332B
+selected_background=#5E7A4F
+selected_foreground=#FFFFFF
+list_background=#EDEBDD
+list_foreground=#2B2F27
+highlight=#E4E3D4
+progress_bar=#7E9B6C
+attention=#B03A2E
+scrollbar=#A9B29A
+list_background_effect=fill=solid colors=#EDEBDD texture=linen strength=45 rows=off

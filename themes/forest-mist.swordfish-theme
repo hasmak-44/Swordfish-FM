@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Forest Mist
+tip=Dark forest green, misty gradient
+base=#1E3A33
+border=#0E1F1B
+background=#183029
+foreground=#E4F2EC
+selected_background=#247A62
+selected_foreground=#FFFFFF
+list_background=#19332C
+list_foreground=#E4F2EC
+highlight=#1F3D35
+progress_bar=#5FD3AE
+attention=#FF6B6B
+scrollbar=#4E8A77
+list_background_effect=fill=gradient colors=#21443A,#132822 direction=vertical texture=concrete strength=20

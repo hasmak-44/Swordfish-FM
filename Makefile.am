@@ -24,7 +24,18 @@ dist_appicon_DATA = app-icon/swordfish-folder-256.png app-icon/swordfish-folder-
 texturedir = $(rcdir)/textures
 dist_texture_DATA = textures/brick.png textures/brushed-metal.png textures/canvas.png textures/concrete.png \
                     textures/cork.png textures/linen.png textures/paper.png textures/pebbles.png \
-                    textures/planks.png textures/slate.png
+                    textures/planks.png textures/slate.png textures/autumn-leaves.png textures/canyon-strata.png \
+                    textures/carbon-fiber.png textures/marble.png
+themedir = $(rcdir)/themes
+dist_theme_DATA = themes/arctic-aurora.swordfish-theme themes/autumn-leaves.swordfish-theme \
+                  themes/carbon-fiber.swordfish-theme themes/desert-canyon.swordfish-theme \
+                  themes/desert-dusk.swordfish-theme themes/forest-mist.swordfish-theme \
+                  themes/graphite-copper.swordfish-theme themes/indigo-weave.swordfish-theme \
+                  themes/linen-sage.swordfish-theme themes/midnight-tide.swordfish-theme \
+                  themes/ocean-depth.swordfish-theme themes/porcelain-blue.swordfish-theme \
+                  themes/red-green-accessible-dark.swordfish-theme \
+                  themes/red-green-accessible-light.swordfish-theme themes/rose-quartz.swordfish-theme \
+                  themes/warm-parchment.swordfish-theme
 preferencesicondir = $(rcdir)/icons/preferences
 dist_preferencesicon_DATA = icons/preferences/pref-general.svg icons/preferences/pref-panels.svg \
     icons/preferences/pref-filelist.svg icons/preferences/pref-fileops.svg \

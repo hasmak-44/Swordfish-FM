@@ -102,6 +102,34 @@ public:
         preferences.rememberPreferences();
         preferences.show(PLACEMENT_SCREEN);
         pump(app);
+        assert(preferences.Themes.size() >= NUM_DEFAULT_THEMES);
+        const char* builtinNames[] = {
+            "Arctic Aurora", "Autumn Leaves", "Carbon Fiber", "Desert Canyon", "Desert Dusk", "Forest Mist",
+            "Graphite Copper", "Indigo Weave", "Linen Sage", "Midnight Tide", "Ocean Depth", "Porcelain Blue",
+            "Red-Green Accessible Dark", "Red-Green Accessible Light", "Rose Quartz", "Warm Parchment"};
+        for (const char* name : builtinNames)
+        {
+            bool found = false;
+            for (size_t i = 1; i < NUM_DEFAULT_THEMES; ++i)
+                if (preferences.Themes[i].name == name) found = true;
+            assert(found);
+        }
+        for (const char* removed : {"Swordfish", "GNOME", "KDE", "XFCE", "Gray On Blue"})
+            for (size_t i = 1; i < NUM_DEFAULT_THEMES; ++i)
+                assert(preferences.Themes[i].name != removed);
+        FXint oceanIndex = -1;
+        for (FXint i = 1; i < NUM_DEFAULT_THEMES; ++i)
+            if (preferences.Themes[i].name == "Ocean Depth") oceanIndex = i;
+        assert(oceanIndex >= 0);
+        preferences.themesList->setCurrentItem(oceanIndex);
+        assert(preferences.onCmdThemeRemove(NULL, 0, NULL) == 0);
+        assert(preferences.Themes[oceanIndex].name == "Ocean Depth");
+        preferences.themesList->setCurrentItem(0);
+        Theme ocean = Theme::current(&app);
+        assert(ocean.color[0] == FXRGB(15, 46, 54));
+        assert(ocean.color[2] == FXRGB(12, 37, 44));
+        assert(ocean.color[4] == FXRGB(191, 67, 42));
+        assert(ocean.effect == "fill=gradient colors=#135563,#0A2A33,#05141A direction=vertical");
         assert(preferences.getBackColor() == DialogColors::background);
         assert(preferences.settingsFilter->getBackColor() == DialogColors::field);
         for (const auto& category : preferences.categories)
@@ -401,6 +429,12 @@ int main(int argc, char** argv)
     FXString prefix = argv[1], fixture = argv[2];
     FXApp app("SwordfishThemeRegression", "SwordfishThemeRegression");
     app.init(argc, argv);
+    app.setBaseColor(FXRGB(15, 46, 54));
+    app.setBorderColor(FXRGB(7, 21, 25));
+    app.setBackColor(FXRGB(12, 37, 44));
+    app.setForeColor(FXRGB(226, 244, 246));
+    app.setSelbackColor(FXRGB(191, 67, 42));
+    app.setSelforeColor(FXRGB(255, 255, 255));
     homedir = FXSystem::getHomeDirectory();
     xdgconfighome = homedir + "/config";
     xdgdatahome = homedir + "/data";

@@ -91,6 +91,75 @@ extern FXMainWindow* mainWindow;
 extern FXString execpath;
 extern FXString xdgconfighome;
 
+static const char* const themeColorKeys[NUM_COLORS] = {
+    "base", "border", "background", "foreground", "selected_background", "selected_foreground",
+    "list_background", "list_foreground", "highlight", "progress_bar", "attention", "scrollbar"};
+
+static const char* const builtinThemeFiles[] = {
+    "arctic-aurora.swordfish-theme", "autumn-leaves.swordfish-theme", "carbon-fiber.swordfish-theme",
+    "desert-canyon.swordfish-theme", "desert-dusk.swordfish-theme", "forest-mist.swordfish-theme",
+    "graphite-copper.swordfish-theme", "indigo-weave.swordfish-theme", "linen-sage.swordfish-theme",
+    "midnight-tide.swordfish-theme", "ocean-depth.swordfish-theme", "porcelain-blue.swordfish-theme",
+    "red-green-accessible-dark.swordfish-theme", "red-green-accessible-light.swordfish-theme",
+    "rose-quartz.swordfish-theme", "warm-parchment.swordfish-theme"};
+
+static FXbool loadBuiltinTheme(const FXString& file, Theme& theme, FXString& error)
+{
+    FILE* fp = fopen(file.text(), "r");
+    if (!fp)
+    {
+        error = FXStringFormat("Cannot read built-in theme %s: %s", file.text(), strerror(errno));
+        return false;
+    }
+
+    FXString name, tip, effect, details;
+    FXColor colors[NUM_COLORS] = {0};
+    FXbool have[NUM_COLORS] = {false};
+    char* line = NULL;
+    size_t capacity = 0;
+    FXbool readable = true;
+    ssize_t length;
+    while ((length = getline(&line, &capacity, fp)) >= 0)
+    {
+        if (length > 65536)
+        {
+            readable = false;
+            break;
+        }
+        FXString text = FXString(line).trim();
+        if (text.empty() || text[0] == '#' || !text.contains('=')) continue;
+        FXString key = text.before('=').trim();
+        FXString value = text.after('=').trim();
+        if (key == "name") name = value;
+        else if (key == "tip") tip = value;
+        else if (key == "list_background_effect") effect = value;
+        else if (key == "theme_details") details = value;
+        else
+        {
+            for (int i = 0; i < NUM_COLORS; ++i)
+                if (key == themeColorKeys[i]) have[i] = themeColorParse(value, colors[i]);
+        }
+    }
+    readable = readable && !ferror(fp);
+    free(line);
+    fclose(fp);
+
+    FXbool valid = readable && !name.empty() && !name.contains(';') && !name.contains('\r') && !name.contains('\n');
+    for (int i = 0; i < NUM_COLORS; ++i) valid = valid && have[i];
+    if (!valid)
+    {
+        error = "Invalid built-in theme file: " + file;
+        return false;
+    }
+
+    Theme loaded(name.text(), tip.text(), colors[0], colors[1], colors[2], colors[3], colors[4], colors[5],
+                 colors[6], colors[7], colors[8], colors[9], colors[10], colors[11]);
+    loaded.effect = effect;
+    if (!loaded.decodeProperties(details, error)) return false;
+    theme = loaded;
+    return true;
+}
+
 
 static FXbool isExtensionAssociationKey(const FXString& key)
 {
@@ -545,12 +614,6 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
                       FXRGB(17, 61, 72), FXRGB(82, 129, 148), FXRGB(255, 0, 0), FXRGB(156, 186, 205));
     Themes.push_back(theme);
 
-    theme = Theme("Swordfish", _("The original theme"), FXRGB(237, 236, 235), FXRGB(125, 125, 125), FXRGB(255, 255, 255),
-                      FXRGB(0, 0, 0),
-                      FXRGB(10, 36, 106), FXRGB(255, 255, 255), FXRGB(255, 255, 255), FXRGB(0, 0, 0),
-                      FXRGB(238, 238, 238), FXRGB(10, 36, 106), FXRGB(255, 0, 0), FXRGB(237, 236, 235));
-    Themes.push_back(theme);
-                      
     theme = Theme("Clearlooks", _("A light grey theme with white background"), FXRGB(237, 236, 235),
                       FXRGB(125, 125, 125), FXRGB(255, 255, 255), FXRGB(0, 0, 0),
                       FXRGB(139, 175, 220), FXRGB(255, 255, 255), FXRGB(255, 255, 255), FXRGB(0, 0, 0),
@@ -569,28 +632,10 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
                       FXRGB(238, 238, 238), FXRGB(49, 101, 156), FXRGB(255, 0, 0), FXRGB(68, 106, 146));
     Themes.push_back(theme);
 
-    theme = Theme("Slate Blue", _("The default theme: light blue with grey background"), FXRGB(156, 186, 205),
+    theme = Theme("Slate Blue", _("A light blue theme with grey background"), FXRGB(156, 186, 205),
                       FXRGB(125, 125, 125), FXRGB(197, 194, 197), FXRGB(0, 0, 0),
                       FXRGB(82, 129, 148), FXRGB(255, 255, 255), FXRGB(197, 194, 197), FXRGB(0, 0, 0),
                       FXRGB(238, 238, 238), FXRGB(82, 129, 148), FXRGB(255, 0, 0), FXRGB(156, 186, 205));
-    Themes.push_back(theme);
-
-    theme = Theme("GNOME", _("A theme with GNOME colors"), FXRGB(220, 218, 213), FXRGB(125, 125, 125),
-                      FXRGB(255, 255, 255), FXRGB(0, 0, 0),
-                      FXRGB(75, 105, 131), FXRGB(255, 255, 255), FXRGB(255, 255, 255), FXRGB(0, 0, 0),
-                      FXRGB(238, 238, 238), FXRGB(75, 105, 131), FXRGB(255, 0, 0), FXRGB(134, 171, 217));
-    Themes.push_back(theme);
-
-    theme = Theme("KDE", _("A theme with KDE colors"), FXRGB(238, 238, 230), FXRGB(125, 125, 125),
-                      FXRGB(255, 255, 255), FXRGB(0, 0, 0),
-                      FXRGB(255, 222, 118), FXRGB(0, 0, 0), FXRGB(255, 255, 255), FXRGB(0, 0, 0),
-                      FXRGB(238, 238, 238), FXRGB(255, 222, 118), FXRGB(255, 0, 0), FXRGB(238, 238, 230));
-    Themes.push_back(theme);
-
-    theme = Theme("XFCE", _("A theme with XFCE colors"), FXRGB(238, 238, 238), FXRGB(125, 125, 125),
-                      FXRGB(238, 238, 238), FXRGB(0, 0, 0),
-                      FXRGB(99, 119, 146), FXRGB(255, 255, 255), FXRGB(255, 255, 255), FXRGB(0, 0, 0),
-                      FXRGB(238, 238, 238), FXRGB(99, 119, 146), FXRGB(255, 0, 0), FXRGB(238, 238, 238));
     Themes.push_back(theme);
 
     theme = Theme("Charcoal", _("A charcoal grey theme"), FXRGB(52, 52, 52), FXRGB(105, 105, 105),
@@ -611,17 +656,25 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
                       FXRGB(255, 0, 0), FXRGB(156, 186, 205));
     Themes.push_back(theme);
 
-    theme = Theme("Gray On Blue", _("A dark blue grey theme with yellow selected text"), FXRGB(41, 53, 59),
-                      FXRGB(125, 125, 125), FXRGB(30, 36, 45), FXRGB(240, 248, 255),
-                      FXRGB(28, 69, 137), FXRGB(255, 255, 0), FXRGB(30, 36, 45), FXRGB(240, 248, 255),
-                      FXRGB(43, 51, 64), FXRGB(82, 129, 148), FXRGB(255, 0, 0), FXRGB(156, 186, 205));
-    Themes.push_back(theme);
-
     theme = Theme("Gray-Blue", _("A dark blue grey theme with charcoal bars"), FXRGB(39, 47, 48),
                       FXRGB(125, 125, 125), FXRGB(30, 36, 45), FXRGB(240, 248, 255),
                       FXRGB(28, 69, 137), FXRGB(255, 255, 0), FXRGB(30, 36, 45), FXRGB(240, 248, 255),
                       FXRGB(43, 51, 64), FXRGB(82, 129, 148), FXRGB(255, 0, 0), FXRGB(156, 186, 205));
     Themes.push_back(theme);
+
+    FXString builtinThemeDirectory = FXPath::directory(execpath) + "/../share/swordfish/themes";
+    if (!xf_isdirectory(builtinThemeDirectory))
+        builtinThemeDirectory = FXPath::directory(execpath) + "/../themes";
+    for (const char* filename : builtinThemeFiles)
+    {
+        Theme builtin;
+        FXString error;
+        FXString path = builtinThemeDirectory + PATHSEPSTRING + filename;
+        if (loadBuiltinTheme(path, builtin, error))
+            Themes.push_back(builtin);
+        else
+            appLog(APP_LOG_ERRORS, "builtin-theme-load-failed", error);
+    }
 
     // Custom themes
     if (getApp()->reg().readStringEntry("THEMES", "theme0", NULL))
@@ -1801,12 +1854,6 @@ long PreferencesBox::onUpdThemeExport(FXObject* sender, FXSelector, void*)
 }
 
 
-// Names of the colors in an exported theme file, in the order stored in a Theme
-static const char* const themeColorKeys[NUM_COLORS] = {
-    "base", "border", "background", "foreground", "selected_background", "selected_foreground",
-    "list_background", "list_foreground", "highlight", "progress_bar", "attention", "scrollbar"};
-
-
 // Export the selected custom theme to a text file
 long PreferencesBox::onCmdThemeExport(FXObject*, FXSelector, void*)
 {
@@ -2123,7 +2170,7 @@ long PreferencesBox::onCmdThemeRename(FXObject* sender, FXSelector sel, void* pt
 {
     int index = themesList->getCurrentItem();
     
-    if (index > 0 && index < (int)Themes.size())
+    if (index >= NUM_DEFAULT_THEMES && index < (int)Themes.size())
     {
         // Dialog
         InputDialog* renamedialog = new InputDialog(this, "", _("Enter theme name:"), _("Rename theme"), "",
@@ -2183,7 +2230,7 @@ long PreferencesBox::onCmdThemeRemove(FXObject* sender, FXSelector sel, void* pt
 {
     int index = themesList->getCurrentItem();
     
-    if (index > 0 && index < (int)Themes.size())
+    if (index >= NUM_DEFAULT_THEMES && index < (int)Themes.size())
     {
         // Remove theme
         Themes.erase(Themes.begin() + index);

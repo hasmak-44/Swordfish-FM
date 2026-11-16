@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Porcelain Blue
+tip=Bright porcelain white and blue
+base=#E6EEF7
+border=#8DA2B8
+background=#F2F6FB
+foreground=#1C2A3A
+selected_background=#2F6FD0
+selected_foreground=#FFFFFF
+list_background=#F7FAFD
+list_foreground=#18263A
+highlight=#E9F0F8
+progress_bar=#3C82E0
+attention=#C0392B
+scrollbar=#A9BBD0
+list_background_effect=fill=gradient colors=#FAFCFF,#E8F0FA direction=vertical

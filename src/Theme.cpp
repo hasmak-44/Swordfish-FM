@@ -299,7 +299,8 @@ Theme Theme::current(FXApp* app)
         app->getForeColor(), app->getBackColor(), app->getSelbackColor(), FXRGB(255, 0, 0), app->getBaseColor()};
     for (FXint i = 0; i < NUM_COLORS; ++i)
         theme.color[i] = app->reg().readColorEntry("SETTINGS", settingsKeys[i], defaults[i]);
-    theme.effect = app->reg().readStringEntry("SETTINGS", "list_background_effect", "");
+    theme.effect = app->reg().readStringEntry("SETTINGS", "list_background_effect",
+                                               "fill=gradient colors=#135563,#0A2A33,#05141A direction=vertical");
     FXString error;
     if (!theme.decodeProperties(app->reg().readStringEntry("SETTINGS", "theme_details", ""), error))
         appLog(APP_LOG_ERRORS, "theme-properties-invalid", error);

@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Rose Quartz
+tip=Pale rose with faint marble
+base=#F1E2E4
+border=#A48A90
+background=#F8EEEF
+foreground=#3A2A2E
+selected_background=#A83A5C
+selected_foreground=#FFFFFF
+list_background=#F9EFF1
+list_foreground=#35252A
+highlight=#F2E3E6
+progress_bar=#C9567A
+attention=#B03A2E
+scrollbar=#CFAAB3
+list_background_effect=fill=solid colors=#F7EAEC texture=marble strength=35 rows=off

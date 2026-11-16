@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Carbon Fiber
+tip=Carbon fibre weave with amber accents
+base=#1A1B1D
+border=#0A0A0B
+background=#141516
+foreground=#F2F2F2
+selected_background=#F2B01E
+selected_foreground=#141414
+list_background=#161718
+list_foreground=#EDEDED
+highlight=#1C1D1F
+progress_bar=#F2B01E
+attention=#FF5A4E
+scrollbar=#4A4C50
+list_background_effect=fill=solid colors=#1A1B1D texture=carbon-fiber strength=30 rows=off

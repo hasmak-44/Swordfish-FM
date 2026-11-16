@@ -1,0 +1,16 @@
+# Swordfish color theme
+name=Warm Parchment
+tip=Light parchment with paper texture
+base=#EFE3CF
+border=#9C8466
+background=#F6ECDC
+foreground=#2E2318
+selected_background=#AE4F2A
+selected_foreground=#FFFFFF
+list_background=#F4E8D2
+list_foreground=#2A1F14
+highlight=#EADBC1
+progress_bar=#D07A4A
+attention=#B03A2E
+scrollbar=#C9AE8A
+list_background_effect=fill=solid colors=#F4E8D2 texture=paper strength=45 rows=off

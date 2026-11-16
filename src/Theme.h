@@ -6,7 +6,7 @@
 #include <vector>
 
 #define NUM_COLORS 12
-#define NUM_DEFAULT_THEMES 15
+#define NUM_DEFAULT_THEMES 26
 
 struct Theme
 {
