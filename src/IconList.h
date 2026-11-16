@@ -283,6 +283,7 @@ protected:
     // Optional theme background effect (gradient, pattern and/or texture), cached per window size.
     // Layers: 0 plain, 1 alternate row, 2 sorted column, 3 sorted column on an alternate row.
     FXString backgroundEffect;
+    FXString effectAssetRoot;
     FXImage* effectLayers[4] = {NULL, NULL, NULL, NULL};
     FXColor* effectBase = NULL;
     int effectWidth = 0;
@@ -460,7 +461,7 @@ public:
     }
 
     // Change the background effect specification (see list_background_effect in theme files)
-    void setBackgroundEffect(const FXString& spec);
+    void setBackgroundEffect(const FXString& spec, const FXString& assetRoot = FXString::null);
     void setHighlightColor(FXColor color);
     virtual void setBackColor(FXColor color);
 

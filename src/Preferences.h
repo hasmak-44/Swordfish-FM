@@ -411,7 +411,7 @@ public:
     long onCmdPage(FXObject*, FXSelector, void*);
     long onFilter(FXObject*, FXSelector, void*);
     long onCmdThemeEditor(FXObject*, FXSelector, void*);
-    FXbool saveEditedTheme(const Theme&, FXint);
+    FXbool saveEditedTheme(Theme&, FXint);
     long onCmdAccept(FXObject*, FXSelector, void*);
     long onCmdColumnPane(FXObject*, FXSelector, void*);
     long onCmdBrowse(FXObject*, FXSelector, void*);

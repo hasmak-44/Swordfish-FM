@@ -159,7 +159,7 @@ class ThemeMockup : public FXCanvas
     FXint previewState = 0;
     FXString hover, selectedArea = "list";
     FXbool invalid = true;
-    FXString contrastEffect;
+    FXString contrastEffect, contrastAssetRoot;
     FXColor contrastBase = 0, contrastAlternate = 0;
     std::vector<double> luminances;
     ThemeMockup() {}
@@ -387,7 +387,8 @@ class ThemeMockup : public FXCanvas
         list->setHighlightColor(theme.colorFor("list", "alternate"));
         list->setSelBackColor(theme.colorFor("list", "selection_background"));
         list->setSelTextColor(theme.colorFor("list", "selection_foreground"));
-        if (list->backgroundEffect != theme.effect) list->setBackgroundEffect(theme.effect);
+        if (list->backgroundEffect != theme.effect || list->effectAssetRoot != theme.assetRoot)
+            list->setBackgroundEffect(theme.effect, theme.assetRoot);
         list->font = font(theme.fontFor("list", getApp()->getNormalFont()->getFont()));
         std::unique_ptr<FXImage> layer(new FXImage(getApp(), NULL, IMAGE_KEEP, node.rectangle.w, node.rectangle.h));
         layer->create();
@@ -682,7 +683,8 @@ public:
     double minimumContrast(FXColor foreground)
     {
         FXColor base = theme.colorFor("list", "background"), alternate = theme.colorFor("list", "alternate");
-        if (luminances.empty() || contrastEffect != theme.effect || contrastBase != base || contrastAlternate != alternate)
+        if (luminances.empty() || contrastEffect != theme.effect || contrastAssetRoot != theme.assetRoot ||
+            contrastBase != base || contrastAlternate != alternate)
         {
             luminances.clear();
             luminances.push_back(themeLuminance(base));
@@ -692,7 +694,7 @@ public:
                 if (!list) continue;
                 list->setBackColor(base);
                 list->setHighlightColor(alternate);
-                list->setBackgroundEffect(theme.effect);
+                list->setBackgroundEffect(theme.effect, theme.assetRoot);
                 list->buildBackgroundEffect();
                 FXbool details = !(list->getListStyle() & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS));
                 for (FXint layer = 0; layer < 4; ++layer)
@@ -715,6 +717,7 @@ public:
             std::sort(luminances.begin(), luminances.end());
             luminances.erase(std::unique(luminances.begin(), luminances.end()), luminances.end());
             contrastEffect = theme.effect;
+            contrastAssetRoot = theme.assetRoot;
             contrastBase = base;
             contrastAlternate = alternate;
         }
@@ -825,13 +828,17 @@ class BackgroundEditor : public DialogBox
         textures->appendItem(_("No texture"));
         textureNames.push_back("");
         extern FXString execpath, xdgconfighome;
-        FXString directories[3] = {FXPath::directory(execpath) + "/../share/swordfish/textures",
+        FXString directories[] = {editor->getDraft().assetRoot.empty() ? FXString::null :
+                                      editor->getDraft().assetRoot + PATHSEPSTRING "textures",
+                                    editor->getDraft().assetRoot,
+                                    FXPath::directory(execpath) + "/../share/swordfish/textures",
                                     xf_userdatahome() + PATHSEPSTRING "textures",
                                     xdgconfighome + PATHSEPSTRING XFECONFIGPATH "/textures"};
         std::set<FXString> names;
         FXString rejected;
-        for (FXint folder = 0; folder < 3; ++folder)
+        for (FXint folder = 0; folder < static_cast<FXint>(ARRAYNUMBER(directories)); ++folder)
         {
+            if (directories[folder].empty()) continue;
             FXDir directory;
             if (!directory.open(directories[folder]))
             {
@@ -851,7 +858,7 @@ class BackgroundEditor : public DialogBox
                 if (!BackgroundEffect::validTextureName(name))
                     error = _("Use only letters, numbers, hyphens and underscores in a texture name.");
                 else if (names.count(name))
-                    error = _("Texture name already exists. Please use another name.");
+                    continue;
                 else
                     BackgroundEffect::validateTexture(getApp(), path, error);
                 if (!error.empty())
@@ -867,7 +874,8 @@ class BackgroundEditor : public DialogBox
                 preview.texture = name;
                 preview.strength = 80;
                 preview.rows = false;
-                FXIcon* icon = BackgroundEffect::preview(this, preview.serialize(), previewLight, previewSize);
+                FXIcon* icon = BackgroundEffect::preview(this, preview.serialize(), previewLight, previewSize,
+                                                          editor->getDraft().assetRoot);
                 icons.push_back(icon);
                 textures->appendItem(name, icon, icon);
                 textureNames.push_back(name);

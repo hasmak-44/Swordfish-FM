@@ -95,7 +95,7 @@ void apply(FXWindow* window, const Theme& theme, const FXString& parentArea,
     if (IconList* list = dynamic_cast<IconList*>(window))
     {
         list->setHighlightColor(theme.colorFor("list", "alternate"));
-        list->setBackgroundEffect(theme.effect);
+        list->setBackgroundEffect(theme.effect, theme.assetRoot);
     }
     if (FXScrollBar* scrollbar = dynamic_cast<FXScrollBar*>(window))
         scrollbar->setBackColor(theme.colorFor("scrollbars", "background"));
@@ -141,7 +141,7 @@ FXbool Theme::operator!=(const Theme& other) const
 {
     for (FXint i = 0; i < NUM_COLORS; ++i)
         if (color[i] != other.color[i]) return true;
-    return effect != other.effect || properties != other.properties;
+    return effect != other.effect || assetRoot != other.assetRoot || properties != other.properties;
 }
 
 FXString Theme::property(const FXString& area, const FXString& key) const
@@ -301,6 +301,17 @@ Theme Theme::current(FXApp* app)
         theme.color[i] = app->reg().readColorEntry("SETTINGS", settingsKeys[i], defaults[i]);
     theme.effect = app->reg().readStringEntry("SETTINGS", "list_background_effect",
                                                "fill=gradient colors=#135563,#0A2A33,#05141A direction=vertical");
+    FXString folder = app->reg().readStringEntry("SETTINGS", "theme_asset_folder", "");
+    if (!folder.empty())
+    {
+        FXString root = FXPath::absolute(xf_userdatahome() + PATHSEPSTRING "themes" PATHSEPSTRING
+                                         "colors" PATHSEPSTRING + folder);
+        if (folder != "." && folder != ".." && folder.find_first_of("/\\\r\n") < 0 &&
+            !xf_islink(root) && xf_isdirectory(root))
+            theme.assetRoot = root;
+        else
+            appLog(APP_LOG_ERRORS, "theme-asset-folder-invalid", folder);
+    }
     FXString error;
     if (!theme.decodeProperties(app->reg().readStringEntry("SETTINGS", "theme_details", ""), error))
         appLog(APP_LOG_ERRORS, "theme-properties-invalid", error);
@@ -318,6 +329,11 @@ void Theme::writeActive(FXSettings& settings) const
     settings.writeColorEntry("SETTINGS", "shadowcolor", makeShadowColor(color[0]));
     settings.writeStringEntry("SETTINGS", "list_background_effect", effect.text());
     settings.writeStringEntry("SETTINGS", "theme_details", encodeProperties().text());
+    FXString library = FXPath::absolute(xf_userdatahome() + PATHSEPSTRING "themes" PATHSEPSTRING "colors");
+    if (!assetRoot.empty() && FXPath::directory(assetRoot) == library && !xf_islink(assetRoot))
+        settings.writeStringEntry("SETTINGS", "theme_asset_folder", FXPath::name(assetRoot).text());
+    else
+        settings.deleteEntry("SETTINGS", "theme_asset_folder");
     FXString font = property("main", "font");
     if (!font.empty()) settings.writeStringEntry("SETTINGS", "font", font.text());
     FXString shading = property("main", "shading");

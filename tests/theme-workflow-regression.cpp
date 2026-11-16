@@ -142,6 +142,29 @@ static void screenshot(FXWindow* window, const char* name)
     assert(image.savePixels(output));
 }
 
+static void solidPng(FXApp& app, const FXString& path, FXColor color)
+{
+    FXColor* pixels = NULL;
+    assert(FXMALLOC(&pixels, FXColor, 4));
+    for (FXint i = 0; i < 4; ++i) pixels[i] = color;
+    FXPNGImage image(&app);
+    image.setData(pixels, IMAGE_KEEP | IMAGE_OWNED, 2, 2);
+    FXFileStream output;
+    assert(output.open(path, FXStreamSave));
+    assert(image.savePixels(output));
+}
+
+static void copyThemeWithName(const FXString& source, const FXString& destination, const FXString& name)
+{
+    std::ifstream input(source.text());
+    std::ofstream output(destination.text());
+    assert(input && output);
+    std::string line;
+    while (std::getline(input, line))
+        output << (line.compare(0, 5, "name=") == 0 ? "name=" + std::string(name.text()) : line) << '\n';
+    assert(!input.bad() && output.good());
+}
+
 class ThemeWorkflowRegression
 {
 public:
@@ -458,6 +481,8 @@ public:
         assert(loadedPreferences.saveCustomThemes(withoutCustom));
         assert(!xf_existfile(savedThemeFile));
         assert(xf_existfile(unknownFile) && xf_existfile(duplicateFile) && xf_existfile(outsideFile));
+        assert(xf_mkpath(FXPath::directory(savedThemeFile).text(), 0755) == 0);
+        assert(FXFile::copyFiles(duplicateFile, savedThemeFile, false));
         FXRegistry disk(app.getAppName(), app.getVendorName());
         assert(disk.read());
         assert(disk.readStringEntry("SETTINGS", "theme_name", "") == saved.name);
@@ -609,6 +634,120 @@ public:
         rightTabs->setCurrentTab(1);
         assert(window.getRightPanel()->getList()->getViewMode() == FileList::VIEW_ICONS);
         puts("PASS: tab groups restore panel layout/orientation and every tab's view type");
+
+        FXString data = FXPath::absolute(xf_userdatahome());
+        FXString globalTextures = data + "/textures";
+        FXString redSource = data + "/source-red";
+        FXString blueSource = data + "/source-blue";
+        assert(xf_mkpath(globalTextures.text(), 0755) == 0);
+        assert(xf_mkpath((redSource + "/textures").text(), 0755) == 0);
+        assert(xf_mkpath((blueSource + "/textures").text(), 0755) == 0);
+        solidPng(app, globalTextures + "/shared.png", FXRGB(0, 255, 0));
+        solidPng(app, redSource + "/textures/shared.png", FXRGB(255, 0, 0));
+        solidPng(app, blueSource + "/textures/shared.png", FXRGB(0, 0, 255));
+        solidPng(app, redSource + "/textures/paper.png", FXRGB(255, 0, 0));
+        assert(BackgroundEffect::texturePath("paper", redSource) == redSource + "/textures/paper.png");
+
+        FXString occupied = data + "/themes/colors/Red pack";
+        assert(xf_mkpath(occupied.text(), 0755) == 0);
+        {
+            std::ofstream keep((occupied + "/keep.txt").text());
+            keep << "unrecognized content";
+            assert(keep.good());
+        }
+        Theme red = Theme::current(&app);
+        red.name = "Red pack";
+        red.assetRoot = redSource;
+        red.effect = "fill=solid colors=#000000 texture=shared strength=100 texture_colors=original rows=off";
+        assert(preferences.saveEditedTheme(red, -1));
+        assert(red.assetRoot == occupied + "-2");
+        assert(xf_existfile(occupied + "/keep.txt"));
+        assert(red.assetRoot[0] == '/');
+        assert(BackgroundEffect::texturePath("shared", red.assetRoot) == red.assetRoot + "/textures/shared.png");
+        assert(Theme::current(&app).assetRoot == red.assetRoot);
+
+        Theme blue = red;
+        blue.name = "Blue pack";
+        blue.assetRoot = blueSource;
+        assert(preferences.saveEditedTheme(blue, -1));
+        assert(red != blue);
+        assert(Theme::current(&app).assetRoot == blue.assetRoot);
+        assert(BackgroundEffect::texturePath("shared") == globalTextures + "/shared.png");
+        std::unique_ptr<FXIcon> global(BackgroundEffect::preview(&window, blue.effect, FXRGB(0, 0, 0), 8));
+        assert(global->getData()[0] == FXRGB(0, 255, 0));
+
+        auto liveBackground = [&]() -> FXColor
+        {
+            FXImage image(&app, NULL, IMAGE_KEEP, 8, 8);
+            image.create();
+            {
+                FXDCWindow dc(&image);
+                files->fillBackground(dc, 0, 0, 8, 8);
+            }
+            image.restore();
+            assert(image.getData());
+            return image.getData()[0];
+        };
+        window.applyTheme(red);
+        assert(liveBackground() == FXRGB(255, 0, 0));
+        window.applyTheme(blue);
+        assert(liveBackground() == FXRGB(0, 0, 255));
+
+        FXString copied = data + "/themes/colors/Copied folder";
+        assert(xf_mkpath((copied + "/textures").text(), 0755) == 0);
+        copyThemeWithName(red.assetRoot + "/theme.swordfish-theme", copied + "/shared.swordfish-theme",
+                          "Copied pack");
+        assert(FXFile::copyFiles(red.assetRoot + "/textures/shared.png", copied + "/textures/shared.png", false));
+        PreferencesBox imported(&window, app.getBackColor(), app.getForeColor(), app.getBackColor(),
+                                app.getSelbackColor(), FXRGB(255, 0, 0), app.getBaseColor());
+        imported.create();
+        imported.rememberPreferences();
+        FXbool foundRed = false, foundBlue = false, foundCopy = false;
+        for (const Theme& theme : imported.Themes)
+        {
+            if (theme.name == red.name) foundRed = theme.assetRoot == red.assetRoot;
+            if (theme.name == blue.name) foundBlue = theme.assetRoot == blue.assetRoot;
+            if (theme.name == "Copied pack") foundCopy = theme.assetRoot == copied;
+        }
+        assert(foundRed && foundBlue && foundCopy);
+        assert(imported.saveCustomThemes(imported.Themes));
+        assert(xf_existfile(copied + "/shared.swordfish-theme"));
+
+        FXString external = data + "/external-pack";
+        assert(xf_mkpath((external + "/textures").text(), 0755) == 0);
+        copyThemeWithName(red.assetRoot + "/theme.swordfish-theme", external + "/exported.swordfish-theme",
+                          "Imported pack");
+        assert(FXFile::copyFiles(red.assetRoot + "/textures/shared.png", external + "/textures/shared.png", false));
+        assert(imported.importThemeFile(external + "/exported.swordfish-theme"));
+        assert(imported.currTheme.assetRoot == external);
+        imported.onCmdAccept(NULL, FXSEL(SEL_COMMAND, PreferencesBox::ID_APPLY), NULL);
+        Theme active = Theme::current(&app);
+        assert(active.assetRoot == data + "/themes/colors/Imported pack");
+        assert(BackgroundEffect::texturePath("shared", active.assetRoot) == active.assetRoot + "/textures/shared.png");
+        assert(liveBackground() == FXRGB(255, 0, 0));
+        global.reset(BackgroundEffect::preview(&window, blue.effect, FXRGB(0, 0, 0), 8));
+        assert(global->getData()[0] == FXRGB(0, 255, 0));
+
+        FXString portable = data + "/relocated-portable";
+        FXString relocated = portable + "/themes/colors/Imported pack";
+        assert(xf_mkpath((relocated + "/textures").text(), 0755) == 0);
+        assert(FXFile::copyFiles(active.assetRoot + "/theme.swordfish-theme",
+                                 relocated + "/theme.swordfish-theme", false));
+        assert(FXFile::copyFiles(active.assetRoot + "/textures/shared.png", relocated + "/textures/shared.png", false));
+        const char* previousPortable = getenv("SWORDFISH_PORTABLE_DATA");
+        FXString previousValue = previousPortable ? previousPortable : "";
+        assert(setenv("SWORDFISH_PORTABLE_DATA", portable.text(), 1) == 0);
+        Theme moved = Theme::current(&app);
+        assert(moved.assetRoot == relocated);
+        assert(BackgroundEffect::texturePath("shared", moved.assetRoot) == relocated + "/textures/shared.png");
+        if (previousPortable) assert(setenv("SWORDFISH_PORTABLE_DATA", previousValue.text(), 1) == 0);
+        else assert(unsetenv("SWORDFISH_PORTABLE_DATA") == 0);
+
+        assert(unlink((copied + "/textures/shared.png").text()) == 0);
+        assert(symlink(outsideFile.text(), (copied + "/textures/shared.png").text()) == 0);
+        assert(!imported.saveCustomThemes(imported.Themes));
+        assert(xf_existfile(outsideFile));
+        puts("PASS: theme-local absolute texture paths, collision isolation, copied folders and portable relocation");
     }
 };
 

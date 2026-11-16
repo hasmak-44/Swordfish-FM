@@ -19,9 +19,9 @@
   brushed-metal, slate, cork, concrete) are installed; your own PNG tiles are
   stored in `$XDG_DATA_HOME/swordfish/textures/` (or `portable-data/textures/`
   in a portable run). Text and selection stay solid colours.
-- Import theme… can import several theme files at once. Custom textures a
-  theme uses are copied from a `textures/` folder next to it into the user data
-  directory; legacy textures in `~/.config/swordfish/textures/` remain readable.
+- Import theme… can import several theme files at once. A theme's own
+  `textures/` folder takes precedence over same-named shared or bundled
+  textures; legacy textures in `~/.config/swordfish/textures/` remain readable.
 - Custom themes are saved in per-theme folders under
   `$XDG_DATA_HOME/swordfish/themes/colors/` (or
   `portable-data/themes/colors/` in a portable run), with a theme file and

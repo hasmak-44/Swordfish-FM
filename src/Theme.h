@@ -14,6 +14,7 @@ struct Theme
     FXString tip;
     FXColor color[NUM_COLORS] = {0};
     FXString effect;
+    FXString assetRoot;
     std::map<FXString, FXString> properties;
 
     Theme() {}

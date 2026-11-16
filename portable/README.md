@@ -759,5 +759,8 @@ In Preferences → Appearance, use **Export theme** to create a shareable theme
 folder containing a `*.swordfish-theme` file and its `textures/` assets.
 Import that file on another machine with **Import theme**; keep the adjacent
 `textures/` folder with it when sharing themes that use custom textures.
-Textures already in the installed theme or user data are reused, and legacy
-custom textures in `~/.config/swordfish/textures/` remain readable.
+Alternatively, copy the complete theme folder into `portable-data/themes/colors/`.
+Each theme's own textures take precedence over same-named shared or bundled
+textures. Swordfish resolves their absolute paths at runtime, so the folder
+can be moved between machines. Legacy custom textures in
+`~/.config/swordfish/textures/` remain readable.

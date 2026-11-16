@@ -1746,11 +1746,13 @@ FXbool patternCovers(int pattern, double x, double y, double s)
     return false;
 }
 
-// Bundled tiles take precedence, so a user tile can never silently replace a built-in name
-FXString findTexture(const FXString& name)
+// A theme's own copy takes precedence; otherwise bundled tiles precede user tiles.
+FXString findTexture(const FXString& name, const FXString& assetRoot)
 {
-    FXString candidates[3] =
+    FXString candidates[] =
     {
+        assetRoot.empty() ? FXString::null : assetRoot + PATHSEPSTRING "textures" PATHSEPSTRING + name + ".png",
+        assetRoot.empty() ? FXString::null : assetRoot + PATHSEPSTRING + name + ".png",
         FXPath::directory(execpath) + "/../share/swordfish/textures/" + name + ".png",
         xf_userdatahome() + PATHSEPSTRING "textures" PATHSEPSTRING + name + ".png",
         xdgconfighome + PATHSEPSTRING XFECONFIGPATH "/textures/" + name + ".png"
@@ -1759,7 +1761,7 @@ FXString findTexture(const FXString& name)
     {
         if (!path.empty() && xf_existfile(path))
         {
-            return path;
+            return FXPath::absolute(path);
         }
     }
     return "";
@@ -1823,12 +1825,12 @@ FXbool BackgroundEffect::validTextureName(const FXString& name)
     return true;
 }
 
-FXString BackgroundEffect::texturePath(const FXString& name)
+FXString BackgroundEffect::texturePath(const FXString& name, const FXString& assetRoot)
 {
-    return validTextureName(name) ? findTexture(name) : FXString::null;
+    return validTextureName(name) ? findTexture(name, assetRoot) : FXString::null;
 }
 
-FXbool BackgroundEffect::validateTexture(FXApp* app, const FXString& path, FXString& error)
+static FXbool validTextureHeader(const FXString& path, FXString& error)
 {
     FILE* file = fopen(path.text(), "rb");
     if (!file)
@@ -1853,6 +1855,12 @@ FXbool BackgroundEffect::validateTexture(FXApp* app, const FXString& path, FXStr
         error = _("A texture must be a PNG image of at most 1024 x 1024 pixels and 16 MB.");
         return false;
     }
+    return true;
+}
+
+FXbool BackgroundEffect::validateTexture(FXApp* app, const FXString& path, FXString& error)
+{
+    if (!validTextureHeader(path, error)) return false;
     FXFileStream stream;
     FXPNGImage image(app, NULL, IMAGE_KEEP);
     if (!stream.open(path, FXStreamLoad) || !image.loadPixels(stream) || !image.getData())
@@ -1908,10 +1916,11 @@ FXbool BackgroundEffect::importTexture(FXApp* app, const FXString& source, const
 }
 
 
-void IconList::setBackgroundEffect(const FXString& spec)
+void IconList::setBackgroundEffect(const FXString& spec, const FXString& assetRoot)
 {
     backgroundEffect = spec;
     backgroundEffect.trim();
+    effectAssetRoot = assetRoot;
     clearBackgroundEffect();
     update();
 }
@@ -2040,12 +2049,17 @@ void IconList::buildBackgroundEffect()
     }
 
     // Tinted tiles modulate brightness around their own average, keeping the colours underneath
-    FXString path = effect.texture.empty() ? FXString() : findTexture(effect.texture);
+    FXString path = effect.texture.empty() ? FXString() : findTexture(effect.texture, effectAssetRoot);
+    if (!effect.texture.empty() && effect.strength > 0 && path.empty())
+        appLog(APP_LOG_ERRORS, "theme-texture-missing", effect.texture);
     if (!path.empty() && effect.strength > 0)
     {
         FXFileStream stream;
         FXPNGImage tile(getApp(), NULL, IMAGE_KEEP);
-        if (stream.open(path, FXStreamLoad) && tile.loadPixels(stream) && tile.getData() &&
+        FXString error;
+        if (!validTextureHeader(path, error))
+            appLog(APP_LOG_ERRORS, "theme-texture-invalid", path + ": " + error);
+        else if (stream.open(path, FXStreamLoad) && tile.loadPixels(stream) && tile.getData() &&
             tile.getWidth() > 0 && tile.getHeight() > 0 && tile.getWidth() <= 1024 && tile.getHeight() <= 1024)
         {
             const int tw = tile.getWidth(), th = tile.getHeight();
@@ -2084,6 +2098,8 @@ void IconList::buildBackgroundEffect()
                 }
             }
         }
+        else
+            appLog(APP_LOG_ERRORS, "theme-texture-invalid", path);
     }
 
     double r = 0, g = 0, b = 0;
@@ -2098,13 +2114,14 @@ void IconList::buildBackgroundEffect()
 
 
 // Server-side image for a layer, derived from the plain effect on first use
-FXIcon* BackgroundEffect::preview(FXComposite* parent, const FXString& spec, FXColor background, FXint size)
+FXIcon* BackgroundEffect::preview(FXComposite* parent, const FXString& spec, FXColor background, FXint size,
+                                  const FXString& assetRoot)
 {
     FXuint column = FileList::ID_COL_NAME;
     IconList list(parent, &column, 1, NULL, 0, FRAME_NONE, 0, 0, size, size);
     list.hide();
     list.setBackColor(background);
-    list.setBackgroundEffect(spec);
+    list.setBackgroundEffect(spec, assetRoot);
     list.buildBackgroundEffect();
     FXColor* pixels = NULL;
     if (!list.effectBase || !FXMEMDUP(&pixels, list.effectBase, FXColor, size * size))

@@ -3267,6 +3267,19 @@ failure explicitly warns that the library may have been partially written.
 The theme workflow regression checks that unrecognized and duplicate files
 survive removal of a loaded theme.
 
+### 3.85. Independent theme textures
+
+Each loaded theme now resolves its own texture copies to absolute paths at
+runtime before consulting shared or bundled textures. The saved setting
+records only the library folder name, so portable data can move between
+machines. A copied theme folder may contain either `theme.swordfish-theme` or
+one other `.swordfish-theme` file. Import validates textures without replacing
+shared files; saves avoid adopting unrecognized folders and following links.
+
+Validation in the codespace: clean native rebuild and theme workflow regression
+covering same-named textures, live rendering, imports, copied folders, portable
+relocation and linked destinations. Desktop acceptance remains pending.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

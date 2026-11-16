@@ -23,10 +23,11 @@ struct BackgroundEffect
     static BackgroundEffect parse(const FXString&);
     FXString serialize() const;
     static FXbool validTextureName(const FXString&);
-    static FXString texturePath(const FXString&);
+    static FXString texturePath(const FXString&, const FXString& = FXString::null);
     static FXbool validateTexture(FXApp*, const FXString&, FXString&);
     static FXbool importTexture(FXApp*, const FXString&, const FXString&, FXbool, FXString&);
-    static FXIcon* preview(FXComposite*, const FXString&, FXColor, FXint = 48);
+    static FXIcon* preview(FXComposite*, const FXString&, FXColor, FXint = 48,
+                           const FXString& = FXString::null);
 };
 
 #endif

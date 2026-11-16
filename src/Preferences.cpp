@@ -163,7 +163,7 @@ static FXbool loadThemeFile(const FXString& file, Theme& theme, FXString& error)
 
 static FXString colorThemeLibraryPath()
 {
-    return xf_userdatahome() + PATHSEPSTRING "themes" PATHSEPSTRING "colors";
+    return FXPath::absolute(xf_userdatahome() + PATHSEPSTRING "themes" PATHSEPSTRING "colors");
 }
 
 static FXString themeFolderName(const FXString& name)
@@ -188,11 +188,20 @@ static FXbool writeThemeFile(const FXString& file, const Theme& theme, FXString&
         return false;
     }
 
-    FXString temporary = file + ".tmp";
-    FILE* fp = fopen(temporary.text(), "w");
+    FXString templateName = file + ".tmp.XXXXXX";
+    std::vector<char> temporary(templateName.text(), templateName.text() + templateName.length());
+    temporary.push_back('\0');
+    int descriptor = mkstemp(temporary.data());
+    FILE* fp = descriptor < 0 ? NULL : fdopen(descriptor, "w");
     if (!fp)
     {
-        error = FXStringFormat(_("Cannot write theme file %s: %s"), temporary.text(), strerror(errno));
+        int errorNumber = errno;
+        if (descriptor >= 0)
+        {
+            close(descriptor);
+            unlink(temporary.data());
+        }
+        error = FXStringFormat(_("Cannot write theme file %s: %s"), file.text(), strerror(errorNumber));
         return false;
     }
     fprintf(fp, "# Swordfish color theme\nname=%s\ntip=%s\n", theme.name.text(), theme.tip.text());
@@ -202,10 +211,10 @@ static FXbool writeThemeFile(const FXString& file, const Theme& theme, FXString&
     if (!theme.properties.empty()) fprintf(fp, "theme_details=%s\n", theme.encodeProperties().text());
     FXbool written = !ferror(fp);
     if (fclose(fp) != 0) written = false;
-    if (!written || rename(temporary.text(), file.text()) != 0)
+    if (!written || rename(temporary.data(), file.text()) != 0)
     {
         int errorNumber = errno;
-        unlink(temporary.text());
+        unlink(temporary.data());
         error = FXStringFormat(_("Cannot save theme file %s: %s"), file.text(), strerror(errorNumber));
         return false;
     }
@@ -231,16 +240,16 @@ static FXbool copyThemeTextures(const Theme& theme, const FXString& folder, FXSt
     if (names.empty()) return true;
 
     FXString textureFolder = folder + PATHSEPSTRING "textures";
-    if (xf_mkpath(textureFolder.text(), 0755) != 0)
+    if (xf_islink(textureFolder) || xf_mkpath(textureFolder.text(), 0755) != 0)
     {
         error = _("Cannot create theme texture folder: ") + textureFolder;
         return false;
     }
     for (const FXString& name : names)
     {
-        FXString source = BackgroundEffect::texturePath(name);
+        FXString source = BackgroundEffect::texturePath(name, theme.assetRoot);
         FXString destination = textureFolder + PATHSEPSTRING + name + ".png";
-        if (source.empty() || (xf_realpath(source) != xf_realpath(destination) &&
+        if (source.empty() || xf_islink(destination) || (xf_realpath(source) != xf_realpath(destination) &&
                                !FXFile::copyFiles(source, destination, true)))
         {
             error = _("Cannot include texture in theme folder: ") + name;
@@ -250,22 +259,7 @@ static FXbool copyThemeTextures(const Theme& theme, const FXString& folder, FXSt
     return true;
 }
 
-static void importThemeFolderTextures(FXApp* app, const FXString& file, const Theme& theme)
-{
-    std::set<FXString> names;
-    themeTextureNames(theme, names);
-    for (const FXString& name : names)
-    {
-        if (!BackgroundEffect::texturePath(name).empty()) continue;
-        FXString source = FXPath::directory(file) + PATHSEPSTRING "textures" PATHSEPSTRING + name + ".png";
-        if (!xf_existfile(source)) continue;
-        FXString error;
-        if (!BackgroundEffect::importTexture(app, source, name, false, error))
-            appLog(APP_LOG_ERRORS, "theme-texture-import-failed", name + ": " + error);
-    }
-}
-
-static void loadCustomThemeFolders(FXApp* app, vector_Theme& themes, std::map<FXString, FXString>& libraryFiles)
+static void loadCustomThemeFolders(vector_Theme& themes, std::map<FXString, FXString>& libraryFiles)
 {
     FXString root = colorThemeLibraryPath();
     FXDir directory;
@@ -283,6 +277,32 @@ static void loadCustomThemeFolders(FXApp* app, vector_Theme& themes, std::map<FX
     for (const FXString& folder : folders)
     {
         FXString file = folder + PATHSEPSTRING "theme.swordfish-theme";
+        if (!xf_existfile(file))
+        {
+            FXDir contents;
+            std::vector<FXString> candidates;
+            if (contents.open(folder))
+                while (contents.next())
+                {
+                    FXString entry = contents.name();
+                    FXString candidate = folder + PATHSEPSTRING + entry;
+                    if (!entry.empty() && entry[0] != '.' && FXPath::extension(entry) == "swordfish-theme" &&
+                        !xf_islink(candidate) && xf_isfile(candidate))
+                        candidates.push_back(candidate);
+                }
+            if (candidates.size() > 1)
+            {
+                appLog(APP_LOG_ERRORS, "theme-library-ambiguous", folder);
+                continue;
+            }
+            if (candidates.empty()) continue;
+            file = candidates[0];
+        }
+        if (xf_islink(file))
+        {
+            appLog(APP_LOG_ERRORS, "theme-library-load-failed", file + ": " + _("Theme file is a symbolic link."));
+            continue;
+        }
         Theme theme;
         FXString error;
         if (!loadThemeFile(file, theme, error))
@@ -298,7 +318,7 @@ static void loadCustomThemeFolders(FXApp* app, vector_Theme& themes, std::map<FX
             appLog(APP_LOG_ERRORS, "theme-library-duplicate", theme.name + " in " + folder);
             continue;
         }
-        importThemeFolderTextures(app, file, theme);
+        theme.assetRoot = folder;
         themes.push_back(theme);
         libraryFiles[theme.name] = file;
     }
@@ -745,7 +765,8 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     currTheme.color[10] = getApp()->reg().readColorEntry("SETTINGS", "attentioncolor", attentioncolor);
     currTheme.color[11] = getApp()->reg().readColorEntry("SETTINGS", "scrollbarcolor", scrollbarcolor);
     currTheme.effect = getApp()->reg().readStringEntry("SETTINGS", "list_background_effect", "");
-    currTheme.properties = Theme::current(getApp()).properties;
+    currTheme.assetRoot = activeTheme.assetRoot;
+    currTheme.properties = activeTheme.properties;
 
     Themes.push_back(currTheme);
 
@@ -820,7 +841,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
             appLog(APP_LOG_ERRORS, "builtin-theme-load-failed", error);
     }
 
-    loadCustomThemeFolders(getApp(), Themes, themeLibraryFiles);
+    loadCustomThemeFolders(Themes, themeLibraryFiles);
 
     // Custom themes
     if (getApp()->reg().readStringEntry("THEMES", "theme0", NULL))
@@ -1805,7 +1826,7 @@ long PreferencesBox::onCmdThemeEditor(FXObject*, FXSelector selector, void*)
     return 1;
 }
 
-FXbool PreferencesBox::saveEditedTheme(const Theme& theme, FXint replace)
+FXbool PreferencesBox::saveEditedTheme(Theme& theme, FXint replace)
 {
     XFileExplorer* window = dynamic_cast<XFileExplorer*>(getOwner());
     if (!window || theme.name.empty() || theme.name.find_first_of(";\r\n") >= 0 ||
@@ -1835,7 +1856,8 @@ FXbool PreferencesBox::saveEditedTheme(const Theme& theme, FXint replace)
     else persistent[persistentIndex] = theme;
     const char* keys[] = {"basecolor", "bordercolor", "backcolor", "forecolor", "selbackcolor", "selforecolor",
         "listbackcolor", "listforecolor", "highlightcolor", "pbarcolor", "attentioncolor", "scrollbarcolor",
-        "hilitecolor", "shadowcolor", "list_background_effect", "theme_details", "theme_name", "font", "bar_shading"};
+        "hilitecolor", "shadowcolor", "list_background_effect", "theme_details", "theme_name", "theme_asset_folder",
+        "font", "bar_shading"};
     std::vector<FXString> previous;
     std::vector<FXbool> existed;
     for (const char* key : keys)
@@ -1843,19 +1865,18 @@ FXbool PreferencesBox::saveEditedTheme(const Theme& theme, FXint replace)
         existed.push_back(getApp()->reg().existingEntry("SETTINGS", key));
         previous.push_back(getApp()->reg().readStringEntry("SETTINGS", key, ""));
     }
-    theme.writeActive(getApp()->reg());
-    getApp()->reg().writeStringEntry("SETTINGS", "theme_name", theme.name.text());
     if (!saveCustomThemes(persistent))
     {
-        saveCustomThemes(themesPrevious);
-        for (size_t i = 0; i < ARRAYNUMBER(keys); ++i)
-        {
-            if (existed[i]) getApp()->reg().writeStringEntry("SETTINGS", keys[i], previous[i].text());
-            else getApp()->reg().deleteEntry("SETTINGS", keys[i]);
-        }
+        if (!saveCustomThemes(themesPrevious))
+            appLog(APP_LOG_ERRORS, "theme-save-rollback-failed", theme.name);
         MessageBox::error(this, BOX_OK, _("Save theme"), _("The custom theme library could not be written."));
         return false;
     }
+    FXString previousRoot = theme.assetRoot;
+    theme.assetRoot = FXPath::directory(themeLibraryFiles[theme.name]);
+    persistent[persistentIndex] = theme;
+    theme.writeActive(getApp()->reg());
+    getApp()->reg().writeStringEntry("SETTINGS", "theme_name", theme.name.text());
     if (!getApp()->reg().write())
     {
         for (size_t i = 0; i < ARRAYNUMBER(keys); ++i)
@@ -1863,7 +1884,9 @@ FXbool PreferencesBox::saveEditedTheme(const Theme& theme, FXint replace)
             if (existed[i]) getApp()->reg().writeStringEntry("SETTINGS", keys[i], previous[i].text());
             else getApp()->reg().deleteEntry("SETTINGS", keys[i]);
         }
-        saveCustomThemes(themesPrevious);
+        if (!saveCustomThemes(themesPrevious))
+            appLog(APP_LOG_ERRORS, "theme-save-rollback-failed", theme.name);
+        theme.assetRoot = previousRoot;
         appLog(APP_LOG_ERRORS, "theme-save-failed", theme.name);
         MessageBox::error(this, BOX_OK, _("Save theme"), _("The settings file could not be written. The theme was not activated."));
         return false;
@@ -1989,6 +2012,7 @@ long PreferencesBox::onCmdThemeSaveAs(FXObject* sender, FXSelector sel, void* pt
                             currTheme.color[7], currTheme.color[8], currTheme.color[9], currTheme.color[10],
                             currTheme.color[11]);
         theme.effect = currTheme.effect;
+        theme.assetRoot = currTheme.assetRoot;
         theme.properties = currTheme.properties;
         Themes.push_back(theme);
         themesList->appendItem(theme.name);
@@ -2039,8 +2063,8 @@ long PreferencesBox::onCmdThemeExport(FXObject*, FXSelector, void*)
     FXString safe = themeFolderName(theme.name);
     savedialog.setPatternList(patterns);
     savedialog.setSelectMode(SELECT_FILE_ANY);
-    savedialog.setFilename(FXSystem::getHomeDirectory() + PATHSEPSTRING + safe + PATHSEPSTRING +
-                            safe + ".swordfish-theme");
+    savedialog.setFilename(FXSystem::getHomeDirectory() + PATHSEPSTRING + safe + PATHSEPSTRING
+                            "theme.swordfish-theme");
     if (!savedialog.execute())
     {
         return 1;
@@ -2069,14 +2093,15 @@ long PreferencesBox::onCmdThemeExport(FXObject*, FXSelector, void*)
     }
     for (const FXString& name : textureNames)
     {
-        FXString source = BackgroundEffect::texturePath(name);
+        FXString source = BackgroundEffect::texturePath(name, theme.assetRoot);
         FXString directory = FXPath::directory(file) + PATHSEPSTRING "textures";
         FXString destination = directory + PATHSEPSTRING + name + ".png";
         if (xf_existfile(destination) && xf_realpath(source) != xf_realpath(destination) &&
             MessageBox::question(this, BOX_YES_NO, _("Replace texture"),
                 _("Texture \"%s\" already exists in the export folder. Replace it?"), name.text()) != BOX_CLICKED_YES)
             return 1;
-        if (source.empty() || ((!xf_existfile(directory) && xf_mkpath(directory.text(), 0755) != 0)) ||
+        if (source.empty() || xf_islink(directory) || xf_islink(destination) ||
+            ((!xf_existfile(directory) && xf_mkpath(directory.text(), 0755) != 0)) ||
             (xf_realpath(source) != xf_realpath(destination) &&
              !FXFile::copyFiles(source, destination, true)))
         {
@@ -2126,7 +2151,7 @@ long PreferencesBox::onCmdThemeImport(FXObject*, FXSelector, void*)
 }
 
 
-// Copy a theme pack's custom texture into the user texture folder; returns false to cancel the import
+// Validate a theme pack's texture without modifying the shared texture library.
 FXbool PreferencesBox::importThemeTexture(const FXString& themefile, const FXString& effect)
 {
     FXString name;
@@ -2149,32 +2174,18 @@ FXbool PreferencesBox::importThemeTexture(const FXString& themefile, const FXStr
         MessageBox::error(this, BOX_OK, _("Import theme"), _("Invalid texture name: %s"), name.text());
         return false;
     }
-    if (xf_existfile(FXPath::directory(execpath) + "/../share/swordfish/textures/" + name + ".png"))
+    FXString base = FXPath::absolute(FXPath::directory(themefile));
+    FXString source = BackgroundEffect::texturePath(name, base);
+    if (source.empty())
     {
-        return true;
-    }
-
-    FXString dir = xf_userdatahome() + PATHSEPSTRING "textures";
-    FXString dest = dir + PATHSEPSTRING + name + ".png";
-    FXString base = FXPath::directory(themefile);
-    FXString source = base + PATHSEPSTRING "textures" PATHSEPSTRING + name + ".png";
-    if (!xf_existfile(source))
-    {
-        source = base + PATHSEPSTRING + name + ".png";
-    }
-    if (!xf_existfile(source))
-    {
-        if (!xf_existfile(dest))
-        {
-            MessageBox::warning(this, BOX_OK, _("Warning"),
-                                _("Texture \"%s\" was not found next to the theme file.\nThe theme is imported without it."),
-                                name.text());
-        }
-        return true;
+        MessageBox::error(this, BOX_OK, _("Import theme"),
+                          _("Texture \"%s\" was not found next to the theme file or in the texture library."),
+                          name.text());
+        return false;
     }
 
     FXString error;
-    if (!BackgroundEffect::importTexture(getApp(), source, name, true, error))
+    if (!BackgroundEffect::validateTexture(getApp(), source, error))
     {
         MessageBox::error(this, BOX_OK, _("Texture import"), "%s\n\n%s", error.text(), source.text());
         return false;
@@ -2195,6 +2206,7 @@ FXbool PreferencesBox::importThemeFile(const FXString& file)
         return false;
     }
     if (imported.tip.empty()) imported.tip = _("Custom theme, right click to rename or remove");
+    imported.assetRoot = FXPath::absolute(FXPath::directory(file));
     if (!importThemeTexture(file, imported.effect)) return false;
     for (const auto& entry : imported.properties)
         if (entry.first.left(9) == "gradient." && !importThemeTexture(file, entry.second)) return false;
@@ -2275,7 +2287,8 @@ long PreferencesBox::onCmdThemeRename(FXObject* sender, FXSelector sel, void* pt
             }
 
             // Rename theme
-            Themes[index].name = name;           
+            if (currTheme.name == Themes[index].name) currTheme.name = name;
+            Themes[index].name = name;
             themesList->setItemText(index, name);
         }
 
@@ -4067,18 +4080,25 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
         restart_showpathlink = true;
     }
 
+    if (!saveCustomThemes(Themes))
+    {
+        MessageBox::error(this, BOX_OK, _("Preferences"),
+                          _("The custom theme library could not be written completely. Check the library and try again."));
+        return 1;
+    }
+    for (FXuint i = NUM_DEFAULT_THEMES; i < Themes.size(); ++i)
+        Themes[i].assetRoot = FXPath::directory(themeLibraryFiles[Themes[i].name]);
+    FXint selectedTheme = themesList->getCurrentItem();
+    if (selectedTheme >= NUM_DEFAULT_THEMES && selectedTheme < static_cast<FXint>(Themes.size()) &&
+        currTheme.name == Themes[selectedTheme].name)
+        currTheme.assetRoot = Themes[selectedTheme].assetRoot;
+
     // Theme has changed
     if (currTheme != Themes[0])
     {
         currTheme.writeActive(getApp()->reg());
         getApp()->reg().writeStringEntry("SETTINGS", "theme_name",
-            themesList->getCurrentItem() >= NUM_DEFAULT_THEMES ? currTheme.name.text() : "");
-    }
-    
-    if (!saveCustomThemes(Themes))
-    {
-        MessageBox::error(this, BOX_OK, _("Preferences"),
-                          _("The custom theme library could not be written completely. Check the library and try again."));
+            selectedTheme >= NUM_DEFAULT_THEMES ? currTheme.name.text() : "");
     }
 
     // UI DPI
@@ -4515,20 +4535,29 @@ FXbool PreferencesBox::saveCustomThemes(const vector_Theme& themes)
     for (FXuint i = NUM_DEFAULT_THEMES; i < themes.size(); ++i)
     {
         const Theme& theme = themes[i];
-        FXString base = themeFolderName(theme.name);
-        FXString folder = root + PATHSEPSTRING + base;
-        for (FXuint suffix = 2; ; ++suffix)
+        FXString folder, file;
+        auto tracked = themeLibraryFiles.find(theme.name);
+        if (tracked != themeLibraryFiles.end())
         {
-            FXString file = folder + PATHSEPSTRING "theme.swordfish-theme";
-            if (!xf_islink(folder) && !xf_existfile(file)) break;
+            file = tracked->second;
+            folder = FXPath::directory(file);
             Theme existing;
-            FXString ignored;
-            auto tracked = themeLibraryFiles.find(theme.name);
-            if (!xf_islink(folder) && tracked != themeLibraryFiles.end() && tracked->second == file &&
-                loadThemeFile(file, existing, ignored) &&
-                existing.name == theme.name)
-                break;
-            folder = root + PATHSEPSTRING + base + "-" + FXStringVal(suffix);
+            FXString error;
+            if (FXPath::directory(folder) != root || xf_islink(folder) || xf_islink(file) ||
+                !loadThemeFile(file, existing, error) || existing.name != theme.name)
+            {
+                appLog(APP_LOG_ERRORS, "theme-library-save-failed",
+                       file + ": " + _("The theme file or folder no longer matches the loaded theme."));
+                return false;
+            }
+        }
+        else
+        {
+            FXString base = themeFolderName(theme.name);
+            folder = root + PATHSEPSTRING + base;
+            for (FXuint suffix = 2; xf_existfile(folder); ++suffix)
+                folder = root + PATHSEPSTRING + base + "-" + FXStringVal(suffix);
+            file = folder + PATHSEPSTRING "theme.swordfish-theme";
         }
         if (xf_mkpath(folder.text(), 0755) != 0)
         {
@@ -4537,12 +4566,12 @@ FXbool PreferencesBox::saveCustomThemes(const vector_Theme& themes)
         }
         FXString error;
         if (!copyThemeTextures(theme, folder, error) ||
-            !writeThemeFile(folder + PATHSEPSTRING "theme.swordfish-theme", theme, error))
+            !writeThemeFile(file, theme, error))
         {
             appLog(APP_LOG_ERRORS, "theme-library-save-failed", error);
             return false;
         }
-        savedFiles[theme.name] = folder + PATHSEPSTRING "theme.swordfish-theme";
+        savedFiles[theme.name] = file;
     }
 
     for (const auto& entry : themeLibraryFiles)
@@ -4552,7 +4581,7 @@ FXbool PreferencesBox::saveCustomThemes(const vector_Theme& themes)
         if (!xf_existfile(entry.second)) continue;
         Theme existing;
         FXString error;
-        if (xf_islink(FXPath::directory(entry.second)) ||
+        if (xf_islink(FXPath::directory(entry.second)) || xf_islink(entry.second) ||
             !loadThemeFile(entry.second, existing, error) || existing.name != entry.first)
         {
             appLog(APP_LOG_ERRORS, "theme-library-remove-failed", entry.second + ": " +
