@@ -515,10 +515,13 @@ public:
             return 1;
         }
         ++prompts;
-        FXWindow* contents = dialog->getFirst();
-        for (FXWindow* child = contents ? contents->getFirst() : NULL; child; child = child->getNext())
+        std::vector<FXWindow*> pending = {dialog};
+        while (!pending.empty())
         {
-            if (FXLabel* label = dynamic_cast<FXLabel*>(child)) message += label->getText() + "\n";
+            FXWindow* window = pending.back();
+            pending.pop_back();
+            if (FXLabel* label = dynamic_cast<FXLabel*>(window)) message += label->getText() + "\n";
+            for (FXWindow* child = window->getFirst(); child; child = child->getNext()) pending.push_back(child);
         }
         dialog->handle(this, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
         return 1;

@@ -780,6 +780,12 @@ namespace DialogColors
     const FXColor scrollthumb = FXRGB(0x66, 0x6f, 0x73);
 }
 
+// True for widgets painted with the fixed dialog palette rather than the active theme
+inline FXbool xf_fixedpalette(const FXWindow* window)
+{
+    return window->getBackColor() == DialogColors::background;
+}
+
 // User data marking a scroll bar that paints its thumb with DialogColors::scrollthumb
 inline void* xf_dialogscrollbartag()
 {
@@ -789,6 +795,9 @@ inline void* xf_dialogscrollbartag()
 
 void xf_widgetcolors(FXWindow*, FXColor, FXColor, FXColor, FXColor, FXColor, FXColor);
 void xf_dialogcolors(FXWindow*);
+// Make a fixed-palette top window resizable and maximizable, and scroll its contents when it
+// is smaller than their default size instead of truncating them
+void xf_scrollabledialog(FXTopWindow*);
 void xf_windowcolors(FXWindow*);
 
 #endif

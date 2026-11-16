@@ -30,6 +30,8 @@ public:
         new FXButton(buttons, _("Use System Default Once"), NULL, this, 1, BUTTON_NORMAL | LAYOUT_FILL_X);
         new FXButton(buttons, _("Open With..."), NULL, this, 2, BUTTON_NORMAL | LAYOUT_FILL_X);
         new FXButton(buttons, _("Cancel"), NULL, this, 3, BUTTON_NORMAL | LAYOUT_FILL_X);
+        xf_scrollabledialog(this);
+        xf_dialogcolors(this);
     }
     long handle(FXObject* sender, FXSelector selector, void* ptr)
     {

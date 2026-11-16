@@ -3907,3 +3907,150 @@ long FXComposite::onKeyPress(FXObject* sender, FXSelector sel, void* ptr)
     }
     return 0;
 }
+
+
+//
+// Hack of FXCheckButton, FXRadioButton and FXTabItem
+//
+
+// In fixed-palette dialogs and child windows, check and radio buttons become one framed, field-coloured
+// target that highlights on hover, with a 1.5x larger indicator, and the active tab is filled with the
+// accent colour. Elsewhere the stock FOX 1.6 code below is kept unchanged.
+
+#define FIXED_TOGGLE_BOX      19
+#define FIXED_TOGGLE_INSET_X  6
+#define FIXED_TOGGLE_INSET_Y  3
+#define FIXED_TOGGLE_HOVER    FXRGB(27, 46, 79)
+#define FIXED_TOGGLE_EDGE     FXRGB(174, 183, 191)
+#define FIXED_TOGGLE_MARKED   FXRGB(141, 180, 255)
+#define FIXED_DISABLED        FXRGB(128, 138, 146)
+
+static void fixedToggleFrame(FXDCWindow& dc, FXWindow* window)
+{
+    dc.setForeground(window->isEnabled() && window->underCursor() ? FIXED_TOGGLE_HOVER : DialogColors::field);
+    dc.fillRectangle(0, 0, window->getWidth(), window->getHeight());
+    dc.setForeground(window->isEnabled() ? DialogColors::accent : FIXED_DISABLED);
+    dc.drawRectangle(0, 0, window->getWidth() - 1, window->getHeight() - 1);
+}
+
+// Natural toggle size around the larger indicator
+#define FIXED_TOGGLE_DEFAULT_WIDTH() \
+    { \
+        FXint tw = label.empty() ? 0 : labelWidth(label); \
+        FXint w = !(options & (ICON_AFTER_TEXT | ICON_BEFORE_TEXT)) ? FXMAX(tw, FIXED_TOGGLE_BOX) : \
+                  tw + FIXED_TOGGLE_BOX + (tw ? 4 : 0); \
+        return padleft + padright + w + 2 * FIXED_TOGGLE_INSET_X + (border << 1); \
+    }
+#define FIXED_TOGGLE_DEFAULT_HEIGHT() \
+    { \
+        FXint th = label.empty() ? 0 : labelHeight(label); \
+        FXint h = !(options & (ICON_ABOVE_TEXT | ICON_BELOW_TEXT)) ? FXMAX(th, FIXED_TOGGLE_BOX) : \
+                  th + FIXED_TOGGLE_BOX; \
+        return padtop + padbottom + h + 2 * FIXED_TOGGLE_INSET_Y + (border << 1); \
+    }
+
+// Place the indicator and label inside the frame, then draw the label
+#define FIXED_TOGGLE_PLACE() \
+    padleft += FIXED_TOGGLE_INSET_X; padright += FIXED_TOGGLE_INSET_X; \
+    padtop += FIXED_TOGGLE_INSET_Y; padbottom += FIXED_TOGGLE_INSET_Y; \
+    just_x(tx, ix, tw, FIXED_TOGGLE_BOX); \
+    just_y(ty, iy, th, FIXED_TOGGLE_BOX); \
+    padleft -= FIXED_TOGGLE_INSET_X; padright -= FIXED_TOGGLE_INSET_X; \
+    padtop -= FIXED_TOGGLE_INSET_Y; padbottom -= FIXED_TOGGLE_INSET_Y
+#define FIXED_TOGGLE_LABEL() \
+    if (!label.empty()) \
+    { \
+        dc.setFont(font); \
+        dc.setForeground(isEnabled() ? textColor : FIXED_DISABLED); \
+        drawLabel(dc, label, hotoff, tx, ty, tw, th); \
+        if (isEnabled() && hasFocus()) dc.drawFocusRectangle(tx - 1, ty - 1, tw + 2, th + 2); \
+    }
+
+FXint FXCheckButton::getDefaultWidth()
+{
+    if (xf_fixedpalette(this)) FIXED_TOGGLE_DEFAULT_WIDTH()
+
+  FXint tw=0,s=0,w;
+  if(!label.empty()){
+    tw=labelWidth(label);
+    s=4;
+    }
+  if(!(options&(ICON_AFTER_TEXT|ICON_BEFORE_TEXT))) w=FXMAX(tw,13); else w=tw+13+s;
+  return padleft+padright+w+(border<<1);
+}
+
+FXint FXCheckButton::getDefaultHeight()
+{
+    if (xf_fixedpalette(this)) FIXED_TOGGLE_DEFAULT_HEIGHT()
+
+  FXint th=0,h;
+  if(!label.empty()){
+    th=labelHeight(label);
+    }
+  if(!(options&(ICON_ABOVE_TEXT|ICON_BELOW_TEXT))) h=FXMAX(th,13); else h=th+13;
+  return padtop+padbottom+h+(border<<1);
+}
+
+long FXCheckButton::onEnter(FXObject* sender, FXSelector sel, void* ptr)
+{
+
+  FXLabel::onEnter(sender,sel,ptr);
+  if(isEnabled() && (flags&FLAG_PRESSED)) setCheck(!oldcheck);
+  update();
+  return 1;
+}
+
+long FXCheckButton::onLeave(FXObject* sender, FXSelector sel, void* ptr)
+{
+
+  FXLabel::onLeave(sender,sel,ptr);
+  if(isEnabled() && (flags&FLAG_PRESSED)) setCheck(oldcheck);
+  update();
+  return 1;
+}
+
+
+FXint FXRadioButton::getDefaultWidth()
+{
+    if (xf_fixedpalette(this)) FIXED_TOGGLE_DEFAULT_WIDTH()
+
+  FXint tw=0,s=0,w;
+  if(!label.empty()){
+    tw=labelWidth(label);
+    s=4;
+    }
+  if(!(options&(ICON_AFTER_TEXT|ICON_BEFORE_TEXT))) w=FXMAX(tw,13); else w=tw+13+s;
+  return padleft+padright+w+(border<<1);
+}
+
+FXint FXRadioButton::getDefaultHeight()
+{
+    if (xf_fixedpalette(this)) FIXED_TOGGLE_DEFAULT_HEIGHT()
+
+  FXint th=0,h;
+  if(!label.empty()){
+    th=labelHeight(label);
+    }
+  if(!(options&(ICON_ABOVE_TEXT|ICON_BELOW_TEXT))) h=FXMAX(th,13); else h=th+13;
+  return padtop+padbottom+h+(border<<1);
+}
+
+long FXRadioButton::onEnter(FXObject* sender, FXSelector sel, void* ptr)
+{
+
+  FXLabel::onEnter(sender,sel,ptr);
+  if(isEnabled() && (flags&FLAG_PRESSED)) setCheck(TRUE);
+  update();
+  return 1;
+}
+
+long FXRadioButton::onLeave(FXObject* sender, FXSelector sel, void* ptr)
+{
+
+  FXLabel::onLeave(sender,sel,ptr);
+  if(isEnabled() && (flags&FLAG_PRESSED)) setCheck(oldcheck);
+  update();
+  return 1;
+}
+
+

@@ -342,6 +342,46 @@ long FXButton::onPaint(FXObject*, FXSelector, void* ptr)
 // Handle repaint
 long FXCheckButton::onPaint(FXObject*, FXSelector, void* ptr)
 {
+    if (xf_fixedpalette(this))
+    {
+        FXEvent* ev = (FXEvent*)ptr;
+        FXint tw = 0, th = 0, tx, ty, ix, iy;
+        const FXint b = FIXED_TOGGLE_BOX;
+        FXDCWindow dc(this, ev);
+        if (!label.empty())
+        {
+            tw = labelWidth(label);
+            th = labelHeight(label);
+        }
+        fixedToggleFrame(dc, this);
+        FIXED_TOGGLE_PLACE();
+        FXbool marked = check != FALSE && !(options & CHECKBUTTON_PLUS);
+        dc.setForeground(!isEnabled() ? DialogColors::field : marked ? DialogColors::accent : DialogColors::background);
+        dc.fillRectangle(ix, iy, b, b);
+        dc.setForeground(!isEnabled() ? FIXED_DISABLED : marked ? FIXED_TOGGLE_MARKED : FIXED_TOGGLE_EDGE);
+        dc.drawRectangle(ix, iy, b - 1, b - 1);
+        if (!marked) dc.drawRectangle(ix + 1, iy + 1, b - 3, b - 3);
+        dc.setForeground(isEnabled() ? DialogColors::text : FIXED_DISABLED);
+        if (options & CHECKBUTTON_PLUS)
+        {
+            dc.fillRectangle(ix + 5, iy + 8, b - 10, 3);
+            if (check != TRUE) dc.fillRectangle(ix + 8, iy + 5, 3, b - 10);
+        }
+        else if (check == MAYBE)
+        {
+            dc.fillRectangle(ix + 5, iy + 8, b - 10, 3);
+        }
+        else if (check == TRUE)
+        {
+            dc.setLineWidth(3);
+            dc.drawLine(ix + 4, iy + 9, ix + 8, iy + 13);
+            dc.drawLine(ix + 8, iy + 13, ix + 14, iy + 5);
+            dc.setLineWidth(1);
+        }
+        FIXED_TOGGLE_LABEL();
+        return 1;
+    }
+
     // Initialize modern controls (here we don't use the macro)
     FXColor shadecolor, bordercolor;
 
@@ -1287,6 +1327,34 @@ long FXMenuTitle::onPaint(FXObject*, FXSelector, void* ptr)
 // Handle repaint
 long FXRadioButton::onPaint(FXObject*, FXSelector, void* ptr)
 {
+    if (xf_fixedpalette(this))
+    {
+        FXEvent* ev = (FXEvent*)ptr;
+        FXint tw = 0, th = 0, tx, ty, ix, iy;
+        const FXint b = FIXED_TOGGLE_BOX;
+        FXDCWindow dc(this, ev);
+        if (!label.empty())
+        {
+            tw = labelWidth(label);
+            th = labelHeight(label);
+        }
+        fixedToggleFrame(dc, this);
+        FIXED_TOGGLE_PLACE();
+        FXbool marked = check == TRUE;
+        dc.setForeground(!isEnabled() ? DialogColors::field : marked ? DialogColors::accent : DialogColors::background);
+        dc.fillArc(ix, iy, b, b, 0, 360 * 64);
+        dc.setForeground(!isEnabled() ? FIXED_DISABLED : marked ? FIXED_TOGGLE_MARKED : FIXED_TOGGLE_EDGE);
+        dc.drawArc(ix, iy, b - 1, b - 1, 0, 360 * 64);
+        if (!marked) dc.drawArc(ix + 1, iy + 1, b - 3, b - 3, 0, 360 * 64);
+        if (marked)
+        {
+            dc.setForeground(isEnabled() ? DialogColors::text : FIXED_DISABLED);
+            dc.fillArc(ix + 6, iy + 6, b - 12, b - 12, 0, 360 * 64);
+        }
+        FIXED_TOGGLE_LABEL();
+        return 1;
+    }
+
     FXEvent* ev = (FXEvent*)ptr;
     FXint tw = 0, th = 0, tx, ty, ix, iy;
     FXRectangle recs[6];
@@ -3224,6 +3292,48 @@ long FXMenuSeparator::onPaint(FXObject*, FXSelector, void* ptr)
 // Handle repaint
 long FXTabItem::onPaint(FXObject*, FXSelector, void* ptr)
 {
+    if (xf_fixedpalette(this))
+    {
+        FXEvent* ev = (FXEvent*)ptr;
+        FXDCWindow dc(this, ev);
+        FXint tw = 0, th = 0, iw = 0, ih = 0, tx, ty, ix, iy;
+        FXbool active = false;
+        if (FXTabBook* book = dynamic_cast<FXTabBook*>(getParent()))
+            active = book->indexOfChild(this) / 2 == book->getCurrent();
+        else if (FXTabBar* bar = dynamic_cast<FXTabBar*>(getParent()))
+            active = bar->indexOfChild(this) == bar->getCurrent();
+        dc.setForeground(active ? DialogColors::accent : DialogColors::field);
+        dc.fillRectangle(0, 0, width, height);
+        dc.setForeground(DialogColors::accent);
+        dc.drawRectangle(0, 0, width - 1, height - 1);
+        if (!label.empty())
+        {
+            tw = labelWidth(label);
+            th = labelHeight(label);
+        }
+        if (icon)
+        {
+            iw = icon->getWidth();
+            ih = icon->getHeight();
+        }
+        just_x(tx, ix, tw, iw);
+        just_y(ty, iy, th, ih);
+        if (icon)
+        {
+            if (isEnabled()) dc.drawIcon(icon, ix, iy);
+            else dc.drawIconSunken(icon, ix, iy);
+        }
+        if (!label.empty())
+        {
+            dc.setFont(font);
+            dc.setForeground(isEnabled() ? DialogColors::text : FIXED_DISABLED);
+            drawLabel(dc, label, hotoff, tx, ty, tw, th);
+            if (isEnabled() && hasFocus())
+                dc.drawFocusRectangle(border + 1, border + 1, width - 2 * border - 2, height - 2 * border - 2);
+        }
+        return 1;
+    }
+
     FXEvent* ev = (FXEvent*)ptr;
     FXDCWindow dc(this, ev);
     FXint tw = 0, th = 0, iw = 0, ih = 0, tx, ty, ix, iy;

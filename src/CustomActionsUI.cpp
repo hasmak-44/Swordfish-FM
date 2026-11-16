@@ -243,6 +243,8 @@ public:
                             "Image files keep their absolute path. SVG requires rsvg-convert."),
                     NULL, JUSTIFY_LEFT);
         filter();
+        xf_scrollabledialog(this);
+        xf_dialogcolors(this);
     }
     ~ActionIconChooser() { clearImages(); }
     const FXString& value() const { return selection; }
@@ -512,6 +514,8 @@ public:
         {
             new FXLabel(body, _("Separators are displayed between visible entries, never at the edges."));
         }
+        xf_scrollabledialog(this);
+        xf_dialogcolors(this);
     }
 
     ~ActionProperties()
@@ -733,6 +737,8 @@ public:
                          BUTTON_NORMAL | ICON_BEFORE_TEXT | LAYOUT_FILL_X | LAYOUT_FIX_HEIGHT, 0, 0, 0, 34);
         }
         refresh("");
+        xf_scrollabledialog(this);
+        xf_dialogcolors(this);
     }
     ~ActionEditor()
     {

@@ -127,6 +127,31 @@ public:
         }
         puts("PASS: fixed Preferences palette, category icons and setting-label filtering");
 
+        assert((preferences.getDecorations() & (DECOR_RESIZE | DECOR_MAXIMIZE)) == (DECOR_RESIZE | DECOR_MAXIMIZE));
+        assert(dynamic_cast<FXScrollWindow*>(preferences.getFirst()) && !preferences.getFirst()->getNext());
+        FXCheckButton* toggle = NULL;
+        std::vector<FXButton*> rowButtons;
+        std::vector<FXWindow*> pending = {&preferences};
+        while (!pending.empty())
+        {
+            FXWindow* item = pending.back();
+            pending.pop_back();
+            if (!toggle) toggle = dynamic_cast<FXCheckButton*>(item);
+            FXButton* button = dynamic_cast<FXButton*>(item);
+            if (button && button->getText() == "OK" && rowButtons.empty())
+                for (FXWindow* sibling = button->getParent()->getFirst(); sibling; sibling = sibling->getNext())
+                    if (dynamic_cast<FXButton*>(sibling)) rowButtons.push_back((FXButton*)sibling);
+            for (FXWindow* child = item->getFirst(); child; child = child->getNext()) pending.push_back(child);
+        }
+        assert(toggle && toggle->getBackColor() == DialogColors::background && toggle->getDefaultHeight() >= 25);
+        assert(rowButtons.size() == 3);
+        for (FXButton* button : rowButtons)
+        {
+            assert(button->getBackColor() == DialogColors::field);
+            assert(button->getDefaultWidth() == rowButtons[0]->getDefaultWidth());
+        }
+        puts("PASS: fixed dialogs are resizable/maximizable/scrollable with large toggles and uniform field buttons");
+
         FileList* files = window.getCurrentPanel()->getList();
         FXColor before = files->getBackColor();
         FXString effectBefore = app.reg().readStringEntry("SETTINGS", "list_background_effect", "");

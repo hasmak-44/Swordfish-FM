@@ -643,6 +643,7 @@ SearchWindow::SearchWindow(FXApp* app, const FXString& name, int x, int y, int w
 void SearchWindow::create()
 {
     // Create windows
+    xf_scrollabledialog(this);
     xf_dialogcolors(this);
     FXTopWindow::create();
     warnwindow->create();

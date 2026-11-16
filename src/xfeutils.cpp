@@ -2317,6 +2317,8 @@ public:
         new FXButton(buttons, _("Open With..."), NULL, this, 1, BUTTON_NORMAL | LAYOUT_FILL_X);
         new FXButton(buttons, _("Settings"), NULL, this, 2, BUTTON_NORMAL | LAYOUT_FILL_X);
         new FXButton(buttons, _("Cancel"), NULL, this, 3, BUTTON_NORMAL | LAYOUT_FILL_X);
+        xf_scrollabledialog(this);
+        xf_dialogcolors(this);
     }
     long handle(FXObject* sender, FXSelector selector, void* ptr)
     {
@@ -3581,10 +3583,75 @@ void xf_widgetcolors(FXWindow* window, FXColor base, FXColor field, FXColor text
     }
 }
 
+// Give sibling text buttons, and sibling check and radio buttons, one common width so related controls
+// line up. Padding is adjusted instead of fixing the width, so a label that grows later is never clipped.
+static void xf_equalizecontrols(FXWindow* parent)
+{
+    FXPacker* packer = dynamic_cast<FXPacker*>(parent);
+    if (packer && (packer->getPackingHints() & PACK_UNIFORM_WIDTH))
+    {
+        return;
+    }
+    std::vector<FXLabel*> buttons, toggles;
+    for (FXWindow* child = parent->getFirst(); child; child = child->getNext())
+    {
+        FXLabel* control = dynamic_cast<FXLabel*>(child);
+        if (!control || control->getText().empty() || (child->getLayoutHints() & (LAYOUT_FILL_X | LAYOUT_FIX_WIDTH)))
+        {
+            continue;
+        }
+        if (FXButton* button = dynamic_cast<FXButton*>(child))
+        {
+            if (!(button->getButtonStyle() & BUTTON_TOOLBAR))
+            {
+                buttons.push_back(control);
+            }
+        }
+        else if ((dynamic_cast<FXCheckButton*>(child) || dynamic_cast<FXRadioButton*>(child)) &&
+                 xf_fixedpalette(child))
+        {
+            toggles.push_back(control);
+        }
+    }
+    const FXint buttonPad = 10, togglePad = 1;
+    for (int pass = 0; pass < 2; pass++)
+    {
+        std::vector<FXLabel*>& group = pass ? toggles : buttons;
+        if (group.size() < 2)
+        {
+            continue;
+        }
+        std::vector<FXint> natural;
+        FXint widest = 0;
+        for (FXLabel* control : group)
+        {
+            natural.push_back(control->getDefaultWidth() - control->getPadLeft() - control->getPadRight());
+            widest = FXMAX(widest, natural.back());
+        }
+        for (size_t i = 0; i < group.size(); i++)
+        {
+            FXint left = pass ? togglePad : buttonPad + (widest - natural[i]) / 2;
+            FXint right = pass ? togglePad + widest - natural[i] : 2 * buttonPad + widest - natural[i] - left;
+            if (group[i]->getPadLeft() != left || group[i]->getPadRight() != right)
+            {
+                group[i]->setPadLeft(left);
+                group[i]->setPadRight(right);
+            }
+        }
+    }
+}
+
+
 void xf_dialogcolors(FXWindow* window)
 {
     xf_widgetcolors(window, DialogColors::background, DialogColors::field, DialogColors::text,
                     DialogColors::accent, DialogColors::accent, DialogColors::text);
+    // Clickable controls use the field colour so they stand out from the dialog background
+    if (dynamic_cast<FXButton*>(window) || dynamic_cast<FXToggleButton*>(window) ||
+        dynamic_cast<FXMenuButton*>(window) || dynamic_cast<FXArrowButton*>(window))
+    {
+        window->setBackColor(DialogColors::field);
+    }
     if (IconList* list = dynamic_cast<IconList*>(window))
     {
         list->setBackgroundEffect("");
@@ -3598,6 +3665,7 @@ void xf_dialogcolors(FXWindow* window)
     {
         xf_dialogcolors(child);
     }
+    xf_equalizecontrols(window);
     FXPopup* popup = NULL;
     if (FXMenuButton* button = dynamic_cast<FXMenuButton*>(window)) popup = button->getMenu();
     if (FXMenuTitle* title = dynamic_cast<FXMenuTitle*>(window)) popup = title->getMenu();

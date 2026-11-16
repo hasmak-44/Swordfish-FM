@@ -111,9 +111,59 @@ FXuint DialogBox::getOption()
 }
 
 
+// Scroll window that keeps the natural size of its contents as its own default size
+class DialogScroller : public FXScrollWindow
+{
+    FXDECLARE(DialogScroller)
+protected:
+    DialogScroller() {}
+public:
+    explicit DialogScroller(FXComposite* parent) : FXScrollWindow(parent, LAYOUT_FILL_X | LAYOUT_FILL_Y) {}
+    virtual FXint getDefaultWidth()
+    {
+        return contentWindow() ? contentWindow()->getDefaultWidth() : 1;
+    }
+    virtual FXint getDefaultHeight()
+    {
+        return contentWindow() ? contentWindow()->getDefaultHeight() : 1;
+    }
+};
+FXIMPLEMENT(DialogScroller, FXScrollWindow, NULL, 0)
+
+
+void xf_scrollabledialog(FXTopWindow* window)
+{
+    window->setDecorations(window->getDecorations() | DECOR_TITLE | DECOR_BORDER | DECOR_RESIZE | DECOR_MAXIMIZE);
+    FXWindow* first = window->getFirst();
+    if (!first || (dynamic_cast<DialogScroller*>(first) && !first->getNext()))
+    {
+        return;
+    }
+    DialogScroller* scroller = new DialogScroller(window);
+    FXPacker* content = new FXPacker(scroller, LAYOUT_FILL_X | LAYOUT_FILL_Y, 0, 0, 0, 0,
+                                     window->getPadLeft(), window->getPadRight(), window->getPadTop(),
+                                     window->getPadBottom(), window->getHSpacing(), window->getVSpacing());
+    if (window->id())
+    {
+        scroller->create();
+    }
+    for (FXWindow* child = window->getFirst(); child && child != scroller;)
+    {
+        FXWindow* next = child->getNext();
+        child->reparent(content);
+        child = next;
+    }
+    window->setPadLeft(0);
+    window->setPadRight(0);
+    window->setPadTop(0);
+    window->setPadBottom(0);
+}
+
+
 // Create window
 void DialogBox::create()
 {
+    xf_scrollabledialog(this);
     xf_dialogcolors(this);
     FXTopWindow::create();
 }
@@ -254,7 +304,7 @@ long DialogTabItem::onPaint(FXObject* sender, FXSelector selector, void* pointer
 {
     FXTabItem::onPaint(sender, selector, pointer);
     FXTabBook* book = dynamic_cast<FXTabBook*>(getParent());
-    if (book && book->indexOfChild(this) / 2 == book->getCurrent())
+    if (book && book->indexOfChild(this) / 2 == book->getCurrent() && !xf_fixedpalette(this))
     {
         FXDCWindow dc(this, static_cast<FXEvent*>(pointer));
         dc.setForeground(highlight);

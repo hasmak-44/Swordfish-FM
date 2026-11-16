@@ -1906,6 +1906,7 @@ ColorDialog::ColorDialog(FXWindow* owner, const FXString& name, FXuint opts, FXi
 
 void ColorDialog::create()
 {
+    xf_scrollabledialog(this);
     xf_dialogcolors(this);
     FXDialogBox::create();
 }
