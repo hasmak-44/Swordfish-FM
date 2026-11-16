@@ -11,6 +11,7 @@ FXDEFMAP(PathLinker) PathLinkerMap[] =
     FXMAPFUNC(SEL_FOCUSIN, PathLinker::ID_FOCUS_BUTTON, PathLinker::onCmdFocusButton),
     FXMAPFUNCS(SEL_COMMAND, PathLinker::ID_START_LINK, PathLinker::ID_END_LINK, PathLinker::onCmdLinkButton),
     FXMAPFUNC(SEL_UPDATE, 0, PathLinker::onUpdPath),
+    FXMAPFUNC(SEL_COMMAND, PathLinker::ID_THEME, PathLinker::onTheme),
 };
 
 FXIMPLEMENT(PathLinker, FXHorizontalFrame, PathLinkerMap, ARRAYNUMBER(PathLinkerMap))
@@ -70,6 +71,22 @@ void PathLinker::create()
     FXHorizontalFrame::create();
 }
 
+
+long PathLinker::onTheme(FXObject*, FXSelector, void*)
+{
+    FXFont* previous = highlightFont;
+    normalFont = linkButtons[0]->getFont();
+    FXFontDesc description;
+    normalFont->getFontDesc(description);
+    description.weight = description.weight == FXFont::Normal ? FXFont::Bold : FXFont::Normal;
+    highlightFont = new FXFont(getApp(), description);
+    highlightFont->create();
+    for (FXuint i = 0; i < linkButtons.size(); ++i)
+        linkButtons[i]->setFont(i == currentButton ? highlightFont : normalFont);
+    delete previous;
+    recalc();
+    return 1;
+}
 
 // Destruct object
 PathLinker::~PathLinker()

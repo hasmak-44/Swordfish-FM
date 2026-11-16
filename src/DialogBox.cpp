@@ -6,6 +6,7 @@
 #include <fxkeys.h>
 
 #include "DialogBox.h"
+#include "xfeutils.h"
 
 
 // Main window
@@ -113,6 +114,7 @@ FXuint DialogBox::getOption()
 // Create window
 void DialogBox::create()
 {
+    xf_dialogcolors(this);
     FXTopWindow::create();
 }
 
@@ -120,6 +122,7 @@ void DialogBox::create()
 // Show window such that the cursor is in it
 void DialogBox::show(FXuint placement)
 {
+    xf_dialogcolors(this);
     int rw, rh, wx, wy, ww, wh, x, y;
     FXuint state;
 
@@ -240,4 +243,22 @@ FXuint DialogBox::execute(FXuint placement)
     show(placement);
     getApp()->refresh();
     return getApp()->runModalFor(this);
+}
+
+FXDEFMAP(DialogTabItem) DialogTabItemMap[] = {
+    FXMAPFUNC(SEL_PAINT, 0, DialogTabItem::onPaint)
+};
+FXIMPLEMENT(DialogTabItem, FXTabItem, DialogTabItemMap, ARRAYNUMBER(DialogTabItemMap))
+
+long DialogTabItem::onPaint(FXObject* sender, FXSelector selector, void* pointer)
+{
+    FXTabItem::onPaint(sender, selector, pointer);
+    FXTabBook* book = dynamic_cast<FXTabBook*>(getParent());
+    if (book && book->indexOfChild(this) / 2 == book->getCurrent())
+    {
+        FXDCWindow dc(this, static_cast<FXEvent*>(pointer));
+        dc.setForeground(highlight);
+        dc.fillRectangle(3, getHeight() - 3, FXMAX(0, getWidth() - 6), 3);
+    }
+    return 1;
 }

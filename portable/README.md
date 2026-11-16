@@ -5,6 +5,12 @@ This is beta software; stable 0.0.2 remains available unchanged. Extract into a
 new folder for testing and back up existing `portable-data` before migrating it.
 Release archives do not include a settings profile or test data.
 
+The beta 2 ZIP was repackaged on 12 November 2026 to avoid newer 7-Zip
+rejecting relative icon links as "Dangerous link path". It contains ordinary
+files instead of symbolic links, with the same application binaries.
+Download it again if extraction failed, and use the updated SHA256SUMS.
+The tar.gz, source and manual archives were not replaced.
+
 The portable build produces a relocatable AppDir-style directory for Linux
 x86_64. It includes the Swordfish programs, installed resources, and shared
 libraries collected by `linuxdeploy`. Run `AppRun` from the generated folder;
@@ -51,7 +57,21 @@ optional customization. Existing settings are not treated as a first run.
 The Preferences button at the right of the menu bar opens the same settings
 dialog as **Edit > Preferences**.
 
-The **System Integration** tab offers a desktop shortcut, applications-menu
+## Theme Editor and Preferences
+
+Preferences shows scrolling categories on the left and the selected category's
+tabbed settings on the right. **Appearance > Theme** selects and manages
+themes. Choose **Edit**, **New theme** or **Duplicate and edit** to open the
+separate Theme Editor. Its safe mockup is a display-only copy of the current
+file-manager view.
+
+Editor **Apply** changes only the mockup; **Save** persists and activates all
+cumulative edits. This differs from Preferences **Apply**, which saves the
+pending Preferences settings and keeps that dialog open. Dialogs and child
+windows use a fixed readable palette; the main file-manager window and editor
+mockup remain themed.
+
+The **System > System integration** page offers a desktop shortcut, applications-menu
 entry and an optional `swordfish` command link. All start unchecked. Accept applies
 changed integration choices; Cancel does not. Saving unrelated preferences
 leaves the launchers alone. If an owned launcher has been modified, the recorded
@@ -169,7 +189,7 @@ include an editing entry, even with no configured/applicable actions.
 **Tools → Show Custom Toolbar** toggles this independent toolbar; its far-right
 **Settings** button opens the editor with an **Edit Custom Actions** tooltip.
 Custom-action toolbar contents remain separate from the built-in toolbars.
-In **Preferences → Appearance → Tool Bar Icon Size**, choose the **16 px**,
+In **Preferences → Appearance → Toolbar → Tool Bar Icon Size**, choose the **16 px**,
 **24 px** or **32 px** radio button for the custom toolbar. Sizes scale with
 display DPI. The change applies when Preferences is accepted; Cancel discards
 it. Image and system icons are loaded at the selected size, keeping their

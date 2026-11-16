@@ -77,16 +77,17 @@ FXulong computeSourceSize(File* f, FXApp* app, char* path, FXuint* nbfiles, FXui
         return dsize;
     }
 
-    // Give cancel button an opportunity to be clicked
-    if (cancelButton)
+    // Give cancel button an opportunity to be clicked and repaint, a few times per second
+    if (f->uiUpdateDue())
     {
-        app->runModalWhileEvents(cancelButton);
-    }
-
-    // Repaint application
-    if (app != NULL)
-    {
-        app->repaint();
+        if (cancelButton)
+        {
+            app->runModalWhileEvents(cancelButton);
+        }
+        if (app != NULL)
+        {
+            app->repaint();
+        }
     }
 
     if (*cancelled)
@@ -311,21 +312,7 @@ DialogBox(owner, title, DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE)
         timelabel = NULL;
     }
 
-    FXbool confirm_overwrite = getApp()->reg().readUnsignedEntry("OPTIONS", "confirm_overwrite", true);
-
-    // Initialize the overwrite flags
-    if (confirm_overwrite)
-    {
-        overwrite = false;
-        overwrite_all = false;
-        skip_all = false;
-    }
-    else
-    {
-        overwrite = true;
-        overwrite_all = true;
-        skip_all = false;
-    }
+    confirmOverwrite = getApp()->reg().readUnsignedEntry("OPTIONS", "confirm_overwrite", true);
 
     // Total read data
     totaldataread = 0;
@@ -380,6 +367,22 @@ File::~File()
 void File::create()
 {
     DialogBox::create();
+}
+
+
+// Progress labels, the cancel button and repaints cost X server round trips; doing them for
+// every small file made copies several times slower, so refresh them about ten times a second
+FXbool File::uiUpdateDue(void)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    FXlong ms = (FXlong)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+    if (lastUiUpdate != 0 && ms - lastUiUpdate < 100)
+    {
+        return false;
+    }
+    lastUiUpdate = ms;
+    return true;
 }
 
 
@@ -444,120 +447,107 @@ FXlong File::fullwrite(int fd, const FXuchar* ptr, FXlong len)
 }
 
 
-// Construct overwrite dialog and get user answer
-FXuint File::getOverwriteAnswer(FXString srcpath, FXString tgtpath, FXbool restart_timeout)
+static FXuint conflictKind(mode_t mode)
 {
-    // Message string
-    FXString msg;
+    return S_ISDIR(mode) ? 0 : S_ISREG(mode) ? 1 : S_ISLNK(mode) ? 2 : 3;
+}
 
-    if (xf_isdirectory(tgtpath))
-    {
-        msg.format(_("Folder %s already exists.\nOverwrite?\n=> Caution, files within this folder could be overwritten!"),
-                   tgtpath.text());
-    }
-    else
-    {
-        msg.format(_("File %s already exists.\nOverwrite?"), tgtpath.text());
-    }
 
-    // Read time format
-    FXString timeformat = getApp()->reg().readStringEntry("SETTINGS", "time_format", DEFAULT_TIME_FORMAT);
-
-    // Get the size and mtime of the source and target
-    struct stat linfo;
-    FXString srcsize, srcmtime, tgtsize, tgtmtime;
-    FXbool statsrc = false, stattgt = false;
-    if (xf_lstat(srcpath.text(), &linfo) == 0)
+static FXString numberedTarget(const FXString& target, FXbool directory)
+{
+    FXString name = FXPath::name(target), extension;
+    FXint dot = directory ? -1 : name.rfind('.');
+    if (dot > 0)
     {
-        statsrc = true;
-        srcmtime = FXSystem::time(timeformat.text(), linfo.st_mtime);
-        char buf[MAXPATHLEN];
-        if (S_ISDIR(linfo.st_mode)) // Folder
+        extension = name.mid(dot, name.length() - dot);
+        name = name.left(dot);
+        if (name.length() > 4 && name.right(4).lower() == ".tar")
         {
-            FXulong dirsize = 0;
-            FXuint nbfiles = 0, nbsubfolders = 0;
-            FXulong totalsize = 0;
-            xf_strlcpy(buf, srcpath.text(), srcpath.length() + 1);
-            dirsize = xf_pathsize(buf, &nbfiles, &nbsubfolders, &totalsize);
-#if __WORDSIZE == 64
-            snprintf(buf, sizeof(buf), "%lu", dirsize);
-#else
-            snprintf(buf, sizeof(buf), "%llu", dirsize);
-#endif
-        }
-        else // File
-        {
-#if __WORDSIZE == 64
-            snprintf(buf, sizeof(buf), "%lu", (FXulong)linfo.st_size);
-#else
-            snprintf(buf, sizeof(buf), "%llu", (FXulong)linfo.st_size);
-#endif
-        }
-        srcsize = xf_humansize(buf);
-    }
-    if (xf_lstat(tgtpath.text(), &linfo) == 0)
-    {
-        stattgt = true;
-        tgtmtime = FXSystem::time(timeformat.text(), linfo.st_mtime);
-        char buf[64];
-        if (S_ISDIR(linfo.st_mode)) // Folder
-        {
-            FXulong dirsize = 0;
-            FXuint nbfiles = 0, nbsubfolders = 0;
-            FXulong totalsize = 0;
-            xf_strlcpy(buf, tgtpath.text(), tgtpath.length() + 1);
-            dirsize = xf_pathsize(buf, &nbfiles, &nbsubfolders, &totalsize);
-#if __WORDSIZE == 64
-            snprintf(buf, sizeof(buf), "%lu", dirsize);
-#else
-            snprintf(buf, sizeof(buf), "%llu", dirsize);
-#endif
-        }
-        else // File
-        {
-#if __WORDSIZE == 64
-            snprintf(buf, sizeof(buf), "%lu", (FXulong)linfo.st_size);
-#else
-            snprintf(buf, sizeof(buf), "%llu", (FXulong)linfo.st_size);
-#endif
-        }
-        tgtsize = xf_humansize(buf);
-    }
-
-    // Overwrite dialog
-    OverwriteBox* dlg;
-    if (statsrc && stattgt)
-    {
-        if (numsel == 1)
-        {
-            dlg = new OverwriteBox(ownerwin, _("Confirm Overwrite"), msg, srcsize, srcmtime, tgtsize, tgtmtime,
-                                   OVWBOX_SINGLE_FILE);
-        }
-        else
-        {
-            dlg = new OverwriteBox(ownerwin, _("Confirm Overwrite"), msg, srcsize, srcmtime, tgtsize, tgtmtime);
+            extension = name.right(4) + extension;
+            name = name.left(name.length() - 4);
         }
     }
-    else
+    FXString result;
+    FXuint number = 0;
+    do
     {
-        if (numsel == 1)
-        {
-            dlg = new OverwriteBox(ownerwin, _("Confirm Overwrite"), msg, OVWBOX_SINGLE_FILE);
-        }
-        else
-        {
-            dlg = new OverwriteBox(ownerwin, _("Confirm Overwrite"), msg);
-        }
+        result = FXPath::directory(target) + PATHSEPSTRING + name +
+                 " (" + FXStringVal(++number) + ")" + extension;
+    }
+    while (xf_existfile(result));
+    return result;
+}
+
+
+int File::resolveConflict(const FXString& source, FXString& destination, FXbool merge,
+                          FXbool restart_timeout, FXbool confirm)
+{
+    struct stat srcinfo, dstinfo;
+    if (xf_lstat(source.text(), &srcinfo) != 0)
+    {
+        int errcode = errno;
+        forceTimeout();
+        MessageBox::error(this, BOX_OK, _("Error"), _("Can't read source %s: %s"),
+                          source.text(), strerror(errcode));
+        return -1;
+    }
+    if (xf_lstat(destination.text(), &dstinfo) != 0)
+    {
+        int errcode = errno;
+        if (errcode == ENOENT) return OVWBOX_CLICKED_OVERWRITE;
+        forceTimeout();
+        MessageBox::error(this, BOX_OK, _("Error"), _("Can't read destination %s: %s"),
+                          destination.text(), strerror(errcode));
+        return -1;
+    }
+    if (srcinfo.st_dev == dstinfo.st_dev && srcinfo.st_ino == dstinfo.st_ino)
+    {
+        forceTimeout();
+        MessageBox::error(this, BOX_OK, _("Error"), _("Destination %s is identical to source"),
+                          destination.text());
+        return -1;
     }
 
-    FXuint answer = dlg->execute(PLACEMENT_OWNER);
-    delete dlg;
-
-    if (restart_timeout)
+    // Cache decisions by both item types: merging folders never permits replacing their files.
+    FXuint kind = conflictKind(srcinfo.st_mode) * 4 + conflictKind(dstinfo.st_mode);
+    FXuint answer = conflictAnswers[kind];
+    if (!confirmOverwrite || !confirm)
     {
-        restartTimeout();
+        answer = OVWBOX_CLICKED_OVERWRITE;
     }
-
+    FXString renamed;
+    if (answer == OVWBOX_CLICKED_CANCEL)
+    {
+        renamed = numberedTarget(destination, S_ISDIR(srcinfo.st_mode));
+        forceTimeout();
+        OverwriteBox* dialog = new OverwriteBox(ownerwin, source, destination, srcinfo, dstinfo, renamed,
+                                                merge && S_ISDIR(srcinfo.st_mode) && S_ISDIR(dstinfo.st_mode));
+        answer = dialog->execute(PLACEMENT_OWNER);
+        delete dialog;
+        if (restart_timeout) restartTimeout();
+        switch (answer)
+        {
+        case OVWBOX_CLICKED_OVERWRITE_ALL:
+            answer = conflictAnswers[kind] = OVWBOX_CLICKED_OVERWRITE;
+            break;
+        case OVWBOX_CLICKED_SKIP_ALL:
+            answer = conflictAnswers[kind] = OVWBOX_CLICKED_SKIP;
+            break;
+        case OVWBOX_CLICKED_RENAME_ALL:
+            answer = conflictAnswers[kind] = OVWBOX_CLICKED_RENAME;
+            break;
+        }
+    }
+    if (answer == OVWBOX_CLICKED_RENAME)
+    {
+        // Recheck after the modal dialog, which may have processed other file operations.
+        destination = numberedTarget(destination, S_ISDIR(srcinfo.st_mode));
+        return OVWBOX_CLICKED_OVERWRITE;
+    }
+    if (answer == OVWBOX_CLICKED_CANCEL)
+    {
+        cancelled = true;
+    }
     return answer;
 }
 
@@ -736,32 +726,34 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
 
                         // Set percentage value for progress dialog
                         totaldataread += nread;
+                        if (uiUpdateDue())
+                        {
+                            if (progressbar)
+                            {
+                                // Percentage
+                                int pct = (sourcesize == 0 ? 0 : (100.0 * totaldataread) / sourcesize);
+                                progressbar->setProgress(pct);
+                            }
 
-                        if (progressbar)
-                        {
-                            // Percentage
-                            int pct = (sourcesize == 0 ? 0 : (100.0 * totaldataread) / sourcesize);
-                            progressbar->setProgress(pct);
-                        }
+                            // Give cancel button an opportunity to be clicked
+                            if (cancelButton)
+                            {
+                                getApp()->runModalWhileEvents(cancelButton);
+                            }
 
-                        // Give cancel button an opportunity to be clicked
-                        if (cancelButton)
-                        {
-                            getApp()->runModalWhileEvents(cancelButton);
+                            // Set labels for progress dialog
+                            FXString label = _("Source: ") + source;
+                            if (uplabel)
+                            {
+                                uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                            }
+                            label = _("Target: ") + target;
+                            if (downlabel)
+                            {
+                                downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                            }
+                            getApp()->repaint();
                         }
-
-                        // Set labels for progress dialog
-                        FXString label = _("Source: ") + source;
-                        if (uplabel)
-                        {
-                            uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
-                        }
-                        label = _("Target: ") + target;
-                        if (downlabel)
-                        {
-                            downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
-                        }
-                        getApp()->repaint();
 
                         // If cancel button was clicked, close files and return
                         if (cancelled)
@@ -907,7 +899,8 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
 
 // Copy directory
 int File::copydir(const FXString& source, const FXString& target, const FXString& hsourcesize, const FXulong sourcesize,
-                  const FXulong tstart, struct stat& parentinfo, inodelist* inodes, const FXbool preserve_date)
+                  const FXulong tstart, struct stat& parentinfo, inodelist* inodes, const FXbool preserve_date,
+                  const FXbool moving)
 {
     DIR* dirp;
     struct dirent* dp;
@@ -970,8 +963,15 @@ int File::copydir(const FXString& source, const FXString& target, const FXString
                 newchild.append(PATHSEP);
             }
             newchild.append(dp->d_name);
-            if (!copyrec(oldchild, newchild, hsourcesize, sourcesize, tstart, &inode, preserve_date))
+            int result = moving ? fmove(oldchild, newchild, hsourcesize, sourcesize, tstart, true) :
+                                  copyrec(oldchild, newchild, hsourcesize, sourcesize, tstart, &inode, preserve_date);
+            if (result != true)
             {
+                if (result < 0)
+                {
+                    closedir(dirp);
+                    return result;
+                }
                 // If the cancel button was pressed
                 if (cancelled)
                 {
@@ -984,11 +984,13 @@ int File::copydir(const FXString& source, const FXString& target, const FXString
                     FXString str;
                     if (xf_isdirectory(oldchild))
                     {
-                        str.format(_("Can't copy folder %s : Permission denied"), oldchild.text());
+                        str.format(moving ? _("Can't move folder %s : Permission denied") :
+                                           _("Can't copy folder %s : Permission denied"), oldchild.text());
                     }
                     else
                     {
-                        str.format(_("Can't copy file %s : Permission denied"), oldchild.text());
+                        str.format(moving ? _("Can't move file %s : Permission denied") :
+                                           _("Can't copy file %s : Permission denied"), oldchild.text());
                     }
                     forceTimeout();
                     mbox->setText(str);
@@ -1012,10 +1014,10 @@ int File::copydir(const FXString& source, const FXString& target, const FXString
     // Keep original date if asked
     if (preserve_date && !target.contains("mtp:host="))  // Don't report error if MTP mount
     {
-        if (xf_lstat(source.text(), &linfo) == 0)
+        if (moving || xf_lstat(source.text(), &linfo) == 0)
         {
-            timbuf.actime = linfo.st_atime;
-            timbuf.modtime = linfo.st_mtime;
+            timbuf.actime = moving ? parentinfo.st_atime : linfo.st_atime;
+            timbuf.modtime = moving ? parentinfo.st_mtime : linfo.st_mtime;
             errno = 0;
             int rc = utime(destfile.text(), &timbuf);
             int errcode = errno;
@@ -1044,6 +1046,23 @@ int File::copydir(const FXString& source, const FXString& target, const FXString
         }
     }
 
+    if (moving)
+    {
+        // Skipped children remain at the source. Never recursively delete a merged source folder.
+        if (::rmdir(source.text()) == 0)
+        {
+            xf_cleanuptrashinfo(source);
+        }
+        else if (errno != ENOTEMPTY && errno != EEXIST)
+        {
+            int errcode = errno;
+            forceTimeout();
+            MessageBox::error(this, BOX_OK, _("Error"), _("Can't remove source folder %s: %s"),
+                              source.text(), strerror(errcode));
+            return -1;
+        }
+    }
+
     // Success
     return true;
 }
@@ -1051,9 +1070,15 @@ int File::copydir(const FXString& source, const FXString& target, const FXString
 
 // Recursive copy
 int File::copyrec(const FXString& source, const FXString& target, const FXString& hsourcesize, const FXulong sourcesize,
-                  const FXulong tstart, inodelist* inodes, const FXbool preserve_date)
+                  const FXulong tstart, inodelist* inodes, const FXbool preserve_date, const FXbool confirm)
 {
     struct stat linfo1, linfo2;
+    FXString destination = target;
+
+    if (cancelled) return false;
+    int answer = resolveConflict(source, destination, true, true, confirm);
+    if (answer == OVWBOX_CLICKED_SKIP) return true;
+    if (answer != OVWBOX_CLICKED_OVERWRITE) return answer;
 
     // Source file or directory does not exist
     if (xf_lstat(source.text(), &linfo1) != 0)
@@ -1061,18 +1086,15 @@ int File::copyrec(const FXString& source, const FXString& target, const FXString
         return false;
     }
 
-    // If target is not a directory, remove it if allowed
-    if (xf_lstat(target.text(), &linfo2) == 0)
+    // Only two real directories merge; links are replaced without following them.
+    if (xf_lstat(destination.text(), &linfo2) == 0)
     {
-        if (!S_ISDIR(linfo2.st_mode))
+        if (!(S_ISDIR(linfo1.st_mode) && S_ISDIR(linfo2.st_mode)))
         {
-            if (!(overwrite | overwrite_all))
+            int result = File::remove(destination);
+            if (result != true)
             {
-                return false;
-            }
-            if (unlink(target.text()) != 0)
-            {
-                return false;
+                return result;
             }
         }
     }
@@ -1080,42 +1102,32 @@ int File::copyrec(const FXString& source, const FXString& target, const FXString
     // Source is directory: copy recursively
     if (S_ISDIR(linfo1.st_mode))
     {
-        return File::copydir(source, target, hsourcesize, sourcesize, tstart, linfo1, inodes, preserve_date);
+        return File::copydir(source, destination, hsourcesize, sourcesize, tstart, linfo1, inodes, preserve_date);
     }
 
     // Source is regular file: copy block by block
     if (S_ISREG(linfo1.st_mode))
     {
-        return File::copyfile(source, target, hsourcesize, sourcesize, tstart, preserve_date);
-    }
-
-    // Remove target if it already exists
-    if (xf_existfile(target))
-    {
-        int ret = File::remove(target);
-        if (!ret)
-        {
-            return false;
-        }
+        return File::copyfile(source, destination, hsourcesize, sourcesize, tstart, preserve_date);
     }
 
     // Source is fifo: make a new one
     if (S_ISFIFO(linfo1.st_mode))
     {
-        return mkfifo(target.text(), linfo1.st_mode);
+        return mkfifo(destination.text(), linfo1.st_mode) == 0;
     }
 
     // Source is device: make a new one
     if (S_ISBLK(linfo1.st_mode) || S_ISCHR(linfo1.st_mode) || S_ISSOCK(linfo1.st_mode))
     {
-        return mknod(target.text(), linfo1.st_mode, linfo1.st_rdev) == 0;
+        return mknod(destination.text(), linfo1.st_mode, linfo1.st_rdev) == 0;
     }
 
     // Source is symbolic link: make a new one
     if (S_ISLNK(linfo1.st_mode))
     {
         FXString lnkfile = xf_readlink(source);
-        return ::symlink(lnkfile.text(), target.text()) == 0;
+        return ::symlink(lnkfile.text(), destination.text()) == 0;
     }
 
     // This shouldn't happen
@@ -1180,74 +1192,8 @@ int File::copy(const FXString& source, const FXString& target, const FXString& h
         return -1;
     }
 
-    // Target already exists
-    if (xf_existfile(targetfile))
-    {
-        // Overwrite dialog if necessary
-        if ((!(overwrite_all | skip_all)) & confirm_dialog)
-        {
-            FXString label = _("Source: ") + source;
-            if (uplabel)
-            {
-                uplabel->setText(xf_multilines(label, MAX_MESSAGE_LENGTH));
-            }
-            label = _("Target: ") + targetfile;
-            if (downlabel)
-            {
-                downlabel->setText(xf_multilines(label, MAX_MESSAGE_LENGTH));
-            }
-            getApp()->repaint();
-            forceTimeout();
-            FXuint answer = getOverwriteAnswer(source, targetfile);
-            switch (answer)
-            {
-            // Cancel
-            case 0:
-                forceTimeout();
-                cancelled = true;
-                return false;
-
-                break;
-
-            // Overwrite
-            case 1:
-                overwrite = true;
-                break;
-
-            // Overwrite all
-            case 2:
-                overwrite_all = true;
-                break;
-
-            // Skip
-            case 3:
-                overwrite = false;
-                break;
-
-            // Skip all
-            case 4:
-                skip_all = true;
-                break;
-            }
-        }
-        if ((!(overwrite | overwrite_all)) | skip_all)
-        {
-            return true;
-        }
-
-        // Remove targetfile if source is not a directory
-        if (!xf_isdirectory(source))
-        {
-            if (File::remove(targetfile) == false)
-            {
-                forceTimeout();
-                return false;
-            }
-        }
-    }
-
     // Copy file or directory
-    return File::copyrec(source, targetfile, hsourcesize, sourcesize, tstart, NULL, preserve_date);
+    return File::copyrec(source, targetfile, hsourcesize, sourcesize, tstart, NULL, preserve_date, confirm_dialog);
 }
 
 
@@ -1277,25 +1223,28 @@ int File::remove(const FXString& file)
                 // Force timeout checking for progress dialog
                 checkProgressBarTimeout();
 
-                // Give cancel button an opportunity to be clicked
-                if (cancelButton)
+                if (uiUpdateDue())
                 {
-                    getApp()->runModalWhileEvents(cancelButton);
-                }
+                    // Give cancel button an opportunity to be clicked
+                    if (cancelButton)
+                    {
+                        getApp()->runModalWhileEvents(cancelButton);
+                    }
 
-                // Set labels for progress dialog
-                FXString label = _("Delete folder: ") + file;
-                if (uplabel)
-                {
-                    uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                    // Set labels for progress dialog
+                    FXString label = _("Delete folder: ") + file;
+                    if (uplabel)
+                    {
+                        uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                    }
+                    dirname = FXPath::directory(FXPath::absolute(file));
+                    label = _("From: ") + dirname;
+                    if (downlabel)
+                    {
+                        downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                    }
+                    getApp()->repaint();
                 }
-                dirname = FXPath::directory(FXPath::absolute(file));
-                label = _("From: ") + dirname;
-                if (downlabel)
-                {
-                    downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
-                }
-                getApp()->repaint();
 
                 // If cancel button was clicked, return
                 if (cancelled)
@@ -1364,25 +1313,28 @@ int File::remove(const FXString& file)
                 // Force timeout checking for progress dialog
                 checkProgressBarTimeout();
 
-                // Give cancel button an opportunity to be clicked
-                if (cancelButton)
+                if (uiUpdateDue())
                 {
-                    getApp()->runModalWhileEvents(cancelButton);
-                }
+                    // Give cancel button an opportunity to be clicked
+                    if (cancelButton)
+                    {
+                        getApp()->runModalWhileEvents(cancelButton);
+                    }
 
-                // Set labels for progress dialog
-                FXString label = _("Delete:") + file;
-                if (uplabel)
-                {
-                    uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                    // Set labels for progress dialog
+                    FXString label = _("Delete:") + file;
+                    if (uplabel)
+                    {
+                        uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                    }
+                    dirname = FXPath::directory(FXPath::absolute(file));
+                    label = _("From: ") + dirname;
+                    if (downlabel)
+                    {
+                        downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                    }
+                    getApp()->repaint();
                 }
-                dirname = FXPath::directory(FXPath::absolute(file));
-                label = _("From: ") + dirname;
-                if (downlabel)
-                {
-                    downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
-                }
-                getApp()->repaint();
 
                 // If cancel button was clicked, return
                 if (cancelled)
@@ -1432,6 +1384,7 @@ int File::remove(const FXString& file)
 // Return -1 to prevent displaying an error message in the calling function
 int File::rename(const FXString& source, const FXString& target)
 {
+    FXString destination = target;
     // Source doesn't exist
     if (!xf_existfile(source))
     {
@@ -1458,45 +1411,9 @@ int File::rename(const FXString& source, const FXString& target)
         // Source and target are files
         else
         {
-            // Overwrite dialog if necessary
-            if (!(overwrite_all | skip_all))
-            {
-                FXuint answer = getOverwriteAnswer(source, target, false); // Don't restart timeout
-                switch (answer)
-                {
-                // Cancel
-                case 0:
-                    cancelled = true;
-                    return false;
-
-                    break;
-
-                // Overwrite
-                case 1:
-                    overwrite = true;
-                    break;
-
-                // Overwrite all
-                case 2:
-                    overwrite_all = true;
-                    break;
-
-                // Skip
-                case 3:
-                    overwrite = false;
-                    break;
-
-                // Skip all
-                case 4:
-                    skip_all = true;
-                    break;
-                }
-            }
-
-            if ((!(overwrite | overwrite_all)) | skip_all)
-            {
-                return true;
-            }
+            int answer = resolveConflict(source, destination, false, false);
+            if (answer == OVWBOX_CLICKED_SKIP) return true;
+            if (answer != OVWBOX_CLICKED_OVERWRITE) return answer;
         }
     }
 
@@ -1505,14 +1422,14 @@ int File::rename(const FXString& source, const FXString& target)
     {       
         // Rename using gio command (regular rename does not work on MTP mounts)
         FXString cmd = "cd " + xf_quote(FXPath::directory(source)) +  "; gio rename " 
-                       + xf_quote(FXPath::name(source)) + " " + xf_quote(FXPath::name(target));       
+                       + xf_quote(FXPath::name(source)) + " " + xf_quote(FXPath::name(destination));
         FXString ret = xf_getcommandoutput(cmd);
 
         // An error has occurred
         if (ret != "")
         {
             forceTimeout();
-            MessageBox::error(this, BOX_OK, _("Error"), _("Can't rename to target %s: %s"), target.text(),
+            MessageBox::error(this, BOX_OK, _("Error"), _("Can't rename to target %s: %s"), destination.text(),
                               ret.text());
 
             return -1;
@@ -1528,7 +1445,7 @@ int File::rename(const FXString& source, const FXString& target)
     {
         // Rename file using the standard C function
         // This should only work for files that are on the same file system
-        if (::rename(source.text(), target.text()) == 0)
+        if (::rename(source.text(), destination.text()) == 0)
         {
             xf_cleanuptrashinfo(source);
             return true;
@@ -1538,7 +1455,7 @@ int File::rename(const FXString& source, const FXString& target)
         if ((errcode != EXDEV) && (errcode != ENOTEMPTY))
         {
             forceTimeout();
-            MessageBox::error(this, BOX_OK, _("Error"), _("Can't rename to target %s: %s"), target.text(),
+            MessageBox::error(this, BOX_OK, _("Error"), _("Can't rename to target %s: %s"), destination.text(),
                               strerror(errcode));
             return -1;
         }
@@ -1601,72 +1518,45 @@ int File::fmove(const FXString& source, const FXString& target, const FXString& 
     // Force timeout checking for progress dialog
     checkProgressBarTimeout();
 
-    // Give cancel button an opportunity to be clicked
-    if (cancelButton)
+    if (uiUpdateDue())
     {
-        getApp()->runModalWhileEvents(cancelButton);
-    }
-
-    // Set labels for progress dialog
-    FXString label = _("Source: ") + source;
-    if (uplabel)
-    {
-        uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
-    }
-    label = _("Target: ") + target;
-    if (downlabel)
-    {
-        downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
-    }
-    getApp()->repaint();
-
-    // Target file already exists
-    if (xf_existfile(targetfile))
-    {
-        // Overwrite dialog if necessary
-        if (!overwrite_all & !skip_all)
+        // Give cancel button an opportunity to be clicked
+        if (cancelButton)
         {
-            forceTimeout();
-            FXuint answer = getOverwriteAnswer(source, targetfile);
-            restartTimeout();
-            switch (answer)
-            {
-            // Cancel
-            case 0:
-                forceTimeout();
-                cancelled = true;
-                return false;
-
-                break;
-
-            // Overwrite
-            case 1:
-                overwrite = true;
-                break;
-
-            // Overwrite all
-            case 2:
-                overwrite_all = true;
-                break;
-
-            // Skip
-            case 3:
-                overwrite = false;
-                break;
-
-            // Skip all
-            case 4:
-                skip_all = true;
-                break;
-            }
+            getApp()->runModalWhileEvents(cancelButton);
         }
-        if ((!(overwrite | overwrite_all)) | skip_all)
-        {
-            // Hide progress dialog and restart timer
-            forceTimeout();
-            restartTimeout();
 
-            return true;
+        // Set labels for progress dialog
+        FXString label = _("Source: ") + source;
+        if (uplabel)
+        {
+            uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+        }
+        label = _("Target: ") + target;
+        if (downlabel)
+        {
+            downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+        }
+        getApp()->repaint();
+    }
+
+    if (cancelled) return false;
+    int answer = resolveConflict(source, targetfile);
+    if (answer == OVWBOX_CLICKED_SKIP) return true;
+    if (answer != OVWBOX_CLICKED_OVERWRITE) return answer;
+
+    struct stat srcinfo, dstinfo;
+    if (xf_lstat(source.text(), &srcinfo) != 0) return false;
+    if (xf_lstat(targetfile.text(), &dstinfo) == 0)
+    {
+        if (S_ISDIR(srcinfo.st_mode) && S_ISDIR(dstinfo.st_mode))
+        {
+            return copydir(source, targetfile, hsourcesize, sourcesize, tstart, srcinfo, NULL, true, true);
+        }
+        if (S_ISDIR(srcinfo.st_mode) || S_ISDIR(dstinfo.st_mode))
+        {
+            int result = remove(targetfile);
+            if (result != true) return result;
         }
     }
 
@@ -1678,11 +1568,16 @@ int File::fmove(const FXString& source, const FXString& target, const FXString& 
         char buf[MAXPATHLEN];
         if (S_ISDIR(linfo.st_mode)) // Folder
         {
-            FXuint nbfiles = 0, nbsubfolders = 0;
-            FXulong totalsize = 0;
-            xf_strlcpy(buf, source.text(), source.length() + 1);
-            srcsize = xf_pathsize(buf, &nbfiles, &nbsubfolders, &totalsize);
-            totaldataread += srcsize;
+            // The folder scan only feeds the progress total; skip it when there is none
+            // (Move to Trash) so a same-drive rename stays instant for large folders
+            if (sourcesize != 0)
+            {
+                FXuint nbfiles = 0, nbsubfolders = 0;
+                FXulong totalsize = 0;
+                xf_strlcpy(buf, source.text(), source.length() + 1);
+                srcsize = xf_pathsize(buf, &nbfiles, &nbsubfolders, &totalsize);
+                totaldataread += srcsize;
+            }
         }
         else // File
         {
@@ -1734,7 +1629,7 @@ int File::fmove(const FXString& source, const FXString& target, const FXString& 
     }
 
     int errcode = errno;
-    if ((errcode != EXDEV) && (errcode != ENOTEMPTY))
+    if (errcode != EXDEV)
     {
         forceTimeout();
         MessageBox::error(this, BOX_OK, _("Error"), _("Can't rename to target %s: %s"), targetfile.text(),
@@ -1745,7 +1640,11 @@ int File::fmove(const FXString& source, const FXString& target, const FXString& 
     // If files are on different file systems, use the copy/delete scheme and preserve the original date
     totaldataread -= srcsize; // Avoid counting data twice
 
-    int ret = this->copy(source, target, hsourcesize, sourcesize, tstart, false, true);
+    if (S_ISDIR(srcinfo.st_mode))
+    {
+        return copydir(source, targetfile, hsourcesize, sourcesize, tstart, srcinfo, NULL, true, true);
+    }
+    int ret = copyrec(source, targetfile, hsourcesize, sourcesize, tstart, NULL, true, false);
 
     // Success
     if (ret == true)
@@ -1755,12 +1654,12 @@ int File::fmove(const FXString& source, const FXString& target, const FXString& 
     // Error during copy
     else if (ret == -2)
     {
-        return true;
+        return -1;
     }
     // Operation cancelled
     else
     {
-        return false;
+        return ret;
     }
 }
 
@@ -1805,47 +1704,13 @@ int File::symlink(const FXString& source, const FXString& target)
         return -1;
     }
 
-    // Target already exists
+    int answer = resolveConflict(source, targetfile, false);
+    if (answer == OVWBOX_CLICKED_SKIP) return true;
+    if (answer != OVWBOX_CLICKED_OVERWRITE) return answer;
     if (xf_existfile(targetfile))
     {
-        // Overwrite dialog if necessary
-        if (!(overwrite_all | skip_all))
-        {
-            FXuint answer = getOverwriteAnswer(source, targetfile);
-            switch (answer)
-            {
-            // Cancel
-            case 0:
-                forceTimeout();
-                return false;
-
-                break;
-
-            // Overwrite
-            case 1:
-                overwrite = true;
-                break;
-
-            // Overwrite all
-            case 2:
-                overwrite_all = true;
-                break;
-
-            // Skip
-            case 3:
-                overwrite = false;
-                break;
-
-            // Skip all
-            case 4:
-                skip_all = true;
-                break;
-            }
-        }
-        if ((!(overwrite | overwrite_all)) | skip_all)
-        {
-            return true;
-        }
+        int result = remove(targetfile);
+        if (result != true) return result;
     }
 
     // Create symbolic link using the standard C function
@@ -1853,14 +1718,7 @@ int File::symlink(const FXString& source, const FXString& target)
 
     // Use the relative path for the symbolic link
     FXString relativepath;
-    if (xf_existfile(target) && xf_isdirectory(target))
-    {
-        relativepath = FXPath::relative(target, source);
-    }
-    else
-    {
-        relativepath = FXPath::relative(FXPath::directory(target), source);
-    }
+    relativepath = FXPath::relative(FXPath::directory(targetfile), source);
 
     int ret = ::symlink(relativepath.text(), targetfile.text());
 

@@ -10,6 +10,9 @@
 #include <FXPNGIcon.h>
 #include <FXJPGIcon.h>
 #include <FXTIFIcon.h>
+#include <FXPNGImage.h>
+#include <math.h>
+#include <vector>
 #if defined(linux)
 #include <mntent.h>
 #endif
@@ -18,6 +21,9 @@
 #include "icons.h"
 #include "IconList.h"
 #include "FileList.h"
+
+extern FXString execpath;
+extern FXString xdgconfighome;
 
 
 #define SIDE_SPACING           4        // Left or right spacing between items
@@ -37,6 +43,18 @@
                              ICONLIST_AUTOSIZE)
 #define TYPE_MASK           (ICONLIST_FILELIST | ICONLIST_SEARCH | ICONLIST_STANDARD)
 
+// FXHeaderItem::draw() is protected; this exposes it to the column drag painter.
+struct HeaderItemPainter : public FXHeaderItem
+{
+    static void paint(FXHeaderItem* item, const FXHeader* header, FXDC& dc, FXint x, FXint y, FXint w, FXint h)
+    {
+        void (FXHeaderItem::*drawItem)(const FXHeader*, FXDC&, FXint, FXint, FXint, FXint) = &HeaderItemPainter::draw;
+        (item->*drawItem)(header, dc, x, y, w, h);
+    }
+};
+
+// Column header whose columns can be dragged to a new position. Like Firefox tabs, the
+// grabbed column follows the pointer and the other columns slide aside to show the gap.
 class ColumnHeader : public FXHeader
 {
     FXDECLARE(ColumnHeader)
@@ -44,11 +62,79 @@ protected:
     ColumnHeader() {}
     FXint source = -1;
     FXint start = 0;
+    FXint grab = 0;
+    FXint dragX = 0;
+    FXint target = -1;
     FXbool dragging = false;
+
+    FXbool movable(FXint index)
+    {
+        if (index < 1 || index >= getNumItems()) return false;
+        FileList* list = dynamic_cast<FileList*>(getParent());
+        // Trash uses a separate fixed layout, not the normal pane layout.
+        if (!list || list->isInTrash()) return false;
+        FXuint id = list->getHeaderId(index);
+        return id != FileList::ID_COL_ORIGPATH && id != FileList::ID_COL_DELDATE;
+    }
+
+    FXint left(FXint index)
+    {
+        return getPosition() + getItem(index)->getPos();
+    }
+
+    // Place the grabbed column under the pointer and find the slot it would drop into
+    void track(FXEvent* event)
+    {
+        FXint result = -1;
+        if (event->win_x >= 0 && event->win_x < getWidth() &&
+            event->win_y >= -getHeight() && event->win_y < 2 * getHeight())
+        {
+            FXint first = source, last = source;
+            while (movable(first - 1)) first--;
+            while (movable(last + 1)) last++;
+            FXint width = getItemSize(source);
+            dragX = FXCLAMP(left(first), event->win_x - grab, left(last) + getItemSize(last) - width);
+            FXint centre = dragX + width / 2;
+            result = source;
+            while (result > first && centre < left(result - 1) + getItemSize(result - 1) / 2) result--;
+            while (result < last && centre > left(result + 1) + getItemSize(result + 1) / 2) result++;
+        }
+        if (result != target || result >= 0)
+        {
+            target = result;
+            update();
+        }
+    }
+
+    void finish()
+    {
+        if (dragging && source >= 0 && source < getNumItems()) setItemPressed(source, false);
+        source = -1;
+        target = -1;
+        dragging = false;
+        setDefaultCursor(getApp()->getDefaultCursor(DEF_ARROW_CURSOR));
+        update();
+    }
+
 public:
     ColumnHeader(IconList* owner) :
         FXHeader(owner, owner, IconList::ID_HEADER_CHANGE,
                  HEADER_TRACKING | HEADER_BUTTON | HEADER_RESIZE | FRAME_GROOVE) {}
+
+    FXbool isDraggingColumn() const
+    {
+        return dragging && target >= 0;
+    }
+
+    FXint getDraggedColumnX() const
+    {
+        return dragX;
+    }
+
+    FXint getDropColumn() const
+    {
+        return target;
+    }
 
     long onPress(FXObject* sender, FXSelector sel, void* ptr)
     {
@@ -56,24 +142,25 @@ public:
         source = getItemAt(event->win_x);
         start = event->win_x;
         dragging = false;
+        target = -1;
         if (source < 0 || source >= getNumItems()) source = -1;
         if (source >= 0)
         {
-            FXint left = getPosition();
-            for (FXint column = 0; column < source; ++column) left += getItemSize(column);
-            FXint right = left + getItemSize(source);
-            if (event->win_x - left < 6 || right - event->win_x < 6) source = -1;
+            FXint right = left(source) + getItemSize(source);
+            if (event->win_x - left(source) < 6 || right - event->win_x < 6) source = -1;
         }
+        if (source >= 0) grab = event->win_x - left(source);
         return FXHeader::onLeftBtnPress(sender, sel, ptr);
     }
 
     long onMove(FXObject* sender, FXSelector sel, void* ptr)
     {
         FXEvent* event = static_cast<FXEvent*>(ptr);
-        if (source > 0 && (event->state & LEFTBUTTONMASK) &&
+        if (movable(source) && (event->state & LEFTBUTTONMASK) &&
             (dragging || abs(event->win_x - start) >= getApp()->getDragDelta()))
         {
             dragging = true;
+            track(event);
             setDefaultCursor(getApp()->getDefaultCursor(DEF_MOVE_CURSOR));
             return 1;
         }
@@ -83,18 +170,58 @@ public:
     long onRelease(FXObject* sender, FXSelector sel, void* ptr)
     {
         FXEvent* event = static_cast<FXEvent*>(ptr);
-        FXint from = source, to = getItemAt(event->win_x);
+        FXint from = source, to = -1;
         FXbool moved = dragging;
-        source = -1;
-        dragging = false;
+        if (moved)
+        {
+            track(event);
+            to = target;
+        }
+        finish();
         FXObject* receiver = getTarget();
         if (moved) setTarget(NULL);
         long result = FXHeader::onLeftBtnRelease(sender, sel, ptr);
         setTarget(receiver);
-        setDefaultCursor(getApp()->getDefaultCursor(DEF_ARROW_CURSOR));
-        if (moved && to > 0 && to < getNumItems() && event->win_y >= 0 && event->win_y < getHeight())
+        if (moved && to >= 0 && to != from)
             static_cast<IconList*>(getParent())->moveColumn(from, to);
         return result;
+    }
+
+    long onPaint(FXObject* sender, FXSelector sel, void* ptr)
+    {
+        if (!isDraggingColumn()) return FXHeader::onPaint(sender, sel, ptr);
+        FXEvent* event = static_cast<FXEvent*>(ptr);
+        FXDCWindow dc(this, event);
+        dc.setForeground(backColor);
+        dc.fillRectangle(event->rect.x, event->rect.y, event->rect.w, event->rect.h);
+        dc.setFont(font);
+        FXint width = getItemSize(source);
+        for (FXint index = 0; index < getNumItems(); ++index)
+        {
+            if (index == source) continue;
+            FXint x = left(index);
+            if (target < source && index >= target && index < source) x += width;
+            if (target > source && index > source && index <= target) x -= width;
+            drawRaisedRectangle(dc, x, 0, getItemSize(index), height);
+            HeaderItemPainter::paint(getItem(index), this, dc, x, 0, getItemSize(index), height);
+        }
+        // The grabbed column floats above the others in the selection colour.
+        FXColor text = textColor;
+        IconList* list = static_cast<IconList*>(getParent());
+        dc.setForeground(list->getSelBackColor());
+        dc.fillRectangle(dragX, 0, width, height);
+        dc.setForeground(borderColor);
+        dc.drawRectangle(dragX, 0, width - 1, height - 1);
+        textColor = list->getSelTextColor();
+        HeaderItemPainter::paint(getItem(source), this, dc, dragX, 0, width, height);
+        textColor = text;
+        return 1;
+    }
+
+    long onUngrabbed(FXObject* sender, FXSelector sel, void* ptr)
+    {
+        finish();
+        return FXHeader::onUngrabbed(sender, sel, ptr);
     }
 
     long onMenu(FXObject*, FXSelector, void* ptr)
@@ -105,9 +232,11 @@ public:
 
 FXDEFMAP(ColumnHeader) ColumnHeaderMap[] =
 {
+    FXMAPFUNC(SEL_PAINT, 0, ColumnHeader::onPaint),
     FXMAPFUNC(SEL_LEFTBUTTONPRESS, 0, ColumnHeader::onPress),
     FXMAPFUNC(SEL_MOTION, 0, ColumnHeader::onMove),
     FXMAPFUNC(SEL_LEFTBUTTONRELEASE, 0, ColumnHeader::onRelease),
+    FXMAPFUNC(SEL_UNGRABBED, 0, ColumnHeader::onUngrabbed),
     FXMAPFUNC(SEL_RIGHTBUTTONRELEASE, 0, ColumnHeader::onMenu),
 };
 FXIMPLEMENT(ColumnHeader, FXHeader, ColumnHeaderMap, ARRAYNUMBER(ColumnHeaderMap))
@@ -358,8 +487,7 @@ void IconItem::drawDetails(IconList* list, FXDC& dc, int x, int y, int, int h) c
     highlight = IconItem::isOdd(list->getItemAt(x, y));
     if (highlight)
     {
-        dc.setForeground(list->getHighlightColor());
-        dc.fillRectangle(x, y, header->getTotalSize(), h);
+        list->fillBackground(dc, x, y, header->getTotalSize(), h, 1, list->getHighlightColor());
     }
     highlight = !highlight;
 
@@ -371,13 +499,12 @@ void IconItem::drawDetails(IconList* list, FXDC& dc, int x, int y, int, int h) c
 
     if (highlight)
     {
-        dc.setForeground(list->getSortColor());
-        dc.fillRectangle(x + dx, y, header->getItemSize(list->getSortHeader()), h);
+        list->fillBackground(dc, x + dx, y, header->getItemSize(list->getSortHeader()), h, 2, list->getSortColor());
     }
     else
     {
-        dc.setForeground(list->getHighlightSortColor());
-        dc.fillRectangle(x + dx, y, header->getItemSize(list->getSortHeader()), h);
+        list->fillBackground(dc, x + dx, y, header->getItemSize(list->getSortHeader()), h, 3,
+                             list->getHighlightSortColor());
     }
 
     // Color the selected items
@@ -452,7 +579,7 @@ void IconItem::drawDetails(IconList* list, FXDC& dc, int x, int y, int, int h) c
             }
 
             // Blend to background color
-            miniIcon->blend(list->getBackColor());
+            miniIcon->blend(list->getIconBlendColor());
             miniIcon->render();
 
             // Restore original pixels
@@ -1089,6 +1216,8 @@ IconList::IconList(FXComposite* p, FXuint *ic, FXuint nc, FXObject* tgt, FXSelec
     selbackColor = getApp()->getSelbackColor();
     seltextColor = getApp()->getSelforeColor();
     highlightColor = getApp()->reg().readColorEntry("SETTINGS", "highlightcolor", FXRGB(238, 238, 238));
+    backgroundEffect = getApp()->reg().readStringEntry("SETTINGS", "list_background_effect", "");
+    backgroundEffect.trim();
 
     // Sort colors for detailed mode
     FXColor listbackColor = getApp()->reg().readColorEntry("SETTINGS", "listbackcolor", FXRGB(197, 194, 197));
@@ -1235,7 +1364,15 @@ void IconList::moveContents(int x, int y)
         top = header->getDefaultHeight();
         header->setPosition(x);
     }
-    scroll(0, top, FXMAX(1, viewport_w - getBackgroundGutter()), viewport_h, dx, dy);
+    if (backgroundEffect.empty())
+    {
+        scroll(0, top, FXMAX(1, viewport_w - getBackgroundGutter()), viewport_h, dx, dy);
+    }
+    else
+    {
+        // The effect is fixed to the window: blitting scrolled pixels would move it with the items
+        update(0, top, viewport_w, viewport_h);
+    }
     placeInlineEditor(true);
 }
 
@@ -1399,6 +1536,637 @@ int IconList::getBackgroundGutter() const
 {
     return (options & ICONLIST_FILELIST) && !(options & (ICONLIST_MINI_ICONS | ICONLIST_BIG_ICONS)) ?
         2 * itemHeight : 0;
+}
+
+
+#include "BackgroundEffect.h"
+#include "AppLogger.h"
+#include <cmath>
+#include <fstream>
+#include <iterator>
+
+// Theme background effects
+//
+// A theme may add one optional line, for example:
+//   list_background_effect=fill=gradient colors=#1E3C72,#2A5298 direction=vertical texture=paper strength=30
+// fill: solid, gradient or pattern. colors: #RRGGBB list (gradient stops, or pattern colours).
+// direction: vertical, horizontal, diagonal or radial. pattern: stripes, vertical-stripes,
+// diagonal-stripes, checks, grid, dots, diamonds or crosshatch; size: pattern cell in pixels.
+// texture: name of a seamless PNG tile; strength: 0-100. texture_colors: theme (greyscale tint, default) or
+// original (the tile's own colours and alpha). rows: on or off (alternate row tint).
+// The effect is anchored to the window, so it stays put while the items scroll over it.
+namespace
+{
+enum EffectPattern
+{
+    PATTERN_NONE, PATTERN_STRIPES, PATTERN_VSTRIPES, PATTERN_DSTRIPES, PATTERN_CHECKS, PATTERN_GRID,
+    PATTERN_DOTS, PATTERN_DIAMONDS, PATTERN_CROSSHATCH
+};
+
+typedef BackgroundEffect EffectSpec;
+
+FXbool parseEffectColor(const FXString& text, FXColor& color)
+{
+    if ((text.length() != 7 && text.length() != 9) || text[0] != '#')
+    {
+        return false;
+    }
+    for (int i = 1; i < text.length(); i++)
+    {
+        if (!isxdigit((unsigned char)text[i]))
+        {
+            return false;
+        }
+    }
+    unsigned long rgb = strtoul(text.text() + 1, NULL, 16);
+    if (text.length() == 9)
+        color = FXRGBA((rgb >> 24) & 255, (rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255);
+    else
+        color = FXRGB((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255);
+    return true;
+}
+
+EffectSpec parseEffect(const FXString& spec)
+{
+    EffectSpec effect;
+    FXString text = spec;
+    text.simplify();
+    for (int i = 0; ; i++)
+    {
+        FXString token = text.section(' ', i);
+        if (token.empty())
+        {
+            break;
+        }
+        FXString key = token.before('=').lower(), value = token.after('=');
+        if (key == "fill")
+        {
+            effect.fill = value.lower();
+        }
+        else if (key == "colors" || key == "colours")
+        {
+            for (int c = 0; ; c++)
+            {
+                FXString part = value.section(',', c);
+                FXColor color;
+                if (part.empty())
+                {
+                    break;
+                }
+                if (parseEffectColor(part, color))
+                {
+                    effect.colors.push_back(color);
+                }
+            }
+        }
+        else if (key == "direction")
+        {
+            effect.direction = value.lower();
+        }
+        else if (key == "positions")
+        {
+            std::vector<FXdouble> positions;
+            FXbool valid = true;
+            for (int p = 0; p <= value.contains(','); ++p)
+            {
+                FXString part = value.section(',', p);
+                char* end = NULL;
+                double position = strtod(part.text(), &end);
+                if (part.empty() || !end || *end || !std::isfinite(position) || position < 0 ||
+                    position > 1 || (!positions.empty() && position <= positions.back()))
+                    valid = false;
+                positions.push_back(position);
+            }
+            if (valid) effect.positions.swap(positions);
+        }
+        else if (key == "midpoints")
+        {
+            std::vector<FXdouble> midpoints;
+            FXbool valid = true;
+            for (int p = 0; p <= value.contains(','); ++p)
+            {
+                FXString part = value.section(',', p);
+                char* end = NULL;
+                double middle = strtod(part.text(), &end);
+                if (part.empty() || !end || *end || !std::isfinite(middle) || middle <= 0 || middle >= 1)
+                    valid = false;
+                midpoints.push_back(middle);
+            }
+            if (valid) effect.midpoints.swap(midpoints);
+        }
+        else if (key == "angle")
+        {
+            char* end = NULL;
+            double angle = strtod(value.text(), &end);
+            if (!value.empty() && end && !*end && std::isfinite(angle))
+            {
+                effect.angle = fmod(fmod(angle, 360) + 360, 360);
+                effect.angled = true;
+            }
+        }
+        else if (key == "pattern")
+        {
+            static const char* const names[] = {"", "stripes", "vertical-stripes", "diagonal-stripes", "checks",
+                                                 "grid", "dots", "diamonds", "crosshatch"};
+            for (int p = 1; p < (int)ARRAYNUMBER(names); p++)
+            {
+                if (value.lower() == names[p])
+                {
+                    effect.pattern = p;
+                }
+            }
+        }
+        else if (key == "size")
+        {
+            effect.size = FXCLAMP(4, FXIntVal(value), 256);
+        }
+        else if (key == "texture")
+        {
+            // Names only: textures are looked up in known folders, never by arbitrary path
+            if (BackgroundEffect::validTextureName(value))
+            {
+                effect.texture = value;
+            }
+        }
+        else if (key == "strength")
+        {
+            effect.strength = FXCLAMP(0, FXIntVal(value), 100);
+        }
+        else if (key == "texture_colors")
+        {
+            effect.originalColors = value.lower() == "original";
+        }
+        else if (key == "rows")
+        {
+            effect.rows = value.lower() != "off";
+        }
+    }
+    return effect;
+}
+
+FXColor mixColor(FXColor a, FXColor b, double t)
+{
+    return FXRGB((int)(FXREDVAL(a) + (FXREDVAL(b) - (int)FXREDVAL(a)) * t + 0.5),
+                 (int)(FXGREENVAL(a) + (FXGREENVAL(b) - (int)FXGREENVAL(a)) * t + 0.5),
+                 (int)(FXBLUEVAL(a) + (FXBLUEVAL(b) - (int)FXBLUEVAL(a)) * t + 0.5));
+}
+
+FXColor offsetColor(FXColor color, int dr, int dg, int db, double scale)
+{
+    return FXRGB(FXCLAMP(0, (int)((FXREDVAL(color) + dr) * scale), 255),
+                 FXCLAMP(0, (int)((FXGREENVAL(color) + dg) * scale), 255),
+                 FXCLAMP(0, (int)((FXBLUEVAL(color) + db) * scale), 255));
+}
+
+FXbool patternCovers(int pattern, double x, double y, double s)
+{
+    const double line = FXMAX(1.0, s / 12.0);
+    switch (pattern)
+    {
+    case PATTERN_STRIPES:
+        return fmod(y, 2 * s) < s;
+    case PATTERN_VSTRIPES:
+        return fmod(x, 2 * s) < s;
+    case PATTERN_DSTRIPES:
+        return fmod(x + y, 2 * s) < s;
+    case PATTERN_CHECKS:
+        return (((int)(x / s)) + ((int)(y / s))) & 1;
+    case PATTERN_GRID:
+        return fmod(x, s) < line || fmod(y, s) < line;
+    case PATTERN_DOTS:
+    {
+        double cx = fmod(x + (((int)(y / s)) & 1 ? s / 2 : 0), s) - s / 2, cy = fmod(y, s) - s / 2;
+        return cx * cx + cy * cy < s * s * 0.04;
+    }
+    case PATTERN_DIAMONDS:
+        return fabs(fmod(x, s) - s / 2) + fabs(fmod(y, s) - s / 2) < s * 0.28;
+    case PATTERN_CROSSHATCH:
+        return fmod(x + y, s) < line || fmod(x - y + 4096 * s, s) < line;
+    }
+    return false;
+}
+
+// Bundled tiles take precedence, so a user tile can never silently replace a built-in name
+FXString findTexture(const FXString& name)
+{
+    FXString candidates[2] =
+    {
+        FXPath::directory(execpath) + "/../share/swordfish/textures/" + name + ".png",
+        xdgconfighome + PATHSEPSTRING XFECONFIGPATH "/textures/" + name + ".png"
+    };
+    for (const FXString& path : candidates)
+    {
+        if (!path.empty() && xf_existfile(path))
+        {
+            return path;
+        }
+    }
+    return "";
+}
+}
+
+BackgroundEffect BackgroundEffect::parse(const FXString& spec)
+{
+    return parseEffect(spec);
+}
+
+FXString BackgroundEffect::serialize() const
+{
+    FXString result = "fill=" + fill;
+    if (!colors.empty())
+    {
+        result += " colors=";
+        for (size_t i = 0; i < colors.size(); ++i)
+        {
+            if (i) result += ',';
+            FXColor color = colors[i];
+            result += FXString().format("#%02X%02X%02X", FXREDVAL(color), FXGREENVAL(color), FXBLUEVAL(color));
+            if (FXALPHAVAL(color) != 255) result += FXString().format("%02X", FXALPHAVAL(color));
+        }
+    }
+    if (positions.size() == colors.size() && positions.size() > 1)
+    {
+        result += " positions=";
+        for (size_t i = 0; i < positions.size(); ++i)
+        {
+            if (i) result += ',';
+            result += FXString().format("%.6f", positions[i]);
+        }
+    }
+    if (midpoints.size() + 1 == colors.size())
+    {
+        result += " midpoints=";
+        for (size_t i = 0; i < midpoints.size(); ++i)
+        {
+            if (i) result += ',';
+            result += FXString().format("%.6f", midpoints[i]);
+        }
+    }
+    result += " direction=" + direction;
+    if (angled || direction == "linear") result += FXString().format(" angle=%.2f", angle);
+    static const char* const names[] = {"", "stripes", "vertical-stripes", "diagonal-stripes", "checks",
+                                        "grid", "dots", "diamonds", "crosshatch"};
+    if (pattern > 0 && pattern < static_cast<int>(ARRAYNUMBER(names))) result += " pattern=" + FXString(names[pattern]);
+    result += FXString().format(" size=%.0f", size);
+    if (!texture.empty()) result += " texture=" + texture;
+    result += FXString().format(" strength=%d texture_colors=%s rows=%s", strength,
+                                 originalColors ? "original" : "theme", rows ? "on" : "off");
+    return result;
+}
+
+FXbool BackgroundEffect::validTextureName(const FXString& name)
+{
+    if (name.empty()) return false;
+    for (FXint i = 0; i < name.length(); ++i)
+        if (!isalnum(static_cast<unsigned char>(name[i])) && name[i] != '-' && name[i] != '_') return false;
+    return true;
+}
+
+FXString BackgroundEffect::texturePath(const FXString& name)
+{
+    return validTextureName(name) ? findTexture(name) : FXString::null;
+}
+
+FXbool BackgroundEffect::validateTexture(FXApp* app, const FXString& path, FXString& error)
+{
+    FILE* file = fopen(path.text(), "rb");
+    if (!file)
+    {
+        error = path + ": " + strerror(errno);
+        return false;
+    }
+    unsigned char header[24];
+    size_t read = fread(header, 1, sizeof(header), file);
+    FXbool failed = ferror(file);
+    fclose(file);
+    FXbool png = read == sizeof(header) && memcmp(header, "\x89PNG\r\n\x1a\n", 8) == 0 &&
+                  memcmp(header + 12, "IHDR", 4) == 0;
+    FXuint width = png ? (static_cast<FXuint>(header[16]) << 24 | static_cast<FXuint>(header[17]) << 16 |
+                          static_cast<FXuint>(header[18]) << 8 | header[19]) : 0;
+    FXuint height = png ? (static_cast<FXuint>(header[20]) << 24 | static_cast<FXuint>(header[21]) << 16 |
+                           static_cast<FXuint>(header[22]) << 8 | header[23]) : 0;
+    struct stat status;
+    if (failed || stat(path.text(), &status) != 0 || !S_ISREG(status.st_mode) || status.st_size > 16 * 1024 * 1024 ||
+        !png || !width || !height || width > 1024 || height > 1024)
+    {
+        error = _("A texture must be a PNG image of at most 1024 x 1024 pixels and 16 MB.");
+        return false;
+    }
+    FXFileStream stream;
+    FXPNGImage image(app, NULL, IMAGE_KEEP);
+    if (!stream.open(path, FXStreamLoad) || !image.loadPixels(stream) || !image.getData())
+    {
+        error = _("The PNG texture could not be decoded: ") + path;
+        return false;
+    }
+    return true;
+}
+
+FXbool BackgroundEffect::importTexture(FXApp* app, const FXString& source, const FXString& name,
+                                       FXbool allowIdentical, FXString& error)
+{
+    if (!validTextureName(name))
+    {
+        error = _("Use only letters, numbers, hyphens and underscores in a texture name.");
+        return false;
+    }
+    if (!validateTexture(app, source, error)) return false;
+    FXString existing = texturePath(name);
+    if (!existing.empty())
+    {
+        FXbool same = allowIdentical;
+        if (same)
+        {
+            std::ifstream a(source.text(), std::ios::binary), b(existing.text(), std::ios::binary);
+            same = a && b;
+            if (same)
+            {
+                std::istreambuf_iterator<char> ia(a), ib(b), end;
+                while (ia != end && ib != end && *ia == *ib) { ++ia; ++ib; }
+                same = ia == end && ib == end;
+            }
+            if (a.bad() || b.bad())
+            {
+                error = _("Cannot read texture: ") + existing;
+                return false;
+            }
+        }
+        if (same) return true;
+        error = _("Texture name already exists. Please use another name.");
+        return false;
+    }
+    FXString directory = xdgconfighome + PATHSEPSTRING XFECONFIGPATH "/textures";
+    if ((!xf_existfile(directory) && xf_mkpath(directory.text(), 0755) != 0) ||
+        !FXFile::copyFiles(source, directory + PATHSEPSTRING + name + ".png", false))
+    {
+        error = _("Cannot copy texture into ") + directory + ": " + strerror(errno);
+        return false;
+    }
+    appLog(APP_LOG_SETTINGS, "theme-texture-imported", name + " from \"" + source + "\"");
+    return true;
+}
+
+
+void IconList::setBackgroundEffect(const FXString& spec)
+{
+    backgroundEffect = spec;
+    backgroundEffect.trim();
+    clearBackgroundEffect();
+    update();
+}
+
+
+void IconList::clearBackgroundEffect()
+{
+    for (int i = 0; i < 4; i++)
+    {
+        delete effectLayers[i];
+        effectLayers[i] = NULL;
+    }
+    FXFREE(&effectBase);
+    effectWidth = effectHeight = 0;
+}
+
+void IconList::setHighlightColor(FXColor color)
+{
+    if (highlightColor != color)
+    {
+        highlightColor = color;
+        highlightSortColor = offsetColor(color, 0, 0, 0, DARKEN_SORT);
+        clearBackgroundEffect();
+        update();
+    }
+}
+
+void IconList::setBackColor(FXColor color)
+{
+    sortColor = offsetColor(color, 0, 0, 0, DARKEN_SORT);
+    FXScrollArea::setBackColor(color);
+}
+
+
+// Compute the plain effect pixels for the current window size
+void IconList::buildBackgroundEffect()
+{
+    clearBackgroundEffect();
+    const int w = FXMAX(1, getWidth()), h = FXMAX(1, getHeight());
+    if (!FXMALLOC(&effectBase, FXColor, w * h))
+    {
+        return;
+    }
+    effectWidth = w;
+    effectHeight = h;
+    effectBackColor = backColor;
+
+    EffectSpec effect = parseEffect(backgroundEffect);
+    effectRows = effect.rows;
+    std::vector<FXColor> stops = effect.colors;
+    if (stops.empty())
+    {
+        stops.push_back(backColor);
+    }
+    if (stops.size() < 2)
+    {
+        stops.push_back(effect.fill == "pattern" ? makeShadowColor(stops[0]) : stops[0]);
+    }
+    for (FXColor& stop : stops)
+        stop = mixColor(backColor, stop, FXALPHAVAL(stop) / 255.0);
+    std::vector<FXdouble> positions = effect.positions;
+    if (positions.size() != stops.size() || positions.front() != 0 || positions.back() != 1)
+    {
+        positions.clear();
+        for (size_t i = 0; i < stops.size(); ++i) positions.push_back(i / static_cast<double>(stops.size() - 1));
+    }
+
+    const double radians = effect.angle * 3.14159265358979323846 / 180.0;
+    const double angleX = cos(radians), angleY = sin(radians);
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            FXColor color = stops[0];
+            if (effect.fill == "gradient")
+            {
+                double t;
+                if (effect.angled || effect.direction == "linear")
+                {
+                    double span = fabs(angleX) + fabs(angleY);
+                    t = 0.5 + (((double)x / FXMAX(1, w - 1) - 0.5) * angleX +
+                                ((double)y / FXMAX(1, h - 1) - 0.5) * angleY) / span;
+                    t = FXCLAMP(0.0, t, 1.0);
+                }
+                else if (effect.direction == "horizontal")
+                {
+                    t = (double)x / FXMAX(1, w - 1);
+                }
+                else if (effect.direction == "diagonal")
+                {
+                    t = ((double)x / FXMAX(1, w - 1) + (double)y / FXMAX(1, h - 1)) / 2;
+                }
+                else if (effect.direction == "radial")
+                {
+                    double dx = (x - w / 2.0) / (w / 2.0), dy = (y - h / 2.0) / (h / 2.0);
+                    t = FXMIN(1.0, sqrt(dx * dx + dy * dy) / sqrt(2.0));
+                }
+                else
+                {
+                    t = (double)y / FXMAX(1, h - 1);
+                }
+                size_t stop = 0;
+                while (stop + 2 < stops.size() && t > positions[stop + 1]) ++stop;
+                double position = (t - positions[stop]) / (positions[stop + 1] - positions[stop]);
+                if (effect.midpoints.size() + 1 == stops.size())
+                {
+                    double middle = effect.midpoints[stop];
+                    position = position <= middle ? 0.5 * position / middle :
+                               0.5 + 0.5 * (position - middle) / (1 - middle);
+                }
+                color = mixColor(stops[stop], stops[stop + 1], position);
+            }
+            else if (effect.fill == "pattern" && effect.pattern != PATTERN_NONE)
+            {
+                // 4x supersampling keeps diagonal and round edges smooth
+                int hits = 0;
+                for (int s = 0; s < 4; s++)
+                {
+                    hits += patternCovers(effect.pattern, x + 0.25 + 0.5 * (s & 1), y + 0.25 + 0.5 * (s >> 1),
+                                          effect.size);
+                }
+                color = mixColor(stops[0], stops[1], hits / 4.0);
+            }
+            effectBase[y * w + x] = color;
+        }
+    }
+
+    // Tinted tiles modulate brightness around their own average, keeping the colours underneath
+    FXString path = effect.texture.empty() ? FXString() : findTexture(effect.texture);
+    if (!path.empty() && effect.strength > 0)
+    {
+        FXFileStream stream;
+        FXPNGImage tile(getApp(), NULL, IMAGE_KEEP);
+        if (stream.open(path, FXStreamLoad) && tile.loadPixels(stream) && tile.getData() &&
+            tile.getWidth() > 0 && tile.getHeight() > 0 && tile.getWidth() <= 1024 && tile.getHeight() <= 1024)
+        {
+            const int tw = tile.getWidth(), th = tile.getHeight();
+            const double amount = effect.strength / 100.0;
+            if (effect.originalColors)
+            {
+                // The tile's own colours are painted over the fill; its alpha keeps transparent areas plain
+                for (int y = 0; y < h; y++)
+                {
+                    for (int x = 0; x < w; x++)
+                    {
+                        FXColor c = tile.getData()[(y % th) * tw + (x % tw)];
+                        effectBase[y * w + x] = mixColor(effectBase[y * w + x], c, amount * FXALPHAVAL(c) / 255.0);
+                    }
+                }
+            }
+            else
+            {
+                std::vector<int> luma(tw * th);
+                double total = 0;
+                for (int i = 0; i < tw * th; i++)
+                {
+                    FXColor c = tile.getData()[i];
+                    luma[i] = (FXREDVAL(c) * 299 + FXGREENVAL(c) * 587 + FXBLUEVAL(c) * 114) / 1000;
+                    total += luma[i];
+                }
+                const int mean = (int)(total / (tw * th) + 0.5);
+                for (int y = 0; y < h; y++)
+                {
+                    for (int x = 0; x < w; x++)
+                    {
+                        int index = (y % th) * tw + (x % tw);
+                        int delta = (int)((luma[index] - mean) * amount * FXALPHAVAL(tile.getData()[index]) / 255.0);
+                        effectBase[y * w + x] = offsetColor(effectBase[y * w + x], delta, delta, delta, 1.0);
+                    }
+                }
+            }
+        }
+    }
+
+    double r = 0, g = 0, b = 0;
+    for (int i = 0; i < w * h; i++)
+    {
+        r += FXREDVAL(effectBase[i]);
+        g += FXGREENVAL(effectBase[i]);
+        b += FXBLUEVAL(effectBase[i]);
+    }
+    effectAverage = FXRGB((int)(r / (w * h)), (int)(g / (w * h)), (int)(b / (w * h)));
+}
+
+
+// Server-side image for a layer, derived from the plain effect on first use
+FXIcon* BackgroundEffect::preview(FXComposite* parent, const FXString& spec, FXColor background, FXint size)
+{
+    FXuint column = FileList::ID_COL_NAME;
+    IconList list(parent, &column, 1, NULL, 0, FRAME_NONE, 0, 0, size, size);
+    list.hide();
+    list.setBackColor(background);
+    list.setBackgroundEffect(spec);
+    list.buildBackgroundEffect();
+    FXColor* pixels = NULL;
+    if (!list.effectBase || !FXMEMDUP(&pixels, list.effectBase, FXColor, size * size))
+        throw FXMemoryException(_("Unable to create texture preview"));
+    FXIcon* icon = new FXIcon(parent->getApp(), pixels, 0, IMAGE_KEEP | IMAGE_OWNED, size, size);
+    icon->create();
+    return icon;
+}
+
+FXImage* IconList::getEffectLayer(int layer)
+{
+    if (!effectBase || effectWidth != FXMAX(1, getWidth()) || effectHeight != FXMAX(1, getHeight()) ||
+        effectBackColor != backColor)
+    {
+        buildBackgroundEffect();
+    }
+    if (!effectBase || layer < 0 || layer > 3)
+    {
+        return NULL;
+    }
+    if (!effectLayers[layer])
+    {
+        // Alternate rows keep the theme's own highlight step; sorted columns darken as usual
+        FXbool row = (layer & 1) && effectRows;
+        int dr = row ? (int)FXREDVAL(highlightColor) - (int)FXREDVAL(backColor) : 0;
+        int dg = row ? (int)FXGREENVAL(highlightColor) - (int)FXGREENVAL(backColor) : 0;
+        int db = row ? (int)FXBLUEVAL(highlightColor) - (int)FXBLUEVAL(backColor) : 0;
+        double scale = (layer & 2) ? DARKEN_SORT : 1.0;
+        FXColor* data;
+        if (!FXMALLOC(&data, FXColor, effectWidth * effectHeight))
+        {
+            return NULL;
+        }
+        for (int i = 0; i < effectWidth * effectHeight; i++)
+        {
+            data[i] = layer ? offsetColor(effectBase[i], dr, dg, db, scale) : effectBase[i];
+        }
+        effectLayers[layer] = new FXImage(getApp(), data, IMAGE_OWNED, effectWidth, effectHeight);
+        effectLayers[layer]->create();
+    }
+    return effectLayers[layer];
+}
+
+
+void IconList::fillBackground(FXDC& dc, int x, int y, int w, int h, int layer, FXColor solid)
+{
+    if (w <= 0 || h <= 0)
+    {
+        return;
+    }
+    FXImage* image = backgroundEffect.empty() ? NULL : getEffectLayer(layer);
+    if (!image)
+    {
+        dc.setForeground(layer ? solid : backColor);
+        dc.fillRectangle(x, y, w, h);
+        return;
+    }
+    int x0 = FXMAX(0, x), y0 = FXMAX(0, y);
+    int x1 = FXMIN(effectWidth, x + w), y1 = FXMIN(effectHeight, y + h);
+    if (x1 > x0 && y1 > y0)
+    {
+        dc.drawArea(image, x0, y0, x1 - x0, y1 - y0, x0, y0);
+    }
 }
 
 
@@ -2923,8 +3691,7 @@ long IconList::onPaint(FXObject*, FXSelector, void* ptr)
     // This avoids an ugly transient drawing on older hardware
     if (itemHeight == ITEM_HEIGHT)
     {
-        dc.setForeground(backColor);
-        dc.fillRectangle(event->rect.x, event->rect.y, event->rect.w, event->rect.h);
+        fillBackground(dc, event->rect.x, event->rect.y, event->rect.w, event->rect.h);
 
         return 0;
     }
@@ -2969,8 +3736,7 @@ long IconList::onPaint(FXObject*, FXSelector, void* ptr)
                 {
                     x = pos_x + c * itemSpace;
                     index = (options & ICONLIST_COLUMNS) ? ncols * r + c : nrows * c + r;
-                    dc.setForeground(backColor);
-                    dc.fillRectangle(x, y, itemSpace, itemHeight);
+                    fillBackground(dc, x, y, itemSpace, itemHeight);
                     if (index < items.no())
                     {
                         items[index]->draw(this, dc, x, y, itemSpace, itemHeight);
@@ -2988,8 +3754,7 @@ long IconList::onPaint(FXObject*, FXSelector, void* ptr)
                 {
                     x = pos_x + c * itemSpace;
                     index = (options & ICONLIST_COLUMNS) ? ncols * r + c : nrows * c + r;
-                    dc.setForeground(backColor);
-                    dc.fillRectangle(x, y, itemSpace, itemHeight);
+                    fillBackground(dc, x, y, itemSpace, itemHeight);
                     if (index < items.no())
                     {
                         items[index]->draw(this, dc, x, y, itemSpace, itemHeight);
@@ -3002,14 +3767,12 @@ long IconList::onPaint(FXObject*, FXSelector, void* ptr)
         yy = (rhi + 1) * itemHeight;
         if (yy < event->rect.y + event->rect.h)
         {
-            dc.setForeground(backColor);
-            dc.fillRectangle(event->rect.x, yy, event->rect.w, event->rect.y + event->rect.h - yy);
+            fillBackground(dc, event->rect.x, yy, event->rect.w, event->rect.y + event->rect.h - yy);
         }
         xx = (chi + 1) * itemSpace;
         if (xx < event->rect.x + event->rect.w)
         {
-            dc.setForeground(backColor);
-            dc.fillRectangle(xx, event->rect.y, event->rect.x + event->rect.w - xx, event->rect.h);
+            fillBackground(dc, xx, event->rect.y, event->rect.x + event->rect.w - xx, event->rect.h);
         }
     }
     // Detailed mode
@@ -3036,22 +3799,19 @@ long IconList::onPaint(FXObject*, FXSelector, void* ptr)
         y = pos_y + rlo * itemHeight + header->getDefaultHeight();
         for (index = rlo; index <= rhi; index++, y += itemHeight)
         {
-            dc.setForeground(backColor);
-            dc.fillRectangle(0, y, width, itemHeight);
+            fillBackground(dc, 0, y, width, itemHeight);
             items[index]->draw(this, dc, pos_x, y, width, itemHeight);
         }
 
         // Repaint left-over background
         if (y < event->rect.y + event->rect.h)
         {
-            dc.setForeground(backColor);
-            dc.fillRectangle(event->rect.x, y, event->rect.w, event->rect.y + event->rect.h - y);
+            fillBackground(dc, event->rect.x, y, event->rect.w, event->rect.y + event->rect.h - y);
         }
         if (gutter)
         {
             dc.setClipRectangle(FXMAX(0, viewport_w - gutter), 0, gutter, height);
-            dc.setForeground(backColor);
-            dc.fillRectangle(FXMAX(0, viewport_w - gutter), 0, gutter, height);
+            fillBackground(dc, FXMAX(0, viewport_w - gutter), 0, gutter, height);
         }
     }
 
@@ -5215,6 +5975,7 @@ void IconList::load(FXStream& store)
 // Cleanup
 IconList::~IconList()
 {
+    clearBackgroundEffect();
     getApp()->removeTimeout(this, ID_TIPTIMER);
     getApp()->removeTimeout(this, ID_LOOKUPTIMER);
     getApp()->removeChore(this, ID_INLINE_COMMIT);

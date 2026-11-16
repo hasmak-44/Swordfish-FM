@@ -10,6 +10,8 @@
 #include "KeyBindings.h"
 #include "SystemIntegration.h"
 #include "SystemIcons.h"
+#include "Theme.h"
+#include "FileList.h"
 
 class ProgramChoice : public ComboBox
 {
@@ -24,58 +26,35 @@ public:
 };
 
 
-// Number of modifiable colors
-#define NUM_COLORS    12
-
-// Number of default themes
-#define NUM_DEFAULT_THEMES    15
-
-
-struct Theme
-{
-    FXString name;
-    FXString tip;
-    FXColor color[NUM_COLORS];
-    Theme()
-    {
-        name = "";
-        tip = "";
-    }
-
-    Theme(const char* n, const char* t, FXColor base = 0, FXColor bdr = 0, FXColor bg = 0, FXColor fg = 0,
-          FXColor selbg = 0, FXColor selfg = 0, FXColor listbg = 0, FXColor listfg = 0,
-          FXColor listhl = 0, FXColor pbarfg = 0, FXColor attenfg = 0, FXColor scrollfg = 0)
-    {
-        name = FXString(n);
-        tip = FXString(t);
-        color[0] = base;
-        color[1] = bdr;
-        color[2] = bg;
-        color[3] = fg;
-        color[4] = selbg;
-        color[5] = selfg;
-        color[6] = listbg;
-        color[7] = listfg;
-        color[8] = listhl;
-        color[9] = pbarfg;
-        color[10] = attenfg;
-        color[11] = scrollfg;
-    }
-
-    FXbool operator !=(const Theme&);
-};
-
-
-// Vector of themes
-typedef std::vector<Theme>   vector_Theme;
-
-
-
 class PreferencesBox : public DialogBox
 {
     FXDECLARE(PreferencesBox)
 private:
-    ComboBox* colorsBox = NULL;
+    enum Category
+    {
+        GENERAL, PANELS, FILE_LIST, FILE_OPERATIONS, APPEARANCE, LANGUAGE, PROGRAMS,
+        KEY_BINDINGS, CUSTOM_ACTIONS, SYSTEM, CATEGORY_COUNT
+    };
+    struct CategoryPage
+    {
+        FXString name;
+        FXButton* button = NULL;
+        FXTabBook* tabs = NULL;
+        FXIcon* icon = NULL;
+        FXIcon* selectedIcon = NULL;
+    };
+    CategoryPage categories[CATEGORY_COUNT];
+    FXSwitcher* categoryPages = NULL;
+    FXTextField* settingsFilter = NULL;
+    FXLabel* pageTitle = NULL;
+    FXint currentCategory = 0;
+    FXVerticalFrame* addPage(Category, const FXString&);
+    void selectCategory(FXint);
+    void rememberNavigation();
+    void rememberPreferences();
+    void saveCustomThemes(const vector_Theme&);
+    vector_Theme themesPrevious;
+    friend class ThemeWorkflowRegression;
     FXList* themesList = NULL;
     FXTextField* iconpath = NULL;
     FXListBox* iconthemelist = NULL;
@@ -214,10 +193,12 @@ private:
     FXRadioButton* dirpanel_placesstartup = NULL;
     FXRadioButton* dirpanel_treestartup = NULL;
     FXSpinner* spindpi = NULL;
-    FXSpinner* spinshade = NULL;
     FXRadioButton* customtoolbariconsizebuttons[3] = { NULL, NULL, NULL };
     FXDataTarget customtoolbariconsizetarget;
     FXint customtoolbariconsize = 16;
+    FXRadioButton* customtoolbarstylebuttons[3] = { NULL, NULL, NULL };
+    FXDataTarget customtoolbarstyletarget;
+    FXuint customtoolbarstyle = 0;
     FXDataTarget startdirtarget;
     FXDataTarget newtabdirtarget;
     FXuint startdirmode = 0;
@@ -265,7 +246,6 @@ private:
     FXuint idCol_prev[NMAX_COLS] = { 0 };
     FXuint nbCols_prev = 0;
 
-    ColorWell* cwell = NULL;
     vector_Theme Themes;
     Theme currTheme;
     Theme currTheme_prev;
@@ -336,6 +316,14 @@ public:
     {
         ID_ACCEPT=DialogBox::ID_LAST,
         ID_CANCEL,
+        ID_APPLY,
+        ID_CATEGORY_FIRST,
+        ID_CATEGORY_LAST = ID_CATEGORY_FIRST + CATEGORY_COUNT - 1,
+        ID_CATEGORY_TAB,
+        ID_FILTER,
+        ID_THEME_EDIT,
+        ID_THEME_NEW,
+        ID_THEME_DUPLICATE,
         ID_BROWSE_TXTVIEW,
         ID_BROWSE_TXTEDIT,
         ID_BROWSE_FILECOMP,
@@ -349,7 +337,6 @@ public:
         ID_BROWSE_XTERM,
         ID_BROWSE_MOUNTCMD,
         ID_BROWSE_UMOUNTCMD,
-        ID_COLOR,
         ID_THEME,
         ID_THEME_SAVEAS,
         ID_THEME_RENAME,
@@ -412,8 +399,16 @@ public:
                    FXColor attentioncolor = FXRGB(255, 0, 0), FXColor scrollbackcolor = FXRGB(237, 236, 235));
 
     FXuint execute(FXuint);
+    virtual ~PreferencesBox();
+    virtual void create();
+    virtual void show(FXuint placement = PLACEMENT_OWNER);
     void selectIntegrationPage();
 
+    long onCmdCategory(FXObject*, FXSelector, void*);
+    long onCmdPage(FXObject*, FXSelector, void*);
+    long onFilter(FXObject*, FXSelector, void*);
+    long onCmdThemeEditor(FXObject*, FXSelector, void*);
+    FXbool saveEditedTheme(const Theme&, FXint);
     long onCmdAccept(FXObject*, FXSelector, void*);
     long onCmdColumnPane(FXObject*, FXSelector, void*);
     long onCmdBrowse(FXObject*, FXSelector, void*);
@@ -423,8 +418,6 @@ public:
     long onCmdRestoreProgramDefaults(FXObject*, FXSelector, void*);
     void loadAssociations();
     void updateAssociationSelection();
-    long onCmdColor(FXObject*, FXSelector, void*);
-    long onUpdColor(FXObject*, FXSelector, void*);
     long onCmdPopupMenu(FXObject*, FXSelector, void*);
     long onCmdTheme(FXObject*, FXSelector, void*);
     long onCmdThemeSaveAs(FXObject*, FXSelector, void*);
@@ -432,6 +425,8 @@ public:
     long onCmdThemeRemove(FXObject*, FXSelector, void*);
     long onCmdThemeExport(FXObject*, FXSelector, void*);
     long onCmdThemeImport(FXObject*, FXSelector, void*);
+    FXbool importThemeFile(const FXString&);
+    FXbool importThemeTexture(const FXString&, const FXString&);
     long onUpdThemeExport(FXObject*, FXSelector, void*);
     long onCmdIconTheme(FXObject*, FXSelector, void*);
     void fillIconThemeList();

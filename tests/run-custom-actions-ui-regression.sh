@@ -12,6 +12,7 @@ mkdir -p "$run_dir/home" "$run_dir/fixture/other"
 export TMPDIR="$run_dir"
 mkdir -p "$run_dir/usr/bin" "$run_dir/usr/share/swordfish/icons"
 ln -s "$icons" "$run_dir/usr/share/swordfish/icons/default-theme"
+ln -s "$root/icons/preferences" "$run_dir/usr/share/swordfish/icons/preferences"
 ln -s "$native/src/swordfish" "$run_dir/usr/bin/swordfish"
 touch "$run_dir/fixture/one 'quoted'.txt" "$run_dir/fixture/two \$HOME.txt"
 cat > "$run_dir/fake-terminal" <<'TERMINAL'

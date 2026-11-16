@@ -2781,6 +2781,7 @@ void XFileImage::create()
         FilterNum = i;
     }
 
+    xf_dialogcolors(this);
     FXMainWindow::create();
 
     if (filterimgs)

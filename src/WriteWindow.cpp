@@ -203,7 +203,7 @@ Preferences::Preferences(WriteWindow* owner) : DialogBox(owner, _("XFileWrite Pr
     FXTabBook* tabbook = new FXTabBook(contents, NULL, 0, LAYOUT_FILL_X | LAYOUT_FILL_Y | LAYOUT_RIGHT);
 
     // First tab - Editor
-    new FXTabItem(tabbook, _("&Editor"), NULL);
+    new DialogTabItem(tabbook, _("&Editor"), NULL);
     FXVerticalFrame* editor = new FXVerticalFrame(tabbook, FRAME_NONE);
     FXGroupBox* group = new FXGroupBox(editor, _("Text"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     FXMatrix* matrix = new FXMatrix(group, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
@@ -228,7 +228,7 @@ Preferences::Preferences(WriteWindow* owner) : DialogBox(owner, _("XFileWrite Pr
     stripcr->setCheck(stripreturn);
 
     // Second tab - Colors
-    new FXTabItem(tabbook, _("&Colors"), NULL);
+    new DialogTabItem(tabbook, _("&Colors"), NULL);
     FXVerticalFrame* colors = new FXVerticalFrame(tabbook, FRAME_NONE);
     group = new FXGroupBox(colors, _("Text"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     FXMatrix* matrix1 = new FXMatrix(group, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
@@ -1090,6 +1090,7 @@ void WriteWindow::create()
         FilterNum = i;
     }
 
+    xf_dialogcolors(this);
     FXMainWindow::create();
     dragshell->create();
     filemenu->create();

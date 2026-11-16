@@ -883,6 +883,9 @@ public:
 
 
 // Color selection widget
+class ColorTools;
+struct Theme;
+
 class FXAPI ColorSelector : public FXPacker
 {
     FXDECLARE(ColorSelector)
@@ -903,6 +906,7 @@ protected:
     FXButton* cancel = NULL;                                    // Cancel button
     FXfloat rgba[4];                                            // Accurate RGBA color
     FXfloat hsva[4];                                            // Accurate HSVA color
+    ColorTools* tools = NULL;
 
 protected:
     static const FXchar* wellname[24];                          // Well names
@@ -1003,6 +1007,11 @@ public:
 
     // Set the selected color
     void setRGBA(FXColor clr);
+    void selectColor(FXColor, FXuint = SEL_COMMAND);
+    void setOriginalRGBA(FXColor);
+    void setTheme(Theme*);
+    void rememberColor();
+    FXbool validInput() const;
 
     // Get the selected color
     FXColor getRGBA() const;
@@ -1057,6 +1066,8 @@ private:
 public:
     long onChgColor(FXObject*, FXSelector, void*);
     long onCmdColor(FXObject*, FXSelector, void*);
+    long onAcceptColor(FXObject*, FXSelector, void*);
+    long onUpdAccept(FXObject*, FXSelector, void*);
 
 public:
     enum
@@ -1070,6 +1081,9 @@ public:
     // Construct color dialog
     ColorDialog(FXWindow* owner, const FXString& name, FXuint opts = 0, FXint x = 0, FXint y = 0, FXint w = 0,
                 FXint h = 0);
+
+    virtual void create();
+    void setTheme(Theme*);
 
     // Set the color
     void setRGBA(FXColor clr);

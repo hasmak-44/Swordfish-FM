@@ -26,6 +26,10 @@
 #include "HistInputDialog.h"
 #include "SystemIntegration.h"
 #include "CustomActionsUI.h"
+#include <FXPNGIcon.h>
+#include "ThemeEditor.h"
+#include "BackgroundEffect.h"
+#include <set>
 
 ProgramChoice::ProgramChoice(FXComposite* parent) :
     ComboBox(parent, 30, false, false, NULL, 0, COMBOBOX_NORMAL |
@@ -82,22 +86,10 @@ FXString ProgramChoice::getText() const
 }
 
 
-FXbool Theme::operator !=(const Theme& t)
-{
-    for (int i = 0; i < NUM_COLORS; i++)
-    {
-        if (color[i] != t.color[i])
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-
 // Main window
 extern FXMainWindow* mainWindow;
 extern FXString execpath;
+extern FXString xdgconfighome;
 
 
 static FXbool isExtensionAssociationKey(const FXString& key)
@@ -216,6 +208,126 @@ static FXVerticalFrame* createPreferencesPage(FXTabBook* tabbook)
     return new FXVerticalFrame(scroll, FRAME_NONE | LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 10, 0);
 }
 
+FXVerticalFrame* PreferencesBox::addPage(Category category, const FXString& name)
+{
+    FXTabBook* book = categories[category].tabs;
+    new DialogTabItem(book, name);
+    return createPreferencesPage(book);
+}
+
+void PreferencesBox::selectCategory(FXint category)
+{
+    currentCategory = category;
+    categoryPages->show();
+    categoryPages->setCurrent(category);
+    pageTitle->setText(categories[category].name);
+    pageTitle->setBackColor(DialogColors::accent);
+    for (FXint i = 0; i < CATEGORY_COUNT; ++i)
+    {
+        categories[i].button->setBackColor(i == category ? DialogColors::accent : DialogColors::background);
+        categories[i].button->setIcon(i == category && categories[i].selectedIcon ?
+                                       categories[i].selectedIcon : categories[i].icon);
+    }
+}
+
+void PreferencesBox::rememberNavigation()
+{
+    getApp()->reg().writeIntEntry("PREFERENCES", "category", currentCategory);
+    for (FXint i = 0; i < CATEGORY_COUNT; ++i)
+        getApp()->reg().writeIntEntry("PREFERENCES", FXStringVal(i).text(), categories[i].tabs->getCurrent());
+}
+
+long PreferencesBox::onCmdCategory(FXObject*, FXSelector selector, void*)
+{
+    selectCategory(FXSELID(selector) - ID_CATEGORY_FIRST);
+    rememberNavigation();
+    return 1;
+}
+
+long PreferencesBox::onCmdPage(FXObject*, FXSelector, void*)
+{
+    rememberNavigation();
+    return 1;
+}
+
+static FXString settingLabels(FXWindow* window)
+{
+    FXString text;
+    if (FXLabel* label = dynamic_cast<FXLabel*>(window)) text += label->getText() + "\n";
+    for (FXWindow* child = window->getFirst(); child; child = child->getNext())
+        text += settingLabels(child);
+    text.substitute("&", "");
+    return text.lower();
+}
+
+long PreferencesBox::onFilter(FXObject*, FXSelector, void*)
+{
+    FXString query = settingsFilter->getText().lower().trim();
+    FXint first = -1;
+    for (FXint category = 0; category < CATEGORY_COUNT; ++category)
+    {
+        CategoryPage& page = categories[category];
+        FXString name = page.name;
+        FXbool match = query.empty() || (name.lower().find(query) >= 0);
+        FXint matchingTab = -1;
+        for (FXint tab = 0; tab < page.tabs->numChildren() / 2; ++tab)
+        {
+            FXString labels = settingLabels(page.tabs->childAtIndex(2 * tab)) +
+                              settingLabels(page.tabs->childAtIndex(2 * tab + 1));
+            if (!query.empty() && labels.find(query) >= 0)
+            {
+                match = true;
+                if (matchingTab < 0) matchingTab = tab;
+            }
+        }
+        if (match)
+        {
+            page.button->show();
+            if (first < 0) first = category;
+            if (matchingTab >= 0) page.tabs->setCurrent(matchingTab);
+        }
+        else
+            page.button->hide();
+    }
+    if (first < 0)
+    {
+        pageTitle->setText(_("No matching settings"));
+        categoryPages->hide();
+    }
+    else
+        selectCategory(categories[currentCategory].button->shown() ? currentCategory : first);
+    categories[0].button->getParent()->recalc();
+    return 1;
+}
+
+void PreferencesBox::create()
+{
+    DialogBox::create();
+    for (CategoryPage& page : categories)
+    {
+        if (page.icon) page.icon->create();
+        if (page.selectedIcon) page.selectedIcon->create();
+    }
+    selectCategory(currentCategory);
+}
+
+void PreferencesBox::show(FXuint placement)
+{
+    resize(FXMAX(getWidth(), FXMIN(1000, FXMAX(160, getRoot()->getWidth() - 80))),
+           FXMAX(getHeight(), FXMIN(740, FXMAX(160, getRoot()->getHeight() - 100))));
+    DialogBox::show(placement);
+    onFilter(NULL, 0, NULL);
+}
+
+PreferencesBox::~PreferencesBox()
+{
+    for (CategoryPage& page : categories)
+    {
+        delete page.icon;
+        delete page.selectedIcon;
+    }
+}
+
 
 // Create hilite color from given color for gradient controls
 static FXColor makeHiliteColorGradient(FXColor color)
@@ -303,6 +415,14 @@ FXDEFMAP(PreferencesBox) PreferencesMap[] =
 {
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_ACCEPT, PreferencesBox::onCmdAccept),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_CANCEL, PreferencesBox::onCmdCancel),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_APPLY, PreferencesBox::onCmdAccept),
+    FXMAPFUNCS(SEL_COMMAND, PreferencesBox::ID_CATEGORY_FIRST, PreferencesBox::ID_CATEGORY_LAST,
+               PreferencesBox::onCmdCategory),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_CATEGORY_TAB, PreferencesBox::onCmdPage),
+    FXMAPFUNC(SEL_CHANGED, PreferencesBox::ID_FILTER, PreferencesBox::onFilter),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_THEME_EDIT, PreferencesBox::onCmdThemeEditor),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_THEME_NEW, PreferencesBox::onCmdThemeEditor),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_THEME_DUPLICATE, PreferencesBox::onCmdThemeEditor),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_CUSTOM_ACTIONS, PreferencesBox::onCmdCustomActions),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_ASSOCIATION_LIST, PreferencesBox::onCmdAssociationSelected),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_ASSOCIATION_APPLY, PreferencesBox::onCmdAssociationApply),
@@ -321,13 +441,14 @@ FXDEFMAP(PreferencesBox) PreferencesMap[] =
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_BROWSE_XTERM, PreferencesBox::onCmdBrowse),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_BROWSE_MOUNTCMD, PreferencesBox::onCmdBrowse),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_BROWSE_UMOUNTCMD, PreferencesBox::onCmdBrowse),
-    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_COLOR, PreferencesBox::onCmdColor),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_THEME_SAVEAS, PreferencesBox::onCmdThemeSaveAs),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_THEME_RENAME, PreferencesBox::onCmdThemeRename),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_THEME_REMOVE, PreferencesBox::onCmdThemeRemove),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_THEME_EXPORT, PreferencesBox::onCmdThemeExport),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_THEME_IMPORT, PreferencesBox::onCmdThemeImport),
     FXMAPFUNC(SEL_UPDATE, PreferencesBox::ID_THEME_EXPORT, PreferencesBox::onUpdThemeExport),
+    FXMAPFUNC(SEL_UPDATE, PreferencesBox::ID_THEME_RENAME, PreferencesBox::onUpdThemeExport),
+    FXMAPFUNC(SEL_UPDATE, PreferencesBox::ID_THEME_REMOVE, PreferencesBox::onUpdThemeExport),
     FXMAPFUNC(SEL_RIGHTBUTTONRELEASE, PreferencesBox::ID_THEME, PreferencesBox::onCmdPopupMenu),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_NORMALFONT, PreferencesBox::onCmdNormalFont),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_TEXTFONT, PreferencesBox::onCmdTextFont),
@@ -360,7 +481,6 @@ FXDEFMAP(PreferencesBox) PreferencesMap[] =
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_DIRPANEL_TREE_STARTUP, PreferencesBox::onCmdDirPanelStartup),
     FXMAPFUNC(SEL_UPDATE, PreferencesBox::ID_LISTCOL_UP, PreferencesBox::onUpdListColUpDown),
     FXMAPFUNC(SEL_UPDATE, PreferencesBox::ID_LISTCOL_DOWN, PreferencesBox::onUpdListColUpDown),
-    FXMAPFUNC(SEL_UPDATE, PreferencesBox::ID_COLOR, PreferencesBox::onUpdColor),
     FXMAPFUNC(SEL_UPDATE, PreferencesBox::ID_WHEELADJUST, PreferencesBox::onUpdWheelAdjust),
     FXMAPFUNC(SEL_UPDATE, PreferencesBox::ID_SCROLLBARSIZE, PreferencesBox::onUpdScrollBarSize),
     FXMAPFUNC(SEL_UPDATE, PreferencesBox::ID_MOUNT_TIMEOUT, PreferencesBox::onUpdMountTimeout),
@@ -403,18 +523,16 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     // Current theme
     currTheme.name = _("Current Theme");
     currTheme.tip = _("Applied theme, right click to save");
-    currTheme.color[0] = getApp()->getBaseColor();
-    currTheme.color[1] = getApp()->getBorderColor();
-    currTheme.color[2] = getApp()->getBackColor();
-    currTheme.color[3] = getApp()->getForeColor();
-    currTheme.color[4] = getApp()->getSelbackColor();
-    currTheme.color[5] = getApp()->getSelforeColor();
-    currTheme.color[6] = listbackcolor;
-    currTheme.color[7] = listforecolor;
-    currTheme.color[8] = highlightcolor;
-    currTheme.color[9] = pbarcolor;
-    currTheme.color[10] = attentioncolor;
-    currTheme.color[11] = scrollbarcolor;
+    Theme activeTheme = Theme::current(getApp());
+    for (FXint i = 0; i < 6; ++i) currTheme.color[i] = activeTheme.color[i];
+    currTheme.color[6] = getApp()->reg().readColorEntry("SETTINGS", "listbackcolor", listbackcolor);
+    currTheme.color[7] = getApp()->reg().readColorEntry("SETTINGS", "listforecolor", listforecolor);
+    currTheme.color[8] = getApp()->reg().readColorEntry("SETTINGS", "highlightcolor", highlightcolor);
+    currTheme.color[9] = getApp()->reg().readColorEntry("SETTINGS", "pbarcolor", pbarcolor);
+    currTheme.color[10] = getApp()->reg().readColorEntry("SETTINGS", "attentioncolor", attentioncolor);
+    currTheme.color[11] = getApp()->reg().readColorEntry("SETTINGS", "scrollbarcolor", scrollbarcolor);
+    currTheme.effect = getApp()->reg().readStringEntry("SETTINGS", "list_background_effect", "");
+    currTheme.properties = Theme::current(getApp()).properties;
 
     Themes.push_back(currTheme);
 
@@ -537,6 +655,10 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
 
                 Theme theme = Theme(name.text(), tip.text(), color0, color1, color2, color3, color4,
                                     color5, color6, color7, color8, color9, color10, color11);
+                theme.effect = data.section(';', 14);
+                FXString error;
+                if (!theme.decodeProperties(data.section(';', 15), error))
+                    appLog(APP_LOG_ERRORS, "theme-properties-invalid", theme.name + ": " + error);
                 Themes.push_back(theme);
 
                 i++;
@@ -553,11 +675,10 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
 
     // Contents
     FXHorizontalFrame* contents = new FXHorizontalFrame(this,
-                                                        LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y |
-                                                        PACK_UNIFORM_WIDTH);
+                                                        LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
     // Accept
-    FXButton* ok = new FXButton(buttons, _("&Accept"), NULL, this, PreferencesBox::ID_ACCEPT,
+    FXButton* ok = new FXButton(buttons, _("&OK"), NULL, this, PreferencesBox::ID_ACCEPT,
                                 BUTTON_INITIAL | BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0,
                                 0, 0, 20, 20);
     ok->addHotKey(KEY_Return);
@@ -566,14 +687,62 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     // Cancel
     new FXButton(buttons, _("&Cancel"), NULL, this, PreferencesBox::ID_CANCEL,
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
+    new FXButton(buttons, _("&Apply"), NULL, this, ID_APPLY,
+                 FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
 
-    // Switcher
-    FXTabBook* tabbook = new FXTabBook(contents, NULL, 0, LAYOUT_FILL_X | LAYOUT_FILL_Y | LAYOUT_RIGHT | FRAME_NONE);
-    preferencesTabs = tabbook;
+    FXVerticalFrame* navigation = new FXVerticalFrame(contents, FRAME_NONE | LAYOUT_FILL_Y | LAYOUT_FIX_WIDTH,
+                                                       0, 0, 178, 0, 0, 8, 0, 0);
+    PreferencesScrollWindow* categoryScroll = new PreferencesScrollWindow(navigation, LAYOUT_FILL_X | LAYOUT_FILL_Y,
+                                                                           400, 640);
+    FXVerticalFrame* categoryButtons = new FXVerticalFrame(categoryScroll, FRAME_NONE | LAYOUT_FILL_X,
+                                                            0, 0, 0, 0, 0, 0, 0, 0);
+    new FXLabel(navigation, _("Filter settings:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    settingsFilter = new FXTextField(navigation, 16, this, ID_FILTER, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
+    settingsFilter->setTipText(_("Filter settings by category or setting label"));
+    FXVerticalFrame* pages = new FXVerticalFrame(contents, FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y,
+                                                 0, 0, 0, 0, 4, 0, 0, 0);
+    pageTitle = new FXLabel(pages, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X, 0, 0, 0, 0, 12, 12, 10, 10);
+    categoryPages = new FXSwitcher(pages, LAYOUT_FILL_X | LAYOUT_FILL_Y | SWITCHER_HCOLLAPSE | SWITCHER_VCOLLAPSE);
+    const char* names[CATEGORY_COUNT] = {_("General"), _("Panels & Tabs"), _("File List"), _("File Operations"),
+        _("Appearance"), _("Language"), _("Programs"), _("Key Bindings"), _("Custom Actions"), _("System")};
+    const char* icons[CATEGORY_COUNT] = {"general", "panels", "filelist", "fileops", "appearance", "language",
+                                        "programs", "keybindings", "customactions", "system"};
+    FXString iconDirectory = FXPath::directory(execpath) + "/../share/swordfish/icons/preferences/";
+    FXint iconSize = FXCLAMP(32, getApp()->reg().readIntEntry("SETTINGS", "screenres", 100) * 48 / 100, 96);
+    for (FXint category = 0; category < CATEGORY_COUNT; ++category)
+    {
+        CategoryPage& page = categories[category];
+        page.name = names[category];
+        for (FXint selected = 0; selected < 2; ++selected)
+        {
+            FXString path = iconDirectory + "pref-" + icons[category] + (selected ? "-selected.png" : ".png");
+            FXFileStream stream;
+            FXPNGIcon* icon = new FXPNGIcon(getApp());
+            if (!stream.open(path, FXStreamLoad) || !icon->loadPixels(stream))
+            {
+                appLog(APP_LOG_ERRORS, "preferences-icon-load-failed", path);
+                delete icon;
+                continue;
+            }
+            icon->scale(iconSize, iconSize);
+            if (selected) page.selectedIcon = icon;
+            else page.icon = icon;
+        }
+        FXString label = page.name;
+        label.substitute("&", "&&");
+        page.button = new FXButton(categoryButtons, label, page.icon, this, ID_CATEGORY_FIRST + category,
+                                    BUTTON_NORMAL | ICON_ABOVE_TEXT | LAYOUT_FILL_X, 0, 0, 0, 0, 4, 4, 10, 10);
+        page.button->setJustify(JUSTIFY_CENTER_X | JUSTIFY_CENTER_Y);
+        page.button->setIconPosition(ICON_ABOVE_TEXT);
+        page.tabs = new FXTabBook(categoryPages, this, ID_CATEGORY_TAB, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    }
 
-    // First tab - General options
-    new FXTabItem(tabbook, _("&General"), NULL);
-    FXVerticalFrame* general = createPreferencesPage(tabbook);
+    FXVerticalFrame* general = addPage(GENERAL, _("Starting"));
+    FXVerticalFrame* generalOptions = addPage(GENERAL, _("General options"));
+    FXVerticalFrame* addressAndScripts = addPage(GENERAL, _("Address bar and scripts"));
+    FXVerticalFrame* folderPanel = addPage(PANELS, _("Folder panel view"));
+    FXVerticalFrame* startupList = addPage(PANELS, _("Startup list"));
+    FXVerticalFrame* copyOptions = addPage(FILE_OPERATIONS, _("Copy suffix"));
 
     FXGroupBox* group = new FXGroupBox(general, _("Starting"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE |
                                        LAYOUT_FILL_X | LAYOUT_FILL_Y);
@@ -585,7 +754,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     oldnewtabdirmode = newtabdirmode;
     newtabdirtarget.connect(newtabdirmode);
 
-    group = new FXGroupBox(general, _("General Options"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    group = new FXGroupBox(generalOptions, _("General Options"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     trashcan = new FXCheckButton(group, _("Use trash can for file deletion (safe delete)") + FXString(" "));
     trashbypass = new FXCheckButton(group, _("Include a command to bypass the trash can (permanent delete)") + FXString(" "),
                                     this, ID_TRASH_BYPASS);
@@ -597,7 +766,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
                                      ID_FILE_TOOLTIPS);
     relativeresize = new FXCheckButton(group, _("Relative resizing of file lists") + FXString(" "), this,
                                        ID_RELATIVE_RESIZE);
-    FXGroupBox* addressModeGroup = new FXGroupBox(group, _("Default address bar mode"),
+    FXGroupBox* addressModeGroup = new FXGroupBox(addressAndScripts, _("Default address bar mode"),
                                                    GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     FXHorizontalFrame* addressModeRow = new FXHorizontalFrame(addressModeGroup, LAYOUT_FILL_X | FRAME_NONE,
                                                                0, 0, 0, 0, 0, 0, 0, 0);
@@ -609,7 +778,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     usesn = new FXCheckButton(group, _("Notify when applications start up") + FXString(" "));
 #endif
 
-    FXGroupBox* script_group = new FXGroupBox(group, _("Executable scripts"),
+    FXGroupBox* script_group = new FXGroupBox(addressAndScripts, _("Executable scripts"),
                                               GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     FXVerticalFrame* script_vframe = new FXVerticalFrame(script_group, FRAME_NONE | LAYOUT_FILL_X);
     script_always = new FXRadioButton(script_vframe, _("Always run") + FXString(" "),
@@ -619,7 +788,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     script_never = new FXRadioButton(script_vframe, _("Don't run") + FXString(" "),
                                      &script_action_target, FXDataTarget::ID_OPTION + 2);
 
-    FXMatrix* matrix = new FXMatrix(group, 3, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP);
+    FXMatrix* matrix = new FXMatrix(folderPanel, 3, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP);
     FXVerticalFrame* vframe = new FXVerticalFrame(matrix,
                                                   LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y |
                                                   LAYOUT_LEFT);
@@ -648,8 +817,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
         dirpanel_tree->setCheck(true);
     }
 
-    new FXLabel(matrix, "     ");
-    vframe = new FXVerticalFrame(matrix, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y | LAYOUT_LEFT);
+    vframe = new FXVerticalFrame(startupList, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y | LAYOUT_LEFT);
     dirpanel_startup = new FXLabel(vframe, _("Displayed list at startup:"), NULL, JUSTIFY_LEFT);
     dirpanel_placesstartup = new FXRadioButton(vframe, _("Places"), this, ID_DIRPANEL_PLACES_STARTUP);
     dirpanel_treestartup = new FXRadioButton(vframe, _("Tree"), this, ID_DIRPANEL_TREE_STARTUP);
@@ -665,7 +833,8 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
         dirpanel_treestartup->setCheck(true);
     }
 
-    matrix = new FXMatrix(group, 2,
+    FXVerticalFrame* fileDisplay = addPage(FILE_LIST, _("Displayed columns"));
+    matrix = new FXMatrix(fileDisplay, 2,
                           MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_COLUMN | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     new FXLabel(matrix,
                 _("Date format used in file and folder lists:\n(Type 'man strftime' in a terminal for help on the format)"),
@@ -674,10 +843,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     oldtimeformat = getApp()->reg().readStringEntry("SETTINGS", "time_format", DEFAULT_TIME_FORMAT);
     timeformat->setText(oldtimeformat);
 
-    // Spacing
-    new FXFrame(matrix, JUSTIFY_LEFT);
-    new FXFrame(matrix, JUSTIFY_LEFT);
-
+    matrix = new FXMatrix(copyOptions, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_X);
     new FXLabel(matrix, _("Suffix used for file copying in the same folder"), NULL, JUSTIFY_LEFT);
     copysuffix = new FXTextField(matrix, 15, NULL, 0, TEXTFIELD_NORMAL | LAYOUT_FILL_COLUMN | LAYOUT_FILL_X);
     oldcopysuffix = getApp()->reg().readStringEntry("OPTIONS", "copysuffix", DEFAULT_COPY_SUFFIX);
@@ -702,9 +868,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
         copysuffix_after->setCheck(true);
     }
 
-    // Second tab - Dialogs
-    new FXTabItem(tabbook, _("&Dialogs"), NULL);
-    FXVerticalFrame* dialogs = createPreferencesPage(tabbook);
+    FXVerticalFrame* dialogs = addPage(FILE_OPERATIONS, _("Confirmations"));
     group = new FXGroupBox(dialogs, _("Confirmations"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     ask = new FXCheckButton(group, _("Confirm copy/move/rename/symlink") + FXString(" "));
@@ -718,7 +882,8 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     exec = new FXCheckButton(group, _("Confirm execute text files") + FXString(" "), this, ID_EXEC_TEXT_FILES);
     properties = new FXCheckButton(group, _("Confirm change properties") + FXString(" "));
 
-    group = new FXGroupBox(dialogs, _("Warnings"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    FXVerticalFrame* warnings = addPage(FILE_OPERATIONS, _("Warnings"));
+    group = new FXGroupBox(warnings, _("Warnings"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     folder_warning = new FXCheckButton(group, _("Warn when setting current folder in search window") + FXString(" "));
 
 #if defined(linux)
@@ -781,9 +946,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
         root_warning->setCheck(root_warn);
     }
 
-    // Third tab - Settings
-    new FXTabItem(tabbook, _("&Settings"), NULL);
-    FXVerticalFrame* settings = createPreferencesPage(tabbook);
+    FXVerticalFrame* settings = addPage(PANELS, _("Tabs"));
 
     startdirmode = getApp()->reg().readUnsignedEntry("OPTIONS", "startdir_mode", START_HOMEDIR) + ID_START_HOMEDIR;
     oldstartdirmode = startdirmode;
@@ -800,7 +963,8 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     restoretabs = new FXCheckButton(matrix, _("Restore tabs on startup") + FXString(" "), this, ID_RESTORE_TABS);
     new FXRadioButton(matrix, _("Open new tab in root folder") + FXString(" "), this, PreferencesBox::ID_NEWTAB_ROOTDIR);
 
-    group = new FXGroupBox(settings, _("Scrolling"),
+    FXVerticalFrame* scrolling = addPage(PANELS, _("Scrolling"));
+    group = new FXGroupBox(scrolling, _("Scrolling"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     matrix = new FXMatrix(group, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP);
     scroll = new FXCheckButton(matrix, _("Smooth scrolling in file lists and text windows") + FXString(" "));
@@ -820,7 +984,8 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     FXHorizontalFrame* hframe = NULL;
 
 #if defined(linux) && defined(XFE_AUTOMOUNTER)
-    automountgroup = new FXGroupBox(settings, _("Automount"),
+    FXVerticalFrame* automountPage = addPage(SYSTEM, _("Automount"));
+    automountgroup = new FXGroupBox(automountPage, _("Automount"),
                                     GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     vframe = new FXVerticalFrame(automountgroup, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     automountlabel = new FXLabel(vframe, _("(Only enable automounting if your system does not have this feature)"), NULL, JUSTIFY_LEFT);
@@ -834,7 +999,8 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
 
 #endif
  
-    rootgroup = new FXGroupBox(settings, _("Root Mode"),
+    FXVerticalFrame* rootPage = addPage(SYSTEM, _("Root mode"));
+    rootgroup = new FXGroupBox(rootPage, _("Root Mode"),
                                GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     vframe = new FXVerticalFrame(rootgroup, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     rootmode = new FXCheckButton(vframe, _("Allow root mode") + FXString(" "));
@@ -883,7 +1049,8 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     }
     root_auth = getApp()->reg().readUnsignedEntry("OPTIONS", "root_auth", 0);
 
-    group = new FXGroupBox(settings, _("Logging"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    FXVerticalFrame* logging = addPage(SYSTEM, _("Logging"));
+    group = new FXGroupBox(logging, _("Logging"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     vframe = new FXVerticalFrame(group, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X);
     hframe = new FXHorizontalFrame(vframe, LAYOUT_FILL_X | FRAME_NONE);
     new FXLabel(hframe, _("Log level:"), NULL, JUSTIFY_LEFT | LAYOUT_CENTER_Y);
@@ -977,9 +1144,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     script_ask->setCheck(script_action == 1);
     script_never->setCheck(script_action == 2);
 
-    // Fourth tab - Columns order
-    new FXTabItem(tabbook, _("File &List"), NULL);
-    FXVerticalFrame* columns = createPreferencesPage(tabbook);
+    FXVerticalFrame* columns = fileDisplay;
     new FXLabel(columns, _("Column visibility and order apply to every tab in the selected panel."),
                 NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
     columnPane = new FXListBox(columns, this, ID_COLUMN_PANE, FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X);
@@ -1077,7 +1242,8 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     }
     nbCols = i;
 
-    group = new FXGroupBox(columns, _("Column Order"),
+    FXVerticalFrame* columnOrder = addPage(FILE_LIST, _("Column order"));
+    group = new FXGroupBox(columnOrder, _("Column Order"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     frame = new FXVerticalFrame(group, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X);
     new FXLabel(frame, _("(Name column is always first)"), NULL, JUSTIFY_LEFT);
@@ -1101,7 +1267,8 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     listcol_down = new FXButton(frame, _("\tMove down"), minidownicon, this, ID_LISTCOL_DOWN,
                                 FRAME_GROOVE | LAYOUT_LEFT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 10, 10);
 
-    group = new FXGroupBox(columns, _("Folder Sizes"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    FXVerticalFrame* folderSizes = addPage(FILE_LIST, _("Folder sizes and previews"));
+    group = new FXGroupBox(folderSizes, _("Folder Sizes"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     hframe = new FXHorizontalFrame(group, LAYOUT_FILL_X | FRAME_NONE);
     new FXLabel(hframe, _("Size column shows for folders:"), NULL, JUSTIFY_LEFT | LAYOUT_CENTER_Y);
     foldersizelist = new FXListBox(hframe, NULL, 0, FRAME_SUNKEN | FRAME_THICK | LAYOUT_CENTER_Y);
@@ -1111,15 +1278,14 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     foldersizelist->appendItem(_("Size on disk and item count"));
     foldersizelist->setNumVisible(4);
 
-    group = new FXGroupBox(columns, _("Previews"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    group = new FXGroupBox(folderSizes, _("Previews"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     iconthumbnails = new FXCheckButton(group, _("Show image previews in Icons view\tImages, RAW photos, "
                                                 "videos and PDFs show a preview instead of the file type icon"),
                                        NULL, 0, JUSTIFY_LEFT | LAYOUT_LEFT | ICON_BEFORE_TEXT);
 
-    // Fifth tab - Programs
-    new FXTabItem(tabbook, _("&Programs"), NULL);
-    FXVerticalFrame* programs = createPreferencesPage(tabbook);
-    group = new FXGroupBox(programs, _("Application Handling"),
+    FXVerticalFrame* programs = addPage(PROGRAMS, _("Default programs"));
+    FXVerticalFrame* applicationHandling = addPage(PROGRAMS, _("Application handling"));
+    group = new FXGroupBox(applicationHandling, _("Application Handling"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     vframe = new FXVerticalFrame(group, FRAME_NONE | LAYOUT_FILL_X);
     new FXLabel(vframe, _("Files use the system's XDG application by default. Local overrides affect only "
@@ -1215,7 +1381,8 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     systemdefaults = xf_defaultApplications(systemdefaultserror);
     populateProgramChoices();
 
-    group = new FXGroupBox(programs, _("Volume Management"),
+    FXVerticalFrame* volumeManagement = addPage(PROGRAMS, _("Volume management"));
+    group = new FXGroupBox(volumeManagement, _("Volume Management"),
                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     matrix = new FXMatrix(group, 3, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
@@ -1234,15 +1401,13 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     oldumountcmd = getApp()->reg().readStringEntry("PROGS", "unmount", DEFAULT_UMOUNTCMD);
     umountcmd->setText(oldumountcmd);
-    // Sixth tab - Appearance
-    new FXTabItem(tabbook, _("&Appearance"), NULL);
-    FXVerticalFrame* visual = createPreferencesPage(tabbook);
+    FXVerticalFrame* visual = addPage(APPEARANCE, _("Theme"));
     FXGroupBox* themes = new FXGroupBox(visual, _("Color Theme"),
                                         GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
     vframe = new FXVerticalFrame(themes, FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y, 0, 0, 0, 0, 0, 0, 0, 0);
-    new FXLabel(vframe, _("(Right click on the current theme to save it as a custom theme. Right click \n\
-on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0, 0, 10, 10);
+    new FXLabel(vframe, _("Select a theme, or open the separate Theme Editor to change its appearance."),
+                NULL, JUSTIFY_LEFT | LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 10, 10);
 
     FXPacker* pack = new FXPacker(vframe, FRAME_NONE | LAYOUT_FILL_Y | LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 0, 0);
     themesList = new FXList(pack, this, ID_THEME, LIST_BROWSESELECT | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
@@ -1253,52 +1418,25 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
     }
     themesList->setCurrentItem(0);
 
+    FXHorizontalFrame* editorbuttons = new FXHorizontalFrame(vframe, FRAME_NONE | LAYOUT_FILL_X,
+                                                              0, 0, 0, 0, 0, 0, 5, 0);
+    new FXButton(editorbuttons, _("&Edit..."), NULL, this, ID_THEME_EDIT, BUTTON_NORMAL);
+    new FXButton(editorbuttons, _("&New theme..."), NULL, this, ID_THEME_NEW, BUTTON_NORMAL);
+    new FXButton(editorbuttons, _("&Duplicate and edit..."), NULL, this, ID_THEME_DUPLICATE, BUTTON_NORMAL);
     FXHorizontalFrame* themebuttons = new FXHorizontalFrame(vframe, FRAME_NONE | LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 5, 0);
     new FXButton(themebuttons, _("&Import theme..."), NULL, this, ID_THEME_IMPORT,
                  FRAME_RAISED | FRAME_THICK | LAYOUT_LEFT, 0, 0, 0, 0, 10, 10, 3, 3);
     new FXButton(themebuttons, _("&Export theme..."), NULL, this, ID_THEME_EXPORT,
                  FRAME_RAISED | FRAME_THICK | LAYOUT_LEFT, 0, 0, 0, 0, 10, 10, 3, 3);
+    new FXButton(themebuttons, _("Rename..."), NULL, this, ID_THEME_RENAME, BUTTON_NORMAL);
+    new FXButton(themebuttons, _("Remove"), NULL, this, ID_THEME_REMOVE, BUTTON_NORMAL);
 
-    FXGroupBox* colors = new FXGroupBox(visual, _("Custom Colors"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
-    FXMatrix* matrix3 = new FXMatrix(colors, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y,
-                                     0, 0, 0, 0, 0);
-    colorsBox = new ComboBox(matrix3, NUM_COLORS, false, false, NULL, 0,
-                             COMBOBOX_STATIC | LAYOUT_FILL_X | LAYOUT_SIDE_RIGHT | LAYOUT_CENTER_Y);
-    colorsBox->setNumVisible(NUM_COLORS);
-    cwell = new ColorWell(matrix3, FXRGB(0, 0, 0), this, ID_COLOR, LAYOUT_FILL_X | LAYOUT_FILL_COLUMN | LAYOUT_FILL_Y,
-                          0, 0, 0, 0, 10, 10, 0, 0);
-    cwell->setTipText(_("Double click to customize the color"));
-
-    colorsBox->appendItem(_("Base color"));
-    colorsBox->appendItem(_("Border color"));
-    colorsBox->appendItem(_("Background color"));
-    colorsBox->appendItem(_("Text color"));
-    colorsBox->appendItem(_("Selection background color"));
-    colorsBox->appendItem(_("Selection text color"));
-    colorsBox->appendItem(_("File list background color"));
-    colorsBox->appendItem(_("File list text color"));
-    colorsBox->appendItem(_("File list highlight color"));
-    colorsBox->appendItem(_("Progress bar color"));
-    colorsBox->appendItem(_("Attention color"));
-    colorsBox->appendItem(_("Scrollbar color"));
-    colorsBox->setCurrentItem(0);
-
-    // Shading of the tool, address, tab and status bars
-    FXMatrix* shadematrix = new FXMatrix(colors, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP);
-    new FXLabel(shadematrix, _("Bar shading (%):") + FXString(" "), NULL,
-                JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
-    spinshade = new FXSpinner(shadematrix, 3, NULL, 0, JUSTIFY_RIGHT | LAYOUT_FILL_X | LAYOUT_FILL_ROW, 0, 0, 0, 0, 2,
-                              2, 1, 1);
-    spinshade->setRange(0, 20);
-    spinshade->setValue(getApp()->reg().readUnsignedEntry("SETTINGS", "bar_shading", 7));
-    spinshade->setTipText(_("Darkens (or lightens, with dark themes) the tool bars, address bars, tab bars and "
-                            "status bars so they stand apart. 0 disables shading."));
-
-    // Icon size of the custom actions toolbar; the built-in toolbars keep the theme size
-    FXGroupBox* toolbaricons = new FXGroupBox(visual, _("Tool Bar Icon Size"),
+    // Icon size and labels of the custom actions toolbar; the built-in toolbars keep the theme look
+    FXVerticalFrame* toolbarPage = addPage(APPEARANCE, _("Toolbar"));
+    FXGroupBox* toolbaricons = new FXGroupBox(toolbarPage, _("Custom Tool Bar"),
                                               GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     FXMatrix* toolbarmatrix = new FXMatrix(toolbaricons, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP);
-    new FXLabel(toolbarmatrix, _("Custom toolbar:") + FXString(" "), NULL,
+    new FXLabel(toolbarmatrix, _("Icon size:") + FXString(" "), NULL,
                 JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
     FXHorizontalFrame* toolbariconrow = new FXHorizontalFrame(toolbarmatrix, FRAME_NONE | LAYOUT_FILL_ROW,
                                                                0, 0, 0, 0, 0, 0, 0, 0);
@@ -1314,9 +1452,27 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
         customtoolbariconsizebuttons[i]->setTipText(
             _("Custom actions toolbar only. Sizes are scaled with DPI and apply when Preferences is accepted."));
     }
+    new FXLabel(toolbarmatrix, _("Show:") + FXString(" "), NULL,
+                JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
+    FXHorizontalFrame* toolbarstylerow = new FXHorizontalFrame(toolbarmatrix, FRAME_NONE | LAYOUT_FILL_ROW,
+                                                                0, 0, 0, 0, 0, 0, 0, 0);
+    customtoolbarstyle = getApp()->reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 0);
+    customtoolbarstyletarget.connect(customtoolbarstyle);
+    const char* toolbarstylelabels[] = { _("Icons and titles"), _("Icons"), _("Titles") };
+    for (FXuint i = 0; i < 3; ++i)
+    {
+        customtoolbarstylebuttons[i] = new FXRadioButton(toolbarstylerow, toolbarstylelabels[i],
+                                                         &customtoolbarstyletarget, FXDataTarget::ID_OPTION + i);
+        customtoolbarstylebuttons[i]->setCheck(customtoolbarstyle == i);
+        customtoolbarstylebuttons[i]->setTipText(
+            _("Custom actions toolbar only. Also available by right-clicking the custom toolbar."));
+    }
 
     // Monitor resolution
-    FXGroupBox* ui = new FXGroupBox(visual, _("Screen Resolution"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    FXVerticalFrame* iconPage = addPage(APPEARANCE, _("Icon theme"));
+    FXVerticalFrame* fonts = addPage(APPEARANCE, _("Fonts"));
+    FXVerticalFrame* dpiPage = addPage(APPEARANCE, _("Screen DPI"));
+    FXGroupBox* ui = new FXGroupBox(dpiPage, _("Screen Resolution"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     matrix = new FXMatrix(ui, 2, MATRIX_BY_COLUMNS | LAYOUT_SIDE_TOP);
     new FXLabel(matrix, _("DPI:") + FXString(" "), NULL, JUSTIFY_LEFT | LAYOUT_FILL_COLUMN | LAYOUT_FILL_ROW);
     spindpi = new FXSpinner(matrix, 4, this, ID_UIDPI, JUSTIFY_RIGHT | LAYOUT_FILL_X | LAYOUT_FILL_ROW, 0, 0, 0, 0, 2,
@@ -1326,7 +1482,7 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
     spindpi->setValue(uidpi);
 
     // Find iconpath from the Xfe registry settings or set it to default
-    FXGroupBox* group2 = new FXGroupBox(visual, _("Icon Theme"),
+    FXGroupBox* group2 = new FXGroupBox(iconPage, _("Icon Theme"),
                                         GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     iconthemelist = new FXListBox(group2, this, ID_ICON_THEME, FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X);
 
@@ -1339,14 +1495,12 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
     fillIconThemeList();
 
     // Language of the user interface, applied after restart
-    FXGroupBox* langgroup = new FXGroupBox(visual, _("Language"),
+    FXVerticalFrame* languagePage = addPage(LANGUAGE, _("Language"));
+    FXGroupBox* langgroup = new FXGroupBox(languagePage, _("Language"),
                                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     languagelist = new FXListBox(langgroup, NULL, 0, FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X);
     fillLanguageList();
 
-    // Seventh tab - Fonts
-    new FXTabItem(tabbook, _("&Fonts"), NULL);
-    FXVerticalFrame* fonts = createPreferencesPage(tabbook);
     FXGroupBox* fgroup = new FXGroupBox(fonts, _("Fonts"),
                                         GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
@@ -1365,9 +1519,7 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
     oldtextfont = getApp()->reg().readStringEntry("SETTINGS", "textfont", DEFAULT_TEXT_FONT);
     textfont->setText(oldtextfont);
 
-    // Eighth tab - Key bindings
-    new FXTabItem(tabbook, _("&Key Bindings"), NULL);
-    FXVerticalFrame* keybindings = createPreferencesPage(tabbook);
+    FXVerticalFrame* keybindings = addPage(KEY_BINDINGS, _("Key bindings"));
     FXGroupBox* kbgroup = new FXGroupBox(keybindings, _("Key Bindings"),
                                          GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
@@ -1378,9 +1530,9 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
                  FRAME_GROOVE | ICON_BEFORE_TEXT | LAYOUT_SIDE_TOP | LAYOUT_FILL_X);    //,0,0,0,0,20,20);
 
     // System integration
-    integrationTabIndex = 8;
-    new FXTabItem(tabbook, _("System &Integration"), NULL);
-    FXVerticalFrame* integration = createPreferencesPage(tabbook);
+    preferencesTabs = categories[SYSTEM].tabs;
+    integrationTabIndex = preferencesTabs->numChildren() / 2;
+    FXVerticalFrame* integration = addPage(SYSTEM, _("System integration"));
     FXGroupBox* integrationGroup = new FXGroupBox(integration, _("Optional System Integration"),
                                                    GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     integrationDesktop = new FXCheckButton(integrationGroup, _("Create a desktop shortcut") + FXString(" "));
@@ -1404,8 +1556,7 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
                 _("Portable launchers use the current AppRun path. Moving the portable folder will break them."),
                 NULL, JUSTIFY_LEFT | LAYOUT_FILL_X | LAYOUT_TOP);
     integrationStatus = new FXLabel(integrationGroup, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X | LAYOUT_TOP);
-    new FXTabItem(tabbook, _("Custom Actions"), NULL);
-    FXVerticalFrame* custom = createPreferencesPage(tabbook);
+    FXVerticalFrame* custom = addPage(CUSTOM_ACTIONS, _("Custom Actions"));
     FXGroupBox* customGroup = new FXGroupBox(custom, _("Custom Actions"),
                                             GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
     new FXLabel(customGroup, _("Configure commands for the Custom Actions menu, file and background menus,\n"
@@ -1417,6 +1568,12 @@ on a custom theme to rename or remove it.)"), NULL, JUSTIFY_LEFT, 0, 0, 0, 0, 0,
                               "Its Save button applies changes immediately, independently of Preferences."),
                 NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
     resetPaneColumns();
+    for (FXint category = 0; category < CATEGORY_COUNT; ++category)
+    {
+        FXint page = getApp()->reg().readIntEntry("PREFERENCES", FXStringVal(category).text(), 0);
+        categories[category].tabs->setCurrent(FXCLAMP(0, page, categories[category].tabs->numChildren() / 2 - 1));
+    }
+    selectCategory(FXCLAMP(0, getApp()->reg().readIntEntry("PREFERENCES", "category", GENERAL), CATEGORY_COUNT - 1));
 
     // Reset restarted flag
     getApp()->reg().writeUnsignedEntry("SETTINGS", "restarted", false);
@@ -1432,26 +1589,91 @@ long PreferencesBox::onCmdCustomActions(FXObject*, FXSelector, void*)
     return 0;
 }
 
-
-long PreferencesBox::onUpdColor(FXObject* sender, FXSelector sel, void* ptr)
+long PreferencesBox::onCmdThemeEditor(FXObject*, FXSelector selector, void*)
 {
-    ColorWell* cwell = (ColorWell*)sender;
-    int i = colorsBox->getCurrentItem();
-
-    cwell->setRGBA(currTheme.color[i]);
-
+    XFileExplorer* window = dynamic_cast<XFileExplorer*>(getOwner());
+    if (!window)
+    {
+        MessageBox::error(this, BOX_OK, _("Theme Editor"), _("The main window is unavailable."));
+        return 1;
+    }
+    FXint selected = themesList->getCurrentItem();
+    ThemeEditor::StartMode mode = FXSELID(selector) == ID_THEME_NEW ? ThemeEditor::NEW_THEME :
+        FXSELID(selector) == ID_THEME_DUPLICATE ? ThemeEditor::DUPLICATE : ThemeEditor::EDIT_CURRENT;
+    ThemeEditor editor(this, window, Themes, selected, mode);
+    editor.execute(PLACEMENT_OWNER);
     return 1;
 }
 
-
-long PreferencesBox::onCmdColor(FXObject* sender, FXSelector sel, void* ptr)
+FXbool PreferencesBox::saveEditedTheme(const Theme& theme, FXint replace)
 {
-    ColorWell* cwell = (ColorWell*)sender;
-    int i = colorsBox->getCurrentItem();
-
-    currTheme.color[i] = cwell->getRGBA();
-
-    return 1;
+    XFileExplorer* window = dynamic_cast<XFileExplorer*>(getOwner());
+    if (!window || theme.name.empty() || theme.name.find_first_of(";\r\n") >= 0 ||
+        (replace >= 0 && (replace < NUM_DEFAULT_THEMES || replace >= static_cast<FXint>(Themes.size()))))
+    {
+        MessageBox::error(this, BOX_OK, _("Save theme"), _("The theme name or destination is invalid."));
+        return false;
+    }
+    for (size_t i = 0; i < Themes.size(); ++i)
+    {
+        if (Themes[i].name == theme.name && static_cast<FXint>(i) != replace)
+        {
+            MessageBox::error(this, BOX_OK, _("Save theme"), _("Theme name already exists. Please use another name."));
+            return false;
+        }
+    }
+    vector_Theme persistent = themesPrevious;
+    FXint persistentIndex = -1;
+    if (replace >= NUM_DEFAULT_THEMES)
+        for (size_t i = NUM_DEFAULT_THEMES; i < persistent.size(); ++i)
+            if (persistent[i].name == Themes[replace].name) persistentIndex = i;
+    if (persistentIndex < 0)
+    {
+        persistentIndex = persistent.size();
+        persistent.push_back(theme);
+    }
+    else persistent[persistentIndex] = theme;
+    const char* keys[] = {"basecolor", "bordercolor", "backcolor", "forecolor", "selbackcolor", "selforecolor",
+        "listbackcolor", "listforecolor", "highlightcolor", "pbarcolor", "attentioncolor", "scrollbarcolor",
+        "hilitecolor", "shadowcolor", "list_background_effect", "theme_details", "theme_name", "font", "bar_shading"};
+    std::vector<FXString> previous;
+    std::vector<FXbool> existed;
+    for (const char* key : keys)
+    {
+        existed.push_back(getApp()->reg().existingEntry("SETTINGS", key));
+        previous.push_back(getApp()->reg().readStringEntry("SETTINGS", key, ""));
+    }
+    theme.writeActive(getApp()->reg());
+    getApp()->reg().writeStringEntry("SETTINGS", "theme_name", theme.name.text());
+    saveCustomThemes(persistent);
+    if (!getApp()->reg().write())
+    {
+        for (size_t i = 0; i < ARRAYNUMBER(keys); ++i)
+        {
+            if (existed[i]) getApp()->reg().writeStringEntry("SETTINGS", keys[i], previous[i].text());
+            else getApp()->reg().deleteEntry("SETTINGS", keys[i]);
+        }
+        saveCustomThemes(themesPrevious);
+        appLog(APP_LOG_ERRORS, "theme-save-failed", theme.name);
+        MessageBox::error(this, BOX_OK, _("Save theme"), _("The settings file could not be written. The theme was not activated."));
+        return false;
+    }
+    window->applyTheme(theme);
+    if (replace < 0) { replace = Themes.size(); Themes.push_back(theme); themesList->appendItem(theme.name); }
+    else { Themes[replace] = theme; themesList->setItemText(replace, theme.name); }
+    currTheme = currTheme_prev = theme;
+    themesList->setCurrentItem(replace);
+    themesList->selectItem(replace);
+    Themes[0] = theme;
+    Themes[0].name = _("Current Theme");
+    persistent[0] = Themes[0];
+    themesPrevious = persistent;
+    themelist_prev = persistentIndex;
+    FXString normal = theme.fontFor("main", getApp()->getNormalFont()->getFont());
+    if (normalfont->getText() == oldnormalfont) normalfont->setText(normal);
+    oldnormalfont = normal;
+    appLog(APP_LOG_SETTINGS, "theme-saved", theme.name);
+    return true;
 }
 
 
@@ -1556,6 +1778,8 @@ long PreferencesBox::onCmdThemeSaveAs(FXObject* sender, FXSelector sel, void* pt
                             currTheme.color[3], currTheme.color[4], currTheme.color[5], currTheme.color[6],
                             currTheme.color[7], currTheme.color[8], currTheme.color[9], currTheme.color[10],
                             currTheme.color[11]);
+        theme.effect = currTheme.effect;
+        theme.properties = currTheme.properties;
         Themes.push_back(theme);
         themesList->appendItem(theme.name);
     }
@@ -1590,33 +1814,6 @@ long PreferencesBox::onUpdThemeExport(FXObject* sender, FXSelector, void*)
 static const char* const themeColorKeys[NUM_COLORS] = {
     "base", "border", "background", "foreground", "selected_background", "selected_foreground",
     "list_background", "list_foreground", "highlight", "progress_bar", "attention", "scrollbar"};
-
-
-static FXString themeColorText(FXColor color)
-{
-    return FXString().format("#%02X%02X%02X", FXREDVAL(color), FXGREENVAL(color), FXBLUEVAL(color));
-}
-
-
-static FXbool themeColorParse(const FXString& text, FXColor& color)
-{
-    FXString value = FXString(text).trim();
-    if (value.length() != 7 || value[0] != '#')
-    {
-        return false;
-    }
-    for (int i = 1; i < 7; i++)
-    {
-        if (!isxdigit((unsigned char)value[i]))
-        {
-            return false;
-        }
-    }
-    unsigned int rgb = 0;
-    sscanf(value.text() + 1, "%x", &rgb);
-    color = FXRGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
-    return true;
-}
 
 
 // Export the selected custom theme to a text file
@@ -1657,6 +1854,33 @@ long PreferencesBox::onCmdThemeExport(FXObject*, FXSelector, void*)
         return 1;
     }
 
+    std::set<FXString> textureNames;
+    FXString texture = BackgroundEffect::parse(theme.effect).texture;
+    if (!texture.empty()) textureNames.insert(texture);
+    for (const auto& entry : theme.properties)
+    {
+        if (entry.first.left(9) != "gradient.") continue;
+        texture = BackgroundEffect::parse(entry.second).texture;
+        if (!texture.empty()) textureNames.insert(texture);
+    }
+    for (const FXString& name : textureNames)
+    {
+        FXString source = BackgroundEffect::texturePath(name);
+        FXString directory = FXPath::directory(file) + PATHSEPSTRING "textures";
+        FXString destination = directory + PATHSEPSTRING + name + ".png";
+        if (xf_existfile(destination) && xf_realpath(source) != xf_realpath(destination) &&
+            MessageBox::question(this, BOX_YES_NO, _("Replace texture"),
+                _("Texture \"%s\" already exists in the export folder. Replace it?"), name.text()) != BOX_CLICKED_YES)
+            return 1;
+        if (source.empty() || ((!xf_existfile(directory) && xf_mkpath(directory.text(), 0755) != 0)) ||
+            (xf_realpath(source) != xf_realpath(destination) &&
+             !FXFile::copyFiles(source, destination, true)))
+        {
+            MessageBox::error(this, BOX_OK, _("Export theme"), _("Cannot export texture \"%s\" to %s."),
+                                name.text(), destination.text());
+            return 1;
+        }
+    }
     FILE* fp = fopen(file.text(), "w");
     if (!fp)
     {
@@ -1670,7 +1894,18 @@ long PreferencesBox::onCmdThemeExport(FXObject*, FXSelector, void*)
     {
         fprintf(fp, "%s=%s\n", themeColorKeys[i], themeColorText(theme.color[i]).text());
     }
-    fclose(fp);
+    if (!theme.effect.empty())
+    {
+        fprintf(fp, "list_background_effect=%s\n", theme.effect.text());
+    }
+    if (!theme.properties.empty()) fprintf(fp, "theme_details=%s\n", theme.encodeProperties().text());
+    FXbool written = !ferror(fp);
+    if (fclose(fp) != 0) written = false;
+    if (!written)
+    {
+        MessageBox::error(this, BOX_OK, _("Export theme"), _("The theme file could not be completely written: %s"), file.text());
+        return 1;
+    }
     appLog(APP_LOG_SETTINGS, "theme-exported", "theme=\"" + theme.name + "\" file=\"" + file + "\"");
     return 1;
 }
@@ -1679,33 +1914,111 @@ long PreferencesBox::onCmdThemeExport(FXObject*, FXSelector, void*)
 // Import a theme from a text file and add it to the custom themes
 long PreferencesBox::onCmdThemeImport(FXObject*, FXSelector, void*)
 {
-    FileDialog browse(this, _("Import color theme"));
+    FileDialog browse(this, _("Import color themes"));
     const char* patterns[] =
     {
         _("Swordfish themes"), "*.swordfish-theme", _("All Files"), "*", NULL
     };
     browse.setPatternList(patterns);
-    browse.setSelectMode(SELECT_FILE_EXISTING);
+    browse.setSelectMode(SELECT_FILE_MULTIPLE);
     browse.setFilename(FXSystem::getHomeDirectory() + PATHSEPSTRING);
     if (!browse.execute())
     {
         return 1;
     }
-    FXString file = browse.getFilename();
+
+    FXString* files = browse.getFilenames();
+    if (!files)
+    {
+        return 1;
+    }
+    for (int i = 0; !files[i].empty(); i++)
+    {
+        importThemeFile(files[i]);
+    }
+    delete[] files;
+    return 1;
+}
+
+
+// Copy a theme pack's custom texture into the user texture folder; returns false to cancel the import
+FXbool PreferencesBox::importThemeTexture(const FXString& themefile, const FXString& effect)
+{
+    FXString name;
+    FXString spec = effect;
+    spec.simplify();
+    for (int i = 0; i < spec.contains(' ') + 1; i++)
+    {
+        FXString token = spec.section(' ', i);
+        if (token.before('=') == "texture")
+        {
+            name = token.after('=');
+        }
+    }
+    if (name.empty())
+    {
+        return true;
+    }
+    if (!BackgroundEffect::validTextureName(name))
+    {
+        MessageBox::error(this, BOX_OK, _("Import theme"), _("Invalid texture name: %s"), name.text());
+        return false;
+    }
+    if (xf_existfile(FXPath::directory(execpath) + "/../share/swordfish/textures/" + name + ".png"))
+    {
+        return true;
+    }
+
+    FXString dir = xdgconfighome + PATHSEPSTRING XFECONFIGPATH "/textures";
+    FXString dest = dir + PATHSEPSTRING + name + ".png";
+    FXString base = FXPath::directory(themefile);
+    FXString source = base + PATHSEPSTRING "textures" PATHSEPSTRING + name + ".png";
+    if (!xf_existfile(source))
+    {
+        source = base + PATHSEPSTRING + name + ".png";
+    }
+    if (!xf_existfile(source))
+    {
+        if (!xf_existfile(dest))
+        {
+            MessageBox::warning(this, BOX_OK, _("Warning"),
+                                _("Texture \"%s\" was not found next to the theme file.\nThe theme is imported without it."),
+                                name.text());
+        }
+        return true;
+    }
+
+    FXString error;
+    if (!BackgroundEffect::importTexture(getApp(), source, name, true, error))
+    {
+        MessageBox::error(this, BOX_OK, _("Texture import"), "%s\n\n%s", error.text(), source.text());
+        return false;
+    }
+    return true;
+}
+
+
+// Import one theme file; returns true when a theme was added or replaced
+FXbool PreferencesBox::importThemeFile(const FXString& file)
+{
 
     FILE* fp = fopen(file.text(), "r");
     if (!fp)
     {
         MessageBox::error(this, BOX_OK, _("Error"), _("Cannot read file: %s"), file.text());
-        return 1;
+        return false;
     }
 
-    FXString name, tip;
+    FXString name, tip, effect, details;
     FXColor colors[NUM_COLORS];
     FXbool have[NUM_COLORS] = {false};
-    char line[1024];
-    while (fgets(line, sizeof(line), fp))
+    char* line = NULL;
+    size_t capacity = 0;
+    FXbool readable = true;
+    ssize_t length;
+    while ((length = getline(&line, &capacity, fp)) >= 0)
     {
+        if (length > 65536) { readable = false; break; }
         FXString text = FXString(line).trim();
         if (text.empty() || text[0] == '#' || !text.contains('='))
         {
@@ -1721,6 +2034,11 @@ long PreferencesBox::onCmdThemeImport(FXObject*, FXSelector, void*)
         {
             tip = value;
         }
+        else if (key == "list_background_effect")
+        {
+            effect = value;
+        }
+        else if (key == "theme_details") details = value;
         else
         {
             for (int i = 0; i < NUM_COLORS; i++)
@@ -1732,9 +2050,11 @@ long PreferencesBox::onCmdThemeImport(FXObject*, FXSelector, void*)
             }
         }
     }
+    readable = readable && !ferror(fp);
+    free(line);
     fclose(fp);
 
-    FXbool valid = !name.empty() && !name.contains(';');
+    FXbool valid = readable && !name.empty() && !name.contains(';') && !name.contains('\r') && !name.contains('\n');
     for (int i = 0; i < NUM_COLORS; i++)
     {
         valid = valid && have[i];
@@ -1742,13 +2062,25 @@ long PreferencesBox::onCmdThemeImport(FXObject*, FXSelector, void*)
     if (!valid)
     {
         MessageBox::error(this, BOX_OK, _("Error"), _("This is not a valid Swordfish theme file: %s"), file.text());
-        return 1;
+        return false;
     }
     tip.substitute(';', ',', true);
+    effect.substitute(';', ' ', true);
     if (tip.empty())
     {
         tip = _("Custom theme, right click to rename or remove");
     }
+
+    Theme metadata;
+    FXString error;
+    if (!metadata.decodeProperties(details, error))
+    {
+        MessageBox::error(this, BOX_OK, _("Import theme"), "%s", error.text());
+        return false;
+    }
+    if (!importThemeTexture(file, effect)) return false;
+    for (const auto& entry : metadata.properties)
+        if (entry.first.left(9) == "gradient." && !importThemeTexture(file, entry.second)) return false;
 
     // Offer to replace a custom theme with the same name
     for (FXuint n = 0; n < Themes.size(); n++)
@@ -1758,28 +2090,32 @@ long PreferencesBox::onCmdThemeImport(FXObject*, FXSelector, void*)
             if (n < NUM_DEFAULT_THEMES)
             {
                 MessageBox::warning(this, BOX_OK, _("Warning"), _("Theme name already exists, operation cancelled"));
-                return 1;
+                return false;
             }
             if (BOX_CLICKED_NO == MessageBox::question(this, BOX_YES_NO, _("Replace theme"),
                                                        _("A theme named \"%s\" already exists. Replace it?"), name.text()))
             {
-                return 1;
+                return false;
             }
             for (int i = 0; i < NUM_COLORS; i++)
             {
                 Themes[n].color[i] = colors[i];
             }
             Themes[n].tip = tip;
+            Themes[n].effect = effect;
+            Themes[n].properties = metadata.properties;
             themesList->setCurrentItem(n);
             themesList->selectItem(n);
             currTheme = Themes[n];
             appLog(APP_LOG_SETTINGS, "theme-imported", "theme=\"" + name + "\" file=\"" + file + "\"");
-            return 1;
+            return true;
         }
     }
 
     Theme theme = Theme(name.text(), tip.text(), colors[0], colors[1], colors[2], colors[3], colors[4], colors[5],
                         colors[6], colors[7], colors[8], colors[9], colors[10], colors[11]);
+    theme.effect = effect;
+    theme.properties = metadata.properties;
     Themes.push_back(theme);
     themesList->appendItem(theme.name);
     int last = (int)Themes.size() - 1;
@@ -1787,7 +2123,7 @@ long PreferencesBox::onCmdThemeImport(FXObject*, FXSelector, void*)
     themesList->selectItem(last);
     currTheme = Themes[last];
     appLog(APP_LOG_SETTINGS, "theme-imported", "theme=\"" + name + "\" file=\"" + file + "\"");
-    return 1;
+    return true;
 }
 
 
@@ -3616,6 +3952,9 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     getApp()->reg().writeUnsignedEntry("SETTINGS", "show_pathlinker", show_pathlink);
     if (show_pathlink != show_pathlink_prev)
     {
+        // A new default replaces both panels' address bar switch choices
+        getApp()->reg().deleteEntry("LEFT PANEL", "show_pathlinker");
+        getApp()->reg().deleteEntry("RIGHT PANEL", "show_pathlinker");
         getApp()->reg().write();
         restart_showpathlink = true;
     }
@@ -3623,65 +3962,12 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     // Theme has changed
     if (currTheme != Themes[0])
     {
-        getApp()->reg().writeColorEntry("SETTINGS", "basecolor", currTheme.color[0]);
-        getApp()->reg().writeColorEntry("SETTINGS", "bordercolor", currTheme.color[1]);
-        getApp()->reg().writeColorEntry("SETTINGS", "backcolor", currTheme.color[2]);
-        getApp()->reg().writeColorEntry("SETTINGS", "forecolor", currTheme.color[3]);
-        getApp()->reg().writeColorEntry("SETTINGS", "selbackcolor", currTheme.color[4]);
-        getApp()->reg().writeColorEntry("SETTINGS", "selforecolor", currTheme.color[5]);
-        getApp()->reg().writeColorEntry("SETTINGS", "listbackcolor", currTheme.color[6]);
-        getApp()->reg().writeColorEntry("SETTINGS", "listforecolor", currTheme.color[7]);
-        getApp()->reg().writeColorEntry("SETTINGS", "highlightcolor", currTheme.color[8]);
-        getApp()->reg().writeColorEntry("SETTINGS", "pbarcolor", currTheme.color[9]);
-        getApp()->reg().writeColorEntry("SETTINGS", "attentioncolor", currTheme.color[10]);
-        getApp()->reg().writeColorEntry("SETTINGS", "scrollbarcolor", currTheme.color[11]);
-
-        // Define hilite and shadow colors from basecolor
-        getApp()->reg().writeColorEntry("SETTINGS", "hilitecolor", makeHiliteColorGradient(currTheme.color[0]));
-        getApp()->reg().writeColorEntry("SETTINGS", "shadowcolor", makeShadowColorGradient(currTheme.color[0]));
-
-        getApp()->reg().write();
-        restart_theme = true;
+        currTheme.writeActive(getApp()->reg());
+        getApp()->reg().writeStringEntry("SETTINGS", "theme_name",
+            themesList->getCurrentItem() >= NUM_DEFAULT_THEMES ? currTheme.name.text() : "");
     }
     
-    // Save custom themes
-    if (Themes.size() > NUM_DEFAULT_THEMES)
-    {
-        // Delete themes section (do not re-read the registry: it would discard the settings accepted above)
-        getApp()->reg().deleteSection("THEMES");
-        
-        // Add custom themes to registry
-        for (FXuint i = NUM_DEFAULT_THEMES; i < Themes.size(); i++)
-        {
-            FXString regkey = "theme" + FXStringVal(i - NUM_DEFAULT_THEMES);          
-            FXString str = Themes[i].name + ";" + Themes[i].tip + ";"
-                           + FXStringVal(Themes[i].color[0]) + ";"
-                           + FXStringVal(Themes[i].color[1]) + ";"
-                           + FXStringVal(Themes[i].color[2]) + ";"
-                           + FXStringVal(Themes[i].color[3]) + ";"
-                           + FXStringVal(Themes[i].color[4]) + ";"
-                           + FXStringVal(Themes[i].color[5]) + ";"
-                           + FXStringVal(Themes[i].color[6]) + ";"
-                           + FXStringVal(Themes[i].color[7]) + ";"
-                           + FXStringVal(Themes[i].color[8]) + ";"
-                           + FXStringVal(Themes[i].color[9]) + ";"
-                           + FXStringVal(Themes[i].color[10]) + ";"
-                           + FXStringVal(Themes[i].color[11]) + ";";
-            
-            getApp()->reg().writeStringEntry("THEMES", regkey.text(), str.text());
-        }
-
-        // Update registry
-        getApp()->reg().write();       
-    }
-
-    // Bar shading
-    if ((FXuint)spinshade->getValue() != getApp()->reg().readUnsignedEntry("SETTINGS", "bar_shading", 7))
-    {
-        getApp()->reg().writeUnsignedEntry("SETTINGS", "bar_shading", (FXuint)spinshade->getValue());
-        getApp()->reg().write();
-        restart_theme = true;
-    }
+    saveCustomThemes(Themes);
 
     // UI DPI
     uidpi = spindpi->getValue();
@@ -3692,10 +3978,12 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
         restart_uidpi = true;
     }
 
-    // Custom toolbar icon size
-    if (customtoolbariconsize != xf_toolbariconsize(getApp(), "customtoolbariconsize"))
+    // Custom toolbar icon size and labels
+    if (customtoolbariconsize != xf_toolbariconsize(getApp(), "customtoolbariconsize") ||
+        customtoolbarstyle != getApp()->reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 0))
     {
         getApp()->reg().writeIntEntry("SETTINGS", "customtoolbariconsize", customtoolbariconsize);
+        getApp()->reg().writeUnsignedEntry("SETTINGS", "customtoolbarstyle", customtoolbarstyle);
         CustomActionsUI* customactions = static_cast<XFileExplorer*>(mainWindow)->getCustomActions();
         if (customactions)
         {
@@ -3740,13 +4028,26 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
 
     applyAssociationChanges(getApp()->reg(), associationoverrides, restoreprogramsettings);
 
-    // Update the registry
-    getApp()->reg().write();
+    rememberNavigation();
+    if (!getApp()->reg().write())
+    {
+        MessageBox::error(this, BOX_OK, _("Preferences"), _("The settings file could not be written."));
+        return 1;
+    }
+    if (currTheme != Themes[0])
+        static_cast<XFileExplorer*>(getOwner())->applyTheme(currTheme);
 
     // Refresh panels
     mainWindow->handle(this, FXSEL(SEL_COMMAND, XFileExplorer::ID_REFRESH), NULL);
 
-    DialogBox::onCmdAccept(sender, sel, ptr);
+    Themes[0] = currTheme;
+    Themes[0].name = _("Current Theme");
+    if (FXSELID(sel) == ID_APPLY)
+    {
+        rememberPreferences();
+    }
+    else
+        DialogBox::onCmdAccept(sender, sel, ptr);
 
     return 1;
 }
@@ -3755,6 +4056,10 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
 // Cancel button pressed
 long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
 {
+    rememberNavigation();
+    Themes = themesPrevious;
+    themesList->clearItems();
+    for (const Theme& theme : Themes) themesList->appendItem(theme.name);
     // Reset preferences to their previous values
     discardAssociationChanges(associationoverrides, restoreprogramsettings);
 
@@ -3873,7 +4178,6 @@ long PreferencesBox::onCmdCancel(FXObject* sender, FXSelector sel, void* ptr)
     }
     spindpi->setValue(uidpi_prev);
     uidpi = uidpi_prev;
-    spinshade->setValue(getApp()->reg().readUnsignedEntry("SETTINGS", "bar_shading", 7));
 
     // Seventh tab - Fonts
     normalfont->setText(oldnormalfont);
@@ -3895,6 +4199,11 @@ FXuint PreferencesBox::execute(FXuint placement)
     for (FXint i = 0; i < 3; ++i)
     {
         customtoolbariconsizebuttons[i]->setCheck(customtoolbariconsize == 16 + i * 8);
+    }
+    customtoolbarstyle = getApp()->reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 0);
+    for (FXuint i = 0; i < 3; ++i)
+    {
+        customtoolbarstylebuttons[i]->setCheck(customtoolbarstyle == i);
     }
     SystemIntegration::Selection integrationSelection;
     std::string integrationError;
@@ -3965,7 +4274,22 @@ FXuint PreferencesBox::execute(FXuint placement)
         initialDestination >= 0 && (size_t)initialDestination < integrationCommandPaths.size() ?
         integrationCommandPaths[initialDestination] : "";
 
-    // Save current preferences to restore them if cancel is pressed
+    rememberPreferences();
+    create();
+    if (getHeight() < 160)
+    {
+        FXint minimumHeight = FXMIN(580, FXMAX(160, getRoot()->getHeight() - 120));
+        resize(FXMAX(getWidth(), getDefaultWidth()), FXMAX(getDefaultHeight(), minimumHeight));
+    }
+    show(placement);
+    selectCategory(currentCategory);
+    getApp()->refresh();
+    return getApp()->runModalFor(this);
+}
+
+void PreferencesBox::rememberPreferences()
+{
+    themesPrevious = Themes;
     associationoverrides.clear();
     restoreprogramsettings = false;
     // First tab - Options
@@ -4068,21 +4392,25 @@ FXuint PreferencesBox::execute(FXuint placement)
     oldnormalfont = normalfont->getText();
     oldtextfont = textfont->getText();
 
-    create();
-    if (getHeight() < 160)
+}
+
+void PreferencesBox::saveCustomThemes(const vector_Theme& themes)
+{
+    getApp()->reg().deleteSection("THEMES");
+    for (FXuint i = NUM_DEFAULT_THEMES; i < themes.size(); ++i)
     {
-        FXint minimumHeight = FXMIN(480, FXMAX(160, getRoot()->getHeight() - 120));
-        resize(FXMAX(getWidth(), getDefaultWidth()), FXMAX(getDefaultHeight(), minimumHeight));
+        FXString key = "theme" + FXStringVal(i - NUM_DEFAULT_THEMES);
+        getApp()->reg().writeStringEntry("THEMES", key.text(), themes[i].serialize().text());
     }
-    show(placement);
-    getApp()->refresh();
-    return getApp()->runModalFor(this);
 }
 
 void PreferencesBox::selectIntegrationPage()
 {
     if (preferencesTabs && integrationTabIndex >= 0)
     {
+        settingsFilter->setText("");
+        onFilter(NULL, 0, NULL);
+        selectCategory(SYSTEM);
         preferencesTabs->setCurrent(integrationTabIndex);
     }
 }

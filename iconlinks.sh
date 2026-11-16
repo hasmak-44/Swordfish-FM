@@ -11,19 +11,14 @@ shopt -s nullglob
 for f in "$SRC"/icons/default-theme/*.png "$SRC"/icons/apps/48x48/apps/*.png; do
   [ -f "$f" ] || continue
   bn=$(basename "$f")
+  if [ ! -f "$DST/icons/default-theme/$bn" ]; then
+    cp "$f" "$DST/icons/default-theme/$bn"
+  fi
   for th in gnome-theme xfce-theme kde-theme; do
     if [ ! -f "$SRC/icons/$th/$bn" ] && [ ! -f "$DST/icons/$th/$bn" ]; then
-      ln -sf "../default-theme/$bn" "$DST/icons/$th/$bn" 2>/dev/null || true
+      ln -sf "../default-theme/$bn" "$DST/icons/$th/$bn"
     fi
   done
 done
 
-for f in "$SRC"/icons/default-theme/*.png; do
-  bn=$(basename "$f")
-  for th in gnome-theme xfce-theme kde-theme; do
-    if [ ! -f "$SRC/icons/$th/$bn" ] && [ ! -f "$DST/icons/$th/$bn" ]; then
-      ln -sf "../default-theme/$bn" "$DST/icons/$th/$bn" 2>/dev/null || true
-    fi
-  done
-done
 echo "Icon links done."

@@ -1159,6 +1159,7 @@ long DirPanel::onSidebarPopup(FXObject*, FXSelector, void* ptr)
     {
         new FXMenuCommand(&menu, networkRefresh->getText(), minireloadicon, this, ID_REFRESH_NETWORK);
     }
+    xf_windowcolors(&menu);
     menu.create();
     sidebarPopupOpen = true;
     menu.popup(NULL, event->root_x, event->root_y);
@@ -1274,11 +1275,11 @@ DirPanel::DirPanel(FXWindow* owner, FXComposite* p, FXColor listbackcolor, FXCol
                                 0, 0, 0, 0, 0, 0, 0);
 
         // First tab - Places hierarchy
-        new FXTabItem(tabbook, _("Places") + FXString("  "), miniplacesicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 0, 0, 3, 5);
+        new DialogTabItem(tabbook, _("Places") + FXString("  "), miniplacesicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 0, 0, 3, 5);
         createPlaces(owner, tabbook, listbackcolor, listforecolor, placesoptions);
 
         // Second tab - Directory list
-        new FXTabItem(tabbook, _("Tree") + FXString("  "), minitreeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 0, 0, 3, 5);
+        new DialogTabItem(tabbook, _("Tree") + FXString("  "), minitreeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 0, 0, 3, 5);
         FXVerticalFrame* frame = new FXVerticalFrame(tabbook, FRAME_NONE, 0, 0, 0, 0, 0, 0, 2, 0);
         dirlist = new DirList(owner, frame, this, ID_FILELIST, treeoptions);
         dirlist->setTextColor(listforecolor);
@@ -2815,6 +2816,7 @@ long DirPanel::onCmdPopupMenuDirList(FXObject* sender, FXSelector sel, void* ptr
         new FXMenuCommand(menu, _("Prop&erties"), miniattribicon, this, DirPanel::ID_PROPERTIES);
     }
 
+    xf_windowcolors(menu);
     menu->create();
     menu->popup(NULL, x, y);
     getApp()->runModalWhileShown(menu);
@@ -2876,6 +2878,7 @@ long DirPanel::onCmdPopupMenuPlaces(FXObject* sender, FXSelector sel, void* ptr)
     new FXMenuSeparator(menu);
     new FXMenuCommand(menu, _("&Properties"), miniattribicon, this, DirPanel::ID_PLACE_PROPERTIES);
 
+    xf_windowcolors(menu);
     menu->create();
     menu->popup(NULL, x, y);
     getApp()->runModalWhileShown(menu);
@@ -2938,6 +2941,7 @@ long DirPanel::onCmdPopupMenuMounts(FXObject* sender, FXSelector sel, void* ptr)
 #endif
     new FXMenuCommand(menu, _("&Properties"), miniattribicon, this, DirPanel::ID_MOUNT_PROPERTIES);
 
+    xf_windowcolors(menu);
     menu->create();
     menu->popup(NULL, x, y);
     getApp()->runModalWhileShown(menu);
@@ -2984,6 +2988,7 @@ long DirPanel::onCmdPopupMenuBookmarks(FXObject* sender, FXSelector sel, void* p
             FXMenuPane* menu = new FXMenuPane(this);
             new FXMenuCommand(menu, _("&Remove"), miniremovebookicon, this, DirPanel::ID_REMOVE_BOOKMARK);
 
+            xf_windowcolors(menu);
             menu->create();
             menu->popup(NULL, x, y);
             getApp()->runModalWhileShown(menu);
@@ -3034,6 +3039,7 @@ long DirPanel::onCmdPopupMenuBookmarks(FXObject* sender, FXSelector sel, void* p
         new FXMenuCommand(menu, _("&Properties"), miniattribicon, this, DirPanel::ID_BOOKMARK_PROPERTIES);
     }
 
+    xf_windowcolors(menu);
     menu->create();
     menu->popup(NULL, x, y);
     getApp()->runModalWhileShown(menu);
@@ -4683,10 +4689,12 @@ long DirPanel::onCmdDirTrash(FXObject*, FXSelector, void*)
             f->showProgressDialog();
 
             // Trash files path name
-            FXString trashpathname = xf_create_trashpathname(pathname, trashfileslocation);
+            FXString itemtrashfiles, itemtrashinfo, itemtopdir;
+            xf_trashfor(pathname, itemtrashfiles, itemtrashinfo, itemtopdir);
+            FXString trashpathname = xf_create_trashpathname(pathname, itemtrashfiles);
 
             // Create trashinfo file
-            xf_create_trashinfo(pathname, trashpathname, trashfileslocation, trashinfolocation);
+            xf_create_trashinfo(pathname, trashpathname, itemtrashfiles, itemtrashinfo, itemtopdir);
 
             // Move file to trash files location
             int ret = f->fmove(pathname, trashpathname);
@@ -4716,10 +4724,12 @@ long DirPanel::onCmdDirTrash(FXObject*, FXSelector, void*)
     else
     {
         // Trash files path name
-        FXString trashpathname = xf_create_trashpathname(pathname, trashfileslocation);
+        FXString itemtrashfiles, itemtrashinfo, itemtopdir;
+        xf_trashfor(pathname, itemtrashfiles, itemtrashinfo, itemtopdir);
+        FXString trashpathname = xf_create_trashpathname(pathname, itemtrashfiles);
 
         // Create trashinfo file
-        xf_create_trashinfo(pathname, trashpathname, trashfileslocation, trashinfolocation);
+        xf_create_trashinfo(pathname, trashpathname, itemtrashfiles, itemtrashinfo, itemtopdir);
 
         // Move file to trash files location
         int ret = f->fmove(pathname, trashpathname);

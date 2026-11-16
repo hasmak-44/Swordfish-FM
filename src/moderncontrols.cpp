@@ -155,8 +155,7 @@ static void drawGradientRectangle(FXDC& dc, FXColor upper, FXColor lower, int x,
 
 
 #define INIT_MODERN                                                                                        \
-        static FXbool init = true;                                                                         \
-        static FXColor topcolor, bottomcolor, shadecolor, bordercolor;                                     \
+        FXColor topcolor, bottomcolor, shadecolor, bordercolor;                                            \
                                                                                                            \
         FXPoint basebackground[4] = { FXPoint(0, 0), FXPoint(width - 1, 0), FXPoint(0, height - 1),        \
                                       FXPoint(width - 1, height - 1) };                                    \
@@ -170,20 +169,18 @@ static void drawGradientRectangle(FXDC& dc, FXColor upper, FXColor lower, int x,
         FXPoint bordercorners[4] = { FXPoint(1, 1), FXPoint(1, height - 2), FXPoint(width - 2, 1),         \
                                      FXPoint(width - 2, height - 2) };                                     \
                                                                                                            \
-        if (init)                                                                                          \
+                                                                                                           \
         {                                                                                                  \
-            FXuint r = FXREDVAL(baseColor);                                                                \
-            FXuint g = FXGREENVAL(baseColor);                                                              \
-            FXuint b = FXBLUEVAL(baseColor);                                                               \
+            FXuint r = FXREDVAL(backColor);                                                                \
+            FXuint g = FXGREENVAL(backColor);                                                              \
+            FXuint b = FXBLUEVAL(backColor);                                                               \
                                                                                                            \
             topcolor = FXRGB(FXMIN(1.1 * r, 255), FXMIN(1.1 * g, 255), FXMIN(1.1 * b, 255));               \
             (void)topcolor;             /* Trick to avoid unused variable compiler warning */              \
             bottomcolor = FXRGB(0.9 * r, 0.9 * g, 0.9 * b);                                                \
             (void)bottomcolor;          /* Trick to avoid unused variable compiler warning */              \
             shadecolor = FXRGB(0.9 * r, 0.9 * g, 0.9 * b);                                                 \
-            bordercolor = FXRGB(0.5 * r, 0.5 * g, 0.5 * b);                                                \
-                                                                                                           \
-            init = false;                                                                                  \
+            bordercolor = borderColor;                                                                     \
         }
 
 
@@ -307,7 +304,7 @@ long FXButton::onPaint(FXObject*, FXSelector, void* ptr)
             dc.setFont(font);
 
             // !!! Hack here !!!
-            FXColor backcolor = getApp()->getBackColor();
+            FXColor backcolor = backColor;
             FXuint rk = FXREDVAL(backcolor);
             FXuint gk = FXREDVAL(backcolor);
             FXuint bk = FXREDVAL(backcolor);
@@ -346,19 +343,15 @@ long FXButton::onPaint(FXObject*, FXSelector, void* ptr)
 long FXCheckButton::onPaint(FXObject*, FXSelector, void* ptr)
 {
     // Initialize modern controls (here we don't use the macro)
-    static FXbool init = true;
-    static FXColor shadecolor, bordercolor;
+    FXColor shadecolor, bordercolor;
 
-    if (init)
     {
         FXuint r = FXREDVAL(baseColor);
         FXuint g = FXGREENVAL(baseColor);
         FXuint b = FXBLUEVAL(baseColor);
 
         shadecolor = FXRGB(0.9 * r, 0.9 * g, 0.9 * b);
-        bordercolor = FXRGB(0.5 * r, 0.5 * g, 0.5 * b);
-
-        init = false;
+        bordercolor = borderColor;
     }
 
     FXEvent* ev = (FXEvent*)ptr;
@@ -514,7 +507,7 @@ long FXCheckButton::onPaint(FXObject*, FXSelector, void* ptr)
         else
         {
             // !!! Hack here !!!
-            FXColor backcolor = getApp()->getBackColor();
+            FXColor backcolor = backColor;
             FXuint rk = FXREDVAL(backcolor);
             FXuint gk = FXREDVAL(backcolor);
             FXuint bk = FXREDVAL(backcolor);
@@ -1069,19 +1062,16 @@ long FXScrollBar::onPaint(FXObject*, FXSelector, void* ptr)
 {
     // Caution, don't use the macro here
 
-    static FXbool init = true;
-    static FXColor bg_topcolor, bg_bottomcolor, bg_shadecolor, bg_bordercolor;
-    static FXColor sb_topcolor, sb_bottomcolor, sb_shadecolor, sb_bordercolor;
-    static FXColor sb_lightcolor, scrollbarcolor, gripcolor;
+    FXColor bg_topcolor, bg_bottomcolor, bg_shadecolor, bg_bordercolor;
+    FXColor sb_topcolor, sb_bottomcolor, sb_shadecolor, sb_bordercolor;
+    FXColor sb_lightcolor, scrollbarcolor, gripcolor;
 
     FXEvent* ev = (FXEvent*)ptr;
     int total;
     FXDCWindow dc(this, ev);
 
-    // At first run, select the scrollbar style and color
-    if (init)
     {
-        scrollbarcolor = getApp()->reg().readColorEntry("SETTINGS", "scrollbarcolor", FXRGB(237, 233, 227));
+        scrollbarcolor = backColor;
 
         // Compute gradient colors from the base color
         // Decompose the base color
@@ -1124,7 +1114,6 @@ long FXScrollBar::onPaint(FXObject*, FXSelector, void* ptr)
             gripcolor = FXRGB(0.5 * r, 0.5 * g, 0.5 * b);
         }
 
-        init = false;
     }
 
     // Nice scrollbar with gradient and rounded corners
@@ -1194,7 +1183,7 @@ long FXScrollBar::onPaint(FXObject*, FXSelector, void* ptr)
 long FXMenuTitle::onPaint(FXObject*, FXSelector, void* ptr)
 {
     // Initialize modern controls
-    FXColor baseColor = backColor;
+    FXColor borderColor = hiliteColor;
     INIT_MODERN
 
     FXEvent* ev = (FXEvent*)ptr;
@@ -1449,7 +1438,7 @@ long FXRadioButton::onPaint(FXObject*, FXSelector, void* ptr)
         else
         {
             // !!! Hack here !!!
-            FXColor backcolor = getApp()->getBackColor();
+            FXColor backcolor = backColor;
             FXuint rk = FXREDVAL(backcolor);
             FXuint gk = FXREDVAL(backcolor);
             FXuint bk = FXREDVAL(backcolor);
@@ -1866,14 +1855,12 @@ long FXArrowButton::onPaint(FXObject*, FXSelector, void* ptr)
 // Draw only the interior, i.e. the part that changes
 void FXProgressBar::drawInterior(FXDCWindow& dc)
 {
-    static FXbool init = true;
-    static FXColor topcolor, bottomcolor, bordercolor;
+    FXColor topcolor, bottomcolor, bordercolor;
 
     FXPoint bordercorners[4] = { FXPoint(1, 1), FXPoint(1, height - 2), FXPoint(width - 2, 1),
                                  FXPoint(width - 2, height - 2) };
 
     // Init modern controls (here we don't use the macro)
-    if (init)
     {
         FXuint r = FXREDVAL(barColor);
         FXuint g = FXGREENVAL(barColor);
@@ -1886,9 +1873,7 @@ void FXProgressBar::drawInterior(FXDCWindow& dc)
         g = FXGREENVAL(baseColor);
         b = FXBLUEVAL(baseColor);
 
-        bordercolor = FXRGB(0.5 * r, 0.5 * g, 0.5 * b);
-
-        init = false;
+        bordercolor = borderColor;
     }
 
     int percent, barlength, barfilled, tx, ty, tw, th, n, d;
@@ -2157,8 +2142,7 @@ long FXProgressBar::onPaint(FXObject*, FXSelector, void* ptr)
 // This hack draws a rectangle with rounded corners and supports dark theme
 void FXPacker::drawGrooveRectangle(FXDCWindow& dc, FXint x, FXint y, FXint w, FXint h)
 {
-    static FXbool init = true;
-    static FXColor bordercolor, shadecolor, shadowcolor;
+    FXColor bordercolor, shadecolor, shadowcolor;
 
     FXPoint bordershade[16] =
     {
@@ -2175,13 +2159,12 @@ void FXPacker::drawGrooveRectangle(FXDCWindow& dc, FXint x, FXint y, FXint w, FX
         FXPoint(x + w - 2, y + h - 2)
     };
 
-    if (init)
     {
         FXuint rk = FXREDVAL(backColor);
         FXuint gk = FXGREENVAL(backColor);
         FXuint bk = FXBLUEVAL(backColor);
 
-        bordercolor = getApp()->getBorderColor();
+        bordercolor = borderColor;
         FXuint rb = FXREDVAL(bordercolor);
         FXuint gb = FXGREENVAL(bordercolor);
         FXuint bb = FXBLUEVAL(bordercolor);
@@ -2198,7 +2181,6 @@ void FXPacker::drawGrooveRectangle(FXDCWindow& dc, FXint x, FXint y, FXint w, FX
             shadowcolor = FXRGB(0.9 * rb, 0.9 * gb, 0.9 * bb);
         }
 
-        init = false;
     }
 
     if ((0 < w) && (0 < h))
@@ -2229,8 +2211,7 @@ void FXPacker::drawGrooveRectangle(FXDCWindow& dc, FXint x, FXint y, FXint w, FX
 // This hack draws a rectangle with rounded corners and supports dark theme
 void FXFrame::drawGrooveRectangle(FXDCWindow& dc, FXint x, FXint y, FXint w, FXint h)
 {
-    static FXbool init = true;
-    static FXColor bordercolor, shadecolor, shadowcolor;
+    FXColor bordercolor, shadecolor, shadowcolor;
 
     FXPoint bordershade[16] =
     {
@@ -2247,13 +2228,12 @@ void FXFrame::drawGrooveRectangle(FXDCWindow& dc, FXint x, FXint y, FXint w, FXi
         FXPoint(x + w - 2, y + h - 2)
     };
 
-    if (init)
     {
         FXuint rk = FXREDVAL(backColor);
         FXuint gk = FXGREENVAL(backColor);
         FXuint bk = FXBLUEVAL(backColor);
 
-        bordercolor = getApp()->getBorderColor();
+        bordercolor = borderColor;
         FXuint rb = FXREDVAL(bordercolor);
         FXuint gb = FXGREENVAL(bordercolor);
         FXuint bb = FXBLUEVAL(bordercolor);
@@ -2270,7 +2250,6 @@ void FXFrame::drawGrooveRectangle(FXDCWindow& dc, FXint x, FXint y, FXint w, FXi
             shadowcolor = FXRGB(0.9 * rb, 0.9 * gb, 0.9 * bb);
         }
 
-        init = false;
     }
 
     if ((0 < w) && (0 < h))
@@ -2296,7 +2275,7 @@ void FXFrame::drawGrooveRectangle(FXDCWindow& dc, FXint x, FXint y, FXint w, FXi
 void FXFrame::drawDoubleRaisedRectangle(FXDCWindow& dc, FXint x, FXint y, FXint w, FXint h)
 {
     // !!! Hack here !!!
-    FXColor backcolor = getApp()->getBackColor();
+    FXColor backcolor = backColor;
     FXuint rk = FXREDVAL(backcolor);
     FXuint gk = FXREDVAL(backcolor);
     FXuint bk = FXREDVAL(backcolor);
@@ -2377,12 +2356,12 @@ long FXMenuRadio::onPaint(FXObject*, FXSelector, void* ptr)
             dc.setFont(font);
 
             // !!! Hack here !!!
-            FXColor backcolor = getApp()->getBackColor();
+            FXColor backcolor = backColor;
             FXuint rk = FXREDVAL(backcolor);
             FXuint gk = FXREDVAL(backcolor);
             FXuint bk = FXREDVAL(backcolor);
 
-            FXColor bordercolor = getApp()->getBorderColor();
+            FXColor bordercolor = hiliteColor;
             FXuint r = FXREDVAL(bordercolor);
             FXuint g = FXGREENVAL(bordercolor);
             FXuint b = FXBLUEVAL(bordercolor);
@@ -2535,12 +2514,12 @@ long FXMenuCheck::onPaint(FXObject*, FXSelector, void* ptr)
             dc.setFont(font);
 
             // !!! Hack here !!!
-            FXColor backcolor = getApp()->getBackColor();
+            FXColor backcolor = backColor;
             FXuint rk = FXREDVAL(backcolor);
             FXuint gk = FXREDVAL(backcolor);
             FXuint bk = FXREDVAL(backcolor);
 
-            FXColor bordercolor = getApp()->getBorderColor();
+            FXColor bordercolor = hiliteColor;
             FXuint r = FXREDVAL(bordercolor);
             FXuint g = FXGREENVAL(bordercolor);
             FXuint b = FXBLUEVAL(bordercolor);
@@ -3224,7 +3203,8 @@ long FXMenuSeparator::onPaint(FXObject*, FXSelector, void* ptr)
     dc.fillRectangle(ev->rect.x, ev->rect.y, ev->rect.w, ev->rect.h);
 
     // !!! Change color !!!
-    dc.setForeground(getApp()->getBorderColor());
+    FXPacker* parent = dynamic_cast<FXPacker*>(getParent());
+    dc.setForeground(parent ? parent->getBorderColor() : makeShadowColor(backColor));
     dc.fillRectangle(1, 0, width, 1);
 
     return 1;
@@ -3481,10 +3461,11 @@ void FXDCWindow::drawIconSunken(const FXIcon* icon, FXint dx, FXint dy)
     }
     XGCValues gcv;
 
-    FXColor basecolor = getApp()->getBaseColor();
+    FXWindow* window = dynamic_cast<FXWindow*>(surface);
+    FXColor basecolor = window ? window->getBackColor() : getApp()->getBaseColor();
 
     // !!! Hack here !!!
-    FXColor backcolor = getApp()->getBackColor();
+    FXColor backcolor = basecolor;
     FXuint rk = FXREDVAL(backcolor);
     FXuint gk = FXREDVAL(backcolor);
     FXuint bk = FXREDVAL(backcolor);
@@ -3547,7 +3528,7 @@ long FXSeparator::onPaint(FXObject*, FXSelector, void* ptr)
     drawFrame(dc, 0, 0, width, height);
 
     // !!! Hack here !!!
-    FXColor backcolor = getApp()->getBackColor();
+    FXColor backcolor = backColor;
     FXuint rk = FXREDVAL(backcolor);
     FXuint gk = FXREDVAL(backcolor);
     FXuint bk = FXREDVAL(backcolor);
@@ -3653,12 +3634,12 @@ long FXMenuCommand::onPaint(FXObject*, FXSelector, void* ptr)
             dc.setFont(font);
 
             // !!! Hack here !!!
-            FXColor backcolor = getApp()->getBackColor();
+            FXColor backcolor = backColor;
             FXuint rk = FXREDVAL(backcolor);
             FXuint gk = FXREDVAL(backcolor);
             FXuint bk = FXREDVAL(backcolor);
 
-            FXColor bordercolor = getApp()->getBorderColor();
+            FXColor bordercolor = hiliteColor;
             FXuint r = FXREDVAL(bordercolor);
             FXuint g = FXGREENVAL(bordercolor);
             FXuint b = FXBLUEVAL(bordercolor);
@@ -3841,7 +3822,7 @@ long FXLabel::onPaint(FXObject*, FXSelector, void* ptr)
         else
         {
             // !!! Hack here !!!
-            FXColor backcolor = getApp()->getBackColor();
+            FXColor backcolor = backColor;
             FXuint rk = FXREDVAL(backcolor);
             FXuint gk = FXREDVAL(backcolor);
             FXuint bk = FXREDVAL(backcolor);
@@ -3948,7 +3929,7 @@ long FXGroupBox::onPaint(FXObject*, FXSelector, void* ptr)
             else
             {
                 // !!! Hack here !!!
-                FXColor backcolor = getApp()->getBackColor();
+                FXColor backcolor = backColor;
                 FXuint rk = FXREDVAL(backcolor);
                 FXuint gk = FXREDVAL(backcolor);
                 FXuint bk = FXREDVAL(backcolor);
@@ -3993,7 +3974,7 @@ long FXDragCorner::onPaint(FXObject*, FXSelector, void* ptr)
     dc.fillRectangle(ev->rect.x, ev->rect.y, ev->rect.w, ev->rect.h);
 
     // !!! Hack here !!!
-    FXColor backcolor = getApp()->getBackColor();
+    FXColor backcolor = backColor;
     FXuint rk = FXREDVAL(backcolor);
     FXuint gk = FXREDVAL(backcolor);
     FXuint bk = FXREDVAL(backcolor);

@@ -1,5 +1,86 @@
 # Swordfish FM portable changelog
 
+## Unreleased
+
+### Added
+- Separate Theme Editor under Preferences > Appearance > Theme, with a safe
+  snapshot of the current view, supported element properties, live preview,
+  undo/redo, comparison, scoped resets and privacy masking. Apply changes only
+  the mockup; Save persists and activates all cumulative edits.
+- Native colour tools include editable colour formats, alpha, named shared
+  and theme palettes, image palette extraction, tints/shades, contrast checks
+  and a magnified X11 eyedropper. File-list backgrounds have visual texture,
+  pattern and positioned gradient-stop/midpoint editors.
+- Experimental: themes can give the file list a gradient, procedural pattern
+  or seamless texture background through an optional
+  `list_background_effect` line in a `.swordfish-theme` file, for example
+  `fill=gradient colors=#F8F2E7,#E9DDC8 texture=linen strength=45`.
+  Ten greyscale texture tiles (brick, planks, pebbles, paper, linen, canvas,
+  brushed-metal, slate, cork, concrete) are installed; your own PNG tiles can
+  go in `~/.config/swordfish/textures/`. Text and selection stay solid colours.
+- Import theme… can import several theme files at once. Custom textures a
+  theme uses are copied from a `textures/` folder next to it into
+  `~/.config/swordfish/textures/`; an existing, different texture with the
+  same name is never overwritten (that theme is skipped with an error).
+- `texture_colors=original` in `list_background_effect` shows a colour
+  texture in its own colours instead of tinting it with the theme colour.
+
+### Changed
+- Preferences uses scrolling icon categories on the left and tabbed settings
+  on the right, with a category filter, remembered navigation and
+  OK/Cancel/Apply buttons. Existing settings are retained.
+- Dialogs and child windows use fixed readable colours: background #29353B,
+  fields #1E242D, borders/active tabs/selection #0F56D9 and text #FFFFFF.
+  The main window and Theme Editor mockup remain themed.
+- Copy/move conflicts show incoming and existing item names, locations, types,
+  sizes and modification dates, with explicit Replace (or folder Merge),
+  Rename, Skip and Cancel choices. Rename keeps both using numbered names
+  such as `report (1).txt`. An "Apply to all similar conflicts" checkbox
+  lasts for the current operation only; merging folders does not authorize
+  replacing conflicting files inside. Skipped files remain at the source
+  when moving merged folders, including between drives.
+- To protect your data, ZIP archives are always opened read-only as folders.
+  Saving changes back could rewrite a ZIP in another format that other
+  programs can't open. A notice explains this and that files can still be
+  browsed and copied or dragged out. Tar archives (.tar, .tar.gz, ...) can
+  still be edited; other formats archivemount can't write stay read-only.
+- Dragging a tab or movable column heading works like Firefox tabs: the
+  tab or heading follows the pointer and its neighbours slide aside to show
+  where it will land. Drag a tab out of the strip to drop it on Bookmarks or
+  the other panel's tabs.
+- The address bar pencil button switches only its own pane. Preferences sets
+  the default mode; changing it resets both panes to the new default.
+- The custom toolbar can show icons and titles, icons only, or titles only
+  (Preferences → Appearance → Custom Tool Bar). Right-click the custom toolbar
+  to change its display or icon size immediately. Built-in toolbars are
+  unchanged.
+
+### Fixed
+- Closing a writable archive folder (tar) now waits until the changes are
+  saved, then checks the saved archive. If it is missing, empty, in another
+  format or unreadable, the original archive is restored. The `.orig` backup
+  is kept after a successful save.
+- Tabs showing the combined Trash now say "Trash" instead of "files".
+- Move to Trash on a USB stick or another drive now uses that drive's own
+  Trash folder (`.Trash-UID`, as Caja and Thunar do), so it is instant
+  instead of copying everything to Home. These items appear in the Trash
+  view and restore normally. Read-only or unsuitable drives still use Home
+  Trash.
+- Faster file operations: copying many small files and moving between drives
+  are about three times faster, and deleting a folder inside Trash is about
+  seven times faster. The progress dialog now refreshes a few times a second
+  instead of after every file, and Move to Trash no longer measures a
+  folder's size before a same-drive move.
+- Open as Folder failed with "permission denied" for ISO images without Unix
+  ownership data (common for Windows media): archivemount showed every entry
+  as root-only. Archives are now mounted as owned by the current user.
+- Column heading right-click checkmarks and toggles were wrong when a normal
+  pane showed exactly five columns (it was mistaken for the Trash layout).
+- Portable ZIP packaging materializes symbolic links for compatibility with
+  newer 7-Zip, which rejects relative theme-icon links containing `../`.
+  Icon installation now supplies the default-theme targets before creating
+  fallback links, fixing broken Swordfish application-icon aliases.
+
 ## swordfish-0.0.3-beta2 — 10 November 2026
 
 Published as **0.0.3 beta 2**, the latest release, after the user accepted

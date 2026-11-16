@@ -1,6 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 10 November 2026, through the 0.0.3 beta 2 release (section 3.56).
+Last updated: 12 November 2026, through beta 2 ZIP repair and new feedback
+(sections 3.57-3.58).
 Latest release: `swordfish-0.0.3-beta2`.
 Stable fallback: `swordfish-0.0.2`.
 
@@ -39,7 +40,7 @@ Historical implementation details below do not override the current code.
    automated tests but still need the user's real-machine testing.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.40-3.50. The RC4-RC6 notes are
+9. For the latest state, read sections 3.56-3.58. The RC4-RC6 notes are
    historical context, not the current release or pending-work status.
 
 This guide is a documentation addition after the frozen RC4 application commit.
@@ -2483,6 +2484,522 @@ plus `Swordfish-User-Manual-0.0.3-beta2.zip` added by hand, with
 regenerated autotools/gettext files (`aclocal.m4`, `Makefile.in`, `po/*.po`);
 the release container regenerates them with `autoreconf -fi` regardless.
 
+### 3.57. Beta 2 ZIP extraction compatibility (12 November 2026)
+
+The user reported the GitHub ZIP as corrupt and supplied extraction output
+showing "Dangerous link path was ignored" for theme-icon links pointing to
+`../default-theme/`. A fresh GitHub download matched the published SHA256
+and passed `unzip -tq`. However, current official 7-Zip 26.06 reproduced the
+exact error (258 rejected links, exit 2); 7-Zip 23.01 extracted successfully.
+Compressed-data tests alone did not catch the compatibility failure.
+
+The user authorized replacing or removing the affected ZIP. Repackaged the
+original published contents with `zip -qr` instead of `zip -qry`, so ZIP
+entries are ordinary files/directories, not symbolic links. Supplied six
+missing default-theme application-icon targets, repairing 18 broken fallback
+links before packaging. The `app-icon` directory link is materialized too.
+Every original regular file and resolvable file-link payload was verified
+byte-for-byte; application binaries and executable modes are unchanged.
+No portable-data is included.
+
+The corrected ZIP passes `unzip -tq` and actual 7-Zip 26.06 extraction with
+no errors. The 7-Zip-extracted app reports `0.0.3-beta2` and displays both the
+main window and first-run welcome under Xvfb without output/errors.
+Corrected ZIP SHA256:
+`e776d792de10704086d5b2d9f1e9245f9f134f3b5dafe5dbb82be404eadfc293`.
+
+Future packaging uses the dereferencing ZIP command and tests compressed
+data in the release workflow. `iconlinks.sh` now supplies default-theme
+targets from the source before linking other themes; its focused regression
+checks fresh install, repair/reinstall and preservation of theme overrides.
+These source changes are local, not committed or pushed.
+
+Only the portable ZIP and its line in SHA256SUMS were replaced on the
+beta 2 release, with a dated explanation on the release page. A fresh GitHub
+download matched the new checksum and extracted successfully with 7-Zip
+26.06; GitHub's other three asset digests stayed unchanged. The tar.gz,
+source and manual assets, binaries, tag and earlier releases stay unchanged.
+
+### 3.58. Beta 2 feedback to investigate (12 November 2026)
+
+The user reported:
+
+- Random slow startup and restart.
+- The address-mode toggle affects both panes; it should be independently
+  usable per pane. The current handler explicitly writes one shared setting
+  and refreshes both panes; this is confirmed current behavior.
+- Column-menu checks disagree with Preferences and visible columns.
+  Initial inspection found `getHeaderIndex()` infers Trash from the number
+  of columns alone; ordinary five-column layouts need reproduction.
+- Restore Icons / Title / Both settings for the custom toolbar, and add a
+  custom-toolbar-only context menu for size and presentation. Do not bring
+  back the rolled-back main-toolbar customization.
+- Open Archive as Folder fails with permission denied unless running root.
+  Exact archive path, format and error/logs are still needed; do not solve
+  this by automatically elevating or changing permissions.
+- Slow archive operations, especially copy/move out of archive folders;
+  investigate 7-Zip or another faster approach.
+- Slow Move to Trash / Empty Trash and copy/move compared with Caja/Thunar;
+  consider Ultracopier, but do not switch engines before measurement and
+  agreement on behavior/dependencies.
+
+Archive folders currently use host `archivemount` (FUSE); extraction commands
+select host tar/unzip/7z and other tools by format. Root can bypass permission
+restrictions, but the report alone does not identify which permission failed.
+The remaining feedback is not implemented or validated by the ZIP repair.
+
+### 3.59. Interface feedback fixes (12 November 2026)
+
+The user chose the interface items first and said the archive permission
+error happens only with `.iso` files (not yet investigated).
+
+- **Column checklist:** `FileList::getHeaderIndex()` and the sort/header
+  update handlers now use `inTrash` instead of "5 columns means Trash".
+  Before, an ordinary pane with exactly five columns used the Trash column
+  list, so heading right-click checkmarks, toggles and sort arrows were wrong.
+  `search-window-regression` checks a normal five-column layout.
+- **Address bar per pane:** the pencil button now switches only its own pane,
+  saving `show_pathlinker` in that pane's `LEFT PANEL`/`RIGHT PANEL` registry
+  section. Panes without their own entry follow the Preferences default
+  (`SETTINGS/show_pathlinker`). Changing the default in Preferences deletes
+  both pane entries, so both panes follow the new default.
+- **Custom toolbar display:** `SETTINGS/customtoolbarstyle` (0 icons and
+  titles, the previous look and default; 1 icons; 2 titles). Preferences →
+  Appearance → **Custom Tool Bar** has Icon size and Show rows. Right-clicking
+  the custom toolbar (empty space, an action/folder button or the Settings
+  button) opens a menu for display, size, Edit Custom Actions and Show Custom
+  Toolbar. Menu choices apply immediately; the rebuild runs as a chore because
+  the right-clicked button itself is replaced. The built-in toolbars are
+  unchanged. The old beta 1 keys (`CUSTOM ACTIONS UI/display_mode`,
+  `icon_size`) stay ignored.
+- Tests: `custom-actions-ui-regression` covers the per-pane switch, default
+  reset, the right-click menu on all three targets and the Preferences Show
+  row. Its `mouseClick()` flushes X requests first, because freshly rebuilt
+  buttons may not yet exist on the X server. `run-search-window-regression.sh`
+  now links `-lXrandr` when configured, like the UI runner.
+- **ISO Open as Folder permission error:** reproduced with an ISO built
+  without Rock Ridge (`bsdtar --options '!rockridge,joliet'`). libarchive
+  then reports entries as `root:root` with modes 0400/0500, so a normal user
+  could not enter folders; root could. Linux ISOs with Rock Ridge were fine.
+  `onCmdArchiveOpen` now passes `-o uid=<uid>,gid=<gid>` to archivemount for
+  every archive (mode bits are unchanged; only displayed ownership).
+  `search-window-regression` mounts such an ISO for real when archivemount,
+  FUSE and bsdtar exist; it must register SIGCHLD like `main.cpp`, otherwise
+  FOX crashes in `File::mount()`. Verified the check fails without the fix.
+  The user confirmed the ISO now opens.
+
+### 3.60. File operation speed (12 November 2026)
+
+Measured with a test harness that runs the real `File` copy/delete/move code
+under Xvfb (10,000 × 4 KiB files in 100 folders; 2 × 500 MiB files). Caja
+and Thunar are not installed here, so `cp`/`rm`/`mv` were the baseline.
+
+| Operation | Before | After | Command line |
+|---|---|---|---|
+| Copy 10,000 small files | 0.90 s | 0.33 s | `cp -a` 0.24 s |
+| Copy 2 large files | 1.9 s | 2.0 s | `cp -a` 1.9 s |
+| Delete a folder in Trash (10,000 files) | 1.5 s | 0.20 s | plain delete 0.15 s |
+| Move 10,000 files to another drive | 1.08 s | 0.36 s | `mv` 0.40 s |
+
+- **Copy/move/delete progress:** each file or 1 MiB block updated the
+  progress labels, ran `runModalWhileEvents` and called `repaint()`, about 13
+  X server round trips per file. `File::uiUpdateDue()` limits this to about
+  ten times a second, also in `computeSourceSize`. Cancel still responds.
+- **Delete inside Trash:** `xf_cleanuptrashinfo` ran `xf_trashlocation` (reads
+  the mount table and checks each mount's trash) for every deleted file. It
+  now returns first unless the parent folder is named `files`, because only
+  top-level Trash items have restore information. Slower still with many or
+  network mounts.
+- **Move to Trash:** `fmove` scanned a whole folder's size before trying a
+  same-drive `rename`, only to feed a progress total. It now skips the scan
+  when no total was given (Move to Trash passes none).
+- Not changed yet: archive-folder copies still read through
+  archivemount/FUSE. (Trash on other drives: see 3.61.)
+
+### 3.61. Move to Trash on USB and other drives (12 November 2026)
+
+Before, Move to Trash always used Home Trash, so trashing from a USB stick or
+another partition copied the whole item to Home and deleted the original:
+slow, and it filled the Home drive. Caja and Thunar use the drive's own trash.
+
+- `xf_trashfor(path, files, info, topdir)` in `xfeutils.cpp` picks the trash
+  can per item, following the freedesktop Trash spec. It uses the drive's
+  own trash when the item's folder is on another device from Home Trash. It
+  finds the drive's top folder with the deepest mount-table entry on the
+  same device, the same table `xf_trashlocations()` reads, so the combined
+  Trash view, Restore, Trash Size and Empty Trash find these items. It
+  prefers a sticky, non-symlink `$top/.Trash/$uid`, otherwise
+  `$top/.Trash-$uid` (mode 0700). Each folder must be a real folder owned by
+  the user on that device. It falls back to Home Trash for read-only mounts,
+  unsafe/symlinked trash, or if the folders can't be created (for example
+  `/` without permission).
+- `xf_create_trashinfo` takes an optional `topdir`; drive trash stores
+  `Path=` relative to the drive, so restore still works if the drive mounts
+  elsewhere later (`xf_readtrashinfo` already resolved relative paths).
+- Used by the three Move to Trash commands: FilePanel, DirPanel (folder tree)
+  and SearchPanel. Drag/paste *into* the Trash folder still targets Home Trash.
+- Regression in `folder-expansion-regression.cpp`: a simulated drive on
+  `/dev/shm` (a real second device). The real Move to Trash command keeps the
+  inode (a rename, not a copy), writes a relative path, and Restore puts the
+  item back. An unsafe (symlink) drive trash and same-device items use Home
+  Trash. It skips if `/dev/shm` is on the same device as the test folder.
+
+### 3.62. Archivemount alternative test (12 November 2026)
+
+Compared the installed `archivemount 0.8.7` with a privately extracted Debian
+`archivemount-ng 1c-1` and FUSE 3.18.3. Neither Swordfish nor the alternative
+was built or installed system-wide. The standalone FUSE mounts used Swordfish's
+`uid`/`gid` options. Each result is the median of two alternating warm-cache
+runs, copying with 1 MiB reads/writes and verifying the resulting contents.
+The 32 MiB inputs were synthetic random data; the ZIP small-file test used
+300 files of 4,000 bytes each.
+
+| Copy out of archive | archivemount 0.8.7 | archivemount-ng 1c-1 |
+|---|---:|---:|
+| 32 MiB ZIP | 2.733 s | 0.114 s |
+| 32 MiB tar.gz | 1.247 s | 0.065 s |
+| ZIP with 300 small files | 0.516 s | 0.540 s |
+
+This is a backend benchmark, not a Swordfish GUI or cold-cache test. In an
+isolated writable ZIP test, 1c preserved ZIP format and correctly saved shorter
+overwrites; the earlier 1b release did not truncate overwrites. Both the
+existing tool and 1c stored a new entry with a leading `/`: reopening through
+archivemount worked, but `unzip` warned and returned status 1 when extracting
+it. The 1c write test also emitted nonfatal ownership warnings for entries
+reported as root-owned. The existing 0.8.7 rewrote the modified ZIP as a tar
+archive while retaining its `.zip` extension. The `.orig` backup was verified
+in the 1c test. Do not switch implementations without further archive-format,
+write, and Swordfish integration testing.
+
+### 3.63. Archive workflow decision and design notes (12 November 2026)
+
+After the archivemount comparison in 3.62, the user decided that data
+integrity matters more than speed. The new archive-folder workflow is **not**
+being implemented yet. The only shipped change: ZIP archives (by extension or
+file signature) always open read-only as folders, with a "ZIP archive opened
+read-only" notice saying this protects the user's data, because archivemount
+0.8.7 can rewrite a saved ZIP as a tar archive. Tar archives stay read/write;
+formats archivemount can't write stay read-only as before. The regression in
+`search-window-regression.cpp` checks the notice and that writes fail.
+
+All the ideas, workarounds and possible solutions from the discussion are in
+[docs/design/archive-workflow-ideas.md](docs/design/archive-workflow-ideas.md):
+what `archiveVerifySave` does and doesn't catch, alternative FUSE backends,
+extracting with 7-Zip or libarchive instead of archivemount, an
+archive-manager-style virtual folder that saves by writing and testing a new
+archive before replacing the original, disk-space checks (including
+`fallocate` reservation), and drop-menu Extract Here / Compress Here.
+
+A draft of the disk-space checks and the drop-menu entries was written,
+syntax-checked but never built, then removed at the user's request. It is kept
+as [docs/design/archive-extract-compress-here.patch](docs/design/archive-extract-compress-here.patch).
+
+Test build (12 November 2026): building revealed that `archiveVerifySave` and
+`archiveMountProcess` were defined but never called, so closing a writable
+tar archive neither waited for archivemount to finish saving nor checked the
+result. `onCmdArchiveClose` now finds the archivemount process before
+unmounting, waits up to 10 minutes for it to exit (warning if it is still
+saving), then runs `archiveVerifySave`, which restores the `.orig` backup if
+the saved archive is missing, empty, in another format or unreadable. A new
+regression edits a mounted `.tar.gz`, closes it and lists the archive
+immediately. The generic read-only notice for ISO/7z/RAR was dropped; only
+ZIP shows a notice. Regressions passed: search-window, folder-expansion,
+custom-actions (+UI), preview, command-link, network-discovery, icon-links,
+portable-launcher, native-directory-helper. system-integration fails on
+unchanged files ("modified owned desktop entry must report a verification
+error"); not investigated.
+
+Tab and column drag were redone after the user compared them with Firefox. A
+tooltip that trailed the cursor plus an insertion line did not look right.
+Observed Firefox behaviour: the grabbed tab stays in the strip at its grab
+offset and its neighbours slide into the gap, with no marker. The Library's
+column headers only draw a drop line. Swordfish now uses the tab behaviour
+for both. `TabDragButton` moves the real tab frames while the pointer stays
+within the strip (half a strip height of slack). XDND starts only once the
+pointer leaves the strip, when the tooltip preview appears for drops on
+Bookmarks or the other panel; returning cancels XDND and resumes sliding.
+`ColumnHeader` paints the header itself during a drag: the other headings
+shift and the grabbed one is drawn at the pointer in the selection colour.
+`FXHeaderItem::draw` is protected and is reached via `HeaderItemPainter`.
+Leaving the header cancels the drag. A folder-expansion regression checks the
+tab slide, cancel and drop; the search-window column test no longer expects
+a tooltip.
+
+### 3.64. Accepted drag feedback, local test bundle and cleanup (12 November 2026)
+
+The user confirmed that archive-as-folder testing passed, then that tab and
+column reordering passed after the Firefox-style rework. They explicitly
+requested keeping archivemount's `.orig` backup after successful archive-save
+verification; this is intentional, not pending automatic cleanup.
+
+Built the current working tree with `portable/build-portable.sh` against
+Debian 10 / glibc 2.28 for Linux x86_64. The test bundle still reports
+`0.0.3-beta2`; it is an unreleased test build, not a new published release.
+The downloadable `Swordfish-Portable-test-20261112.tar.gz` contained no
+`portable-data` profile. Validation checked required files, archive paths,
+internal symlinks, extraction, `AppRun --version`, and a visible GUI using
+an isolated profile and Xvfb. All six portable-launcher regressions passed.
+The complete HTTP download matched the packaged checksum:
+
+```text
+610a85a6b54bface62fe550537fe1a66d5ff050184a7e280be539e44f538f6a4  Swordfish-Portable-test-20261112.tar.gz
+```
+
+The archive was 81,241,947 bytes and was served through private Codespaces
+port 8765. The user confirmed downloading and opening it, requested closing
+that port, and will test locally later. Opening the local bundle is confirmed;
+further local testing remains pending.
+
+At the user's request, the download server was stopped and generated package
+archives, expanded application payloads, compiled binaries/objects, and
+temporary drag-test assets were cleaned up. Discussion documents, reference
+images, themes and saved portable settings were retained rather than treated
+as disposable build output. Source changes remain uncommitted and were
+preserved; no release was published. The separate noVNC desktop on port 6080
+was left running.
+
+Cleanup reduced `build/` from about 2 GiB to 2 MiB and reclaimed about 2 GiB
+on the workspace filesystem, leaving 5.3 GiB available. A content-and-mode
+comparison of 8,300 source/resource files confirmed no changes apart from
+this intentional history update. Port 8765 was verified closed and the
+retained noVNC desktop remained responsive.
+
+### 3.65. Clearer copy/move conflicts and numbered Rename (13 November 2026)
+
+During the theoretical texture-folder discussion, the user requested clearer
+general file-operation conflicts and explicitly approved implementing them.
+They chose automatic unique names for Rename, including Apply to all, and
+specified numeric suffixes rather than requiring a typed name for each item.
+The gradient/texture ideas themselves remain unimplemented.
+
+Copy/move conflicts now identify the incoming source and existing destination
+with names, scrollable/copyable locations, types, sizes and modification dates.
+Folder contents are explicitly not counted for the size display, avoiding
+recursive scans just to show a prompt. Actions are Replace (or Merge for two
+real folders), Rename, Skip and Cancel. Rename keeps both using unused names
+such as `report (1).txt`, preserving compound tar extensions and skipping
+occupied names, including dangling symbolic links.
+
+The unchecked-by-default Apply to all checkbox remembers the action only for
+the current operation and matching source/destination item types. Merge All
+does not authorize replacing conflicting files inside. Nested conflicts are
+handled individually or by their own remembered choice. Merged moves process
+children separately and remove source folders only when empty, preserving
+skipped source files on both same-drive and cross-device paths. Cancel stops
+remaining work without promising to undo completed transfers.
+
+Rename/link commands use the same conflict resolver where applicable. Existing
+delete/Trash confirmations and the overwrite-confirmation preference remain
+unchanged. The changelog and beginner's manual describe the new behavior.
+
+Validation passed: a clean native build, the search-window suite with new
+actual-dialog/file-operation cases (including simulated EXDEV fallback), and
+the folder-expansion suite covering Trash/restore, archive commands and tab
+dragging. No new portable bundle was produced; the user's previously
+downloaded bundle is unchanged. These changes remain local and uncommitted,
+with real-user acceptance of the new conflict dialogs still pending.
+
+### 3.66. Experimental file-list gradients, patterns and textures (13 November 2026)
+
+The user asked to test gradients, textures and patterns in the Codespace build
+with example themes and high-resolution screenshots. The prototype is limited
+to the file-list (IconList) background; text, selection fills, the tree,
+Places, headers and other widgets keep solid colours.
+
+One optional theme key drives it, `list_background_effect`, a space-separated
+`key=value` list: `fill=solid|gradient|pattern`, `colors=#RRGGBB,...`,
+`direction=vertical|horizontal|diagonal|radial`, `pattern=stripes|
+vertical-stripes|diagonal-stripes|checks|grid|dots|diamonds|crosshatch`,
+`size=4..256`, `texture=NAME`, `strength=0..100` and `rows=on|off`. Textures
+are greyscale tiles whose luminance modulates the colours underneath. Bundled
+tiles (`<prefix>/share/swordfish/textures`, generated reproducibly by
+`textures/generate-textures.py`) win over user tiles in
+`~/.config/swordfish/textures`; missing names are ignored. Theme export/import,
+saved custom themes and Accept carry the key; a theme change still restarts.
+
+Rendering builds server-side images lazily per widget size: plain, alternate
+row (adds `highlight - list_background`), sorted column and both. The effect is
+fixed to the window, so scrolling repaints the viewport instead of blitting.
+Big-icon thumbnail tiles stay solid. The agreed texture palette, user-folder
+name-clash message ("Texture name already exists. Please use another name.")
+and bundling PNGs with exported themes are not implemented.
+
+Validation: clean native build; 13 example themes rendered at 2560x1440 under
+Xvfb with detail and big-icon panes, selection and scrolled checks; the
+search-window and folder-expansion suites passed. The preview package lives in
+`build/theme-effects-preview/`. Nothing was committed; user review is pending.
+
+### 3.67. Theme editor workflow agreed (13 November 2026)
+
+The user described a separate Theme Editor with startup choices to edit the
+current theme, create a new theme from the built-in Swordfish default, or
+duplicate an existing theme. The mockup's appearance follows the chosen theme,
+but its folders, files and layout always come from the user's current view.
+The mockup is display-only for file operations and uses selectable editable
+areas, property sheets and appropriate colour, texture/pattern and font tools.
+
+The user approved the other proposed workflow improvements: hover/highlight
+and an editable-area outline toggle; an element tree; preview states;
+immediate mockup feedback with Apply/Cancel and cumulative changes;
+inherited values; multi-step undo/redo; scoped resets, distinct Restore
+Original and Restore Defaults actions; before/after comparison; readability
+warnings; Save/Save As and unsaved-change warnings; bundling custom textures
+with exported themes; an extensible user texture palette and the agreed
+duplicate-name message; and fit-to-window/zoom.
+
+The intended scope is all themeable interface areas. Delivery may be phased
+(file list, tree/Places, tabs/headers, then toolbars/controls and remaining
+areas) without reducing that goal. The mockup should update without restart;
+any properties that still require restarting the main application must be
+identified clearly. Full design and implementation notes are in
+`docs/design/theme-editor-workflow.md`. This is a design agreement only; no
+theme-editor code has been implemented.
+
+The user then chose keshavbhatt/ColorPicker as the colour-picker model, with
+all features. It and its successor ColorSmith are Qt apps (MIT archived and
+GPLv3 respectively), so the agreed approach is a native FOX picker extending
+`src/ColorSelector.*` with ColorPicker/ColorSmith-style features (design §6).
+
+The user clarified that Apply changes only the mockup, without saving or
+restarting. Save applies all cumulative changes to the running file manager and
+restarts it if needed. An element's property sheet offers only supported
+properties/effects; unsupported ones are hidden or disabled. Transparency
+should be supported wherever possible. When saving edits to an existing theme,
+ask each time whether to overwrite it or save a copy. Copy textures selected
+from other folders into Swordfish's user texture folder; texture files should
+be PNG only and at most 1024 x 1024 pixels. Colour palettes should include
+both shared and theme-specific palettes, with optional names for individual
+colours and gradients and a list of recent choices. If the screen eyedropper
+is unavailable, explain this and allow manual colour selection. Readability
+warnings should use WCAG AA, show the stricter AAA rating and offer an optional
+fix rather than changing colours silently. An optional mockup privacy switch
+can mask file and folder names and paths while sharing the screen. Textures
+combined with colours or gradients can use the theme's colours or their PNG's
+original colours, with a preview for each option. Gradient-stop changes remain
+separately undoable even when several are made before the same Apply.
+
+### 3.68. Preferences layout agreed (13 November 2026)
+
+The user asked to replace Preferences' ten-tab row with a left category panel
+and tabbed pages on the right, giving Double Commander and JDownloader 2 as
+references. Agreed: a JDownloader-style left panel with large icons, a filter
+box, a page title bar, OK/Cancel/Apply buttons, and reopening on the last page.
+The existing settings are regrouped into General, Panels & Tabs, File List, File
+Operations, Appearance, Language, Programs, Key Bindings, Custom Actions and
+System. Theme colour editing moves to the Theme Editor; Preferences only manages
+the theme list. Details are in `docs/design/preferences-layout.md`. Not yet
+implemented. All dialogs and child windows, including file lists inside them,
+will use a fixed palette instead of the theme. It will be built together with
+the Preferences redesign. The palette is background #29353B, fields #1E242D,
+borders, active tab and selection #0F56D9, and text #FFFFFF.
+
+### 3.69. Importable test theme packs (13 November 2026)
+
+The user wanted several generated full themes to test with the next build,
+as importable packs rather than built-ins. An image model drafted 14 concept
+sheets; they were turned into `.swordfish-theme` files (Arctic Aurora,
+Autumn Leaves, Carbon Fiber, Desert Canyon, Desert Dusk, Forest Mist,
+Graphite Copper, Indigo Weave, Linen Sage, Midnight Tide, Ocean Depth,
+Porcelain Blue, Rose Quartz, Warm Parchment). Every list text/selection pair
+meets WCAG AA (4.5:1). Four use new custom textures (autumn-leaves,
+canyon-strata, marble, carbon-fiber). Generators, screenshots and a README are
+in `build/swordfish-test-themes/` (git-ignored, not installed).
+
+Code changes so the pack imports cleanly:
+
+- `texture_colors=original` in `list_background_effect` draws a colour or
+  RGBA texture in its own colours (mixed over the fill by strength and alpha)
+  instead of tinting it by luminance.
+- Import theme… accepts several files at once (`importThemeFile`).
+- `importThemeTexture` copies a custom texture from `<theme dir>/textures/` or
+  the theme's own folder into `$XDG_CONFIG_HOME/swordfish/textures/`. Built-in
+  names are skipped; PNGs are checked (signature, at most 1024×1024). A missing
+  texture only warns. A different file with the same name blocks that theme
+  with "Texture name already exists" so another theme's texture is never
+  overwritten. Verified in Xvfb, including the name clash.
+
+The portable test archive carries the pack as `test-themes/`.
+
+Validation: the multi-import and texture-name collision were exercised in
+Xvfb; all 14 themes were imported, and the portable bundle rendered Autumn
+Leaves with its custom texture. Full-size screenshots and a contact sheet are
+in the pack. `tests/run-search-window-regression.sh` and
+`tests/run-folder-expansion-regression.sh` both passed. The portable test
+archive is `build/Swordfish-Portable-test-20261113.tar.gz`; the standalone
+theme archives are `build/swordfish-test-themes.zip` and
+`build/swordfish-test-themes.tar.gz`. The user will test these and provide
+feedback later. That archive predates the fixed dialog colours and editor
+implemented in section 3.70.
+
+The portable build initially failed due to a corrupt Docker build cache.
+`docker builder prune -af` allowed it to complete. After delivery, temporary
+build products and Docker images/cache were removed to address the user's
+low-disk warning; approximately 2 GB was freed. The portable bundle can be
+rebuilt with `./portable/build-portable.sh`.
+
+### 3.70. Theme Editor, Preferences and fixed child-window palette
+
+After learning that the earlier build contained the theme-effects prototype,
+not the designed editor, the user explicitly requested implementation of the
+Theme Editor, Preferences redesign and fixed dialog colours.
+
+Implemented locally:
+
+- Preferences now has the ten scrolling icon categories, filter below them,
+  category header, right-side tabbooks, remembered navigation and
+  OK/Cancel/Apply. The approved SVG/PNG icon set is installed with the app.
+- **Preferences > Appearance > Theme > Edit / New theme / Duplicate and edit**
+  opens the separate Theme Editor. Its display-only snapshot copies current
+  panes, visible files, columns, tabs, tree, icons, fonts and column mappings;
+  it contains no operational file panels.
+- Supported main-window areas expose their supported properties only.
+  File lists support solid/gradient/pattern/texture backgrounds, positioned
+  RGBA stops and movable midpoints. Fonts, inheritance, supported transparency,
+  zoom, privacy masking, comparison, state previews and readability warnings
+  are available. Window opacity requires an X11 compositor.
+- Apply affects only the cumulative mockup. Undo/redo, separate gradient
+  changes, resets and restores are supported. Save includes pending and
+  previously applied edits, persists the theme and activates it live.
+  Cancelling Preferences does not undo an explicit editor Save.
+- Native FOX colour tools add format parsing/copying, alpha, palettes,
+  tints/shades, contrast suggestions, random colours, image palette extraction
+  and a magnified X11 picker, without a new library dependency.
+- Dialogs, choosers, operation/progress windows and companion child windows
+  use background #29353B, fields #1E242D, borders/active tabs/selection
+  #0F56D9 and white text. Main-window popups retain their theme. Shared
+  modern-control colour caches were removed so per-window palettes and
+  live theme changes actually paint correctly.
+
+Validation: the native `make` build passed, as did
+`bash tests/run-theme-workflow-regression.sh`, the search and folder-expansion
+regressions, the Custom Actions model regression, and
+`SWORDFISH_TEST_WM=1 bash tests/run-custom-actions-ui-regression.sh`.
+The new workflow harness checks actual preview/button pixels, native gradient
+controls, preview isolation, separate undo, disk-persisted cumulative Save,
+Preferences Apply/Cancel, late popups, fixed choosers and palette scope.
+An isolated `DESTDIR` data install also verified the ten category SVGs,
+twenty normal/selected category PNGs and ten bundled textures. The manual's
+Preferences instructions and screenshot now match the new layout.
+Like the existing GUI harnesses it exits without directly deleting the main
+window; it does not claim to validate the pre-existing destructor cleanup.
+
+These are local build/Xvfb results. Real-compositor opacity and interactive
+screen picking still need desktop acceptance, as do the remaining manual
+palette/texture import-export paths. No commit, push or release was made for
+this work.
+
+Portable delivery (13 November 2026): `./portable/build-portable.sh` built
+`build/Swordfish-Portable-Theme-Editor-20261113.tar.gz` (Debian 10 / glibc
+2.28 baseline, 96 MB, SHA-256
+`241b1dca3b7ae7022e2c674728df57e50f3b21ab78117f6f4a8c0a5a73da58cf`). It
+includes the 14 sample themes and their 4 textures under `test-themes/`, plus
+updated portable README instructions. The extracted archive launched under
+Xvfb. The user downloaded it and will test later; feedback is pending.
+Afterwards, the superseded `Swordfish-Portable-test-20261113.tar.gz`, the
+extracted bundle folder, and this build's Docker image and cache were removed
+to free disk space (about 2.3 GB). Keep the new archive and its `.sha256`
+until the user finishes testing.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -2967,6 +3484,14 @@ unmount/tab lifecycle, attribution and project-link changes on portable-layout,
 then publish a separate Network Preview 1 prerelease. The frozen RC4 tag and
 assets must remain unchanged. Preview limitations include the pre-login delay
 and Windows validation deferred until the user's Windows shares are ready.
+
+### Theme editor, Preferences and fixed dialog colours
+
+Implemented locally in section 3.70, with the agreed palette and Preferences
+layout, and delivered as the portable test
+`build/Swordfish-Portable-Theme-Editor-20261113.tar.gz`. Awaiting the user's
+desktop testing and feedback (opacity, eyedropper, palette/texture
+import-export). The section 3.69 test archive was superseded and deleted.
 
 ### Application and executable UX
 

@@ -1,0 +1,843 @@
+--- a/src/File.h
++++ b/src/File.h
+@@ -3,6 +3,7 @@
+ 
+ 
+ #include <fx.h>
++#include <vector>
+ #include "DialogBox.h"
+ #include "OverwriteBox.h"
+ #include "MessageBox.h"
+@@ -164,6 +165,12 @@
+     int extract(const FXString, const FXString, const FXString);
+     int archive(const FXString, const FXString);
+ 
++    // Drop menu actions: Extract Here (each archive into a new folder) and Compress Here
++    static std::vector<FXString> dropPaths(const FXuchar*, FXuint);
++    static FXbool allArchives(const std::vector<FXString>&);
++    static int extractInto(FXWindow*, const FXString& archive, const FXString& dir);
++    static int compressInto(FXWindow*, const std::vector<FXString>& sources, const FXString& dir);
++
+ #if defined(linux)
+     int mount(const FXString, const FXString, const FXString, FXString* output = NULL, int* status = NULL);
+     int pkgInstall(const FXString, const FXString);
+--- a/src/File.cpp
++++ b/src/File.cpp
+@@ -29,6 +29,7 @@
+ #include "OverwriteBox.h"
+ #include "MessageBox.h"
+ #include "CommandWindow.h"
++#include "ArchInputDialog.h"
+ #include "File.h"
+ #include "TabButtons.h"
+ 
+@@ -2389,6 +2390,208 @@
+ }
+ 
+ 
++// Local file paths in a dropped uri-list
++std::vector<FXString> File::dropPaths(const FXuchar* data, FXuint len)
++{
++    std::vector<FXString> paths;
++    FXString list((const FXchar*)data, len);
++    for (int i = 0; i < list.contains('\n') + 1; i++)
++    {
++        FXString url = list.section('\n', i);
++        url.trim();
++        if (!url.empty())
++        {
++            paths.push_back(FXURL::decode(FXURL::fileFromURL(url)));
++        }
++    }
++    return paths;
++}
++
++
++FXbool File::allArchives(const std::vector<FXString>& paths)
++{
++    for (size_t i = 0; i < paths.size(); i++)
++    {
++        if (!xf_isarchive(paths[i]))
++        {
++            return false;
++        }
++    }
++    return !paths.empty();
++}
++
++
++// Extract an archive into a new folder named after it, so its files can't spill out or overwrite
++// anything. A single compressed file is decompressed beside it under a new name instead.
++int File::extractInto(FXWindow* owner, const FXString& archive, const FXString& dir)
++{
++    if (!xf_iswritable(dir))
++    {
++        MessageBox::error(owner, BOX_OK, _("Error"), _("Can't write to %s: Permission denied"), dir.text());
++        return 0;
++    }
++    if (!xf_checkextractspace(owner, archive, dir))
++    {
++        return 0;
++    }
++
++    FXString base = xf_archivebasename(archive);
++    FXString target = FXPath::absolute(dir, base);
++    for (int i = 2; xf_existfile(target); i++)
++    {
++        target = FXPath::absolute(dir, base + " (" + FXStringVal(i) + ")");
++    }
++
++    FXbool single = xf_extractcommand(archive, "").find(" -dc ") >= 0;
++    FXString cmd = xf_extractcommand(archive, FXPath::name(target));
++    if (cmd.empty())
++    {
++        MessageBox::error(owner, BOX_OK, _("Error"),
++                          _("No program to extract %s was found.\n\n"
++                            "Install 7-Zip (7z) or libarchive (bsdtar) using your distribution's software manager."),
++                          FXPath::name(archive).text());
++        return 0;
++    }
++
++    FXString workdir = dir;
++    if (!single)
++    {
++        if (::mkdir(target.text(), 0777) != 0)
++        {
++            MessageBox::error(owner, BOX_OK, _("Error"), _("Can't create folder %s: %s"), target.text(),
++                              strerror(errno));
++            return 0;
++        }
++        workdir = target;
++    }
++
++    File* f = new File(owner, _("Extract Archive"), EXTRACT);
++    f->create();
++    int ret = f->extract(xf_quote(archive), workdir, cmd);
++    delete f;
++    return ret;
++}
++
++
++// Compress items from one folder into an archive in another folder
++int File::compressInto(FXWindow* owner, const std::vector<FXString>& sources, const FXString& dir)
++{
++    if (sources.empty())
++    {
++        return 0;
++    }
++    FXString parent = FXPath::directory(sources[0]);
++    for (size_t i = 1; i < sources.size(); i++)
++    {
++        if (FXPath::directory(sources[i]) != parent)
++        {
++            MessageBox::warning(owner, BOX_OK, _("Compress Here"),
++                                _("Items from different folders can't be compressed together.\n"
++                                  "Drag items from one folder at a time."));
++            return 0;
++        }
++    }
++
++    FXString name = sources.size() == 1 ? FXPath::name(sources[0]) : FXPath::name(parent);
++    if (name.empty())
++    {
++        name = _("Archive");
++    }
++    ArchInputDialog dialog(owner, "");
++    dialog.create();
++    dialog.setText(FXPath::absolute(dir, name + ".tar.gz"));
++    dialog.CursorEnd();
++    if (!dialog.execute(PLACEMENT_OWNER))
++    {
++        return 0;
++    }
++    FXString archive = dialog.getText();
++    if (archive.empty())
++    {
++        MessageBox::warning(owner, BOX_OK, _("Warning"), _("File name is empty, operation cancelled"));
++        return 0;
++    }
++    archive = FXPath::absolute(dir, archive);
++    if (!xf_iswritable(FXPath::directory(archive)))
++    {
++        MessageBox::error(owner, BOX_OK, _("Error"), _("Can't write to %s: Permission denied"),
++                          FXPath::directory(archive).text());
++        return 0;
++    }
++
++    FXString lower = FXPath::name(archive).lower();
++    FXString ext1 = lower.rafter('.', 1);
++    FXString ext2 = lower.rafter('.', 2);
++    FXString qarchive = xf_quote(archive);
++    FXString items;
++    for (size_t i = 0; i < sources.size(); i++)
++    {
++        items += " " + xf_quote(FXPath::name(sources[i]));
++    }
++
++    FXString cmd;
++    if (ext2 == "tar.gz" || ext2 == "tar.bz2" || ext2 == "tar.xz" || ext2 == "tar.zst" || ext2 == "tar.z" ||
++        ext1 == "tgz" || ext1 == "tbz2" || ext1 == "tbz" || ext1 == "txz" || ext1 == "tzst" || ext1 == "taz")
++    {
++        cmd = "tar -acvf " + qarchive + items;
++    }
++    else if (ext1 == "tar")
++    {
++        cmd = "tar -cvf " + qarchive + items;
++    }
++    else if (ext1 == "zip")
++    {
++        cmd = "zip -r " + qarchive + items;
++    }
++    else if (ext1 == "7z")
++    {
++        FXString prog = xf_existcommand("7zz") ? "7zz" : xf_existcommand("7z") ? "7z" : "7za";
++        cmd = prog + " a " + qarchive + items;
++    }
++    else if (ext1 == "rar")
++    {
++        cmd = "rar a " + qarchive + items;
++    }
++    else if (ext1 == "gz" || ext1 == "bz2" || ext1 == "xz" || ext1 == "zst" || ext1 == "z")
++    {
++        // These compress one file; never compress in place, which would replace the original
++        if (sources.size() != 1 || !xf_isfile(sources[0]))
++        {
++            MessageBox::warning(owner, BOX_OK, _("Compress Here"),
++                                _("The .%s format compresses a single file.\n"
++                                  "Choose a format such as .tar.gz or .zip for folders or several items."),
++                                ext1.text());
++            return 0;
++        }
++        const char* prog = (ext1 == "bz2") ? "bzip2" : (ext1 == "xz") ? "xz" : (ext1 == "zst") ? "zstd" :
++                           (ext1 == "z") ? "compress" : "gzip";
++        cmd = FXString(prog) + " -c" + items + " > " + qarchive;
++    }
++    else
++    {
++        qarchive = xf_quote(archive + ".tar.gz");
++        cmd = "tar -acvf " + qarchive + items;
++    }
++
++    FXString currentdir = FXSystem::getCurrentDirectory();
++    if (chdir(parent.text()) != 0)
++    {
++        MessageBox::error(owner, BOX_OK, _("Error"), _("Can't enter folder %s: %s"), parent.text(), strerror(errno));
++        return 0;
++    }
++    File* f = new File(owner, _("Create archive"), ARCHIVE);
++    f->create();
++    int ret = f->archive(qarchive, cmd);
++    delete f;
++    if (chdir(currentdir.text()) != 0)
++    {
++        MessageBox::error(owner, BOX_OK, _("Error"), _("Can't enter folder %s: %s"), currentdir.text(),
++                          strerror(errno));
++    }
++    return ret;
++}
++
++
+ // Compute data size and show progress dialog
+ FXString File::sourcesize(const FXString src, FXulong* totalsize, const FXbool url)
+ {
+--- a/src/FileList.h
++++ b/src/FileList.h
+@@ -4,6 +4,7 @@
+ #include <set>
+ #include <map>
+ #include <string>
++#include <vector>
+ #include "xfedefs.h"
+ #include "StringList.h"
+ #include "IconList.h"
+@@ -144,6 +145,8 @@
+     FXString orgdirectory;                              // Original directory
+     FXString dropdirectory;                             // Drop directory
+     FXDragAction dropaction;                            // Drop action
++    FXuint droparchive = 0;                             // ID_DRAG_EXTRACT or ID_DRAG_COMPRESS chosen in the drop menu
++    std::vector<FXString> droppaths;                    // Local paths of the dropped items, for droparchive
+     FXString dragfiles;                                 // Dragged files
+     FileDict* associations = NULL;                      // Association table
+     FXString pattern;                                   // Pattern of file names
+@@ -334,6 +337,7 @@
+     long onCmdDragMove(FXObject*, FXSelector, void*);
+     long onCmdDragLink(FXObject*, FXSelector, void*);
+     long onCmdDragReject(FXObject*, FXSelector, void*);
++    long onCmdDragArchive(FXObject*, FXSelector, void*);
+     long onUpdRefreshTimer(FXObject*, FXSelector, void*);
+     long onCmdCloseFilter(FXObject*, FXSelector, void*);
+     long onFolderSizeTimer(FXObject*, FXSelector, void*);
+@@ -468,6 +472,8 @@
+         ID_DRAG_MOVE,
+         ID_DRAG_LINK,
+         ID_DRAG_REJECT,
++        ID_DRAG_EXTRACT,
++        ID_DRAG_COMPRESS,
+         ID_CLOSE_FILTER,
+         ID_ZOOM_OUT,
+         ID_ZOOM_IN,
+--- a/src/FileList.cpp
++++ b/src/FileList.cpp
+@@ -416,6 +416,8 @@
+     FXMAPFUNC(SEL_COMMAND, FileList::ID_DRAG_MOVE, FileList::onCmdDragMove),
+     FXMAPFUNC(SEL_COMMAND, FileList::ID_DRAG_LINK, FileList::onCmdDragLink),
+     FXMAPFUNC(SEL_COMMAND, FileList::ID_DRAG_REJECT, FileList::onCmdDragReject),
++    FXMAPFUNC(SEL_COMMAND, FileList::ID_DRAG_EXTRACT, FileList::onCmdDragArchive),
++    FXMAPFUNC(SEL_COMMAND, FileList::ID_DRAG_COMPRESS, FileList::onCmdDragArchive),
+     FXMAPFUNC(SEL_COMMAND, FileList::ID_DIRECTORY_UP, FileList::onCmdDirectoryUp),
+     FXMAPFUNC(SEL_COMMAND, FileList::ID_COL_NAME, FileList::onCmdSortByName),
+     FXMAPFUNC(SEL_COMMAND, FileList::ID_COL_DIRNAME, FileList::onCmdSortByDirName),
+@@ -1565,6 +1567,15 @@
+ }
+ 
+ 
++// Extract or compress the dropped items instead of copying them
++long FileList::onCmdDragArchive(FXObject* sender, FXSelector sel, void* ptr)
++{
++    dropaction = DRAG_REJECT;
++    droparchive = FXSELID(sel);
++    return 1;
++}
++
++
+ // Drop the dragged items into a folder, for drops received by another widget (e.g. a tab)
+ long FileList::dropIntoDirectory(const FXString& pathname, void* ptr)
+ {
+@@ -1640,12 +1651,32 @@
+ 
+         // Display a popup to select the drag type
+         dropaction = DRAG_REJECT;
++        droparchive = 0;
++        droppaths.clear();
+         FXMenuPane menu(this);
+         int x, y;
+         getRoot()->getCursorPosition(x, y, state);
+         new FXMenuCommand(&menu, _("Copy Here"), minicopyicon, this, FileList::ID_DRAG_COPY);
+         new FXMenuCommand(&menu, _("Move Here"), minimoveicon, this, FileList::ID_DRAG_MOVE);
+         new FXMenuCommand(&menu, _("Link Here"), minilinktoicon, this, FileList::ID_DRAG_LINK);
++        if (dnd)
++        {
++            droppaths = File::dropPaths(data, len);
++            FXbool local = !droppaths.empty();
++            for (size_t i = 0; i < droppaths.size(); i++)
++            {
++                local = local && xf_existfile(droppaths[i]);
++            }
++            if (local)
++            {
++                new FXMenuSeparator(&menu);
++                if (File::allArchives(droppaths))
++                {
++                    new FXMenuCommand(&menu, _("Extract Here"), miniarchexticon, this, FileList::ID_DRAG_EXTRACT);
++                }
++                new FXMenuCommand(&menu, _("Compress Here..."), miniarchaddicon, this, FileList::ID_DRAG_COMPRESS);
++            }
++        }
+         new FXMenuSeparator(&menu);
+         new FXMenuCommand(&menu, _("Cancel"), NULL, this, FileList::ID_DRAG_REJECT);
+ 
+@@ -1677,6 +1708,36 @@
+         }
+         handle(this, FXSEL(SEL_COMMAND, ID_REFRESH), NULL);
+         return 1;
++    }
++
++    // Extract Here / Compress Here from the drop menu
++    if (dnd && droparchive != 0)
++    {
++        FXuint action = droparchive;
++        std::vector<FXString> paths = droppaths;
++        droparchive = 0;
++        droppaths.clear();
++        FXFREE(&data);
++        if (index >= 0)
++        {
++            deselectItem(index);
++        }
++        if (action == ID_DRAG_EXTRACT)
++        {
++            for (size_t i = 0; i < paths.size(); i++)
++            {
++                if (!File::extractInto(this, paths[i], dropdirectory))
++                {
++                    break;
++                }
++            }
++        }
++        else
++        {
++            File::compressInto(this, paths, dropdirectory);
++        }
++        handle(this, FXSEL(SEL_COMMAND, ID_REFRESH), NULL);
++        return 1;
+     }
+ 
+     // Get uri-list of files being dropped
+--- a/src/xfeutils.h
++++ b/src/xfeutils.h
+@@ -639,6 +639,14 @@
+ 
+ FXString xf_mimetype(FXString);
+ FXlong xf_getavailablespace(const FXString&);
++
++// Archives that can be extracted by name (tar.*, zip, 7z, rar, iso...)
++FXbool xf_isarchive(const FXString&);
++FXString xf_archivebasename(const FXString&);
++FXString xf_extractcommand(const FXString& archive, const FXString& output);
++FXbool xf_archiveunpackedsize(const FXString&, FXulong&, FXbool&);
++int xf_reservespace(const FXString& dir, FXulong size);
++FXbool xf_checkextractspace(FXWindow*, const FXString& archive, const FXString& dir);
+ FXHotKey xf_parseaccel(const FXString&);
+ FXbool xf_existcommand(const FXString);
+ void xf_restorehostenv();
+--- a/src/xfeutils.cpp
++++ b/src/xfeutils.cpp
+@@ -14,6 +14,7 @@
+ #include <libgen.h>
+ #include <stdlib.h>
+ #include <sys/statvfs.h>
++#include <fcntl.h>
+ #include <fstream>
+ #include <set>
+ #if defined(linux)
+@@ -108,6 +109,324 @@
+ }
+ 
+ 
++// Archive kinds, from the file name
++enum
++{
++    ARCHIVE_NONE,
++    ARCHIVE_TAR,      // tar, possibly compressed (tar.gz, tgz...)
++    ARCHIVE_STREAM,   // A single compressed file (gz, xz...)
++    ARCHIVE_ZIP,
++    ARCHIVE_7Z,
++    ARCHIVE_RAR,
++    ARCHIVE_OTHER     // iso, cab, cpio, lzh, ace, arj
++};
++
++static int xf_archivekind(const FXString& path)
++{
++    FXString name = FXPath::name(path).lower();
++    FXString ext1 = name.rafter('.', 1);
++    FXString ext2 = name.rafter('.', 2);
++    if (name.find('.') < 0)
++    {
++        return ARCHIVE_NONE;
++    }
++    if (ext2.left(4) == "tar." || ext1 == "tar" || ext1 == "tgz" || ext1 == "tbz" || ext1 == "tbz2" ||
++        ext1 == "txz" || ext1 == "tzst" || ext1 == "taz")
++    {
++        return ARCHIVE_TAR;
++    }
++    if (ext1 == "gz" || ext1 == "bz2" || ext1 == "xz" || ext1 == "zst" || ext1 == "z" || ext1 == "lzma")
++    {
++        return ARCHIVE_STREAM;
++    }
++    if (ext1 == "zip")
++    {
++        return ARCHIVE_ZIP;
++    }
++    if (ext1 == "7z")
++    {
++        return ARCHIVE_7Z;
++    }
++    if (ext1 == "rar")
++    {
++        return ARCHIVE_RAR;
++    }
++    if (ext1 == "iso" || ext1 == "cab" || ext1 == "cpio" || ext1 == "lzh" || ext1 == "ace" || ext1 == "arj")
++    {
++        return ARCHIVE_OTHER;
++    }
++    return ARCHIVE_NONE;
++}
++
++
++FXbool xf_isarchive(const FXString& path)
++{
++    return xf_archivekind(path) != ARCHIVE_NONE && xf_isfile(path);
++}
++
++
++// First of the given programs found in the PATH, or empty
++static FXString xf_firstcommand(const char* const* programs)
++{
++    for (int i = 0; programs[i]; i++)
++    {
++        if (xf_existcommand(programs[i]))
++        {
++            return programs[i];
++        }
++    }
++    return FXString::null;
++}
++
++static const char* const sevenzip[] = { "7zz", "7z", "7za", NULL };
++
++
++// Name of the file or folder an archive extracts to: archive name without its archive extension
++FXString xf_archivebasename(const FXString& path)
++{
++    FXString name = FXPath::name(path);
++    FXString base = name.lower().rafter('.', 2).left(4) == "tar." ? name.rbefore('.', 2) : name.rbefore('.', 1);
++    return base.empty() ? name : base;
++}
++
++
++// Command extracting an archive into the current folder. A single compressed file is written as output.
++// Returns an empty string if no suitable program is installed.
++FXString xf_extractcommand(const FXString& archive, const FXString& output)
++{
++    FXString q = xf_quote(archive);
++    FXString name = FXPath::name(archive).lower();
++    FXString ext1 = name.rafter('.', 1);
++    FXString prog;
++
++    switch (xf_archivekind(archive))
++    {
++    case ARCHIVE_TAR:
++        return "tar -xvf " + q;
++
++    case ARCHIVE_STREAM:
++    {
++        const char* decompressor = (ext1 == "bz2") ? "bzip2" : (ext1 == "xz" || ext1 == "lzma") ? "xz" :
++                                   (ext1 == "zst") ? "zstd" : "gzip";
++        if (!xf_existcommand(decompressor))
++        {
++            return FXString::null;
++        }
++        return FXString(decompressor) + " -dc " + q + " > " + xf_quote(output);
++    }
++
++    case ARCHIVE_ZIP:
++        if (xf_existcommand("unzip"))
++        {
++            return "unzip -o " + q;
++        }
++        break;
++
++    case ARCHIVE_RAR:
++        if (xf_existcommand("unrar"))
++        {
++            return "unrar x -o+ " + q;
++        }
++        break;
++
++    case ARCHIVE_OTHER:
++        if (ext1 == "lzh" && xf_existcommand("lha"))
++        {
++            return "lha -xf " + q;
++        }
++        if (ext1 == "ace" && xf_existcommand("unace"))
++        {
++            return "unace x " + q;
++        }
++        if (ext1 == "arj" && xf_existcommand("arj"))
++        {
++            return "arj x -y " + q;
++        }
++        break;
++
++    default:
++        break;
++    }
++
++    // 7-Zip and libarchive read nearly every format, including RAR and ISO
++    prog = xf_firstcommand(sevenzip);
++    if (!prog.empty())
++    {
++        return prog + " x -y " + q;
++    }
++    if (xf_existcommand("bsdtar"))
++    {
++        return "bsdtar -xvf " + q;
++    }
++    return FXString::null;
++}
++
++
++static FXbool xf_parseulong(const FXString& token, FXulong& value)
++{
++    if (token.empty())
++    {
++        return false;
++    }
++    for (int i = 0; i < token.length(); i++)
++    {
++        if (!Ascii::isDigit(token[i]))
++        {
++            return false;
++        }
++    }
++    value = strtoull(token.text(), NULL, 10);
++    return true;
++}
++
++
++// Space needed to extract an archive. ZIP, 7z, RAR and ISO list their unpacked sizes cheaply, so the
++// size is exact. Compressed streams would have to be decompressed completely to be measured, so the
++// archive size is used as a lower bound. Returns false if the size is unknown.
++FXbool xf_archiveunpackedsize(const FXString& archive, FXulong& size, FXbool& exact)
++{
++    size = 0;
++    exact = false;
++    struct stat info;
++    if (stat(archive.text(), &info) != 0 || !S_ISREG(info.st_mode))
++    {
++        return false;
++    }
++    int kind = xf_archivekind(archive);
++    FXString ext1 = FXPath::name(archive).lower().rafter('.', 1);
++    if (kind == ARCHIVE_TAR || kind == ARCHIVE_STREAM)
++    {
++        size = info.st_size;
++        exact = (ext1 == "tar");
++        return true;
++    }
++
++    // Listing never asks for a password (no input) and can't hang on a damaged archive
++    FXString q = xf_quote(archive);
++    FXString output;
++    if (kind == ARCHIVE_ZIP && xf_existcommand("unzip") &&
++        xf_hostcommandoutput("timeout -k 1 30 unzip -Zt " + q + " </dev/null", output))
++    {
++        // 3 files, 12345 bytes uncompressed, 6789 bytes compressed:  45.0%
++        int pos = output.find(" bytes uncompressed");
++        int start = pos > 0 ? output.rfind(' ', pos - 1) + 1 : 0;
++        if (pos > 0 && xf_parseulong(output.mid(start, pos - start), size))
++        {
++            exact = true;
++            return true;
++        }
++    }
++
++    FXString prog = xf_firstcommand(sevenzip);
++    if (!prog.empty() && xf_hostcommandoutput("timeout -k 1 30 " + prog + " l " + q + " </dev/null", output))
++    {
++        // The summary follows the last dashed line: [date time] size packed N files[, N folders]
++        int dashes = output.rfind("\n------");
++        FXString summary = dashes >= 0 ? output.mid(dashes + 1, output.length()).after('\n').section('\n', 0) : "";
++        for (int i = 0; !summary.empty() && i < summary.contains(' ') + 1; i++)
++        {
++            FXString token = summary.section(' ', i);
++            if (!token.empty() && xf_parseulong(token, size))
++            {
++                exact = true;
++                return true;
++            }
++        }
++    }
++
++    if (xf_existcommand("bsdtar") && xf_hostcommandoutput("timeout -k 1 30 bsdtar -tvf " + q + " </dev/null", output))
++    {
++        // -rw-r--r--  0 owner  group  12345 Jan  1  2024 name
++        FXulong total = 0, entry;
++        for (int i = 0; i < output.contains('\n') + 1; i++)
++        {
++            FXString line = output.section('\n', i).simplify();
++            if (line[0] == '-' && xf_parseulong(line.section(' ', 4), entry))
++            {
++                total += entry;
++            }
++        }
++        size = total;
++        exact = true;
++        return true;
++    }
++    return false;
++}
++
++
++// Ask the file system to really allocate size bytes in dir, then release them. Unlike the free space
++// reported by statvfs, this also honours disk quotas and file systems that only estimate free space.
++// Returns 1 if the space could be allocated, 0 if it could not, -1 if the file system can't tell.
++int xf_reservespace(const FXString& dir, FXulong size)
++{
++    if (size == 0)
++    {
++        return 1;
++    }
++    FXString path = FXPath::absolute(dir, ".swordfish-reserve-XXXXXX");
++    std::vector<char> tmpl(path.text(), path.text() + path.length() + 1);
++    int fd = mkstemp(tmpl.data());
++    if (fd < 0)
++    {
++        return -1;
++    }
++    unlink(tmpl.data());
++    int ret = 1;
++    if (fallocate(fd, 0, 0, (off_t)size) != 0)
++    {
++        ret = (errno == ENOSPC || errno == EDQUOT || errno == EFBIG) ? 0 : -1;
++    }
++    close(fd);
++    return ret;
++}
++
++
++// Warn and return false when the folder doesn't have enough free space to extract the archive
++FXbool xf_checkextractspace(FXWindow* owner, const FXString& archive, const FXString& dir)
++{
++    FXulong needed;
++    FXbool exact;
++    struct statvfs vfs;
++    if (!xf_archiveunpackedsize(archive, needed, exact) || statvfs(dir.text(), &vfs) != 0)
++    {
++        return true;
++    }
++    FXulong available = (FXulong)vfs.f_frsize * vfs.f_bavail;
++    if (needed <= available && xf_reservespace(dir, needed) != 0)
++    {
++        return true;
++    }
++    if (needed <= available)
++    {
++        MessageBox::error(owner, BOX_OK, _("Not Enough Disk Space"),
++                          _("%s can't be extracted in %s.\n\nThe disk reports %s free, but refused to set aside "
++                            "the %s needed (disk quota or space reserved by the file system).\n\n"
++                            "Nothing was extracted. Free up some space or choose another destination."),
++                          FXPath::name(archive).text(), dir.text(),
++                          xf_humansize(FXStringVal(available).text()).text(),
++                          xf_humansize(FXStringVal(needed).text()).text());
++        return false;
++    }
++    FXString hneeded = xf_humansize(FXStringVal(needed).text());
++    FXString havailable = xf_humansize(FXStringVal(available).text());
++    if (exact)
++    {
++        MessageBox::error(owner, BOX_OK, _("Not Enough Disk Space"),
++                          _("There is not enough free space to extract %s.\n\nNeeded: %s\nFree in %s: %s\n\n"
++                            "Nothing was extracted. Free up some space or choose another destination."),
++                          FXPath::name(archive).text(), hneeded.text(), dir.text(), havailable.text());
++    }
++    else
++    {
++        MessageBox::error(owner, BOX_OK, _("Not Enough Disk Space"),
++                          _("There is not enough free space to extract %s.\n\nNeeded: at least %s\nFree in %s: %s\n\n"
++                            "Nothing was extracted. Free up some space or choose another destination."),
++                          FXPath::name(archive).text(), hneeded.text(), dir.text(), havailable.text());
++    }
++    return false;
++}
++
++
+ // Decode filename to get original again
+ FXString FXPath::dequote(const FXString& file)
+ {
+--- a/src/FilePanel.cpp
++++ b/src/FilePanel.cpp
+@@ -7441,6 +7441,11 @@
+ 
+             if (xf_iswritable(dir))
+             {
++                if (!xf_checkextractspace(this, current->list->getItemPathname(item), dir))
++                {
++                    return 0;
++                }
++
+                 // Wait cursor
+                 getApp()->beginWaitCursor();
+ 
+@@ -7498,6 +7503,11 @@
+             dirname = name.section('\t', 0).rbefore('.', 1);
+         }
+ 
++        if (xf_iswritable(cdir) && !xf_checkextractspace(this, current->list->getItemPathname(item), cdir))
++        {
++            return 0;
++        }
++
+         // Create the new dir according to the current umask
+         // Don't complain if directory already exists
+         int mask = umask(0);
+@@ -7700,6 +7710,11 @@
+             // Final extract command
+             cmd += name + " ";
+ 
++            if (!xf_checkextractspace(this, current->list->getItemPathname(item), cdir))
++            {
++                return 0;
++            }
++
+             // Wait cursor
+             getApp()->beginWaitCursor();
+ 
+@@ -8348,6 +8363,16 @@
+     FXbool isZip = archive.rafter('.', 1).lower() == "zip" || archiveSignature(archive) == "zip";
+     FXbool readOnly = !archiveWritable(archive) || isZip || access(archive.text(), W_OK) != 0;
+ 
++    // Saving changes writes a new copy of the archive beside the original, which is only replaced once the
++    // new copy is complete. Open read-only if the disk can't hold that copy.
++    FXbool lowSpace = false;
++    struct stat archivestat;
++    if (!readOnly && stat(archive.text(), &archivestat) == 0 &&
++        xf_reservespace(FXPath::directory(archive), (FXulong)archivestat.st_size) == 0)
++    {
++        readOnly = lowSpace = true;
++    }
++
+     FXString cmd = archiveHostEnv() + xf_quote(program) + " -o uid=" + FXStringVal((FXuint)getuid()) +
+                    ",gid=" + FXStringVal((FXuint)getgid());
+     if (readOnly)
+@@ -8392,7 +8417,16 @@
+     {
+         // Show and select the new folder
+         current->list->boostRefresh();
+-        if (readOnly && isZip)
++        if (lowSpace)
++        {
++            MessageBox::information(this, BOX_OK, _("Archive opened read-only"),
++                                    _("This archive is open read-only because there is not enough free disk "
++                                      "space to save changes. Saving writes a new copy of the archive (%s) "
++                                      "before the original is replaced.\n\nYou can browse it and drag or copy "
++                                      "files out. Free up some space and open it again to make changes."),
++                                    xf_humansize(FXStringVal((FXulong)archivestat.st_size).text()).text());
++        }
++        else if (readOnly && isZip)
+         {
+             MessageBox::information(this, BOX_OK, _("ZIP archive opened read-only"),
+                                     _("To protect your data, ZIP archives are always opened read-only.\n\n"
+--- a/tests/search-window-regression.cpp
++++ b/tests/search-window-regression.cpp
+@@ -6,6 +6,8 @@
+ #include <cerrno>
+ #include <cstdio>
+ #include <cstdlib>
++#include <cstring>
++#include <dirent.h>
+ #include <sys/wait.h>
+ #include <unistd.h>
+ #include "icons.h"
+@@ -787,6 +789,31 @@
+     if (url.empty()) fprintf(stderr, "Browser log missing after accepting archive installation help\n");
+     assert(url == "https://github.com/cybernoid/archivemount#installation");
+     puts("PASS: ZIP/ISO archive-folder menu remains visible without archivemount; declining opens nothing, accepting opens installation help with host libraries");
++    {
++        const FXString spaceDir = fixture + "/space";
++        assert(mkdir(spaceDir.text(), 0755) == 0);
++        { std::ofstream archive((spaceDir + "/Photos.tar.gz").text()); archive << "x"; }
++        assert(xf_isarchive(spaceDir + "/Photos.tar.gz") && !xf_isarchive(spaceDir + "/missing.zip"));
++        assert(xf_archivebasename("/x/Photos.tar.gz") == "Photos" && xf_archivebasename("/x/disk.iso") == "disk" &&
++               xf_archivebasename("/x/notes.txt.gz") == "notes.txt");
++        int small = xf_reservespace(spaceDir, 1 << 20);
++        assert(small != 0);
++        if (small == 1)
++        {
++            // A reservation the file system can't hold must fail instead of being reported as available
++            assert(xf_reservespace(spaceDir, 1ULL << 62) == 0);
++        }
++        DIR* dir = opendir(spaceDir.text());
++        int entries = 0;
++        for (struct dirent* entry; (entry = readdir(dir)) != NULL;)
++        {
++            entries += entry->d_name[0] != '.';
++            assert(strncmp(entry->d_name, ".swordfish-reserve-", 19) != 0);
++        }
++        closedir(dir);
++        assert(entries == 1);
++        puts("PASS: Extract Here names its folder after the archive; disk space is test-allocated and released before extracting");
++    }
+     // ISOs without Unix ownership (e.g. Windows media) show root-only entries unless mounted as the user
+     if (getuid() != 0 && access("/usr/bin/archivemount", X_OK) == 0 && access("/dev/fuse", R_OK | W_OK) == 0 &&
+         system("command -v bsdtar >/dev/null") == 0)

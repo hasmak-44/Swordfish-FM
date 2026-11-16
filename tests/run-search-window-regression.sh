@@ -30,11 +30,15 @@ for object in "$root"/src/*.o; do
     esac
 done
 read -r -a configured_flags <<< "$(sed -n 's/^CXXFLAGS = //p' "$root/src/Makefile")"
+randr_libs=()
+if [[ " ${configured_flags[*]} " == *" -DHAVE_XRANDR_H=1 "* ]]; then
+    randr_libs=(-lXrandr)
+fi
 g++ -std=gnu++11 "${configured_flags[@]}" -I"$root/src" -I"$root" $(fox-config --cflags) \
     "$root/tests/search-window-regression.cpp" "$scratch/main.o" "${objects[@]}" \
     "$root/st/x.o" "$root/st/st.o" "$root"/libsn/*.o \
     -lutil -lfontconfig -lpng -lFOX-1.6 -lX11 -lfreetype -lXft -lxcb -lxcb-util \
-    -lX11-xcb -ldl $(pkg-config --libs gio-2.0) -o "$scratch/usr/bin/swordfish"
+    -lX11-xcb -ldl "${randr_libs[@]}" $(pkg-config --libs gio-2.0) -o "$scratch/usr/bin/swordfish"
 runner=()
 if [[ ${SWORDFISH_TEST_DEBUG:-0} == 1 ]]; then
     runner=(gdb --batch -ex run -ex bt --args)

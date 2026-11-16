@@ -1115,6 +1115,38 @@ int main(int argc, char** argv)
         assert(xf_readtrashinfo(freshPath, freshLocation, original, deleted, infofile));
         assert(original == homeOriginal && !deleted.empty());
         FilePanel* panel = window->getCurrentPanel();
+        TabButtons* trashTabs = panel->getTabButtons();
+        const TabButtons::State originalTabs = trashTabs->saveState();
+        const FXuint originalTab = trashTabs->getCurrentTab();
+        assert(panel->onCmdGoTrash(NULL, 0, NULL));
+        assert(trashTabs->getLabel(originalTab) == "Trash");
+        assert(trashTabs->getPath(originalTab) == homeTrash + "/files");
+        assert(setenv("SWORDFISH_HOST_XDG_DATA_HOME", (trashData + "/").text(), 1) == 0);
+        panel->updatePath();
+        assert(trashTabs->getLabel(originalTab) == "Trash");
+        assert(setenv("SWORDFISH_HOST_XDG_DATA_HOME", trashData.text(), 1) == 0);
+        const FXString nestedTrash = homeTrash + "/files/nested";
+        const FXString ordinaryFiles = fixture + "/files";
+        assert(mkdir(nestedTrash.text(), 0700) == 0);
+        assert(mkdir(ordinaryFiles.text(), 0700) == 0);
+        panel->setDirectory(nestedTrash);
+        panel->updatePath();
+        assert(trashTabs->getLabel(originalTab) == "nested");
+        panel->setDirectory(ordinaryFiles);
+        panel->updatePath();
+        assert(trashTabs->getLabel(originalTab) == "files");
+        trashTabs->addTab(homeTrash + "/files");
+        const FXuint trashTab = trashTabs->getCurrentTab();
+        assert(trashTabs->getLabel(trashTab) == "Trash");
+        const TabButtons::State trashTabState = trashTabs->saveState();
+        trashTabs->setCurrentTab(originalTab);
+        assert(trashTabs->getLabel(trashTab) == "Trash");
+        trashTabs->restoreState(trashTabState);
+        assert(trashTabs->getLabel(trashTab) == "Trash");
+        trashTabs->restoreState(originalTabs);
+        assert(rmdir(nestedTrash.text()) == 0);
+        assert(rmdir(ordinaryFiles.text()) == 0);
+        puts("PASS: Trash tab labels survive navigation, tab switching and state restoration without renaming ordinary folders");
         panel->setDirectory(homeTrash + "/files");
         FileList* files = panel->getList();
         files->setAllowRefresh(false);
@@ -1208,6 +1240,66 @@ int main(int argc, char** argv)
         }
         assert(FXStat::exists(oldPortable + "/files/keep.txt"));
         puts("PASS: actual Empty Trash cancellation preserves all items; partial deletion failure preserves remaining restore metadata; success empties Home and mounted drives without touching old portable Trash");
+
+        // Move to Trash on another drive must use that drive's own trash can (needs a second real device)
+        char driveRoot[] = "/dev/shm/swordfish-trash-drive.XXXXXX";
+        struct stat homeInfo, driveInfo;
+        assert(lstat(homeTrash.text(), &homeInfo) == 0);
+        if (mkdtemp(driveRoot) && lstat(driveRoot, &driveInfo) == 0 && driveInfo.st_dev != homeInfo.st_dev)
+        {
+            const FXString drive = FXString(driveRoot) + "/drive";
+            const FXString unsafeDrive = FXString(driveRoot) + "/unsafe";
+            const FXString driveTrash = drive + "/.Trash-" + FXStringVal((FXuint)getuid());
+            assert(xf_mkpath(drive.text(), 0700) == 0 && xf_mkpath(unsafeDrive.text(), 0700) == 0);
+            assert(symlink(driveRoot, (unsafeDrive + "/.Trash-" + FXStringVal((FXuint)getuid())).text()) == 0);
+            {
+                std::ofstream output(simulatedMountTable.text(), std::ios::app);
+                output << "tmpfs " << drive.text() << " tmpfs rw 0 0\n";
+                output << "tmpfs " << unsafeDrive.text() << " tmpfs rw 0 0\n";
+            }
+            FXString trashFiles, trashInfo, trashTop;
+            xf_trashfor(unsafeDrive + "/item.txt", trashFiles, trashInfo, trashTop);
+            assert(trashFiles == homeTrash + "/files" && trashTop.empty());
+            xf_trashfor(fixture + "/item.txt", trashFiles, trashInfo, trashTop);
+            assert(trashFiles == homeTrash + "/files" && trashTop.empty());
+            const FXString driveItem = drive + "/drive item%.txt";
+            put(driveItem, "drive contents");
+            struct stat before, after;
+            assert(lstat(driveItem.text(), &before) == 0);
+            panel->setDirectory(drive);
+            files->onCmdRefresh(NULL, 0, NULL);
+            files->killSelection();
+            int driveIndex = pathIndex(driveItem);
+            assert(driveIndex >= 0);
+            files->selectItem(driveIndex);
+            panel->onCmdFileTrash(NULL, 0, NULL);
+            const FXString trashedItem = driveTrash + "/files/drive item%.txt";
+            assert(!FXStat::exists(driveItem));
+            assert(lstat(trashedItem.text(), &after) == 0 && after.st_ino == before.st_ino);
+            assert(!FXStat::exists(homeTrash + "/files/drive item%.txt"));
+            std::ifstream infoFile((driveTrash + "/info/drive item%.txt.trashinfo").text());
+            std::string infoText((std::istreambuf_iterator<char>(infoFile)), std::istreambuf_iterator<char>());
+            assert(infoText.find(std::string("\nPath=") + FXURL::encode("drive item%.txt").text() + "\n") != std::string::npos);
+            panel->setDirectory(homeTrash + "/files");
+            files->onCmdRefresh(NULL, 0, NULL);
+            files->killSelection();
+            driveIndex = pathIndex(trashedItem);
+            assert(driveIndex >= 0);
+            files->selectItem(driveIndex);
+            panel->onCmdFileRestore(NULL, 0, NULL);
+            assert(FXStat::exists(driveItem) && !FXStat::exists(trashedItem));
+            assert(!FXStat::exists(driveTrash + "/info/drive item%.txt.trashinfo"));
+            puts("PASS: Move to Trash on another drive renames into that drive's .Trash-UID with a drive-relative restore path and restores; same-drive items and unsafe drive trash use Home Trash");
+        }
+        else
+        {
+            puts("SKIP: drive trash test needs /dev/shm on a different device from the test folder");
+        }
+        if (driveRoot[sizeof(driveRoot) - 2] != 'X')
+        {
+            const FXString cleanup = FXString("rm -rf '") + driveRoot + "'";
+            assert(system(cleanup.text()) == 0);
+        }
         files->setAllowRefresh(true);
         panel->setDirectory(fixture);
         simulatedMountTable.clear();
@@ -2342,6 +2434,49 @@ int main(int argc, char** argv)
     assert(hoverPanel->getDirectory() == fixture);
     assert(find(hoverPanel->getList(), "folder") >= 0);
     puts("PASS: tab-hover timeout selects the inactive folder and populates its list immediately");
+
+    hoverTabs->addTab(PATHSEPSTRING);
+    pump(app, 150);
+    FXWindow* firstTab = hoverTabs->childAtIndex(0);
+    FXWindow* secondTab = hoverTabs->childAtIndex(1);
+    FXWindow* dragButton = firstTab->getFirst();
+    const FXString firstPath = hoverTabs->getPath(0), secondPath = hoverTabs->getPath(1);
+    const FXint firstHome = firstTab->getX(), secondHome = secondTab->getX();
+    const FXint distance = secondHome - firstHome + secondTab->getWidth() / 2 + 2;
+    FXEvent drag = {};
+    drag.win_x = 10;
+    drag.win_y = dragButton->getHeight() / 2;
+    dragButton->translateCoordinatesTo(drag.root_x, drag.root_y, dragButton->getRoot(), drag.win_x, drag.win_y);
+    drag.state = LEFTBUTTONMASK;
+    drag.click_button = LEFTBUTTON;
+    for (FXint pass = 0; pass < 2; pass++)
+    {
+        FXint pressX = drag.root_x;
+        dragButton->handle(NULL, FXSEL(SEL_LEFTBUTTONPRESS, 0), &drag);
+        drag.root_x = pressX + distance;
+        dragButton->handle(NULL, FXSEL(SEL_MOTION, 0), &drag);
+        // The grabbed tab follows the pointer while its neighbour slides into the gap.
+        assert(firstTab->getX() == firstHome + distance);
+        assert(secondTab->getX() == secondHome - firstTab->getWidth() - hoverTabs->getHSpacing());
+        drag.state = 0;
+        if (pass == 0)
+        {
+            dragButton->ungrab();
+            dragButton->handle(NULL, FXSEL(SEL_UNGRABBED, 0), &drag);
+            assert(firstTab->getX() == firstHome && secondTab->getX() == secondHome);
+            assert(hoverTabs->getPath(0) == firstPath && hoverTabs->getPath(1) == secondPath);
+        }
+        else
+        {
+            dragButton->handle(NULL, FXSEL(SEL_LEFTBUTTONRELEASE, 0), &drag);
+        }
+        drag.root_x = pressX;
+        drag.state = LEFTBUTTONMASK;
+    }
+    pump(app, 150);
+    assert(hoverTabs->getPath(0) == secondPath && hoverTabs->getPath(1) == firstPath);
+    assert(firstTab->getX() == firstHome);
+    puts("PASS: dragged tab follows the pointer, neighbours slide aside, and the drop or cancel settles the strip");
     XCloseDisplay(otherClient);
     std::fflush(stdout);
     // The application-global teardown is outside this focused widget test.

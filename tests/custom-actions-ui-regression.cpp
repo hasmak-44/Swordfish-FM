@@ -43,6 +43,8 @@ static void pump(FXApp& app, int milliseconds)
 
 static void mouseClick(FXWindow* window, int button, int x = 2, int y = 2)
 {
+    // Newly rebuilt widgets may still be queued in FOX's X request buffer
+    window->getApp()->flush(true);
     FXString command = "xdotool mousemove --window " + FXStringVal((FXulong)window->id()) +
                        " " + FXStringVal(x) + " " + FXStringVal(y);
     assert(system(command.text()) == 0);
@@ -515,6 +517,53 @@ public:
     }
 };
 
+// Picks an entry from the custom toolbar's right-click menu after checking the current choices
+class ToolbarMenuAutomation : public FXObject
+{
+    FXApp& app;
+    const char* choice;
+    const char* checkedStyle;
+    const char* checkedSize;
+public:
+    bool done = false;
+    ToolbarMenuAutomation(FXApp& application, const char* entry, const char* style, const char* size) :
+        app(application), choice(entry), checkedStyle(style), checkedSize(size) {}
+    long handle(FXObject*, FXSelector, void*)
+    {
+        for (FXMenuPane* menu : widgets<FXMenuPane>(app.getRootWindow()))
+        {
+            if (!menu->shown()) { continue; }
+            app.forceRefresh();
+            app.refresh();
+            pump(app, 50);
+            FXMenuRadio* wanted = NULL;
+            unsigned radios = 0;
+            bool edit = false, show = false;
+            for (FXWindow* child = menu->getFirst(); child; child = child->getNext())
+            {
+                if (FXMenuRadio* radio = dynamic_cast<FXMenuRadio*>(child))
+                {
+                    ++radios;
+                    bool expected = radio->getText() == checkedStyle || radio->getText() == checkedSize;
+                    assert(radio->getCheck() == expected);
+                    if (radio->getText() == choice) { wanted = radio; }
+                }
+                else if (FXMenuCheck* check = dynamic_cast<FXMenuCheck*>(child))
+                { show = check->getText() == "Show Custom Toolbar" && check->getCheck(); }
+                else if (FXMenuCommand* command = dynamic_cast<FXMenuCommand*>(child))
+                { edit = edit || command->getText() == "Edit Custom Actions..."; }
+            }
+            assert(radios == 6 && wanted && edit && show);
+            menu->hide();
+            wanted->getTarget()->handle(wanted, FXSEL(SEL_COMMAND, wanted->getSelector()), NULL);
+            done = true;
+            return 1;
+        }
+        assert(false);
+        return 0;
+    }
+};
+
 class ToolbarSizePreferenceAutomation : public FXObject
 {
     PreferencesBox& preferences;
@@ -522,41 +571,61 @@ class ToolbarSizePreferenceAutomation : public FXObject
     FXint choice;
     bool accept;
     bool integrationReadable;
+    FXint style;
 public:
     ToolbarSizePreferenceAutomation(PreferencesBox& dialog, FXint current, FXint selected, bool save,
-                                    bool readable = true) :
-        preferences(dialog), initial(current), choice(selected), accept(save), integrationReadable(readable) {}
+                                    bool readable = true, FXint display = -1) :
+        preferences(dialog), initial(current), choice(selected), accept(save), integrationReadable(readable),
+        style(display) {}
     long handle(FXObject*, FXSelector, void*)
     {
         FXGroupBox* toolbarIcons = NULL;
         FXGroupBox* integration = NULL;
         for (FXGroupBox* group : widgets<FXGroupBox>(&preferences))
         {
-            if (group->getText() == "Tool Bar Icon Size") { toolbarIcons = group; }
+            if (group->getText() == "Custom Tool Bar") { toolbarIcons = group; }
             if (group->getText() == "Optional System Integration") { integration = group; }
         }
         assert(toolbarIcons && integration);
-        std::vector<FXTabBook*> books = widgets<FXTabBook>(&preferences);
-        assert(books.size() == 1);
+        FXTabBook* book = NULL;
+        for (FXWindow* ancestor = toolbarIcons->getParent(); ancestor; ancestor = ancestor->getParent())
+            if ((book = dynamic_cast<FXTabBook*>(ancestor))) break;
+        assert(book);
+        for (FXButton* button : widgets<FXButton>(&preferences))
+            if (button->getText() == "Appearance")
+                button->getTarget()->handle(button, FXSEL(SEL_COMMAND, button->getSelector()), NULL);
         FXint page = 0;
         bool appearanceSelected = false;
-        for (FXWindow* child = books[0]->getFirst(); child; child = child->getNext())
+        for (FXWindow* child = book->getFirst(); child; child = child->getNext())
         {
             if (FXTabItem* tab = dynamic_cast<FXTabItem*>(child))
             {
                 FXString label = tab->getText();
                 label.substitute("&", "");
-                if (label == "Appearance")
+                if (label == "Toolbar")
                 {
-                    books[0]->setCurrent(page);
+                    book->setCurrent(page);
                     appearanceSelected = true;
                 }
                 ++page;
             }
         }
         assert(appearanceSelected);
-        std::vector<FXRadioButton*> sizes = widgets<FXRadioButton>(toolbarIcons);
-        assert(sizes.size() == 3 && widgets<FXListBox>(toolbarIcons).empty());
+        std::vector<FXRadioButton*> radios = widgets<FXRadioButton>(toolbarIcons);
+        assert(radios.size() == 6 && widgets<FXListBox>(toolbarIcons).empty());
+        std::vector<FXRadioButton*> sizes(radios.begin(), radios.begin() + 3);
+        std::vector<FXRadioButton*> styles(radios.begin() + 3, radios.end());
+        assert(styles[0]->getText() == "Icons and titles" && styles[1]->getText() == "Icons" &&
+               styles[2]->getText() == "Titles");
+        FXuint savedStyle = preferences.getApp()->reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 0);
+        for (FXuint i = 0; i < 3; ++i) { assert(styles[i]->getCheck() == (i == savedStyle)); }
+        if (style >= 0)
+        {
+            styles[style]->setCheck(true, true);
+            preferences.getApp()->forceRefresh();
+            pump(*preferences.getApp(), 50);
+            for (FXint i = 0; i < 3; ++i) { assert(styles[i]->getCheck() == (i == style)); }
+        }
         for (FXint i = 0; i < 3; ++i) { assert(sizes[i]->getCheck() == (i == initial)); }
         sizes[choice]->setCheck(true, true);
         preferences.getApp()->forceRefresh();
@@ -1222,7 +1291,7 @@ int main(int argc, char** argv)
         left->onCmdTogglePathMode(NULL, 0, NULL);
         pump(app, 100);
         checkAddressBarMode(left, true);
-        checkAddressBarMode(right, true);
+        checkAddressBarMode(right, false);
         assert(left->navigatePane(fixture + "/other"));
         checkPaneHistory(app, left, leftHistory[0], fixture, false);
         left->onCmdTogglePathMode(NULL, 0, NULL);
@@ -1355,14 +1424,46 @@ int main(int argc, char** argv)
     assert(editorButton->getIcon() == miniprefsicon);
     assert(editorButton->getTarget() == actions && editorButton->getSelector() == CustomActionsUI::ID_EDIT);
     assert(editorButton->getX() + editorButton->getWidth() >= custom->getWidth() - 8);
+    ToolbarMenuAutomation iconsOnly(app, "Icons Only", "Icons and Titles", "Small Icons (16 px)");
+    app.addTimeout(&iconsOnly, 1, 300);
     mouseClick(editorButton, 3);
     pump(app, 300);
+    assert(iconsOnly.done);
     for (FXMenuPane* menu : widgets<FXMenuPane>(app.getRootWindow())) { assert(!menu->shown()); }
+    assert(app.reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 0) == 1);
+    for (FXMenuButton* button : widgets<FXMenuButton>(custom))
+    { assert(button->getText().empty() && button->getIcon() && button->getTipText() == "Utilities"); }
+    // Right-clicking an action button reaches the same menu through the action menu target
+    FXMenuButton* iconOnlyFolder = widgets<FXMenuButton>(custom)[0];
+    ToolbarMenuAutomation titlesOnly(app, "Titles Only", "Icons Only", "Small Icons (16 px)");
+    app.addTimeout(&titlesOnly, 1, 300);
+    mouseClick(iconOnlyFolder, 3);
+    pump(app, 300);
+    assert(titlesOnly.done);
+    assert(app.reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 0) == 2);
+    for (FXMenuButton* button : widgets<FXMenuButton>(custom))
+    { assert(button->getText() == "Utilities" && !button->getIcon()); }
+    ToolbarMenuAutomation largeIcons(app, "Large Icons (32 px)", "Titles Only", "Small Icons (16 px)");
+    app.addTimeout(&largeIcons, 1, 300);
+    mouseClick(custom, 3, custom->getWidth() / 2, custom->getHeight() - 2);
+    pump(app, 300);
+    assert(largeIcons.done);
+    assert(xf_toolbariconsize(&app, "customtoolbariconsize") == 32);
+    actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_STYLE_BOTH), NULL);
+    actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_SIZE_16), NULL);
+    // pump() never blocks, so FOX does not run chores; run the queued rebuild as the main loop would
+    app.removeChore(actions, CustomActionsUI::ID_REBUILD);
+    actions->handle(&app, FXSEL(SEL_CHORE, CustomActionsUI::ID_REBUILD), NULL);
+    pump(app, 100);
+    assert(app.reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 1) == 0);
+    assert(xf_toolbariconsize(&app, "customtoolbariconsize") == 16);
+    for (FXMenuButton* button : widgets<FXMenuButton>(custom))
+    { assert(button->getText() == "Utilities" && button->getIcon()); }
     DismissDialog editFromToolbar(app, "Custom Actions", "Cancel");
     app.addTimeout(&editFromToolbar, 1, 200);
     click(custom, "Edit Custom Actions");
     assert(left->getNumSelectedItems() == 2);
-    puts("PASS: custom toolbar keeps labeled actions, live applicability, show/hide and rightmost Settings editor; ignores old size/display overrides and has no presentation menu");
+    puts("PASS: custom toolbar keeps labeled actions, live applicability, show/hide and rightmost Settings editor; ignores old size/display overrides; right-click menu sets icons/titles/both and size");
     ctx = actions->context();
     actions->run(2, ctx);
     pump(app, 600);
@@ -1540,10 +1641,16 @@ int main(int argc, char** argv)
         PreferencesBox preferences(window);
         FXGroupBox* toolbarIcons = NULL;
         for (FXGroupBox* group : widgets<FXGroupBox>(&preferences))
-            if (group->getText() == "Tool Bar Icon Size") { toolbarIcons = group; }
+            if (group->getText() == "Custom Tool Bar") { toolbarIcons = group; }
         assert(toolbarIcons);
-        std::vector<FXRadioButton*> sizes = widgets<FXRadioButton>(toolbarIcons);
-        assert(sizes.size() == 3 && widgets<FXListBox>(toolbarIcons).empty());
+        std::vector<FXRadioButton*> radios = widgets<FXRadioButton>(toolbarIcons);
+        assert(radios.size() == 6 && widgets<FXListBox>(toolbarIcons).empty());
+        std::vector<FXRadioButton*> sizes(radios.begin(), radios.begin() + 3);
+        std::vector<FXRadioButton*> styles(radios.begin() + 3, radios.end());
+        assert(styles[0]->getText() == "Icons and titles" && styles[1]->getText() == "Icons" &&
+               styles[2]->getText() == "Titles");
+        FXuint savedStyle = preferences.getApp()->reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 0);
+        for (FXuint i = 0; i < 3; ++i) { assert(styles[i]->getCheck() == (i == savedStyle)); }
         assert(sizes[0]->getText() == "16 px" && sizes[1]->getText() == "24 px" &&
                sizes[2]->getText() == "32 px");
         std::vector<FXTabItem*> tabs = widgets<FXTabItem>(&preferences);
@@ -1613,6 +1720,16 @@ int main(int argc, char** argv)
             modified << "\n# Desktop environment metadata\n";
             assert(modified.good());
         }
+        ToolbarSizePreferenceAutomation iconsStyle(preferences, 0, 0, true, true, 1);
+        app.addTimeout(&iconsStyle, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 1);
+        assert(app.reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 0) == 1);
+        for (FXMenuButton* button : widgets<FXMenuButton>(custom)) { assert(button->getText().empty()); }
+        ToolbarSizePreferenceAutomation bothStyle(preferences, 0, 0, true, true, 0);
+        app.addTimeout(&bothStyle, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 1);
+        assert(app.reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 1) == 0);
+        checkToolbarIcons(16);
         const struct stat modifiedDesktopState = fileState(desktopPath);
         // A launcher the desktop has reformatted is still recognised as Swordfish's own
         ToolbarSizePreferenceAutomation sizeWithModifiedLauncher(preferences, 0, 1, true);
@@ -1677,22 +1794,40 @@ int main(int argc, char** argv)
         checkAddressBarMode(left, false);
         checkAddressBarMode(right, false);
 
+        // The pencil switch changes only its own panel and leaves the Preferences default alone
         left->onCmdTogglePathMode(NULL, 0, NULL);
-        assert(app.reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false));
+        pump(app, 100);
+        assert(!app.reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true));
+        assert(app.reg().readUnsignedEntry("LEFT PANEL", "show_pathlinker", false));
+        checkAddressBarMode(left, true);
+        checkAddressBarMode(right, false);
+        right->onCmdTogglePathMode(NULL, 0, NULL);
+        pump(app, 100);
         checkAddressBarMode(left, true);
         checkAddressBarMode(right, true);
-        AddressModePreferenceAutomation switchedBreadcrumbs(preferences, 1, 1, false);
-        app.addTimeout(&switchedBreadcrumbs, 1, 30);
+        right->onCmdTogglePathMode(NULL, 0, NULL);
+        pump(app, 100);
+        checkAddressBarMode(left, true);
+        checkAddressBarMode(right, false);
+        AddressModePreferenceAutomation unchangedDefault(preferences, 0, 0, false);
+        app.addTimeout(&unchangedDefault, 1, 30);
         assert(preferences.execute(PLACEMENT_OWNER) == 0);
-        left->onCmdTogglePathMode(NULL, 0, NULL);
-        assert(!app.reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true));
+        // A new default resets both panels' switch choices
+        AddressModePreferenceAutomation newDefault(preferences, 0, 1, true);
+        app.addTimeout(&newDefault, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 1);
+        pump(app, 100);
+        assert(!app.reg().existingEntry("LEFT PANEL", "show_pathlinker"));
+        assert(!app.reg().existingEntry("RIGHT PANEL", "show_pathlinker"));
+        checkAddressBarMode(left, true);
+        checkAddressBarMode(right, true);
+        AddressModePreferenceAutomation textDefault(preferences, 1, 0, true);
+        app.addTimeout(&textDefault, 1, 30);
+        assert(preferences.execute(PLACEMENT_OWNER) == 1);
+        pump(app, 100);
         checkAddressBarMode(left, false);
         checkAddressBarMode(right, false);
-        AddressModePreferenceAutomation switchedAddress(preferences, 0, 0, false);
-        app.addTimeout(&switchedAddress, 1, 30);
-        assert(preferences.execute(PLACEMENT_OWNER) == 0);
-        assert(!app.reg().readUnsignedEntry("SETTINGS", "show_pathlinker", true));
-        puts("PASS: named address mode choices, cancel, saved preference, panel refresh and toolbar synchronization");
+        puts("PASS: named address mode choices, cancel, saved preference, panel refresh, per-panel switches and default reset");
         RemoveIntegrationPreferenceAutomation cancelRemoval(preferences, false);
         app.addTimeout(&cancelRemoval, 1, 30);
         assert(preferences.execute(PLACEMENT_OWNER) == 0);

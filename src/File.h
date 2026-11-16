@@ -53,6 +53,7 @@ private:
     FXuint numsel = 0;
     FXdouble vecCopyspeed[NMAX_COPY_SPEED];
     FXuint numcopyspeed = 0;
+    FXlong lastUiUpdate = 0;
 
 protected:
 
@@ -80,12 +81,13 @@ protected:
     FXlong fullread(int, FXuchar*, FXlong);
     FXlong fullwrite(int, const FXuchar*, FXlong);
 
-    FXuint getOverwriteAnswer(FXString, FXString, FXbool restart_timeout = true);
+    int resolveConflict(const FXString&, FXString&, FXbool merge = true,
+                        FXbool restart_timeout = true, FXbool confirm = true);
     int copyfile(const FXString&, const FXString&, const FXString&, const FXulong, const FXulong, const FXbool);
     int copyrec(const FXString&, const FXString&, const FXString&, const FXulong, const FXulong, inodelist*,
-                const FXbool);
+                const FXbool, const FXbool confirm = true);
     int copydir(const FXString&, const FXString&, const FXString&, const FXulong, const FXulong, struct stat&,
-                inodelist*, const FXbool);
+                inodelist*, const FXbool, const FXbool moving = false);
     int rchmod(char*, char*, mode_t, const FXbool, const FXbool);
     int rchown(char*, char*, uid_t, gid_t, const FXbool, const FXbool);
 
@@ -97,9 +99,8 @@ protected:
     FXString timetext;
     FXProgressBar* progressbar = NULL;
     FXButton* cancelButton = NULL;
-    FXbool overwrite = false;
-    FXbool overwrite_all = false;
-    FXbool skip_all = false;
+    FXbool confirmOverwrite = true;
+    FXuint conflictAnswers[16] = {};
     FXbool cancelled = false;
     MessageBox* mbox = NULL;
 
@@ -109,6 +110,7 @@ public:
     }
     ~File();
     void create();
+    FXbool uiUpdateDue(void);
 
     File(FXWindow* owner, FXString title, const FXuint operation, const FXuint num = 1);
 

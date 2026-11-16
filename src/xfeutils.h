@@ -647,7 +647,7 @@ FXString xf_getkeybinding(FXEvent*);
 
 int xf_mkpath(const char*, mode_t);
 FXString xf_create_trashpathname(FXString, FXString);
-int xf_create_trashinfo(FXString, FXString, FXString, FXString);
+int xf_create_trashinfo(FXString, FXString, FXString, FXString, const FXString& topdir = FXString::null);
 int xf_istextfile(FXString);
 FXString xf_quote(FXString);
 FXbool xf_isutf8(const char*, FXuint);
@@ -759,6 +759,10 @@ FXbool xf_readtrashinfo(const FXString& pathname, const TrashLocation& location,
                        FXString& original, FXString& deleted, FXString& infofile);
 void xf_cleanuptrashinfo(const FXString& pathname);
 
+// Choose the trash can for an item: the Home Trash, or the item drive's own trash
+// (topdir is set to that drive's mount folder) so the move is a fast rename
+void xf_trashfor(const FXString& pathname, FXString& files, FXString& info, FXString& topdir);
+
 FXArrowButton* xf_historybutton(FXComposite*, FXObject*, FXSelector, const FXString&);
 
 // Background color of a bar, shaded from the base color (level 0 = base color)
@@ -766,5 +770,17 @@ FXColor xf_barcolor(FXApp*, int level);
 
 // Apply a bar color to a bar and its children that use the base color
 void xf_shadebar(FXWindow*, FXColor);
+
+namespace DialogColors
+{
+    const FXColor background = FXRGB(41, 53, 59);
+    const FXColor field = FXRGB(30, 36, 45);
+    const FXColor accent = FXRGB(15, 86, 217);
+    const FXColor text = FXRGB(255, 255, 255);
+}
+
+void xf_widgetcolors(FXWindow*, FXColor, FXColor, FXColor, FXColor, FXColor, FXColor);
+void xf_dialogcolors(FXWindow*);
+void xf_windowcolors(FXWindow*);
 
 #endif

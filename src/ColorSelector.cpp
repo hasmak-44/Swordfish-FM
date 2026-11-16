@@ -8,6 +8,10 @@
 
 #include "icons.h"
 #include "ColorSelector.h"
+#include "ColorTools.h"
+#include "MessageBox.h"
+#include "xfeutils.h"
+#include <cmath>
 
 
 //
@@ -1086,8 +1090,7 @@ ColorSelector::ColorSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXui
     FXVerticalFrame* wellframe = new FXVerticalFrame(main, LAYOUT_FILL_Y, 0, 0, 0, 0, 0, 0, 10, 0, 0, 2);
 
     // Color sucker
-    new FXPicker(wellframe, _("\tPick Color"), eyedropicon, this, ID_COLORPICK, JUSTIFY_CENTER_X | JUSTIFY_CENTER_Y |
-                 FRAME_GROOVE | LAYOUT_CENTER_X | LAYOUT_FIX_WIDTH | LAYOUT_FIX_HEIGHT, 0, 0, 56, 32, 0, 0, 0, 0);
+    createScreenPicker(wellframe, this, ID_COLORPICK, eyedropicon);
 
     // Main color well
     well = new ColorWell(wellframe, FXRGBA(255, 255, 255, 255), this, ID_WELL_CHANGED, _COLORWELL_SOURCEONLY |
@@ -1095,9 +1098,11 @@ ColorSelector::ColorSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXui
 
     // Tab book with switchable panels
     panels = new FXTabBook(main, this, ID_ACTIVEPANE, TABBOOK_TOPTABS | LAYOUT_FILL_Y | LAYOUT_FILL_X);
+    new DialogTabItem(panels, _("Picker"));
+    tools = new ColorTools(panels, this);
 
     // HSV Dial Mode
-    new FXTabItem(panels, _("\tHue, Saturation, Value"), dialmodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
+    new DialogTabItem(panels, _("\tHue, Saturation, Value"), dialmodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
 
     // Color wheel
     FXHorizontalFrame* dialblock = new FXHorizontalFrame(panels, FRAME_GROOVE | LAYOUT_FILL_Y | LAYOUT_FILL_X |
@@ -1106,7 +1111,7 @@ ColorSelector::ColorSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXui
                             0, 0, 120, 120, 1, 1, 1, 1);
 
     // RGB Mode
-    new FXTabItem(panels, _("\tRed, Green, Blue"), rgbmodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
+    new DialogTabItem(panels, _("\tRed, Green, Blue"), rgbmodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
 
     // RGB Sliders
     FXMatrix* rgbblock = new FXMatrix(panels, 3, FRAME_GROOVE | LAYOUT_FILL_Y | LAYOUT_FILL_X | LAYOUT_TOP |
@@ -1157,7 +1162,7 @@ ColorSelector::ColorSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXui
     rgbaslider[3]->setRange(0, 255);
 
     // HSV Mode
-    new FXTabItem(panels, _("\tHue, Saturation, Value"), hsvmodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
+    new DialogTabItem(panels, _("\tHue, Saturation, Value"), hsvmodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
 
     // RGB Sliders
     FXMatrix* hsvblock = new FXMatrix(panels, 3, FRAME_GROOVE | LAYOUT_FILL_Y | LAYOUT_FILL_X | LAYOUT_TOP |
@@ -1209,7 +1214,7 @@ ColorSelector::ColorSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXui
     hsvaslider[3]->setRange(0, 255);
 
     // CMY Mode
-    new FXTabItem(panels, _("\tCyan, Magenta, Yellow"), cmymodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
+    new DialogTabItem(panels, _("\tCyan, Magenta, Yellow"), cmymodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
 
     // RGB Sliders
     FXMatrix* cmyblock = new FXMatrix(panels, 3, FRAME_GROOVE | LAYOUT_FILL_Y | LAYOUT_FILL_X | LAYOUT_TOP |
@@ -1261,7 +1266,7 @@ ColorSelector::ColorSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXui
     cmyslider[3]->setRange(0, 255);
 
     // Named Color Mode
-    new FXTabItem(panels, _("\tBy Name"), listmodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
+    new DialogTabItem(panels, _("\tBy Name"), listmodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
 
     // Name list
     FXHorizontalFrame* outer = new FXHorizontalFrame(panels, FRAME_GROOVE | LAYOUT_FILL_Y | LAYOUT_FILL_X);
@@ -1639,6 +1644,8 @@ long ColorSelector::onChgWell(FXObject*, FXSelector, void* ptr)
     rgba[3] = 0.003921568627f * FXALPHAVAL(color);
     fxrgb_to_hsv(hsva[0], hsva[1], hsva[2], rgba[0], rgba[1], rgba[2]);
     hsva[3] = rgba[3];
+    if (tools) tools->setRGBA(color);
+    if (target) target->tryHandle(this, FXSEL(SEL_CHANGED, message), ptr);
     return 1;
 }
 
@@ -1657,8 +1664,9 @@ long ColorSelector::onCmdWell(FXObject*, FXSelector, void*)
 // Update main well
 void ColorSelector::updateWell()
 {
-    well->setRGBA(FXRGBA((int)(rgba[0] * 255.0), (int)(rgba[1] * 255.0), (int)(rgba[2] * 255.0),
-                         (int)(rgba[3] * 255.0)));
+    well->setRGBA(FXRGBA(FXCLAMP(0, std::lround(rgba[0] * 255), 255), FXCLAMP(0, std::lround(rgba[1] * 255), 255),
+                          FXCLAMP(0, std::lround(rgba[2] * 255), 255), FXCLAMP(0, std::lround(rgba[3] * 255), 255)));
+    if (tools) tools->setRGBA(well->getRGBA());
 }
 
 
@@ -1749,8 +1757,20 @@ void ColorSelector::setRGBA(FXColor clr)
         hsva[3] = rgba[3];
         well->setRGBA(clr);
     }
+    if (tools) tools->setRGBA(well->getRGBA());
 }
 
+void ColorSelector::selectColor(FXColor color, FXuint type)
+{
+    setRGBA(color);
+    if (target) target->tryHandle(this, FXSEL(type, message),
+                                   reinterpret_cast<void*>(static_cast<FXuval>(getRGBA())));
+}
+
+void ColorSelector::setOriginalRGBA(FXColor color) { if (tools) tools->setOriginalRGBA(color); }
+void ColorSelector::setTheme(Theme* theme) { if (tools) tools->setTheme(theme); }
+void ColorSelector::rememberColor() { if (tools) tools->rememberColor(); }
+FXbool ColorSelector::validInput() const { return !tools || tools->validInput(); }
 
 // Retrieve RGBA color
 FXColor ColorSelector::getRGBA() const
@@ -1769,6 +1789,7 @@ FXbool ColorSelector::isOpaqueOnly() const
 // Change opaque only mode
 void ColorSelector::setOpaqueOnly(FXbool opaque)
 {
+    if (tools) tools->setOpaqueOnly(opaque);
     if (opaque)
     {
         well->setOpaqueOnly(TRUE);
@@ -1859,6 +1880,8 @@ FXDEFMAP(ColorDialog) ColorDialogMap[] =
 {
     FXMAPFUNC(SEL_CHANGED, ColorDialog::ID_COLORSELECTOR, ColorDialog::onChgColor),
     FXMAPFUNC(SEL_COMMAND, ColorDialog::ID_COLORSELECTOR, ColorDialog::onCmdColor),
+    FXMAPFUNC(SEL_COMMAND, FXDialogBox::ID_ACCEPT, ColorDialog::onAcceptColor),
+    FXMAPFUNC(SEL_UPDATE, FXDialogBox::ID_ACCEPT, ColorDialog::onUpdAccept),
 };
 
 
@@ -1879,11 +1902,36 @@ ColorDialog::ColorDialog(FXWindow* owner, const FXString& name, FXuint opts, FXi
     colorbox->cancelButton()->setSelector(FXDialogBox::ID_CANCEL);
 }
 
+void ColorDialog::create()
+{
+    xf_dialogcolors(this);
+    FXDialogBox::create();
+}
+
+void ColorDialog::setTheme(Theme* theme) { colorbox->setTheme(theme); }
+
+long ColorDialog::onAcceptColor(FXObject* sender, FXSelector selector, void* pointer)
+{
+    if (!colorbox->validInput())
+    {
+        MessageBox::warning(this, BOX_OK, _("Colour"), _("Correct the invalid colour value before accepting."));
+        return 1;
+    }
+    colorbox->rememberColor();
+    return FXDialogBox::onCmdAccept(sender, selector, pointer);
+}
+
+long ColorDialog::onUpdAccept(FXObject* sender, FXSelector, void*)
+{
+    sender->handle(this, FXSEL(SEL_COMMAND, colorbox->validInput() ? ID_ENABLE : ID_DISABLE), NULL);
+    return 1;
+}
 
 // Change RGBA color
 void ColorDialog::setRGBA(FXColor clr)
 {
     colorbox->setRGBA(clr);
+    colorbox->setOriginalRGBA(clr);
 }
 
 

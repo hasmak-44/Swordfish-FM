@@ -38,6 +38,7 @@ class FXAPI IconItem : public FXObject
 {
     FXDECLARE(IconItem)
     friend class IconList;
+    friend class ThemeMockup;
 protected:
     FXString label;                                     // Text of item
     FXIcon* bigIcon = NULL;                             // Big icon of item
@@ -216,6 +217,8 @@ typedef FXObjectListOf<IconItem>   IconItemList;
 class FXAPI IconList : public FXScrollArea
 {
     FXDECLARE(IconList)
+    friend class ThemeMockup;
+    friend struct BackgroundEffect;
 protected:
     FXHeader* header = NULL;                        // Header control
     IconItemList items;                             // Item list
@@ -276,6 +279,20 @@ protected:
     FXString inlineLabel;                           // First label field of the item being edited
     int inlineIndex = -1;
     FXbool inlineClosing = false;
+
+    // Optional theme background effect (gradient, pattern and/or texture), cached per window size.
+    // Layers: 0 plain, 1 alternate row, 2 sorted column, 3 sorted column on an alternate row.
+    FXString backgroundEffect;
+    FXImage* effectLayers[4] = {NULL, NULL, NULL, NULL};
+    FXColor* effectBase = NULL;
+    int effectWidth = 0;
+    int effectHeight = 0;
+    FXColor effectBackColor = 0;
+    FXColor effectAverage = 0;
+    FXbool effectRows = true;
+    void buildBackgroundEffect();
+    FXImage* getEffectLayer(int layer);
+    void clearBackgroundEffect();
 
 protected:
     IconList()
@@ -427,6 +444,25 @@ public:
     // Return content height
     virtual int getContentHeight();
     int getBackgroundGutter() const;
+
+    // Paint the list background, using the theme effect when one is configured
+    void fillBackground(FXDC& dc, int x, int y, int w, int h, int layer = 0, FXColor solid = 0);
+
+    // Color to blend semi-transparent icon edges against
+    FXColor getIconBlendColor() const
+    {
+        return backgroundEffect.empty() ? backColor : effectAverage;
+    }
+
+    FXbool hasBackgroundEffect() const
+    {
+        return !backgroundEffect.empty();
+    }
+
+    // Change the background effect specification (see list_background_effect in theme files)
+    void setBackgroundEffect(const FXString& spec);
+    void setHighlightColor(FXColor color);
+    virtual void setBackColor(FXColor color);
 
     // Icon list can receive focus
     virtual bool canFocus() const;

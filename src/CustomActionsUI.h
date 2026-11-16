@@ -20,8 +20,11 @@ class CustomActionsUI : public FXObject
     FXString loadError;
     bool toolbarShown = true;
     void rebuild();
+    void showToolbarMenu();
 public:
-    enum { ID_EDIT = 1, ID_TOGGLE, ID_LOAD_ERROR, ID_ACTION = 100 };
+    enum { ID_EDIT = 1, ID_TOGGLE, ID_LOAD_ERROR, ID_TOOLBAR_MENU, ID_REBUILD,
+           ID_STYLE_BOTH, ID_STYLE_ICONS, ID_STYLE_TITLES, ID_SIZE_16, ID_SIZE_24, ID_SIZE_32,
+           ID_ACTION = 100 };
     CustomActions model;
     CustomActionsUI(XFileExplorer*, FXDockSite*, FXMenuPane*, FXMenuBar*);
     ~CustomActionsUI();
@@ -32,6 +35,8 @@ public:
     FXIcon* icon(unsigned) const;
     // Rebuild after the custom toolbar icon size preference changes
     void refreshToolbarIcons() { rebuild(); }
+    // Opens the display/size menu when a custom toolbar button is right-clicked
+    long toolbarButtonRightClick(FXObject*, FXSelector);
 };
 
 // Owns cascading panes (FOX menu cascades do not own their popup).

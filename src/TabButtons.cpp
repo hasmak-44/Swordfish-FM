@@ -1,7 +1,9 @@
 #include "config.h"
+#include "Theme.h"
 #include "i18n.h"
 
 #include "AppLogger.h"
+#include "DragPreview.h"
 #include "TabButtons.h"
 #include "MessageBox.h"
 #include "RemoteDirectory.h"
@@ -15,6 +17,47 @@ extern FXString homedir;
 #define TAB_HOVER_DELAY 1000
 
 
+class TabCloseButton : public FXButton
+{
+    FXDECLARE(TabCloseButton)
+
+protected:
+    FXbool dropAfter = false;
+    TabCloseButton() {}
+
+public:
+    TabCloseButton(FXComposite* p, FXObject* tgt, FXSelector sel) :
+        FXButton(p, "", minicloseicon, tgt, sel, BUTTON_TOOLBAR, 0, 0, 0, 0, 0, 0, 2, 2) {}
+
+    void setDropAfter(FXbool after)
+    {
+        if (dropAfter != after)
+        {
+            dropAfter = after;
+            update();
+        }
+    }
+
+    long onPaint(FXObject* sender, FXSelector sel, void* ptr)
+    {
+        long result = FXButton::onPaint(sender, sel, ptr);
+        if (dropAfter)
+        {
+            FXDCWindow dc(this, static_cast<FXEvent*>(ptr));
+            dc.setForeground(getApp()->getSelbackColor());
+            dc.fillRectangle(getWidth() - 3, 0, 3, getHeight());
+        }
+        return result;
+    }
+};
+
+FXDEFMAP(TabCloseButton) TabCloseButtonMap[] =
+{
+    FXMAPFUNC(SEL_PAINT, 0, TabCloseButton::onPaint),
+};
+FXIMPLEMENT(TabCloseButton, FXButton, TabCloseButtonMap, ARRAYNUMBER(TabCloseButtonMap))
+
+
 // Tab label button that can be dragged onto the Bookmarks list or another tab,
 // and that accepts files dropped on it
 class TabDragButton : public FXButton
@@ -25,8 +68,14 @@ protected:
     FXint pressx = 0;
     FXint pressy = 0;
     FXuint pressstate = STATE_UP;
-    FXbool dragging = false;
+    FXbool started = false;             // Pointer moved far enough to start a drag
+    FXbool dragging = false;            // XDND drag out of the tab strip is active
     FXbool hovering = false;
+    FXint dropSide = 0;
+    FXint grab = 0;                     // Pointer offset inside the grabbed tab
+    FXint slot = -1;                    // Position the tab slides into within its strip
+    std::vector<FXint> homes;           // Laid-out tab positions when the drag started
+    DragPreview preview;
     FXDragType tabType = 0;
     FXDragType uriType = 0;
     static TabDragButton* dragged;      // Tab being dragged within this application
@@ -49,6 +98,77 @@ protected:
     {
         hovering = false;
         getApp()->removeTimeout(this, ID_HOVER);
+    }
+
+    void setDropSide(FXint side)
+    {
+        if (dropSide != side)
+        {
+            dropSide = side;
+            TabCloseButton* close = dynamic_cast<TabCloseButton*>(getNext());
+            if (close) close->setDropAfter(side > 0);
+            update();
+        }
+    }
+
+    FXWindow* frame(FXint i)
+    {
+        return tabs()->childAtIndex(i);
+    }
+
+    // Put every tab back where the layout placed it
+    void restoreTabs()
+    {
+        for (FXint i = 0; i < (FXint)homes.size(); i++)
+        {
+            frame(i)->move(homes[i], frame(i)->getY());
+        }
+        slot = -1;
+    }
+
+    // Like Firefox, keep the grabbed tab under the pointer and slide its neighbours aside
+    void slideTabs(FXint x)
+    {
+        FXint count = homes.size(), from = index();
+        FXint width = frame(from)->getWidth();
+        FXint step = width + tabs()->getHSpacing();
+        FXint last = homes[count - 1] + frame(count - 1)->getWidth() - width;
+        FXint left = FXCLAMP(homes[0], x - grab, last);
+        FXint centre = left + width / 2;
+        slot = from;
+        while (slot > 0 && centre < homes[slot - 1] + frame(slot - 1)->getWidth() / 2) slot--;
+        while (slot < count - 1 && centre > homes[slot + 1] + frame(slot + 1)->getWidth() / 2) slot++;
+        for (FXint i = 0; i < count; i++)
+        {
+            FXint home = homes[i];
+            if (i == from) home = left;
+            else if (slot < from && i >= slot && i < from) home += step;
+            else if (slot > from && i > from && i <= slot) home -= step;
+            frame(i)->move(home, frame(i)->getY());
+        }
+        frame(from)->raise();
+    }
+
+    // Pointer position in the tab strip, or false when the pointer has left the strip
+    FXbool inStrip(FXEvent* event, FXint& x)
+    {
+        FXint y;
+        tabs()->translateCoordinatesFrom(x, y, getRoot(), event->root_x, event->root_y);
+        FXint height = tabs()->getHeight();
+        return x >= 0 && x < tabs()->getWidth() && y >= -height / 2 && y < height + height / 2;
+    }
+
+    void finishDrag()
+    {
+        if (dragging && isDragging()) endDrag(false);
+        restoreTabs();
+        homes.clear();
+        preview.hide();
+        started = false;
+        dragging = false;
+        if (dragged == this) dragged = NULL;
+        setDragCursor(getDefaultCursor());
+        setDefaultCursor(getApp()->getDefaultCursor(DEF_HAND_CURSOR));
     }
 
 public:
@@ -92,6 +212,7 @@ public:
         pressx = event->root_x;
         pressy = event->root_y;
         pressstate = getState();
+        started = false;
         dragging = false;
         return FXButton::onLeftBtnPress(sender, sel, ptr);
     }
@@ -99,37 +220,110 @@ public:
     long onMotion(FXObject*, FXSelector, void* ptr)
     {
         FXEvent* event = (FXEvent*)ptr;
-        if (!dragging && (flags & FLAG_PRESSED) &&
-            FXABS(event->root_x - pressx) + FXABS(event->root_y - pressy) > 6 && beginDrag(&tabType, 1))
+        if (!started && (flags & FLAG_PRESSED) && tabs() &&
+            FXABS(event->root_x - pressx) + FXABS(event->root_y - pressy) > 6)
         {
-            dragging = true;
+            FXint x, y;
+            tabs()->translateCoordinatesFrom(x, y, getRoot(), pressx, pressy);
+            started = true;
             dragged = this;
+            grab = x - getParent()->getX();
+            homes.clear();
+            for (FXuint i = 0; i < tabs()->getNumActiveTabs(); i++)
+            {
+                homes.push_back(frame(i)->getX());
+            }
+            setState(pressstate);
         }
-        if (dragging)
+        if (!started)
         {
-            handleDrag(event->root_x, event->root_y, DRAG_COPY);
-            setDragCursor(getApp()->getDefaultCursor(didAccept() != DRAG_REJECT ? DEF_DNDCOPY_CURSOR :
-                                                     DEF_DNDSTOP_CURSOR));
+            return 0;
+        }
+        FXint x;
+        if (inStrip(event, x))
+        {
+            if (dragging)
+            {
+                // Back in the strip: drop the XDND drag and slide the tab again
+                endDrag(false);
+                dragging = false;
+                preview.hide();
+            }
+            slideTabs(x);
+            setDefaultCursor(getApp()->getDefaultCursor(DEF_MOVE_CURSOR));
             return 1;
         }
-        return 0;
+        if (!dragging)
+        {
+            restoreTabs();
+            if (!beginDrag(&tabType, 1))
+            {
+                return 1;
+            }
+            dragging = true;
+            preview.show(this, getText(), getFont(), getBackColor(), getTextColor(),
+                         getWidth(), getHeight(), event->root_x, event->root_y);
+        }
+        // Outside the strip the tab can still go to Bookmarks or the other panel's tabs
+        preview.move(event->root_x, event->root_y);
+        handleDrag(event->root_x, event->root_y, DRAG_COPY);
+        setDragCursor(getApp()->getDefaultCursor(didAccept() != DRAG_REJECT ? DEF_DNDCOPY_CURSOR :
+                                                 DEF_DNDSTOP_CURSOR));
+        return 1;
     }
 
     long onLeftBtnRelease(FXObject* sender, FXSelector sel, void* ptr)
     {
-        if (!dragging)
+        if (!started)
         {
             return FXButton::onLeftBtnRelease(sender, sel, ptr);
         }
-        dragging = false;
-        endDrag(didAccept() != DRAG_REJECT);
-        setDragCursor(getDefaultCursor());
+        FXEvent* event = (FXEvent*)ptr;
+        TabButtons* strip = tabs();
+        FXuint from = index();
+        FXint x, to = -1;
+        if (!dragging && inStrip(event, x))
+        {
+            slideTabs(x);
+            to = slot;
+        }
+        else if (dragging)
+        {
+            endDrag(didAccept() != DRAG_REJECT);
+            dragging = false;
+        }
+        finishDrag();
         ungrab();
         flags &= ~FLAG_PRESSED;
         flags |= FLAG_UPDATE;
+        if (to >= 0 && (FXuint)to != from)
+        {
+            strip->moveTab(from, to);
+        }
+        strip->recalc();
         // The drop may have moved another tab to this button
-        setState((tabs() && index() == tabs()->getCurrentTab()) ? STATE_DOWN : STATE_UP);
+        setState((index() == strip->getCurrentTab()) ? STATE_DOWN : STATE_UP);
         return 1;
+    }
+
+    long onPaint(FXObject* sender, FXSelector sel, void* ptr)
+    {
+        long result = FXButton::onPaint(sender, sel, ptr);
+        if (dropSide < 0)
+        {
+            FXDCWindow dc(this, static_cast<FXEvent*>(ptr));
+            dc.setForeground(getApp()->getSelbackColor());
+            dc.fillRectangle(0, 0, 3, getHeight());
+        }
+        return result;
+    }
+
+    long onUngrabbed(FXObject* sender, FXSelector sel, void* ptr)
+    {
+        if (started) finishDrag();
+        long result = FXButton::onUngrabbed(sender, sel, ptr);
+        setState((tabs() && index() == tabs()->getCurrentTab()) ? STATE_DOWN : STATE_UP);
+        return result;
     }
 
     long onDNDRequest(FXObject* sender, FXSelector sel, void* ptr)
@@ -155,6 +349,7 @@ public:
     {
         FXButton::onDNDLeave(sender, sel, ptr);
         stopHover();
+        setDropSide(0);
         return 1;
     }
 
@@ -171,12 +366,14 @@ public:
         }
         if (offeredDNDType(FROM_DRAGNDROP, tabType))
         {
-            if (dragged != this)
-            {
-                acceptDrop(DRAG_MOVE);
-            }
+            FXEvent* event = static_cast<FXEvent*>(ptr);
+            FXint x, y;
+            getRoot()->translateCoordinatesTo(x, y, this, event->root_x, event->root_y);
+            setDropSide(x < getWidth() / 2 ? -1 : 1);
+            acceptDrop(DRAG_MOVE);
             return 1;
         }
+        setDropSide(0);
         if (offeredDNDType(FROM_DRAGNDROP, uriType) && tabs()->canDropFiles(index()))
         {
             if (!hovering && index() != tabs()->getCurrentTab())
@@ -208,6 +405,8 @@ public:
     long onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
     {
         stopHover();
+        FXint side = dropSide;
+        setDropSide(0);
         if (FXButton::onDNDDrop(sender, sel, ptr))
         {
             return 1;
@@ -224,14 +423,19 @@ public:
             FXString path((FXchar*)data, len);
             FXFREE(&data);
             TabButtons* source = dragged ? dragged->tabs() : NULL;
+            FXuint slot = index() + (side > 0 ? 1 : 0);
             if (source == target && dragged->index() < target->getNumActiveTabs() &&
                 target->getPath(dragged->index()) == path)
             {
-                target->moveTab(dragged->index(), index());
+                FXuint from = dragged->index();
+                target->moveTab(from, slot - (from < slot ? 1 : 0));
             }
-            else if (dragged != this && !path.empty())
+            else if (!path.empty())
             {
+                FXuint count = target->getNumActiveTabs();
                 target->addTab(path);
+                if (target->getNumActiveTabs() > count)
+                    target->moveTab(count, slot);
             }
             dragged = NULL;
             return 1;
@@ -248,8 +452,10 @@ TabDragButton* TabDragButton::dragged = NULL;
 
 FXDEFMAP(TabDragButton) TabDragButtonMap[] =
 {
+    FXMAPFUNC(SEL_PAINT, 0, TabDragButton::onPaint),
     FXMAPFUNC(SEL_LEFTBUTTONPRESS, 0, TabDragButton::onLeftBtnPress),
     FXMAPFUNC(SEL_LEFTBUTTONRELEASE, 0, TabDragButton::onLeftBtnRelease),
+    FXMAPFUNC(SEL_UNGRABBED, 0, TabDragButton::onUngrabbed),
     FXMAPFUNC(SEL_MOTION, 0, TabDragButton::onMotion),
     FXMAPFUNC(SEL_DND_REQUEST, 0, TabDragButton::onDNDRequest),
     FXMAPFUNC(SEL_DND_LEAVE, 0, TabDragButton::onDNDLeave),
@@ -261,12 +467,16 @@ FXDEFMAP(TabDragButton) TabDragButtonMap[] =
 FXIMPLEMENT(TabDragButton, FXButton, TabDragButtonMap, ARRAYNUMBER(TabDragButtonMap))
 
 
-// Tab label for a folder: SMB mounts as share@computer, MTP devices by model, servers by name
+// Tab label for a folder: Trash, SMB mounts, MTP devices and servers have special names
 static FXString tabLabel(const FXString& pathname)
 {
     if (pathname == PATHSEPSTRING)
     {
         return PATHSEPSTRING;
+    }
+    if (pathname == FXPath::absolute(xf_trashdatahome() + PATHSEPSTRING TRASHFILESPATH))
+    {
+        return _("Trash");
     }
     if (RemoteDirectory::isMedia(pathname))
     {
@@ -310,6 +520,7 @@ FXDEFMAP(TabButtons) TabButtonsMap[] =
     FXMAPFUNCS(SEL_UPDATE, TabButtons::ID_START_TAB, TabButtons::ID_END_TAB, TabButtons::onUpdCurrentTab),
     FXMAPFUNCS(SEL_COMMAND, TabButtons::ID_START_BOOKMARK, TabButtons::ID_END_BOOKMARK, TabButtons::onCmdBookmarkTab),
     FXMAPFUNC(SEL_COMMAND, TabButtons::ID_BOOKMARK_GROUP, TabButtons::onCmdBookmarkGroup),
+    FXMAPFUNC(SEL_COMMAND, TabButtons::ID_THEME, TabButtons::onTheme),
 };
 
 FXIMPLEMENT(TabButtons, FXHorizontalFrame, TabButtonsMap, ARRAYNUMBER(TabButtonsMap))
@@ -325,6 +536,8 @@ void TabButtons::setTabColor(int index, FXColor color)
     tabButtons[index]->getParent()->setBackColor(color);
     tabButtons[index]->setBackColor(color);
     closeButtons[index]->setBackColor(color);
+    tabButtons[index]->setTextColor(color == activecolor ? activeTextColor : textcolor);
+    closeButtons[index]->setTextColor(color == activecolor ? activeTextColor : textcolor);
 
     // With shaded bars, the current tab is drawn flat in the lighter base color instead of pressed
     if ((basecolor != getApp()->getBaseColor()) && (color == activecolor))
@@ -339,6 +552,8 @@ void TabButtons::setTabColor(int index, FXColor color)
 TabButtons::TabButtons(FXComposite* a, FilePanel* fpanel, DirPanel* dpanel, FXuint opts) :
     FXHorizontalFrame(a, opts, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2)
 {
+    textcolor = getApp()->getForeColor();
+    activeTextColor = getApp()->getSelforeColor();
     // Frame background colors of selected and unselected tab
     // With bar shading, inactive tabs use the shaded bar color and the current tab the lighter base color
     basecolor = xf_barcolor(getApp(), 2);
@@ -375,8 +590,7 @@ TabButtons::TabButtons(FXComposite* a, FilePanel* fpanel, DirPanel* dpanel, FXui
         FXHorizontalFrame* buttons = new FXHorizontalFrame(this, FRAME_GROOVE | LAYOUT_SIDE_TOP | LAYOUT_LEFT |
                                                            LAYOUT_FILL_Y, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2);
         tabButtons.push_back(new TabDragButton(buttons, this, idTab, BUTTON_TOOLBAR));
-        closeButtons.push_back(new FXButton(buttons, "", minicloseicon, this, idClose, BUTTON_TOOLBAR,
-                               0, 0, 0, 0, 0, 0, 2, 2));
+        closeButtons.push_back(new TabCloseButton(buttons, this, idClose));
 
         idTab++;
         idClose++;
@@ -897,6 +1111,7 @@ long TabButtons::onBlankMenu(FXObject*, FXSelector, void*)
 {
     FXMenuPane menu(this);
     new FXMenuCommand(&menu, _("New &Tab"), mininewtabicon, this, ID_NEW_TAB);
+    xf_windowcolors(&menu);
     menu.create();
     int x, y;
     FXuint state;
@@ -947,6 +1162,7 @@ long TabButtons::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
     
     new FXMenuCommand(menu, _("&Close Tab"), minicloseicon, this, index + ID_START_CLOSE);
 
+    xf_windowcolors(menu);
     menu->create();
     menu->popup(NULL, x, y);
     getApp()->runModalWhileShown(menu);
@@ -1092,6 +1308,29 @@ void TabButtons::showTabStates(void)
         closeButtons[i]->setState(active ? STATE_DOWN : STATE_UP);
         setTabColor(i, active ? activecolor : basecolor);
     }
+}
+
+long TabButtons::onTheme(FXObject*, FXSelector, void* pointer)
+{
+    const Theme& theme = *static_cast<const Theme*>(pointer);
+    basecolor = theme.colorFor("tabs", "background");
+    shadecolor = basecolor;
+    activecolor = theme.colorFor("tabs", "selection_background");
+    if (!theme.overrides("tabs", "selection_background")) activecolor = themeBlend(basecolor, activecolor, 0.4);
+    textcolor = theme.colorFor("tabs", "foreground");
+    activeTextColor = theme.colorFor("tabs", "selection_foreground");
+    normalFont = tabButtons.empty() ? getApp()->getNormalFont() : tabButtons[0]->getFont();
+    FXFontDesc description;
+    normalFont->getFontDesc(description);
+    description.weight = description.weight == FXFont::Normal ? FXFont::Bold : FXFont::Normal;
+    FXFont* previous = highlightFont;
+    highlightFont = new FXFont(getApp(), description);
+    highlightFont->create();
+    setBackColor(basecolor);
+    showTabStates();
+    delete previous;
+    recalc();
+    return 1;
 }
 
 

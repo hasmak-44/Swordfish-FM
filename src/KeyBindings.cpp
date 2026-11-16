@@ -90,7 +90,7 @@ KeyBindingsBox::KeyBindingsBox(FXWindow* win, FXStringDict* glbbindings, FXStrin
     FXTabBook* tabbook = new FXTabBook(contents, NULL, 0, LAYOUT_FILL_X | LAYOUT_FILL_Y | LAYOUT_RIGHT);
 
     // First tab is global key bindings
-    new FXTabItem(tabbook, _("&Global Key Bindings"), NULL);
+    new DialogTabItem(tabbook, _("&Global Key Bindings"), NULL);
     FXVerticalFrame* frame1 = new FXVerticalFrame(tabbook, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y,
                                                   0, 0, 0, 0, 0, 0, 20, 20);
     new FXLabel(frame1, FXString::null, NULL, JUSTIFY_LEFT); // For spacing
@@ -104,7 +104,7 @@ KeyBindingsBox::KeyBindingsBox(FXWindow* win, FXStringDict* glbbindings, FXStrin
                                    LAYOUT_SIDE_TOP | LAYOUT_LEFT | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
     // Second tab is Xfe key bindings
-    new FXTabItem(tabbook, _("S&wordfish Key Bindings"), NULL);
+    new DialogTabItem(tabbook, _("S&wordfish Key Bindings"), NULL);
     FXVerticalFrame* frame2 = new FXVerticalFrame(tabbook, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y,
                                                   0, 0, 0, 0, 0, 0, 20, 20);
     new FXLabel(frame2, FXString::null, NULL, JUSTIFY_LEFT); // For spacing
@@ -118,7 +118,7 @@ KeyBindingsBox::KeyBindingsBox(FXWindow* win, FXStringDict* glbbindings, FXStrin
                                    LAYOUT_SIDE_TOP | LAYOUT_LEFT | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
     // Third tab is Xfi key bindings
-    new FXTabItem(tabbook, _("Xf&i Key Bindings"), NULL);
+    new DialogTabItem(tabbook, _("Xf&i Key Bindings"), NULL);
     FXVerticalFrame* frame3 = new FXVerticalFrame(tabbook, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y,
                                                   0, 0, 0, 0, 0, 0, 20, 20);
     new FXLabel(frame3, FXString::null, NULL, JUSTIFY_LEFT); // For spacing
@@ -132,7 +132,7 @@ KeyBindingsBox::KeyBindingsBox(FXWindow* win, FXStringDict* glbbindings, FXStrin
                                    LAYOUT_SIDE_TOP | LAYOUT_LEFT | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
     // Fourth tab is Xfw key bindings
-    new FXTabItem(tabbook, _("Xf&w Key Bindings"), NULL);
+    new DialogTabItem(tabbook, _("Xf&w Key Bindings"), NULL);
     FXVerticalFrame* frame4 = new FXVerticalFrame(tabbook, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y,
                                                   0, 0, 0, 0, 0, 0, 20, 20);
     new FXLabel(frame4, FXString::null, NULL, JUSTIFY_LEFT); // For spacing

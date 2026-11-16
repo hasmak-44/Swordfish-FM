@@ -41,6 +41,7 @@ public:
         // Note: Place any additional id's AFTER ID_END_LINK
         ID_END_LINK = ID_START_LINK + NMAX_LINKS - 1,
         ID_FOCUS_BUTTON,
+        ID_THEME,
         ID_LAST
     };
 
@@ -51,6 +52,7 @@ public:
     long onCmdLinkButton(FXObject*, FXSelector, void*);
     long onCmdFocusButton(FXObject*, FXSelector, void*);
     long onUpdPath(FXObject*, FXSelector, void*);
+    long onTheme(FXObject*, FXSelector, void*);
     void setPath(FXString);
     void focus();
     void unfocus();

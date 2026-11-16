@@ -855,6 +855,7 @@ long FileList::showColumnMenu(FXEvent* event)
         item->setCheck(getHeaderIndex(id) >= 0);
         if (id == ID_COL_NAME || id == ID_COL_DIRNAME) item->disable();
     }
+    xf_windowcolors(&menu);
     menu.create();
     menu.popup(NULL, event->root_x, event->root_y);
     getApp()->runModalWhileShown(&menu);
@@ -883,7 +884,7 @@ int FileList::getHeaderIndex(FXuint id)
     else
     {
         // In trash
-        if (getNumHeaders() == (int)nbColsTrash)
+        if (inTrash)
         {
             for (FXuint i = 0; i < nbColsTrash; i++)
             {
@@ -1649,6 +1650,7 @@ long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuSeparator(&menu);
         new FXMenuCommand(&menu, _("Cancel"), NULL, this, FileList::ID_DRAG_REJECT);
 
+        xf_windowcolors(&menu);
         menu.create();
         menu.popup(NULL, x, y);
         getApp()->runModalWhileShown(&menu);
@@ -2619,7 +2621,7 @@ long FileList::onUpdSortByOrigpath(FXObject* sender, FXSelector, void*)
                    sortfunc == ascendingOrigpathCaseMix || sortfunc == descendingOrigpathCaseMix) ?
                    FXSEL(SEL_COMMAND, ID_CHECK) : FXSEL(SEL_COMMAND, ID_UNCHECK), NULL);
 
-    if (!(options & FILELIST_SEARCH) && (getNumHeaders() == (int)nbColsTrash))
+    if (!(options & FILELIST_SEARCH) && inTrash)
     {
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
     }
@@ -2662,7 +2664,7 @@ long FileList::onUpdSortByDeldate(FXObject* sender, FXSelector, void*)
                    sortfunc == ascendingDeldateMix || sortfunc == descendingDeldateMix) ?
                    FXSEL(SEL_COMMAND, ID_CHECK) : FXSEL(SEL_COMMAND, ID_UNCHECK), NULL);
 
-    if (!(options & FILELIST_SEARCH) && (getNumHeaders() == (int)nbColsTrash))
+    if (!(options & FILELIST_SEARCH) && inTrash)
     {
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
     }
@@ -3947,7 +3949,7 @@ long FileList::onUpdHeader(FXObject*, FXSelector, void* ptr)
     else
     {
         // Columns always displayed in a file list, when in Trash
-        if (!(options & FILELIST_SEARCH) && (getNumHeaders() == (int)nbColsTrash))
+        if (!(options & FILELIST_SEARCH) && inTrash)
         {
             header->setArrowDir(getHeaderIndex(ID_COL_ORIGPATH), (sortfunc == ascendingOrigpath ||
                                 sortfunc == ascendingOrigpathCase || sortfunc == ascendingOrigpathMix ||

@@ -479,6 +479,13 @@ public:
     {
         return list;
     }
+    FXString themeArea(FXWindow* window) const
+    {
+        if (window == addressbar) return "address";
+        if (window == statusbar) return "status";
+        if (window == tabbar) return "tabs";
+        return FXString::null;
+    }
 
     // Set ignore case
     void setIgnoreCase(FXbool ignorecase)

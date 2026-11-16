@@ -3,6 +3,7 @@
 
 
 #include "DialogBox.h"
+#include <sys/stat.h>
 
 // Return values
 enum OverwriteBoxReturn
@@ -12,6 +13,8 @@ enum OverwriteBoxReturn
     OVWBOX_CLICKED_OVERWRITE_ALL    = 2,
     OVWBOX_CLICKED_SKIP             = 3,
     OVWBOX_CLICKED_SKIP_ALL         = 4,
+    OVWBOX_CLICKED_RENAME           = 5,
+    OVWBOX_CLICKED_RENAME_ALL       = 6,
 };
 
 // Dialog type
@@ -26,6 +29,7 @@ class FXAPI OverwriteBox : public DialogBox
 {
     FXDECLARE(OverwriteBox)
 protected:
+    FXCheckButton* applyToAll = NULL;
     OverwriteBox()
     {
     }
@@ -42,9 +46,14 @@ public:
         ID_CLICKED_OVERWRITE_ALL,
         ID_CLICKED_SKIP,
         ID_CLICKED_SKIP_ALL,
+        ID_CLICKED_RENAME,
         ID_LAST
     };
 public:
+    OverwriteBox(FXWindow* win, const FXString& source, const FXString& destination,
+                 const struct stat& srcinfo, const struct stat& dstinfo, const FXString& renamed,
+                 FXbool merge);
+
     OverwriteBox(FXWindow* win, const FXString& name, const FXString& text, FXuint type = OVWBOX_MULTIPLE_FILES,
                  FXuint opts = DECOR_TITLE | DECOR_BORDER, int x = 0, int y = 0);
 

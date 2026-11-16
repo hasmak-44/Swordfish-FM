@@ -9,6 +9,8 @@
 #include "DirPanel.h"
 #include "FilePanel.h"
 
+struct Theme;
+
 class FXAPI TabButtons : public FXHorizontalFrame
 {
     FXDECLARE(TabButtons)
@@ -38,6 +40,8 @@ protected:
     FXColor shadecolor = FXRGB(0, 0, 0);                // Base color
     FXColor basecolor = FXRGB(0, 0, 0);                 // Shade color
     FXColor activecolor = FXRGB(0, 0, 0);               // Current tab color
+    FXColor textcolor = FXRGB(0, 0, 0);
+    FXColor activeTextColor = FXRGB(0, 0, 0);
 
     void setTabColor(int, FXColor);
     void showTabStates(void);
@@ -86,6 +90,7 @@ public:
         ID_END_BOOKMARK = ID_START_BOOKMARK + NMAX_TABS - 1,
 
         ID_BOOKMARK_GROUP,
+        ID_THEME,
         ID_LAST
     };
 
@@ -110,6 +115,7 @@ public:
     long onBlankMenu(FXObject*, FXSelector, void*);
     long onUpdMoveLeft(FXObject* sender, FXSelector sel, void* ptr);
     long onUpdMoveRight(FXObject* sender, FXSelector sel, void* ptr);
+    long onTheme(FXObject*, FXSelector, void*);
     
     // Number of active tabs
     FXuint getNumActiveTabs(void)

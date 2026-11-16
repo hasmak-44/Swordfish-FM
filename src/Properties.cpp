@@ -217,13 +217,13 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString file, FXString path, FXbool
     FXTabBook* tabbook = new FXTabBook(contents, NULL, 0, LAYOUT_FILL_X | LAYOUT_FILL_Y | LAYOUT_RIGHT);
 
     // First tab is General
-    general = new FXTabItem(tabbook, _("&General"), NULL);
+    general = new DialogTabItem(tabbook, _("&General"), NULL);
     FXPacker* genpack = new FXPacker(tabbook, FRAME_NONE);
     FXGroupBox* generalgroup = new FXGroupBox(genpack, FXString::null, FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
     FXVerticalFrame* generalframe = new FXVerticalFrame(generalgroup, LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
     // Second tab is Access Permissions
-    FXTabItem* permstab = new FXTabItem(tabbook, _("&Permissions"), NULL);
+    FXTabItem* permstab = new DialogTabItem(tabbook, _("&Permissions"), NULL);
     perms = new PermsFrame(tabbook, this);
 
     // Permission tab is disabled for parent directory
@@ -233,7 +233,7 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString file, FXString path, FXbool
     }
 
     // Third tab - file associations
-    FXTabItem* fassoctab = new FXTabItem(tabbook, _("&File Associations"), NULL);
+    FXTabItem* fassoctab = new DialogTabItem(tabbook, _("&File Associations"), NULL);
     FXPacker* fassocpack = new FXPacker(tabbook, FRAME_NONE);
     new FXLabel(fassocpack, FXString::null, NULL, JUSTIFY_LEFT); // For spacing
     FXGroupBox* fassocgroup = new FXGroupBox(fassocpack, _("Associations"),
@@ -951,7 +951,7 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString* file, int n, FXString* pat
     FXTabBook* tabbook = new FXTabBook(contents, NULL, 0, LAYOUT_FILL_X | LAYOUT_FILL_Y | LAYOUT_RIGHT);
 
     // First tab is General
-    new FXTabItem(tabbook, _("&General"), NULL);
+    new DialogTabItem(tabbook, _("&General"), NULL);
     FXVerticalFrame* generalframe = new FXVerticalFrame(tabbook, FRAME_NONE);
     FXGroupBox* attrgroup = new FXGroupBox(generalframe, _("Properties"),
                                            GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
@@ -968,7 +968,7 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString* file, int n, FXString* pat
     fileSizeDetails = new FXLabel(attrmatrix, FXString::null, NULL, LAYOUT_LEFT | JUSTIFY_LEFT);
 
     // Second tab is Access Permissions
-    new FXTabItem(tabbook, _("&Permissions"), NULL);
+    new DialogTabItem(tabbook, _("&Permissions"), NULL);
     perms = new PermsFrame(tabbook, this);
 
     // Get file/link info of the first file of the list

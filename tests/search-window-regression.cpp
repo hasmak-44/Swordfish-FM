@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include "icons.h"
 #include "xfeutils.h"
+#include "DragPreview.h"
 #include "FileList.h"
 #include "TextWindow.h"
 #include "SearchWindow.h"
@@ -17,13 +18,33 @@
 #include "MessageBox.h"
 #include "Preferences.h"
 #include "TabButtons.h"
+#include "File.h"
 #include <fxkeys.h>
+#include <dlfcn.h>
 #include <fstream>
+#include <iterator>
+#include <vector>
 #include <sys/stat.h>
 
 extern FXMainWindow* mainWindow;
 extern FXString execpath, homedir, xdgdatahome, xdgconfighome;
 extern FXString clipboard;
+
+static FXString crossDeviceSource;
+static int crossDeviceRenames;
+
+extern "C" int rename(const char* source, const char* destination) noexcept
+{
+    if (!crossDeviceSource.empty() && FXString(source).left(crossDeviceSource.length()) == crossDeviceSource)
+    {
+        ++crossDeviceRenames;
+        errno = EXDEV;
+        return -1;
+    }
+    typedef int (*Rename)(const char*, const char*);
+    static Rename realRename = reinterpret_cast<Rename>(dlsym(RTLD_NEXT, "rename"));
+    return realRename(source, destination);
+}
 
 static void checkPreferencesScrolling(FXApp& app, FXWindow* window)
 {
@@ -146,6 +167,26 @@ public:
         assert(dialog->getText().contains("will not download packages or install software"));
         seen = true;
         dialog->handle(this, FXSEL(SEL_COMMAND, accept ? MessageBox::ID_CLICKED_YES : MessageBox::ID_CLICKED_NO), NULL);
+        return 1;
+    }
+};
+
+class ArchiveReadOnlyNotice : public FXObject
+{
+public:
+    FXApp* app;
+    FXbool seen = false;
+    ArchiveReadOnlyNotice(FXApp* application) : app(application) {}
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        MessageBox* dialog = dynamic_cast<MessageBox*>(app->getModalWindow());
+        if (!dialog) { app->addTimeout(this, 1, 10); return 1; }
+        assert(dialog->getTitle() == "ZIP archive opened read-only");
+        assert(dialog->getText().contains("To protect your data, ZIP archives are always opened read-only"));
+        assert(dialog->getText().contains("drag or copy files out"));
+        assert(dialog->getText().contains("cannot add, edit, rename, or delete"));
+        seen = true;
+        dialog->handle(this, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_OK), NULL);
         return 1;
     }
 };
@@ -300,6 +341,16 @@ public:
     }
 };
 
+static DragPreviewTip* visibleDragPreview(FXApp* app)
+{
+    for (FXWindow* child = app->getRootWindow()->getFirst(); child; child = child->getNext())
+    {
+        DragPreviewTip* tip = dynamic_cast<DragPreviewTip*>(child);
+        if (tip && tip->shown()) return tip;
+    }
+    return NULL;
+}
+
 static void checkColumns(FileList* files)
 {
     const std::vector<FXuint> original = files->getColumnLayout();
@@ -322,15 +373,32 @@ static void checkColumns(FileList* files)
     assert(menu.seen);
     files->layout();
     header->layout();
+    const FXint headerWidth = header->getWidth();
+    header->resize(FXMAX(headerWidth, header->getTotalSize() + 1), header->getHeight());
     FXEvent event = {};
     event.win_x = header->getItem(1)->getPos() + header->getPosition() + 40;
     event.win_y = header->getHeight() / 2;
     event.state = LEFTBUTTONMASK;
     header->handle(NULL, FXSEL(SEL_LEFTBUTTONPRESS, 0), &event);
-    event.win_x = header->getItem(2)->getPos() + header->getPosition() + 40;
+    FXWindow* focus = files->getApp()->getFocusWindow();
+    event.win_x = header->getItem(2)->getPos() + header->getPosition() + 160;
+    header->translateCoordinatesTo(event.root_x, event.root_y, header->getRoot(), event.win_x, event.win_y);
+    header->handle(NULL, FXSEL(SEL_MOTION, 0), &event);
+    // The column slides inside the header; no detached tooltip follows the pointer.
+    assert(!visibleDragPreview(files->getApp()));
+    assert(files->getApp()->getFocusWindow() == focus);
+    header->ungrab();
+    header->handle(NULL, FXSEL(SEL_UNGRABBED, 0), &event);
+    assert(!visibleDragPreview(files->getApp()) && !header->isItemPressed(1));
+    assert(files->getHeaderId(1) == FileList::ID_COL_SIZE);
+
+    event.win_x = header->getItem(1)->getPos() + header->getPosition() + 40;
+    header->handle(NULL, FXSEL(SEL_LEFTBUTTONPRESS, 0), &event);
+    event.win_x = header->getItem(2)->getPos() + header->getPosition() + 160;
     header->handle(NULL, FXSEL(SEL_MOTION, 0), &event);
     event.state = 0;
     header->handle(NULL, FXSEL(SEL_LEFTBUTTONRELEASE, 0), &event);
+    assert(!visibleDragPreview(files->getApp()));
     assert(files->getHeaderId(1) == FileList::ID_COL_TYPE);
     assert(files->getHeaderId(2) == FileList::ID_COL_SIZE);
     assert(files->getHeaderSize(1) == 211 && files->getHeaderSize(2) == 177);
@@ -338,6 +406,29 @@ static void checkColumns(FileList* files)
     assert(files->getItemText(0).section('\t', 1) == type);
     assert(files->getItemText(0).section('\t', 2) == size);
     assert(files->isItemSelected(0));
+
+    event.state = LEFTBUTTONMASK;
+    event.win_x = header->getItem(2)->getPos() + header->getPosition() + 40;
+    header->handle(NULL, FXSEL(SEL_LEFTBUTTONPRESS, 0), &event);
+    event.win_x = header->getItem(1)->getPos() + header->getPosition() + 20;
+    header->handle(NULL, FXSEL(SEL_MOTION, 0), &event);
+    event.state = 0;
+    header->handle(NULL, FXSEL(SEL_LEFTBUTTONRELEASE, 0), &event);
+    assert(files->getHeaderId(1) == FileList::ID_COL_SIZE);
+    assert(files->getHeaderId(2) == FileList::ID_COL_TYPE);
+
+    event.state = LEFTBUTTONMASK;
+    event.win_x = header->getItem(1)->getPos() + header->getPosition() + 40;
+    header->handle(NULL, FXSEL(SEL_LEFTBUTTONPRESS, 0), &event);
+    event.win_x = header->getWidth();
+    header->handle(NULL, FXSEL(SEL_MOTION, 0), &event);
+    event.state = 0;
+    header->handle(NULL, FXSEL(SEL_LEFTBUTTONRELEASE, 0), &event);
+    assert(files->getHeaderId(1) == FileList::ID_COL_SIZE);
+    assert(files->getHeaderId(2) == FileList::ID_COL_TYPE);
+    assert(!visibleDragPreview(files->getApp()));
+    header->resize(headerWidth, header->getHeight());
+
     files->onToggleColumn(NULL, FXSEL(SEL_COMMAND, FileList::ID_COLUMN_TOGGLE +
                              FileList::ID_COL_TYPE - FileList::ID_COL_NAME), NULL);
     assert(files->getHeaderIndex(FileList::ID_COL_TYPE) == -1);
@@ -350,6 +441,253 @@ static void checkColumns(FileList* files)
     files->killSelection();
     files->setColumnLayout(original);
     puts("PASS: real header drag reorders values and widths; column checklist toggles visibility and protects Name");
+}
+
+class ConflictResponder : public FXObject
+{
+    FXApp& app;
+    struct Choice
+    {
+        FXuint command;
+        bool all;
+        bool merge;
+    };
+    std::vector<Choice> choices;
+public:
+    FXuint answered = 0;
+    FXString details;
+    explicit ConflictResponder(FXApp& application) : app(application) {}
+    ~ConflictResponder() { app.removeTimeout(this, 1); }
+    void choose(FXuint command, bool all = false, bool merge = false)
+    {
+        choices.push_back({command, all, merge});
+    }
+    void start() { app.addTimeout(this, 1, 10); }
+    void collect(FXWindow* window, FXCheckButton*& checkbox, FXButton*& replace)
+    {
+        if (FXLabel* label = dynamic_cast<FXLabel*>(window)) details += label->getText() + "\n";
+        if (FXGroupBox* group = dynamic_cast<FXGroupBox*>(window)) details += group->getText() + "\n";
+        if (FXTextField* field = dynamic_cast<FXTextField*>(window)) details += field->getText() + "\n";
+        if (FXCheckButton* check = dynamic_cast<FXCheckButton*>(window)) checkbox = check;
+        if (FXButton* button = dynamic_cast<FXButton*>(window))
+            if (button->getSelector() == OverwriteBox::ID_CLICKED_OVERWRITE) replace = button;
+        for (FXWindow* child = window->getFirst(); child; child = child->getNext())
+            collect(child, checkbox, replace);
+    }
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        OverwriteBox* dialog = dynamic_cast<OverwriteBox*>(app.getModalWindow());
+        if (dialog)
+        {
+            assert(answered < choices.size());
+            const Choice& choice = choices[answered++];
+            FXCheckButton* checkbox = NULL;
+            FXButton* replace = NULL;
+            details.clear();
+            collect(dialog, checkbox, replace);
+            assert(checkbox && replace);
+            assert(replace->getText() == (choice.merge ? "Merge" : "Replace"));
+            assert(details.contains("Source (incoming)") && details.contains("Destination (existing)"));
+            assert(details.contains("Location:") && details.contains("Modified:"));
+            assert(!checkbox->getCheck());
+            checkbox->setCheck(choice.all);
+            dialog->handle(this, FXSEL(SEL_COMMAND, choice.command), NULL);
+        }
+        else
+        {
+            assert(!dynamic_cast<MessageBox*>(app.getModalWindow()));
+        }
+        app.addTimeout(this, 1, 10);
+        return 1;
+    }
+    void done() { assert(answered == choices.size()); app.removeTimeout(this, 1); }
+};
+
+static void writeConflictFile(const FXString& path, const char* contents)
+{
+    std::ofstream file(path.text());
+    file << contents;
+    assert(file.good());
+}
+
+static std::string readConflictFile(const FXString& path)
+{
+    std::ifstream file(path.text());
+    assert(file.good());
+    return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+}
+
+static void checkFileConflicts(FXApp& app, FXWindow* owner, const FXString& fixture)
+{
+    const FXString root = fixture + "/conflicts";
+    assert(mkdir(root.text(), 0700) == 0);
+    const FXString source = root + "/source", destination = root + "/destination";
+    assert(mkdir(source.text(), 0700) == 0 && mkdir(destination.text(), 0700) == 0);
+    const FXulong start = xf_getcurrenttime() - 1;
+    const char* names[] = {"report.txt", "backup.tar.gz", ".hidden"};
+    for (const char* name : names)
+    {
+        writeConflictFile(source + "/" + name, "incoming");
+        writeConflictFile(destination + "/" + name, "existing");
+    }
+    writeConflictFile(destination + "/report (2).txt", "numbered");
+    assert(::symlink("missing", (destination + "/report (1).txt").text()) == 0);
+    app.reg().writeUnsignedEntry("OPTIONS", "confirm_overwrite", true);
+    {
+        File operation(owner, "Conflict regression", COPY, 3);
+        operation.create();
+        ConflictResponder answer(app);
+        answer.choose(OverwriteBox::ID_CLICKED_RENAME, true);
+        answer.start();
+        for (const char* name : names)
+            assert(operation.copy(source + "/" + name, destination, "1 kB", 1024, start) == 1);
+        answer.done();
+        assert(readConflictFile(destination + "/report (3).txt") == "incoming");
+        assert(readConflictFile(destination + "/report (2).txt") == "numbered");
+        assert(readConflictFile(destination + "/backup (1).tar.gz") == "incoming");
+        assert(readConflictFile(destination + "/.hidden (1)") == "incoming");
+        for (const char* name : names) assert(readConflictFile(destination + "/" + name) == "existing");
+        assert(answer.details.contains("8 bytes") && answer.details.contains("report.txt"));
+        assert(answer.details.contains(source) && answer.details.contains(destination));
+    }
+    {
+        File operation(owner, "Conflict regression", COPY, 3);
+        operation.create();
+        ConflictResponder answer(app);
+        answer.choose(OverwriteBox::ID_CLICKED_OVERWRITE);
+        answer.choose(OverwriteBox::ID_CLICKED_SKIP);
+        answer.choose(OverwriteBox::ID_CLICKED_CANCEL);
+        answer.start();
+        assert(operation.copy(source + "/report.txt", destination, "1 kB", 1024, start) == 1);
+        assert(operation.copy(source + "/backup.tar.gz", destination, "1 kB", 1024, start) == 1);
+        assert(operation.copy(source + "/.hidden", destination, "1 kB", 1024, start) == 0);
+        answer.done();
+        assert(operation.isCancelled());
+        assert(readConflictFile(destination + "/report.txt") == "incoming");
+        assert(readConflictFile(destination + "/backup.tar.gz") == "existing");
+        assert(readConflictFile(destination + "/.hidden") == "existing");
+    }
+    puts("PASS: file conflicts show source/destination metadata; numbered Rename keeps both, applies to all, skips occupied names and resets per operation; Replace, Skip and Cancel work");
+
+    for (FXint mode = 0; mode < 5; ++mode)
+    {
+        const FXbool moving = mode == 1 || mode == 2 || mode == 4;
+        const FXString from = root + "/from" + FXStringVal(mode), to = root + "/to" + FXStringVal(mode);
+        for (const FXString& path : {from, to, from + "/tree", to + "/tree",
+                                    from + "/tree/nested", to + "/tree/nested"})
+            assert(mkdir(path.text(), 0700) == 0);
+        writeConflictFile(from + "/tree/nested/conflict.txt", "incoming");
+        writeConflictFile(to + "/tree/nested/conflict.txt", "existing");
+        writeConflictFile(from + "/tree/nested/another.txt", "incoming");
+        writeConflictFile(to + "/tree/nested/another.txt", "existing");
+        writeConflictFile(from + "/tree/new.txt", "new");
+        writeConflictFile(from + "/tree/nested/new.txt", "nested");
+        writeConflictFile(to + "/tree/only-here.txt", "keep");
+        File operation(owner, "Merge regression", moving ? MOVE : COPY);
+        operation.create();
+        ConflictResponder answer(app);
+        answer.choose(OverwriteBox::ID_CLICKED_OVERWRITE, true, true);
+        answer.choose(mode == 4 ? OverwriteBox::ID_CLICKED_CANCEL :
+                      mode == 3 ? OverwriteBox::ID_CLICKED_OVERWRITE : OverwriteBox::ID_CLICKED_SKIP,
+                      mode != 4);
+        answer.start();
+        crossDeviceRenames = 0;
+        if (mode == 2) crossDeviceSource = from + "/";
+        assert((moving ? operation.fmove(from + "/tree", to, "1 kB", 1024, start) :
+                         operation.copy(from + "/tree", to, "1 kB", 1024, start)) == (mode == 4 ? 0 : 1));
+        answer.done();
+        if (mode == 2) assert(crossDeviceRenames > 0);
+        crossDeviceSource.clear();
+        assert(readConflictFile(from + "/tree/nested/conflict.txt") == "incoming");
+        assert(readConflictFile(from + "/tree/nested/another.txt") == "incoming");
+        assert(readConflictFile(to + "/tree/nested/conflict.txt") == (mode == 3 ? "incoming" : "existing"));
+        assert(readConflictFile(to + "/tree/nested/another.txt") == (mode == 3 ? "incoming" : "existing"));
+        assert(readConflictFile(to + "/tree/only-here.txt") == "keep");
+        if (mode == 4)
+        {
+            assert(operation.isCancelled());
+            continue;
+        }
+        assert(readConflictFile(to + "/tree/new.txt") == "new");
+        assert(readConflictFile(to + "/tree/nested/new.txt") == "nested");
+        assert(xf_existfile(from + "/tree/new.txt") == !moving);
+        assert(xf_existfile(from + "/tree/nested/new.txt") == !moving);
+    }
+    puts("PASS: copy, same-drive move and cross-device move separate Merge All from file Replace/Skip All; skipped sources and unrelated destinations survive; nested Cancel stops safely");
+    {
+        writeConflictFile(source + "/link.txt", "incoming");
+        writeConflictFile(destination + "/untouched.txt", "external");
+        assert(::symlink("untouched.txt", (destination + "/link.txt").text()) == 0);
+        File operation(owner, "Link conflict regression", COPY);
+        operation.create();
+        ConflictResponder answer(app);
+        answer.choose(OverwriteBox::ID_CLICKED_OVERWRITE);
+        answer.start();
+        assert(operation.copy(source + "/link.txt", destination, "1 kB", 1024, start) == 1);
+        answer.done();
+        assert(readConflictFile(destination + "/link.txt") == "incoming");
+        assert(readConflictFile(destination + "/untouched.txt") == "external");
+    }
+    {
+        File operation(owner, "Numbered move regression", MOVE, 3);
+        operation.create();
+        ConflictResponder answer(app);
+        answer.choose(OverwriteBox::ID_CLICKED_RENAME, true);
+        answer.choose(OverwriteBox::ID_CLICKED_RENAME, true, true);
+        answer.start();
+        crossDeviceSource = source + "/";
+        assert(operation.fmove(source + "/report.txt", destination, "1 kB", 1024, start) == 1);
+        assert(operation.fmove(source + "/backup.tar.gz", destination, "1 kB", 1024, start) == 1);
+        assert(mkdir((source + "/folder").text(), 0700) == 0);
+        assert(mkdir((destination + "/folder").text(), 0700) == 0);
+        writeConflictFile(source + "/folder/new.txt", "moved");
+        writeConflictFile(destination + "/folder/old.txt", "keep");
+        assert(operation.fmove(source + "/folder", destination, "1 kB", 1024, start) == 1);
+        crossDeviceSource.clear();
+        answer.done();
+        assert(!xf_existfile(source + "/report.txt") && !xf_existfile(source + "/backup.tar.gz"));
+        assert(readConflictFile(destination + "/report (4).txt") == "incoming");
+        assert(readConflictFile(destination + "/backup (2).tar.gz") == "incoming");
+        assert(!xf_existfile(source + "/folder"));
+        assert(readConflictFile(destination + "/folder (1)/new.txt") == "moved");
+        assert(readConflictFile(destination + "/folder/old.txt") == "keep");
+    }
+    puts("PASS: replacing a symbolic link leaves its target untouched; numbered file/folder moves keep both and honor renamed destinations across devices");
+    for (FXuint type : {RENAME, SYMLINK})
+    {
+        const FXString name = type == RENAME ? "rename.txt" : "linked.txt";
+        const FXString numbered = type == RENAME ? "rename (1).txt" : "linked (1).txt";
+        writeConflictFile(source + "/" + name, "incoming");
+        writeConflictFile(destination + "/" + name, "existing");
+        File operation(owner, "Related conflict regression", type);
+        operation.create();
+        ConflictResponder answer(app);
+        answer.choose(OverwriteBox::ID_CLICKED_RENAME);
+        answer.start();
+        assert((type == RENAME ? operation.rename(source + "/" + name, destination + "/" + name) :
+                               operation.symlink(source + "/" + name, destination)) == 1);
+        answer.done();
+        assert(readConflictFile(destination + "/" + name) == "existing");
+        assert(readConflictFile(destination + "/" + numbered) == "incoming");
+        assert(xf_existfile(source + "/" + name) == (type == SYMLINK));
+        if (type == SYMLINK)
+        {
+            struct stat info;
+            assert(lstat((destination + "/" + numbered).text(), &info) == 0 && S_ISLNK(info.st_mode));
+        }
+    }
+    {
+        app.reg().writeUnsignedEntry("OPTIONS", "confirm_overwrite", false);
+        File operation(owner, "Confirmation preference regression", COPY);
+        operation.create();
+        ConflictResponder answer(app);
+        answer.start();
+        assert(operation.copy(source + "/linked.txt", destination, "1 kB", 1024, start) == 1);
+        answer.done();
+        assert(readConflictFile(destination + "/linked.txt") == "incoming");
+        app.reg().writeUnsignedEntry("OPTIONS", "confirm_overwrite", true);
+    }
+    puts("PASS: rename and link commands honor numbered conflict destinations; the existing overwrite-confirmation preference is preserved");
 }
 
 int main(int argc, char** argv)
@@ -408,6 +746,7 @@ int main(int argc, char** argv)
     }
     mainWindow = new FXMainWindow(&app, "Main regression");
     app.create();
+    checkFileConflicts(app, mainWindow, fixture);
     TestSearch* search = new TestSearch(&app);
     search->create();
     search->show(PLACEMENT_SCREEN);
@@ -479,6 +818,18 @@ int main(int argc, char** argv)
         results->setColumnLayout(original);
         puts("PASS: search results use the live column order for existing and newly arriving rows");
     }
+    // Five normal columns (the Trash column count) must not be mistaken for the Trash layout
+    files->setColumnLayout({FileList::ID_COL_NAME, FileList::ID_COL_SIZE, FileList::ID_COL_TYPE,
+                            FileList::ID_COL_EXT, FileList::ID_COL_DATE});
+    assert(files->getHeaderIndex(FileList::ID_COL_EXT) == 3);
+    assert(files->getHeaderIndex(FileList::ID_COL_DATE) == 4);
+    assert(files->getHeaderIndex(FileList::ID_COL_ORIGPATH) == -1);
+    assert(files->getHeaderIndex(FileList::ID_COL_USER) == -1);
+    files->onToggleColumn(NULL, FXSEL(SEL_COMMAND, FileList::ID_COLUMN_TOGGLE +
+                             FileList::ID_COL_EXT - FileList::ID_COL_NAME), NULL);
+    assert(files->getHeaderIndex(FileList::ID_COL_EXT) == -1);
+    assert(files->getHeaderIndex(FileList::ID_COL_DATE) == 3);
+    puts("PASS: a normal five-column layout reports its own columns, not the Trash columns");
     TabButtons* columnTabs = panel->getTabButtons();
     files->setColumnLayout({FileList::ID_COL_NAME, FileList::ID_COL_SIZE, FileList::ID_COL_TYPE});
     files->setHeaderSize(0, 333);
@@ -704,6 +1055,119 @@ int main(int argc, char** argv)
     if (url.empty()) fprintf(stderr, "Browser log missing after accepting archive installation help\n");
     assert(url == "https://github.com/cybernoid/archivemount#installation");
     puts("PASS: ZIP/ISO archive-folder menu remains visible without archivemount; declining opens nothing, accepting opens installation help with host libraries");
+    // ISOs without Unix ownership (e.g. Windows media) show root-only entries unless mounted as the user
+    if (getuid() != 0 && access("/usr/bin/archivemount", X_OK) == 0 && access("/dev/fuse", R_OK | W_OK) == 0 &&
+        system("command -v bsdtar >/dev/null") == 0)
+    {
+        const FXString zipDir = fixture + "/zip";
+        assert(mkdir(zipDir.text(), 0755) == 0 && mkdir((zipDir + "/src").text(), 0755) == 0);
+        { std::ofstream inner((zipDir + "/src/inside.txt").text()); inner << "inside\n"; }
+        FXString buildZip = "bsdtar --format zip -cf " + xf_quote(zipDir + "/sample.zip") +
+                            " -C " + xf_quote(zipDir + "/src") + " inside.txt";
+        assert(system(buildZip.text()) == 0);
+        const FXString isoDir = fixture + "/iso";
+        assert(mkdir(isoDir.text(), 0755) == 0 && mkdir((isoDir + "/src").text(), 0755) == 0 &&
+               mkdir((isoDir + "/src/sub").text(), 0755) == 0);
+        { std::ofstream inner((isoDir + "/src/sub/inside.txt").text()); inner << "inside\n"; }
+        FXString build = "bsdtar --format iso9660 --options '!rockridge,joliet' -cf " +
+                         xf_quote(isoDir + "/windows.iso") + " -C " + xf_quote(isoDir + "/src") + " .";
+        assert(system(build.text()) == 0 && chmod((isoDir + "/windows.iso").text(), 0444) == 0);
+        setenv("SWORDFISH_HOST_PATH", "/usr/bin:/bin", 1);
+        // main.cpp registers this at startup; File::mount() swaps it while archivemount runs
+        app.addSignal(SIGCHLD, explorer, XFileExplorer::ID_HARVEST);
+        auto selectZip = [&]()
+        {
+            files->setDirectory(zipDir);
+            int index = -1;
+            for (int tries = 0; tries < 300 && index < 0; ++tries)
+            {
+                for (int i = 0; i < files->getNumItems(); ++i)
+                    if (files->getItemFilename(i) == "sample.zip") index = i;
+                if (index < 0) { app.runOneEvent(false); usleep(10000); }
+            }
+            assert(index >= 0);
+            files->killSelection();
+            files->setCurrentItem(index);
+            files->selectItem(index);
+        };
+        selectZip();
+        ArchiveReadOnlyNotice readOnlyNotice(&app);
+        app.addTimeout(&readOnlyNotice, 1, 10);
+        panel->onCmdArchiveOpen(NULL, 0, NULL);
+        assert(readOnlyNotice.seen);
+        const FXString zipMounted = zipDir + "/sample_archive";
+        assert(access((zipMounted + "/inside.txt").text(), R_OK) == 0);
+        std::ofstream writeAttempt((zipMounted + "/new-file.txt").text());
+        assert(!writeAttempt && !xf_existfile(zipMounted + "/new-file.txt"));
+        selectZip();
+        panel->onCmdArchiveClose(NULL, 0, NULL);
+        for (int tries = 0; tries < 300 && xf_existfile(zipMounted + "/inside.txt"); ++tries)
+        { app.runOneEvent(false); usleep(10000); }
+        assert(!xf_existfile(zipMounted + "/inside.txt"));
+        puts("PASS: ZIP archives mount read-only, explain that files can be dragged or copied out, and reject writes");
+        {
+            const FXString tarDir = fixture + "/tar";
+            assert(mkdir(tarDir.text(), 0755) == 0 && mkdir((tarDir + "/src").text(), 0755) == 0);
+            { std::ofstream inner((tarDir + "/src/inside.txt").text()); inner << "inside\n"; }
+            assert(system(("tar -czf " + xf_quote(tarDir + "/sample.tar.gz") + " -C " +
+                           xf_quote(tarDir + "/src") + " inside.txt").text()) == 0);
+            files->setDirectory(tarDir);
+            int index = -1;
+            for (int tries = 0; tries < 300 && index < 0; ++tries)
+            {
+                for (int i = 0; i < files->getNumItems(); ++i)
+                    if (files->getItemFilename(i) == "sample.tar.gz") index = i;
+                if (index < 0) { app.runOneEvent(false); usleep(10000); }
+            }
+            assert(index >= 0);
+            files->killSelection();
+            files->setCurrentItem(index);
+            files->selectItem(index);
+            panel->onCmdArchiveOpen(NULL, 0, NULL);
+            const FXString tarMounted = tarDir + "/sample_archive";
+            { std::ofstream added((tarMounted + "/added.txt").text()); assert(added); added << "added\n"; }
+            files->setDirectory(tarDir);
+            for (int i = 0; i < files->getNumItems(); ++i)
+                if (files->getItemFilename(i) == "sample_archive") { files->killSelection(); files->selectItem(i); }
+            panel->onCmdArchiveClose(NULL, 0, NULL);
+            // Closing waits for archivemount to finish saving, so the archive is complete straight away
+            FXString listing;
+            assert(xf_hostcommandoutput("tar -tzf " + xf_quote(tarDir + "/sample.tar.gz"), listing));
+            assert(listing.contains("added.txt") && listing.contains("inside.txt"));
+            assert(!xf_existfile(tarDir + "/sample.tar.gz.failed"));
+            puts("PASS: tar archives stay writable; closing waits for the save and the saved archive is verified");
+        }
+        auto selectIso = [&]()
+        {
+            files->setDirectory(isoDir);
+            int index = -1;
+            for (int tries = 0; tries < 300 && index < 0; ++tries)
+            {
+                for (int i = 0; i < files->getNumItems(); ++i)
+                    if (files->getItemFilename(i) == "windows.iso") index = i;
+                if (index < 0) { app.runOneEvent(false); usleep(10000); }
+            }
+            assert(index >= 0);
+            files->killSelection();
+            files->setCurrentItem(index);
+            files->selectItem(index);
+        };
+        selectIso();
+        panel->onCmdArchiveOpen(NULL, 0, NULL);
+        const FXString mounted = isoDir + "/windows_archive";
+        struct stat info;
+        assert(stat((mounted + "/sub").text(), &info) == 0 && info.st_uid == getuid());
+        assert(access((mounted + "/sub").text(), R_OK | X_OK) == 0);
+        assert(access((mounted + "/sub/inside.txt").text(), R_OK) == 0);
+        selectIso();
+        panel->onCmdArchiveClose(NULL, 0, NULL);
+        for (int tries = 0; tries < 300 && xf_existfile(mounted + "/sub"); ++tries)
+        { app.runOneEvent(false); usleep(10000); }
+        assert(!xf_existfile(mounted + "/sub"));
+        setenv("SWORDFISH_HOST_PATH", tools.text(), 1);
+        files->setDirectory(data);
+        puts("PASS: an ISO without Unix ownership opens as a folder readable by the user");
+    }
     explorer->onCmdFileSearch(NULL, 0, NULL);
     SearchWindow* savedSearch = explorer->getSearchWindow();
     assert(savedSearch);

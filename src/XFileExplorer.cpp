@@ -14,6 +14,8 @@
 #include <fx.h>
 #include <fxkeys.h>
 #include <FXPNGIcon.h>
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
 
 #include "AppLogger.h"
 #include "Preview.h"
@@ -185,6 +187,7 @@ FXDEFMAP(XFileExplorer) XFileExplorerMap[] =
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_PROJECT_WEBSITE, XFileExplorer::onCmdProjectWebsite),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_FILE_ASSOC, XFileExplorer::onCmdFileAssoc),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_REFRESH, XFileExplorer::onCmdRefresh),
+    FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_THEME_REQUEST, XFileExplorer::onThemeRequest),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_EMPTY_TRASH, XFileExplorer::onCmdEmptyTrash),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_TRASH_SIZE, XFileExplorer::onCmdTrashSize),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_XTERM, XFileExplorer::onCmdXTerm),
@@ -3717,8 +3720,69 @@ void XFileExplorer::create()
     }
 
 #endif
+    applyTheme(Theme::current(getApp()));
 }
 
+void XFileExplorer::applyTheme(const Theme& theme, FXWindow* subtree)
+{
+    if (!subtree)
+    {
+        getApp()->setBaseColor(theme.colorFor("main", "background"));
+        getApp()->setBorderColor(theme.colorFor("main", "border"));
+        getApp()->setBackColor(theme.colorFor("main", "field"));
+        getApp()->setForeColor(theme.colorFor("main", "foreground"));
+        getApp()->setSelbackColor(theme.colorFor("main", "selection_background"));
+        getApp()->setSelforeColor(theme.colorFor("main", "selection_foreground"));
+        getApp()->setHiliteColor(makeHiliteColor(getApp()->getBaseColor()));
+        getApp()->setShadowColor(makeShadowColor(getApp()->getBaseColor()));
+        listbackcolor = theme.colorFor("list", "background");
+        listforecolor = theme.colorFor("list", "foreground");
+        highlightcolor = theme.colorFor("list", "alternate");
+        pbarcolor = theme.color[9];
+        attentioncolor = theme.color[10];
+        scrollbarcolor = theme.colorFor("scrollbars", "background");
+        FXString description = theme.property("main", "font");
+        if (!description.empty() && description != getApp()->getNormalFont()->getFont())
+        {
+            FXFont* normal = getApp()->getNormalFont();
+            normal->destroy();
+            normal->setFont(description);
+            normal->create();
+        }
+    }
+    applyThemeWidgets(subtree ? subtree : this, theme, themeFonts);
+    if (!getuid())
+    {
+        FXColor rootColor = FXRGB(180, 0, 0);
+        menubar->setBackColor(rootColor);
+        for (FXWindow* child = menubar->getFirst(); child; child = child->getNext())
+        {
+            child->setBackColor(rootColor);
+            if (FXMenuCaption* caption = dynamic_cast<FXMenuCaption*>(child)) caption->setTextColor(FXRGB(255, 255, 255));
+        }
+    }
+    if (!subtree && id())
+    {
+        Display* display = static_cast<Display*>(getApp()->getDisplay());
+        Atom opacity = XInternAtom(display, "_NET_WM_WINDOW_OPACITY", False);
+        FXint percent = theme.property("main", "opacity").empty() ? 100 : FXIntVal(theme.property("main", "opacity"));
+        if (percent >= 100) XDeleteProperty(display, id(), opacity);
+        else
+        {
+            unsigned long value = static_cast<unsigned long>(0xffffffffUL * (FXCLAMP(20, percent, 100) / 100.0));
+            XChangeProperty(display, id(), opacity, XA_CARDINAL, 32, PropModeReplace,
+                              reinterpret_cast<unsigned char*>(&value), 1);
+        }
+    }
+    recalc();
+    update();
+}
+
+long XFileExplorer::onThemeRequest(FXObject*, FXSelector, void* pointer)
+{
+    applyTheme(Theme::current(getApp()), static_cast<FXWindow*>(pointer));
+    return 1;
+}
 
 // Destructor
 XFileExplorer::~XFileExplorer()
@@ -3761,6 +3825,7 @@ XFileExplorer::~XFileExplorer()
     delete bookmarksmenu;
     delete addbookmarkdialog;
     delete connectdialog;
+    for (FXFont* font : themeFonts) delete font;
 }
 
 

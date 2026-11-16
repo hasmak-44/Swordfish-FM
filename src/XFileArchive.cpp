@@ -2151,6 +2151,7 @@ void XFileArchive::create()
         FilterNum = i;
     }
 
+    xf_dialogcolors(this);
     FXMainWindow::create();
 
     minifoldericon->create();

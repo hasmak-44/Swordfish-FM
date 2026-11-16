@@ -75,7 +75,9 @@ jobs:
           # The build script creates portable-data; users' own data must
           # never be replaced by a download, so it is not shipped.
           rm -rf "$out/stage/$name/portable-data"
-          (cd "$out/stage" && zip -qry "../$name.zip" "$name")
+          # Materialize links: newer 7-Zip rejects ../ icon links in ZIPs.
+          (cd "$out/stage" && zip -qr "../$name.zip" "$name")
+          unzip -tq "$out/$name.zip"
           tar -C "$out/stage" -czf "$out/$name.tar.gz" "$name"
           git archive --format=tar.gz --prefix="Swordfish-FM-$RELEASE_VERSION/" \
             -o "$out/Swordfish-FM-$RELEASE_VERSION-source.tar.gz" HEAD

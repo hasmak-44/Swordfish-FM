@@ -2683,6 +2683,7 @@ long SearchPanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuCommand(menu, _("Compare &Sizes"), minicharticon, this, SearchPanel::ID_DIR_USAGE);
         new FXMenuCommand(menu, _("P&roperties"), miniattribicon, this, SearchPanel::ID_PROPERTIES);
     }
+    xf_windowcolors(menu);
     menu->create();
     menu->popup(NULL, x, y);
     getApp()->runModalWhileShown(menu);
@@ -3214,10 +3215,12 @@ long SearchPanel::onCmdFileTrash(FXObject*, FXSelector, void*)
                 if ((overwrite | overwrite_all) && !skip_all)
                 {
                     // Trash files path name
-                    FXString trashpathname = xf_create_trashpathname(pathname, trashfileslocation);
+                    FXString itemtrashfiles, itemtrashinfo, itemtopdir;
+                    xf_trashfor(pathname, itemtrashfiles, itemtrashinfo, itemtopdir);
+                    FXString trashpathname = xf_create_trashpathname(pathname, itemtrashfiles);
 
                     // Create trashinfo file
-                    xf_create_trashinfo(pathname, trashpathname, trashfileslocation, trashinfolocation);
+                    xf_create_trashinfo(pathname, trashpathname, itemtrashfiles, itemtrashinfo, itemtopdir);
 
                     // Move file to trash files location
                     int ret = f->fmove(pathname, trashpathname);
@@ -3237,10 +3240,12 @@ long SearchPanel::onCmdFileTrash(FXObject*, FXSelector, void*)
             else
             {
                 // Trash files path name
-                FXString trashpathname = xf_create_trashpathname(pathname, trashfileslocation);
+                FXString itemtrashfiles, itemtrashinfo, itemtopdir;
+                xf_trashfor(pathname, itemtrashfiles, itemtrashinfo, itemtopdir);
+                FXString trashpathname = xf_create_trashpathname(pathname, itemtrashfiles);
 
                 // Create trashinfo file
-                xf_create_trashinfo(pathname, trashpathname, trashfileslocation, trashinfolocation);
+                xf_create_trashinfo(pathname, trashpathname, itemtrashfiles, itemtrashinfo, itemtopdir);
 
                 // Move file to trash files location
                 int ret = f->fmove(pathname, trashpathname);

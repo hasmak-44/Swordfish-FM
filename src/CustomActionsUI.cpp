@@ -396,7 +396,7 @@ public:
         new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
         new FXButton(buttons, _("Apply"), NULL, this, ENTRY_SAVE, BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT);
         FXTabBook* tabs = new FXTabBook(this, NULL, 0, LAYOUT_FILL_X | LAYOUT_FILL_Y);
-        new FXTabItem(tabs, _("Basic"));
+        new DialogTabItem(tabs, _("Basic"));
         FXScrollWindow* scroll = new FXScrollWindow(tabs, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_THICK | FRAME_RAISED);
         FXVerticalFrame* body = new FXVerticalFrame(scroll, LAYOUT_FILL_X | LAYOUT_FILL_Y);
         FXMatrix* form = new FXMatrix(body, 2, MATRIX_BY_COLUMNS | LAYOUT_FILL_X);
@@ -477,7 +477,7 @@ public:
                                "Filenames are quoted automatically. Use %F/%N/%D/%U as separate,\n"
                                "unquoted arguments. Use a script for complex shell substitutions."),
                         NULL, JUSTIFY_LEFT);
-            new FXTabItem(tabs, _("Appearance Conditions"));
+            new DialogTabItem(tabs, _("Appearance Conditions"));
             FXScrollWindow* appearance = new FXScrollWindow(tabs, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_THICK | FRAME_RAISED);
             FXVerticalFrame* conditions = new FXVerticalFrame(appearance, LAYOUT_FILL_X | LAYOUT_FILL_Y);
             FXGroupBox* placement = new FXGroupBox(conditions, _("Toolbar"), GROUPBOX_NORMAL | LAYOUT_FILL_X);
@@ -893,6 +893,7 @@ void CustomActionMenu::appendEditor(FXMenuPane* menu)
 
 long CustomActionMenu::handle(FXObject* sender, FXSelector sel, void* ptr)
 {
+    if (FXSELTYPE(sel) == SEL_RIGHTBUTTONRELEASE) { return actions->toolbarButtonRightClick(sender, sel); }
     unsigned n = FXSELID(sel) - CustomActionsUI::ID_ACTION;
     if (n >= actions->model.items.size()) { return 0; }
     CustomActionContext ctx = live ? actions->context() : snapshot;
@@ -911,6 +912,8 @@ CustomActionsUI::CustomActionsUI(XFileExplorer* window, FXDockSite* dock, FXMenu
     model.load(owner->getApp()->reg(), loadError);
     toolbarShown = owner->getApp()->reg().readUnsignedEntry("CUSTOM ACTIONS UI", "toolbar", 1) != 0;
     toolbar = new FXToolBar(dock, FRAME_NONE | LAYOUT_SIDE_TOP | LAYOUT_DOCK_NEXT | LAYOUT_FILL_X);
+    toolbar->setTarget(this);
+    toolbar->setSelector(ID_TOOLBAR_MENU);
     mainPane = new FXMenuPane(owner);
     mainTitle = new FXMenuTitle(bar, _("Custom &Actions"), NULL, mainPane);
     new FXMenuSeparator(tools);
@@ -923,6 +926,7 @@ CustomActionsUI::CustomActionsUI(XFileExplorer* window, FXDockSite* dock, FXMenu
 CustomActionsUI::~CustomActionsUI()
 {
     owner->getApp()->removeChore(this, ID_LOAD_ERROR);
+    owner->getApp()->removeChore(this, ID_REBUILD);
     delete toolbar;
     delete toolbarMenu;
     delete mainTitle;
@@ -949,6 +953,7 @@ void CustomActionsUI::rebuild()
     for (unsigned i = 0; i < toolbarIcons.size(); ++i) { delete toolbarIcons[i]; }
     toolbarIcons.clear();
     const FXint toolbarIconSize = xf_toolbariconsize(owner->getApp(), "customtoolbariconsize");
+    const FXuint toolbarStyle = owner->getApp()->reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 0);
     // Toolbar buttons get their own enlarged icons; menus keep the normal ones.
     auto toolbarIcon = [&](FXIcon* normal, const FXString& path) -> FXIcon*
     {
@@ -995,9 +1000,9 @@ void CustomActionsUI::rebuild()
             separator = false;
         }
         haveEntry = true;
-        FXString text = label(a.name) + "\t" + label(a.description);
         FXString toolbarLabel = label(a.name);
-        FXIcon* buttonIcon = toolbarIcon(icon(n), icons[n] ? a.icon : FXString());
+        FXString text = (toolbarStyle == 1 ? FXString() : toolbarLabel) + "\t" + label(a.description);
+        FXIcon* buttonIcon = toolbarStyle == 2 ? NULL : toolbarIcon(icon(n), icons[n] ? a.icon : FXString());
         if (a.kind == CustomAction::FOLDER)
         {
             FXMenuPane* menu = toolbarMenu->pane(owner);
@@ -1017,6 +1022,7 @@ void CustomActionsUI::rebuild()
     if (toolbarShown) { toolbar->show(); } else { toolbar->hide(); }
     if (owner->id())
     {
+        xf_windowcolors(toolbar);
         toolbar->create();
         mainPane->create();
         for (FXWindow* w = toolbar->getFirst(); w; w = w->getNext())
@@ -1073,7 +1079,46 @@ long CustomActionsUI::handle(FXObject* sender, FXSelector sel, void* ptr)
             loadError.text());
         return 1;
     }
+    if (FXSELTYPE(sel) == SEL_CHORE && FXSELID(sel) == ID_REBUILD)
+    {
+        rebuild();
+        return 1;
+    }
+    if (FXSELTYPE(sel) == SEL_RIGHTBUTTONRELEASE)
+    {
+        if (FXSELID(sel) == ID_TOOLBAR_MENU || FXSELID(sel) == ID_EDIT)
+        {
+            showToolbarMenu();
+            return 1;
+        }
+        return 0;
+    }
+    if (FXSELTYPE(sel) == SEL_UPDATE && FXSELID(sel) >= ID_STYLE_BOTH && FXSELID(sel) <= ID_SIZE_32)
+    {
+        FXuint id = FXSELID(sel);
+        FXbool checked = id <= ID_STYLE_TITLES ?
+            owner->getApp()->reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 0) == id - ID_STYLE_BOTH :
+            xf_toolbariconsize(owner->getApp(), "customtoolbariconsize") == (FXint)(16 + (id - ID_SIZE_16) * 8);
+        sender->handle(this, FXSEL(SEL_COMMAND, checked ? FXWindow::ID_CHECK : FXWindow::ID_UNCHECK), NULL);
+        return 1;
+    }
     if (FXSELTYPE(sel) != SEL_COMMAND) { return 0; }
+    if (FXSELID(sel) >= ID_STYLE_BOTH && FXSELID(sel) <= ID_SIZE_32)
+    {
+        FXuint id = FXSELID(sel);
+        if (id <= ID_STYLE_TITLES)
+        {
+            owner->getApp()->reg().writeUnsignedEntry("SETTINGS", "customtoolbarstyle", id - ID_STYLE_BOTH);
+        }
+        else
+        {
+            owner->getApp()->reg().writeIntEntry("SETTINGS", "customtoolbariconsize", 16 + (id - ID_SIZE_16) * 8);
+        }
+        owner->getApp()->reg().write();
+        // The clicked button may be one being rebuilt, so rebuild after its event finishes
+        owner->getApp()->addChore(this, ID_REBUILD);
+        return 1;
+    }
     if (FXSELID(sel) == ID_EDIT)
     {
         if (!loadError.empty() && MessageBox::question(owner, BOX_OK_CANCEL, _("Invalid Saved Custom Actions"),
@@ -1092,6 +1137,36 @@ long CustomActionsUI::handle(FXObject* sender, FXSelector sel, void* ptr)
         return 1;
     }
     return 0;
+}
+
+void CustomActionsUI::showToolbarMenu()
+{
+    FXMenuPane menu(owner);
+    new FXMenuRadio(&menu, _("Icons and Titles"), this, ID_STYLE_BOTH);
+    new FXMenuRadio(&menu, _("Icons Only"), this, ID_STYLE_ICONS);
+    new FXMenuRadio(&menu, _("Titles Only"), this, ID_STYLE_TITLES);
+    new FXMenuSeparator(&menu);
+    new FXMenuRadio(&menu, _("Small Icons (16 px)"), this, ID_SIZE_16);
+    new FXMenuRadio(&menu, _("Medium Icons (24 px)"), this, ID_SIZE_24);
+    new FXMenuRadio(&menu, _("Large Icons (32 px)"), this, ID_SIZE_32);
+    new FXMenuSeparator(&menu);
+    new FXMenuCommand(&menu, _("Edit Custom Actions..."), minirunicon, this, ID_EDIT);
+    new FXMenuCheck(&menu, _("Show Custom Toolbar"), this, ID_TOGGLE);
+    FXint x, y;
+    FXuint state;
+    owner->getRoot()->getCursorPosition(x, y, state);
+    xf_windowcolors(&menu);
+    menu.create();
+    menu.popup(NULL, x, y);
+    owner->getApp()->runModalWhileShown(&menu);
+}
+
+long CustomActionsUI::toolbarButtonRightClick(FXObject* sender, FXSelector sel)
+{
+    FXWindow* window = dynamic_cast<FXWindow*>(sender);
+    if (FXSELTYPE(sel) != SEL_RIGHTBUTTONRELEASE || !window || window->getParent() != toolbar) { return 0; }
+    showToolbarMenu();
+    return 1;
 }
 
 void CustomActionsUI::run(unsigned n, const CustomActionContext& ctx)

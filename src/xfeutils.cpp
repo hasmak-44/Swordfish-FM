@@ -30,6 +30,9 @@
 #include "FileDict.h"
 #include "AppLogger.h"
 #include "MessageBox.h"
+#include "ComboBox.h"
+#include "IconList.h"
+#include "TextLabel.h"
 #include "../st/x.h"
 
 #include <X11/Xlib.h>
@@ -711,7 +714,7 @@ FXString xf_create_trashpathname(FXString pathname, FXString trashfileslocation)
 
 // Create trashinfo file based on the pathname and the trashpathname
 int xf_create_trashinfo(FXString pathname, FXString trashpathname,
-                       FXString trashfileslocation, FXString trashinfolocation)
+                       FXString trashfileslocation, FXString trashinfolocation, const FXString& topdir)
 {
     // Create trash can files if it doesn't exist
     if (!xf_existfile(trashfileslocation))
@@ -741,7 +744,14 @@ int xf_create_trashinfo(FXString pathname, FXString trashpathname,
     if ((fp = fopen(trashinfopathname.text(), "w")) != NULL)
     {
         fprintf(fp, "[Trash Info]\n");
-        fprintf(fp, "Path=%s\n", FXURL::encode(pathname).text());
+        // Drive trash cans store the path relative to the drive, so restore works wherever it gets mounted
+        FXString path = pathname;
+        FXString top = topdir == "/" ? topdir : topdir + "/";
+        if (!topdir.empty() && pathname.left(top.length()) == top)
+        {
+            path = pathname.right(pathname.length() - top.length());
+        }
+        fprintf(fp, "Path=%s\n", FXURL::encode(path).text());
         fprintf(fp, "DeletionDate=%s\n", deldate.text());
         fclose(fp);
         ret = 0;
@@ -3191,6 +3201,86 @@ std::vector<TrashLocation> xf_trashlocations()
 }
 
 
+// Trash folder on a drive, created if needed; it must be a real folder we own on that drive
+static FXbool xf_drivetrash(const FXString& directory, dev_t device, FXbool create)
+{
+    struct stat info;
+    if (create && lstat(directory.text(), &info) != 0 && errno == ENOENT)
+    {
+        if (mkdir(directory.text(), 0700) != 0 && errno != EEXIST) return false;
+    }
+    if (lstat(directory.text(), &info) != 0 || !S_ISDIR(info.st_mode) ||
+        info.st_uid != getuid() || info.st_dev != device) return false;
+    const char* subdirs[] = { "/files", "/info" };
+    for (const char* subdir : subdirs)
+    {
+        FXString path = directory + subdir;
+        if (lstat(path.text(), &info) != 0 && errno == ENOENT && mkdir(path.text(), 0700) != 0 && errno != EEXIST)
+            return false;
+        if (lstat(path.text(), &info) != 0 || !S_ISDIR(info.st_mode) || info.st_uid != getuid() ||
+            info.st_dev != device) return false;
+    }
+    return true;
+}
+
+
+void xf_trashfor(const FXString& pathname, FXString& files, FXString& info, FXString& topdir)
+{
+    FXString home = xf_trashdatahome();
+    files = home + PATHSEPSTRING TRASHFILESPATH;
+    info = home + PATHSEPSTRING TRASHINFOPATH;
+    topdir.clear();
+#if defined(linux)
+    // The item's folder tells which drive the item lives on (a mounted folder itself can't be renamed)
+    struct stat item, homeinfo;
+    if (lstat(FXPath::directory(pathname).text(), &item) != 0) return;
+    FXString homeTrash = home + "/Trash";
+    if (lstat(homeTrash.text(), &homeinfo) != 0 && lstat(home.text(), &homeinfo) != 0) return;
+    if (item.st_dev == homeinfo.st_dev) return;
+
+    // Deepest mount folder holding the item and on the same drive
+    FXString top;
+    FILE* mounts = setmntent(MTAB_PATH, "r");
+    if (!mounts) return;
+    struct mntent* mount;
+    struct stat mountinfo;
+    while ((mount = getmntent(mounts)))
+    {
+        FXString dir = FXPath::simplify(mount->mnt_dir);
+        FXString prefix = dir == "/" ? dir : dir + "/";
+        if (pathname.left(prefix.length()) != prefix || dir.length() <= top.length()) continue;
+        if (hasmntopt(mount, "ro")) continue;
+        if (stat(dir.text(), &mountinfo) == 0 && mountinfo.st_dev == item.st_dev) top = dir;
+    }
+    endmntent(mounts);
+    if (top.empty()) return;
+
+    FXString uid = FXStringVal((FXuint)getuid());
+    FXString prefix = top == "/" ? FXString::null : top;
+    FXString trash;
+    struct stat shared;
+    FXString sharedpath = prefix + "/.Trash";
+    if (lstat(sharedpath.text(), &shared) == 0 && S_ISDIR(shared.st_mode) && (shared.st_mode & S_ISVTX) &&
+        xf_drivetrash(sharedpath + "/" + uid, item.st_dev, true))
+    {
+        trash = sharedpath + "/" + uid;
+    }
+    else if (xf_drivetrash(prefix + "/.Trash-" + uid, item.st_dev, true))
+    {
+        trash = prefix + "/.Trash-" + uid;
+    }
+    else
+    {
+        appLog(APP_LOG_FILE_OPERATIONS, "trash-drive-fallback", "Using Home Trash for " + pathname);
+        return;
+    }
+    files = trash + "/files";
+    info = trash + "/info";
+    topdir = top;
+#endif
+}
+
+
 FXbool xf_trashlocation(const FXString& pathname, TrashLocation& location)
 {
     FXString home = xf_trashdatahome() + "/Trash/files";
@@ -3282,6 +3372,9 @@ void xf_cleanuptrashinfo(const FXString& pathname)
 {
     FXString home = xf_trashdatahome() + "/Trash/files/";
     if (pathname.left(home.length()) != home && pathname.find("/.Trash") < 0) return;
+    // Only direct children of a trash files folder have restore information; checking this first
+    // avoids reading the mount table for every file inside a trashed folder
+    if (FXPath::name(FXPath::directory(pathname)) != "files") return;
     struct stat info;
     if (lstat(pathname.text(), &info) == 0 || errno != ENOENT) return;
     TrashLocation location;
@@ -3349,6 +3442,149 @@ FXColor xf_barcolor(FXApp* app, int level)
     }
 
     return FXRGBA(r, g, b, FXALPHAVAL(base));
+}
+
+
+void xf_widgetcolors(FXWindow* window, FXColor base, FXColor field, FXColor text, FXColor border,
+                     FXColor selection, FXColor selectedText)
+{
+    const FXbool entry = dynamic_cast<FXTextField*>(window) || dynamic_cast<FXText*>(window) ||
+        dynamic_cast<FXScrollArea*>(window) || dynamic_cast<FXListBox*>(window) ||
+        dynamic_cast<FXComboBox*>(window) || dynamic_cast<ComboBox*>(window);
+    window->setBackColor(entry ? field : base);
+    if (FXFrame* frame = dynamic_cast<FXFrame*>(window))
+    {
+        frame->setBaseColor(base);
+        frame->setBorderColor(border);
+        frame->setHiliteColor(makeHiliteColor(base));
+        frame->setShadowColor(makeShadowColor(base));
+    }
+    if (FXPacker* frame = dynamic_cast<FXPacker*>(window))
+    {
+        frame->setBaseColor(base);
+        frame->setBorderColor(border);
+        frame->setHiliteColor(makeHiliteColor(base));
+        frame->setShadowColor(makeShadowColor(base));
+    }
+    if (FXGroupBox* group = dynamic_cast<FXGroupBox*>(window)) group->setTextColor(text);
+    if (FXLabel* label = dynamic_cast<FXLabel*>(window)) label->setTextColor(text);
+    if (FXTextField* edit = dynamic_cast<FXTextField*>(window))
+    {
+        edit->setTextColor(text);
+        edit->setSelBackColor(selection);
+        edit->setSelTextColor(selectedText);
+        edit->setCursorColor(text);
+    }
+    if (FXText* edit = dynamic_cast<FXText*>(window))
+    {
+        edit->setTextColor(text);
+        edit->setSelBackColor(selection);
+        edit->setSelTextColor(selectedText);
+        edit->setCursorColor(text);
+        edit->setHiliteBackColor(selection);
+        edit->setHiliteTextColor(selectedText);
+        edit->setActiveBackColor(field);
+        edit->setBarColor(base);
+        edit->setNumberColor(text);
+    }
+    if (TextLabel* label = dynamic_cast<TextLabel*>(window))
+    {
+        label->setTextColor(text);
+        label->setSelBackColor(selection);
+        label->setSelTextColor(selectedText);
+        label->setCursorColor(text);
+    }
+    if (FXList* list = dynamic_cast<FXList*>(window))
+    {
+        list->setTextColor(text);
+        list->setSelBackColor(selection);
+        list->setSelTextColor(selectedText);
+    }
+    if (FXTreeList* list = dynamic_cast<FXTreeList*>(window))
+    {
+        list->setTextColor(text);
+        list->setSelBackColor(selection);
+        list->setSelTextColor(selectedText);
+        list->setLineColor(border);
+    }
+    if (FXIconList* list = dynamic_cast<FXIconList*>(window))
+    {
+        list->setTextColor(text);
+        list->setSelBackColor(selection);
+        list->setSelTextColor(selectedText);
+    }
+    if (IconList* list = dynamic_cast<IconList*>(window))
+    {
+        list->setTextColor(text);
+        list->setSelBackColor(selection);
+        list->setSelTextColor(selectedText);
+    }
+    if (FXListBox* list = dynamic_cast<FXListBox*>(window))
+    {
+        list->setTextColor(text);
+        list->setSelBackColor(selection);
+        list->setSelTextColor(selectedText);
+    }
+    if (FXComboBox* list = dynamic_cast<FXComboBox*>(window))
+    {
+        list->setTextColor(text);
+        list->setSelBackColor(selection);
+        list->setSelTextColor(selectedText);
+    }
+    if (ComboBox* list = dynamic_cast<ComboBox*>(window))
+    {
+        list->setTextColor(text);
+        list->setSelBackColor(selection);
+        list->setSelTextColor(selectedText);
+    }
+    if (FXHeader* header = dynamic_cast<FXHeader*>(window)) header->setTextColor(text);
+    if (FXMenuCaption* menu = dynamic_cast<FXMenuCaption*>(window))
+    {
+        menu->setTextColor(text);
+        menu->setSelBackColor(selection);
+        menu->setSelTextColor(selectedText);
+        menu->setHiliteColor(border);
+        menu->setShadowColor(makeShadowColor(base));
+    }
+    if (FXScrollBar* bar = dynamic_cast<FXScrollBar*>(window))
+    {
+        bar->setBorderColor(border);
+        bar->setHiliteColor(makeHiliteColor(base));
+        bar->setShadowColor(makeShadowColor(base));
+        bar->setArrowColor(text);
+    }
+    if (FXProgressBar* bar = dynamic_cast<FXProgressBar*>(window))
+    {
+        bar->setBarBGColor(field);
+        bar->setBarColor(selection);
+        bar->setTextColor(text);
+        bar->setTextAltColor(selectedText);
+    }
+    if (FXStatusLine* line = dynamic_cast<FXStatusLine*>(window))
+    {
+        line->setTextColor(text);
+        line->setTextHighlightColor(text);
+    }
+}
+
+void xf_dialogcolors(FXWindow* window)
+{
+    xf_widgetcolors(window, DialogColors::background, DialogColors::field, DialogColors::text,
+                    DialogColors::accent, DialogColors::accent, DialogColors::text);
+    if (IconList* list = dynamic_cast<IconList*>(window))
+    {
+        list->setBackgroundEffect("");
+        list->setHighlightColor(DialogColors::field);
+    }
+    for (FXWindow* child = window->getFirst(); child; child = child->getNext())
+    {
+        xf_dialogcolors(child);
+    }
+    FXPopup* popup = NULL;
+    if (FXMenuButton* button = dynamic_cast<FXMenuButton*>(window)) popup = button->getMenu();
+    if (FXMenuTitle* title = dynamic_cast<FXMenuTitle*>(window)) popup = title->getMenu();
+    if (FXMenuCascade* cascade = dynamic_cast<FXMenuCascade*>(window)) popup = cascade->getMenu();
+    if (popup) xf_dialogcolors(popup);
 }
 
 

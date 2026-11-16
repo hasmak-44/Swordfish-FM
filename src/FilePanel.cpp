@@ -101,10 +101,16 @@ static void logFileOpen(const char* event, FXApp* app, const FXString& pathname,
 // Map
 // In text mode the address bar is a permanently editable field;
 // remote server addresses keep the read-only display
-static FXbool pathAlwaysEditable(FXApp* app, const FXString& directory)
+// Each panel may override the Preferences default with the address bar switch
+static FXbool paneBreadcrumbs(FXApp* app, const FXString& panel)
 {
-    return !app->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false) &&
-           !RemoteDirectory::isServer(directory);
+    FXbool fallback = app->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false);
+    return app->reg().readUnsignedEntry(panel.text(), "show_pathlinker", fallback);
+}
+
+static FXbool pathAlwaysEditable(FXApp* app, const FXString& panel, const FXString& directory)
+{
+    return !paneBreadcrumbs(app, panel) && !RemoteDirectory::isServer(directory);
 }
 
 
@@ -274,6 +280,79 @@ static FXbool archiveMountable(const FXString& name)
 }
 
 
+// Archives whose changes archivemount can save safely. Others (ZIP, 7z, ISO...) open read-only:
+// archivemount 0.8.7 silently rewrote changed ZIP files as tar archives.
+static FXbool archiveWritable(const FXString& name)
+{
+    FXString ext1 = name.rafter('.', 1).lower();
+    FXString ext2 = name.rafter('.', 2).lower();
+    if (ext2.left(4) == "tar.")
+    {
+        return true;
+    }
+    static const char* exts[] = { "tar", "tgz", "tbz", "tbz2", "txz", "tzst", "taz", NULL };
+    for (int i = 0; exts[i]; i++)
+    {
+        if (ext1 == exts[i])
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+// Container format of an archive from its first bytes, or an empty string if unrecognized
+static FXString archiveSignature(const FXString& path)
+{
+    unsigned char buf[512] = { 0 };
+    int fd = open(path.text(), O_RDONLY);
+    if (fd < 0)
+    {
+        return FXString::null;
+    }
+    ssize_t n = read(fd, buf, sizeof(buf));
+    close(fd);
+    if (n >= 3 && buf[0] == 0x1f && buf[1] == 0x8b)
+    {
+        return "gzip";
+    }
+    if (n >= 3 && memcmp(buf, "BZh", 3) == 0)
+    {
+        return "bzip2";
+    }
+    if (n >= 6 && memcmp(buf, "\xfd" "7zXZ\0", 6) == 0)
+    {
+        return "xz";
+    }
+    if (n >= 4 && memcmp(buf, "\x28\xb5\x2f\xfd", 4) == 0)
+    {
+        return "zstd";
+    }
+    if (n >= 4 && memcmp(buf, "LZIP", 4) == 0)
+    {
+        return "lzip";
+    }
+    if (n >= 2 && buf[0] == 0x1f && buf[1] == 0x9d)
+    {
+        return "compress";
+    }
+    if (n >= 3 && buf[0] == 0x5d && buf[1] == 0x00 && buf[2] == 0x00)
+    {
+        return "lzma";
+    }
+    if (n >= 263 && memcmp(buf + 257, "ustar", 5) == 0)
+    {
+        return "tar";
+    }
+    if (n >= 4 && memcmp(buf, "PK", 2) == 0)
+    {
+        return "zip";
+    }
+    return FXString::null;
+}
+
+
 // Look for a program in the host PATH (the portable launcher adds its own folder first)
 static FXString archiveFindProgram(const char* program)
 {
@@ -353,6 +432,143 @@ static FXString archiveHostEnv()
         return "env LD_LIBRARY_PATH=" + xf_quote(FXString(hostlib)) + " ";
     }
     return "env -u LD_LIBRARY_PATH ";
+}
+
+
+// archivemount process serving a mount folder and the archive it serves; returns 0 if not found
+static pid_t archiveMountProcess(const FXString& mountpoint, FXString& archive)
+{
+    DIR* proc = opendir("/proc");
+    if (!proc)
+    {
+        return 0;
+    }
+    pid_t found = 0;
+    struct dirent* entry;
+    while (!found && (entry = readdir(proc)))
+    {
+        if (!Ascii::isDigit(entry->d_name[0]))
+        {
+            continue;
+        }
+        FILE* fp = fopen((FXString("/proc/") + entry->d_name + "/cmdline").text(), "r");
+        if (!fp)
+        {
+            continue;
+        }
+        std::vector<FXString> args;
+        FXString arg;
+        int c;
+        while ((c = fgetc(fp)) != EOF)
+        {
+            if (c == 0)
+            {
+                args.push_back(arg);
+                arg.clear();
+            }
+            else
+            {
+                arg += (FXchar)c;
+            }
+        }
+        fclose(fp);
+        if (args.size() < 3 || FXPath::name(args[0]) != "archivemount")
+        {
+            continue;
+        }
+        // Opened as: archivemount -o ... ARCHIVE MOUNTPOINT
+        for (size_t i = 1; i < args.size(); i++)
+        {
+            if (args[i] == mountpoint && args[i - 1] != "-o")
+            {
+                archive = args[i - 1];
+                found = (pid_t)strtol(entry->d_name, NULL, 10);
+                break;
+            }
+        }
+    }
+    closedir(proc);
+    return found;
+}
+
+
+// After archivemount saved changes, make sure the new archive is intact. Otherwise put
+// the original back (archivemount keeps it as ARCHIVE.orig) and keep the rejected copy.
+static void archiveVerifySave(FXWindow* owner, const FXString& archive, const struct stat& before,
+                              const FXString& signature)
+{
+    struct stat after;
+    if (stat(archive.text(), &after) == 0 && after.st_ino == before.st_ino && after.st_size == before.st_size &&
+        after.st_mtime == before.st_mtime)
+    {
+        return;  // Nothing was saved
+    }
+
+    FXString backup = archive + ".orig";
+    struct stat orig;
+    FXbool hasbackup = lstat(backup.text(), &orig) == 0 && S_ISREG(orig.st_mode) && orig.st_ino == before.st_ino &&
+                       orig.st_dev == before.st_dev;
+
+    FXString problem;
+    if (stat(archive.text(), &after) != 0 || !S_ISREG(after.st_mode))
+    {
+        problem = _("the saved archive is missing");
+    }
+    else if (after.st_size == 0)
+    {
+        problem = _("the saved archive is empty");
+    }
+    else if (archiveSignature(archive) != signature)
+    {
+        problem = _("the archive was saved in a different format");
+    }
+    else
+    {
+        FXString tar = archiveFindProgram("tar");
+        FXString output;
+        if (!tar.empty() && !xf_hostcommandoutput(xf_quote(tar) + " -tf " + xf_quote(archive) + " >/dev/null", output))
+        {
+            // Only trust the failure if the original could be listed (a decompressor may be missing)
+            FXString origoutput;
+            if (hasbackup && xf_hostcommandoutput(xf_quote(tar) + " -tf " + xf_quote(backup) + " >/dev/null", origoutput))
+            {
+                problem = output.empty() ? FXString(_("the saved archive can't be read")) : output;
+            }
+        }
+    }
+    if (problem.empty())
+    {
+        return;
+    }
+
+    if (!hasbackup)
+    {
+        MessageBox::error(owner, BOX_OK, _("Error"),
+                          _("Changes to archive %s may not have been saved correctly: %s.\n\n"
+                            "No backup of the original archive was found."),
+                          archive.text(), problem.text());
+        return;
+    }
+
+    FXString rejected = archive + ".failed";
+    for (int i = 2; xf_existfile(rejected); i++)
+    {
+        rejected = archive + ".failed" + FXStringVal(i);
+    }
+    if ((xf_existfile(archive) && rename(archive.text(), rejected.text()) != 0) ||
+        rename(backup.text(), archive.text()) != 0)
+    {
+        MessageBox::error(owner, BOX_OK, _("Error"),
+                          _("Changes to archive %s were not saved correctly: %s.\n\n"
+                            "The original archive could not be restored automatically: %s\n"
+                            "It is kept as %s."),
+                          archive.text(), problem.text(), strerror(errno), backup.text());
+        return;
+    }
+    MessageBox::error(owner, BOX_OK, _("Error"),
+                      _("Changes to archive %s were not saved correctly: %s.\n\n"
+                        "The original archive was restored. The changed copy was kept as %s."),
+                      archive.text(), problem.text(), rejected.text());
 }
 #endif
 
@@ -1081,8 +1297,8 @@ void FilePanel::create()
     utf8Type = getApp()->registerDragType("UTF8_STRING");
 
     // Display the path linker, the editable path or the read-only path
-    FXbool show_pathlink = getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false);
-    if (pathAlwaysEditable(getApp(), list->getDirectory()))
+    FXbool show_pathlink = paneBreadcrumbs(getApp(), name);
+    if (pathAlwaysEditable(getApp(), name, list->getDirectory()))
     {
         pathtext->hide();
         pathlink->hide();
@@ -2846,6 +3062,7 @@ long FilePanel::onCmdPaneNavigation(FXObject* sender, FXSelector sel, void* ptr)
         if (count)
         {
             setActive();
+            xf_windowcolors(&menu);
             menu.create();
             int x, y;
             FXuint state;
@@ -2940,7 +3157,7 @@ long FilePanel::onUpdPaneNavigation(FXObject* sender, FXSelector sel, void* ptr)
 void FilePanel::finishPathEditing()
 {
     editingPath = false;
-    if (pathAlwaysEditable(getApp(), list->getDirectory()))
+    if (pathAlwaysEditable(getApp(), name, list->getDirectory()))
     {
         pathedit->setText(list->getDirectory());
         pathedit->show();
@@ -2948,7 +3165,7 @@ void FilePanel::finishPathEditing()
         pathlink->hide();
     }
     else if (!RemoteDirectory::isServer(list->getDirectory()) &&
-             getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false))
+             paneBreadcrumbs(getApp(), name))
     {
         pathedit->hide();
         pathlink->show();
@@ -2986,17 +3203,13 @@ long FilePanel::onCmdEditPath(FXObject* sender, FXSelector, void*)
 }
 
 
-// Switch the address bar between editable text and breadcrumbs, in both panels
+// Switch this panel's address bar between editable text and breadcrumbs
 long FilePanel::onCmdTogglePathMode(FXObject*, FXSelector, void*)
 {
-    FXbool breadcrumbs = !getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false);
-    getApp()->reg().writeUnsignedEntry("SETTINGS", "show_pathlinker", breadcrumbs);
+    FXbool breadcrumbs = !paneBreadcrumbs(getApp(), name);
+    getApp()->reg().writeUnsignedEntry(name.text(), "show_pathlinker", breadcrumbs);
     getApp()->reg().write();
     finishPathEditing();
-    if (next)
-    {
-        next->finishPathEditing();
-    }
     list->setFocus();
     return 1;
 }
@@ -3004,7 +3217,7 @@ long FilePanel::onCmdTogglePathMode(FXObject*, FXSelector, void*)
 
 long FilePanel::onUpdTogglePathMode(FXObject* sender, FXSelector, void*)
 {
-    FXbool breadcrumbs = getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false);
+    FXbool breadcrumbs = paneBreadcrumbs(getApp(), name);
     FXString tip = breadcrumbs ? _("Switch to Text Address") : _("Switch to Breadcrumbs");
     FXButton* button = dynamic_cast<FXButton*>(sender);
     if (button && button->getTipText() != tip)
@@ -3081,6 +3294,7 @@ long FilePanel::onPathPopup(FXObject*, FXSelector, void*)
     new FXMenuCommand(&menu, _("Paste and &Go"), minigotodiricon, this, ID_PATH_PASTE_GO);
     new FXMenuSeparator(&menu);
     new FXMenuCommand(&menu, _("Select &All"), NULL, pathedit, FXTextField::ID_SELECT_ALL);
+    xf_windowcolors(&menu);
     menu.create();
     int x, y;
     FXuint state;
@@ -4446,10 +4660,12 @@ long FilePanel::onCmdFileTrash(FXObject*, FXSelector, void*)
                         if (filename != "..")
                         {
                             // Trash files path name
-                            FXString trashpathname = xf_create_trashpathname(pathname, trashfileslocation);
+                            FXString itemtrashfiles, itemtrashinfo, itemtopdir;
+                            xf_trashfor(pathname, itemtrashfiles, itemtrashinfo, itemtopdir);
+                            FXString trashpathname = xf_create_trashpathname(pathname, itemtrashfiles);
 
                             // Create trashinfo file
-                            xf_create_trashinfo(pathname, trashpathname, trashfileslocation, trashinfolocation);
+                            xf_create_trashinfo(pathname, trashpathname, itemtrashfiles, itemtrashinfo, itemtopdir);
 
                             // Move file to trash files location
                             int ret = f->fmove(pathname, trashpathname);
@@ -4473,10 +4689,12 @@ long FilePanel::onCmdFileTrash(FXObject*, FXSelector, void*)
                     if (filename != "..")
                     {
                         // Trash files path name
-                        FXString trashpathname = xf_create_trashpathname(pathname, trashfileslocation);
+                        FXString itemtrashfiles, itemtrashinfo, itemtopdir;
+                        xf_trashfor(pathname, itemtrashfiles, itemtrashinfo, itemtopdir);
+                        FXString trashpathname = xf_create_trashpathname(pathname, itemtrashfiles);
 
                         // Create trashinfo file
-                        xf_create_trashinfo(pathname, trashpathname, trashfileslocation, trashinfolocation);
+                        xf_create_trashinfo(pathname, trashpathname, itemtrashfiles, itemtrashinfo, itemtopdir);
 
                         // Move file to trash files location
                         int ret = f->fmove(pathname, trashpathname);
@@ -6446,6 +6664,7 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         if (RemoteDirectory::isMedia(list->getDirectory()))
             new FXMenuCommand(&menu, _("Download..."), minicopyicon, this, ID_MEDIA_DOWNLOAD);
         new FXMenuCommand(&menu, _("Refresh"), minireloadicon, this, ID_REFRESH);
+        xf_windowcolors(&menu);
         menu.create();
         menu.popup(NULL, event->root_x, event->root_y);
         getApp()->runModalWhileShown(&menu);
@@ -6813,6 +7032,7 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
     {
         customMenu = explorer->getCustomActions()->appendContextMenu(menu, this);
     }
+    xf_windowcolors(menu);
     menu->create();
 
     // Reset flags
@@ -8127,8 +8347,14 @@ long FilePanel::onCmdArchiveOpen(FXObject*, FXSelector, void*)
         created = true;
     }
 
-    FXString cmd = archiveHostEnv() + xf_quote(program);
-    if (access(archive.text(), W_OK) != 0)
+    // Entries without Unix ownership (e.g. Windows ISOs) are root-only 0400/0500;
+    // present them as the user's own so the mount is usable without root
+    FXbool isZip = archive.rafter('.', 1).lower() == "zip" || archiveSignature(archive) == "zip";
+    FXbool readOnly = !archiveWritable(archive) || isZip || access(archive.text(), W_OK) != 0;
+
+    FXString cmd = archiveHostEnv() + xf_quote(program) + " -o uid=" + FXStringVal((FXuint)getuid()) +
+                   ",gid=" + FXStringVal((FXuint)getgid());
+    if (readOnly)
     {
         cmd += " -o readonly";
     }
@@ -8170,6 +8396,17 @@ long FilePanel::onCmdArchiveOpen(FXObject*, FXSelector, void*)
     {
         // Show and select the new folder
         current->list->boostRefresh();
+        if (readOnly && isZip)
+        {
+            MessageBox::information(this, BOX_OK, _("ZIP archive opened read-only"),
+                                    _("To protect your data, ZIP archives are always opened read-only.\n\n"
+                                      "Saving changes back into a ZIP archive can damage it: the archive "
+                                      "folder tool rewrites it in another format, so other programs can no "
+                                      "longer open it as a ZIP file.\n\n"
+                                      "You can browse it and drag or copy files out, but cannot add, edit, "
+                                      "rename, or delete files inside. To change its contents, extract it, make "
+                                      "your changes, then create a new archive."));
+        }
     }
 
     onCmdRefresh(0, 0, 0);
@@ -8237,6 +8474,13 @@ long FilePanel::onCmdArchiveClose(FXObject*, FXSelector, void*)
     }
     FXString cmd = archiveHostEnv() + xf_quote(program) + " -u " + xf_quote(mountpoint) + " 2>&1";
 
+    // archivemount saves changes after the folder is unmounted; remember the archive to check it afterwards
+    FXString mountedArchive;
+    pid_t mountpid = archiveMountProcess(mountpoint, mountedArchive);
+    struct stat before;
+    FXbool verify = mountpid > 0 && stat(mountedArchive.text(), &before) == 0;
+    FXString signature = verify ? archiveSignature(mountedArchive) : FXString::null;
+
     int ret = chdir(ROOTDIR);
     if (ret < 0)
     {
@@ -8250,11 +8494,33 @@ long FilePanel::onCmdArchiveClose(FXObject*, FXSelector, void*)
 
     FXString output;
     int status = -1;
-    f->mount(mountpoint, _("Saving archive, please wait:"), cmd, &output, &status);
+    f->mount(mountpoint, _("Closing archive folder, please wait:"), cmd, &output, &status);
     delete f;
+
+    // Wait until archivemount has finished writing the archive (up to 10 minutes for large archives)
+    FXbool saving = false;
+    if (status == 0 && mountpid > 0)
+    {
+        for (int i = 0; i < 6000 && kill(mountpid, 0) == 0; i++)
+        {
+            usleep(100000);
+        }
+        saving = kill(mountpid, 0) == 0;
+    }
 
     ret = chdir(startlocation.text());
     getApp()->endWaitCursor();
+
+    if (saving)
+    {
+        MessageBox::warning(this, BOX_OK, _("Warning"),
+                            _("Archive %s is still being saved. Don't move or delete it until saving has finished."),
+                            mountedArchive.text());
+    }
+    else if (status == 0 && verify)
+    {
+        archiveVerifySave(this, mountedArchive, before, signature);
+    }
 
     if (status != 0)
     {
@@ -8860,7 +9126,7 @@ void FilePanel::updatePath(FXbool resetEditor)
     tabbuttons->onUpdCurrentTab(this, 0, NULL);
     if (!RemoteDirectory::isServer(list->getDirectory()))
         pathlink->setPath(list->getDirectory());
-    if (!editingPath && pathAlwaysEditable(getApp(), list->getDirectory()))
+    if (!editingPath && pathAlwaysEditable(getApp(), name, list->getDirectory()))
     {
         pathlink->hide();
         pathtext->hide();
@@ -8871,7 +9137,7 @@ void FilePanel::updatePath(FXbool resetEditor)
         }
     }
     else if (!editingPath && (RemoteDirectory::isServer(list->getDirectory()) ||
-             !getApp()->reg().readUnsignedEntry("SETTINGS", "show_pathlinker", false)))
+             !paneBreadcrumbs(getApp(), name)))
     {
         if (pathedit->shown())
         {

@@ -122,6 +122,7 @@ protected:
     FXColor pbarcolor = FXRGB(0, 0, 0);
     FXColor attentioncolor = FXRGB(0, 0, 0);
     FXColor scrollbarcolor = FXRGB(0, 0, 0);
+    std::vector<FXFont*> themeFonts;
     FXArrowButton* btnbackhist = NULL;
     FXArrowButton* btnforwardhist = NULL;
     HistInputDialog* rundialog = NULL;
@@ -238,6 +239,7 @@ public:
         ID_VERT_PANELS,
         ID_MENU_OPEN,
         ID_MENU_CLOSE,
+        ID_THEME_REQUEST,
         ID_LAST
     };
 
@@ -254,6 +256,7 @@ public:
 
     ~XFileExplorer();
     void saveConfig(FXbool restarting = false);
+    void applyTheme(const Theme&, FXWindow* = NULL);
 
     void openFiles(vector_FXString);
     long onSigHarvest(FXObject*, FXSelector, void*);
@@ -267,6 +270,7 @@ public:
     long onCmdProjectWebsite(FXObject*, FXSelector, void*);
     long onCmdFileAssoc(FXObject*, FXSelector, void*);
     long onCmdRefresh(FXObject*, FXSelector, void*);
+    long onThemeRequest(FXObject*, FXSelector, void*);
     long onCmdToggleStatus(FXObject*, FXSelector, void*);
     long onCmdPopupMenu(FXObject*, FXSelector, void*);
     long onCmdPrefs(FXObject*, FXSelector, void*);

@@ -29,6 +29,7 @@ swordfish_SOURCES = ../st/x.c \
 			  BookmarkDialog.cpp \
 			  BrowseInputDialog.cpp \
 			  ColorSelector.cpp \
+              ColorTools.cpp \
 			  ComboBox.cpp \
 			  CommandWindow.cpp \
 			  ConnectDialog.cpp \
@@ -54,6 +55,8 @@ swordfish_SOURCES = ../st/x.c \
 			  PathLinker.cpp \
 			  Places.cpp \
 			  Preferences.cpp \
+              Theme.cpp \
+              ThemeEditor.cpp \
 			  SystemIcons.cpp \
               SystemIntegration.cpp \
               Properties.cpp \
@@ -82,6 +85,7 @@ swordfish_LDADD = @LIBINTL@ -lutil
 
 
 swfa_SOURCES = ../st/x.c \
+              Theme.cpp \
               ../st/st.c \
               AppLogger.cpp \
               Preview.cpp \
@@ -123,6 +127,7 @@ swfa_LDADD = @LIBINTL@ -lutil
 
 
 swfi_SOURCES = ../st/x.c \
+              Theme.cpp \
               ../st/st.c \
               AppLogger.cpp \
               Preview.cpp \
@@ -164,6 +169,7 @@ swfi_LDADD = @LIBINTL@ -lutil
 
 
 swfp_SOURCES = ../st/x.c \
+              Theme.cpp \
               ../st/st.c \
               AppLogger.cpp \
               Preview.cpp \
@@ -205,6 +211,7 @@ swfp_LDADD = @LIBINTL@ -lutil
 	  
 
 swfw_SOURCES = ../st/x.c \
+              Theme.cpp \
               ../st/st.c \
               AppLogger.cpp \
               Preview.cpp \
@@ -214,6 +221,7 @@ swfw_SOURCES = ../st/x.c \
 			  xfeutils.cpp \
 			  ComboBox.cpp \
 			  ColorSelector.cpp \
+              ColorTools.cpp \
 			  CommandWindow.cpp \
 			  DialogBox.cpp \
  			  DirHistBox.cpp \
@@ -277,6 +285,10 @@ EXTRA_DIST =  ../libsn/sn-common.h	\
               AppLogger.h \
               CustomActions.h \
               CustomActionsUI.h \
+              BackgroundEffect.h \
+              Theme.h \
+              ThemeEditor.h \
+              DragPreview.h \
               Preview.h \
               RemoteDirectory.h \
               SystemIcons.h \
@@ -290,6 +302,7 @@ EXTRA_DIST =  ../libsn/sn-common.h	\
 			  BookmarkDialog.h \
 			  BrowseInputDialog.h \
 			  ColorSelector.h \
+              ColorTools.h \
 			  ComboBox.h \
 			  CommandWindow.h \
 			  ConnectDialog.h \

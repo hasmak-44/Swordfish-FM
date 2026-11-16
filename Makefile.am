@@ -21,6 +21,26 @@ appicondir = $(rcdir)/app-icon
 dist_appicon_DATA = app-icon/swordfish-folder-256.png app-icon/swordfish-folder-512.png app-icon/swordfish-folder-512.jpg \
                     app-icon/swordfish-circle-256.png app-icon/swordfish-circle-512.png app-icon/swordfish-circle-512.jpg \
                     app-icon/swordfish-shield-256.jpg app-icon/swordfish-shield-512.jpg
+texturedir = $(rcdir)/textures
+dist_texture_DATA = textures/brick.png textures/brushed-metal.png textures/canvas.png textures/concrete.png \
+                    textures/cork.png textures/linen.png textures/paper.png textures/pebbles.png \
+                    textures/planks.png textures/slate.png
+preferencesicondir = $(rcdir)/icons/preferences
+dist_preferencesicon_DATA = icons/preferences/pref-general.svg icons/preferences/pref-panels.svg \
+    icons/preferences/pref-filelist.svg icons/preferences/pref-fileops.svg \
+    icons/preferences/pref-appearance.svg icons/preferences/pref-language.svg \
+    icons/preferences/pref-programs.svg icons/preferences/pref-keybindings.svg \
+    icons/preferences/pref-customactions.svg icons/preferences/pref-system.svg \
+    icons/preferences/pref-general.png icons/preferences/pref-general-selected.png \
+    icons/preferences/pref-panels.png icons/preferences/pref-panels-selected.png \
+    icons/preferences/pref-filelist.png icons/preferences/pref-filelist-selected.png \
+    icons/preferences/pref-fileops.png icons/preferences/pref-fileops-selected.png \
+    icons/preferences/pref-appearance.png icons/preferences/pref-appearance-selected.png \
+    icons/preferences/pref-language.png icons/preferences/pref-language-selected.png \
+    icons/preferences/pref-programs.png icons/preferences/pref-programs-selected.png \
+    icons/preferences/pref-keybindings.png icons/preferences/pref-keybindings-selected.png \
+    icons/preferences/pref-customactions.png icons/preferences/pref-customactions-selected.png \
+    icons/preferences/pref-system.png icons/preferences/pref-system-selected.png
 pkdir = $(prefix)/share/polkit-1/actions
 
 EXTRA_DIST = autogen.sh install-swordfish-system.sh iconlinks.sh config.h i18n.h org.swordfish.root.policy.in.in swordfish.1 swordfish-archive.1 swordfish-image.1 swordfish-package.1 swordfish-write.1 \
@@ -29,12 +49,13 @@ EXTRA_DIST = autogen.sh install-swordfish-system.sh iconlinks.sh config.h i18n.h
              tests/network-discovery-regression.cpp tests/run-network-discovery-regression.sh \
              tests/folder-expansion-regression.cpp tests/run-folder-expansion-regression.sh \
              tests/search-window-regression.cpp tests/run-search-window-regression.sh \
+             tests/theme-workflow-regression.cpp tests/run-theme-workflow-regression.sh \
              tests/system-integration-regression.cpp tests/run-system-integration-regression.sh \
              tests/custom-actions-regression.cpp tests/run-custom-actions-regression.sh \
              tests/custom-actions-ui-regression.cpp tests/run-custom-actions-ui-regression.sh \
              tests/run-command-link-regression.sh \
              tests/fake-remote-directory.py tests/native-directory-helper-regression.py \
-             tests/portable-launcher-regression.py \
+             tests/portable-launcher-regression.py textures/generate-textures.py icons/preferences/render-icons.py \
              ABOUT-NLS TODO BUGS swordfishrc.in *.desktop.in.in \
                  $(top_srcdir)/icons/*
 

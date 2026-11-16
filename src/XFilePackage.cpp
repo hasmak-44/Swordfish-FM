@@ -288,13 +288,13 @@ XFilePackage::XFilePackage(FXApp* a) : FXMainWindow(a, "Xfp", NULL, NULL,
                             0, 0, 0, 0);
 
     // First tab is Description
-    new FXTabItem(tabbook, _("&Description"), NULL);
+    new DialogTabItem(tabbook, _("&Description"), NULL);
     FXVerticalFrame* descr = new FXVerticalFrame(tabbook);
     FXPacker* p = new FXPacker(descr, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_NONE, 0, 0, 0, 0, 0, 0, 0, 0);
     description = new FXText(p, this, XFilePackage::ID_DESCRIPTION, LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
     // Second tab is File List
-    new FXTabItem(tabbook, _("File &List"), NULL);
+    new DialogTabItem(tabbook, _("File &List"), NULL);
     FXVerticalFrame* flistfr = new FXVerticalFrame(tabbook);
     p = new FXPacker(flistfr, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_NONE, 0, 0, 0, 0, 0, 0, 0, 0);
     list = new FXTreeList(p, this, XFilePackage::ID_FILELIST,
@@ -790,6 +790,7 @@ void XFilePackage::create()
         FilterNum = i;
     }
 
+    xf_dialogcolors(this);
     FXMainWindow::create();
 
     minifoldericon->create();

@@ -1,6 +1,19 @@
 #ifndef DIALOGBOX_H
 #define DIALOGBOX_H
 
+class DialogTabItem : public FXTabItem
+{
+    FXDECLARE(DialogTabItem)
+    FXColor highlight = FXRGB(15, 86, 217);
+    DialogTabItem() {}
+public:
+    DialogTabItem(FXTabBar* parent, const FXString& text, FXIcon* icon = NULL,
+                  FXuint opts = TAB_TOP_NORMAL, FXint x = 0, FXint y = 0, FXint w = 0, FXint h = 0,
+                  FXint pl = DEFAULT_PAD, FXint pr = DEFAULT_PAD, FXint pt = DEFAULT_PAD, FXint pb = DEFAULT_PAD) :
+        FXTabItem(parent, text, icon, opts, x, y, w, h, pl, pr, pt, pb) {}
+    long onPaint(FXObject*, FXSelector, void*);
+    void setHighlightColor(FXColor color) { highlight = color; update(); }
+};
 
 // Dialog Box window
 class FXAPI DialogBox : public FXTopWindow
