@@ -26,6 +26,37 @@ dist_texture_DATA = textures/brick.png textures/brushed-metal.png textures/canva
                     textures/cork.png textures/linen.png textures/paper.png textures/pebbles.png \
                     textures/planks.png textures/slate.png textures/autumn-leaves.png textures/canyon-strata.png \
                     textures/carbon-fiber.png textures/marble.png
+texturefabricdir = $(texturedir)/Fabric
+dist_texturefabric_DATA = textures/Fabric/Brown-Leather.png textures/Fabric/Denim-Fabric-03.png \
+                          textures/Fabric/Hessian-230.png textures/Fabric/Hessian-380.png \
+                          textures/Fabric/Knitted-Fleece.png textures/Fabric/Ribbed-Corduroy.png
+texturewooddir = $(texturedir)/Wood
+dist_texturewood_DATA = textures/Wood/American-Walnut-Veneer.png textures/Wood/Bamboo-Veneer.png \
+                        textures/Wood/Cherry-Veneer.png textures/Wood/Fine-Grained-Wood.png \
+                        textures/Wood/Hinoki-Planks.png textures/Wood/Oak-Veneer-01.png \
+                        textures/Wood/Olive-Veneer.png
+texturenaturedir = $(texturedir)/Nature
+dist_texturenature_DATA = textures/Nature/Clean-Pebbles.png textures/Nature/Coast-Sand-02.png \
+                          textures/Nature/Dark-Rock.png textures/Nature/Dry-River-Pebbles.png \
+                          textures/Nature/Granite-Tile-03.png textures/Nature/Pine-Bark.png
+texturemetaldir = $(texturedir)/Metal
+dist_texturemetal_DATA = textures/Metal/Corrugated-Iron-02.png textures/Metal/Rust-Coarse-01.png
+patternfabricdir = $(rcdir)/patterns/Fabric
+dist_patternfabric_DATA = patterns/Fabric/Curly-Teddy-Checkered.png patterns/Fabric/Fabric-Pattern-05.png \
+                          patterns/Fabric/Fabric-Pattern-07.png patterns/Fabric/Faux-Fur-Geometric.png \
+                          patterns/Fabric/Floral-Jacquard.png patterns/Fabric/Gingham-Check.png \
+                          patterns/Fabric/Poly-Wool-Herringbone.png patterns/Fabric/Quatrefoil-Jacquard-Fabric.png \
+                          patterns/Fabric/Waffle-Pique-Cotton.png
+patternmasonrydir = $(rcdir)/patterns/Masonry
+dist_patternmasonry_DATA = patterns/Masonry/Blue-Floor-Tiles-01.png patterns/Masonry/Brick-Crosswalk.png \
+                           patterns/Masonry/Brick-Floor.png patterns/Masonry/Brown-Floor-Tiles.png \
+                           patterns/Masonry/Checkered-Pavement-Tiles.png patterns/Masonry/Interior-Tiles.png \
+                           patterns/Masonry/Patterned-Terracotta-Tiling.png patterns/Masonry/Rectangular-Facade-Tiles.png \
+                           patterns/Masonry/Terracotta-Floor-Tiles.png patterns/Masonry/Terrazzo-Tiles.png
+patternparquetdir = $(rcdir)/patterns/Parquet
+dist_patternparquet_DATA = patterns/Parquet/Diagonal-Parquet.png patterns/Parquet/Herringbone-Parquet.png
+themeassetlicensesdir = $(rcdir)
+dist_themeassetlicenses_DATA = docs/cc0-theme-assets.md
 themedir = $(rcdir)/themes
 dist_theme_DATA = themes/arctic-aurora.swordfish-theme themes/autumn-leaves.swordfish-theme \
                   themes/carbon-fiber.swordfish-theme themes/desert-canyon.swordfish-theme \

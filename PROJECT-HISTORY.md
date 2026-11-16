@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 16 November 2026, through categorized pattern graphics
-(section 3.88).
+Last updated: 16 November 2026, through public-domain theme samples
+(section 3.89).
 Latest release: `swordfish-0.0.3-beta2`.
 Stable fallback: `swordfish-0.0.2`.
 
@@ -40,7 +40,7 @@ Historical implementation details below do not override the current code.
    automated tests but still need the user's real-machine testing.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.70-3.88. Older beta and RC notes are
+9. For the latest state, read sections 3.70-3.89. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide is a documentation addition after the frozen RC4 application commit.
@@ -3317,6 +3317,19 @@ filtering and import, collisions, links, reload and sharing. Additional
 public-domain samples and background images remain future work; desktop
 acceptance remains pending.
 
+### 3.89. Public-domain theme samples
+
+The bundled galleries include 21 additional patterns and 21 additional
+textures adapted from Poly Haven's CC0 assets. Category folders are preserved
+on installation, and source, author and transformation details are installed
+with the application. The original downloads were checked against Poly
+Haven's metadata; thumbnails were checked for visibility.
+
+Validation in the codespace: the theme workflow regression and a staged
+installation passed, with 21 pattern PNGs and 35 texture PNGs installed.
+Desktop acceptance and the portable build remain pending. Background-image
+support remains future work.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -3868,7 +3881,7 @@ Do not amend published commits/tags as an automatic workaround.
 ### Durable starting point
 
 0.0.2 remains the frozen stable fallback; 0.0.3 beta 2 is the latest published
-test release. Sections 3.70-3.88 record the current implementation state.
+test release. Sections 3.70-3.89 record the current implementation state.
 Groups 2 through 5 are committed locally; none is pushed or released. Generated
 autotools files may remain modified after local builds and must not be included
 in feature commits. Start from the current branch and worktree, not from an old

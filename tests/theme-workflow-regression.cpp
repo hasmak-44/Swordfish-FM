@@ -519,7 +519,14 @@ public:
                 pump(app);
                 FXWindow* page = effectTabs->childAtIndex(tab * 2 + 1);
                 FXIconList* samples = static_cast<FXIconList*>(findClass(page, "FXIconList"));
-                assert(page->shown() && samples && samples->shown() && samples->getNumItems() > 1);
+                assert(page->shown() && samples && samples->shown());
+                assert(samples->getNumItems() >= (tab == 1 ? 29 : 36));
+                const FXString bundledName = tab == 1 ? "Gingham-Check (Fabric)" : "Oak-Veneer-01 (Wood)";
+                FXint bundledIndex = -1;
+                for (FXint item = 0; item < samples->getNumItems(); ++item)
+                    if (samples->getItemText(item) == bundledName) bundledIndex = item;
+                assert(bundledIndex >= 0 && samples->getItemBigIcon(bundledIndex) &&
+                       samples->getItemBigIcon(bundledIndex)->getData());
                 FXint sampleIndex = tab == 1 ? 0 : 1;
                 FXint otherIndex = tab == 1 ? 1 : 0;
                 samples->setCurrentItem(otherIndex);
@@ -531,6 +538,7 @@ public:
                        itemShowsPixel(samples, sampleIndex, visibleSample->getData()[0]));
                 screenshot(dialog, tabShots[tab - 1]);
                 FXint checked = 0;
+                FXbool readable = true;
                 for (FXint item = 0; item < samples->getNumItems(); ++item)
                 {
                     // Samples must stay readable on the dark fixed field regardless of the edited theme.
@@ -547,9 +555,14 @@ public:
                         high = FXMAX(high, luma);
                         total += luma;
                     }
-                    assert(total / count > 110 && high - low > (tab == 1 ? 40 : 12));
+                    if (total / count <= 110 || high - low <= (tab == 1 ? 40 : 12))
+                    {
+                        fprintf(stderr, "Unreadable gallery sample: %s (mean %d, range %d)\n",
+                                samples->getItemText(item).text(), total / count, high - low);
+                        readable = false;
+                    }
                 }
-                assert(checked >= 8);
+                assert(checked >= 8 && readable);
             }
             ActionTimer textureNamingHelp([&]()
             {

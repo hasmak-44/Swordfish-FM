@@ -770,4 +770,6 @@ Texture PNGs can also be organized into category subfolders under
 textures into them. Textures in the folder root are uncategorized.
 PNG pattern masks use the separate `portable-data/patterns/` folder and the
 same category rules. Exported themes include referenced pattern and texture
-files in their respective subfolders.
+files in their respective subfolders. Additional bundled texture and pattern
+samples are adapted from public-domain Poly Haven assets; their sources,
+authors and licence are listed in `share/swordfish/cc0-theme-assets.md`.

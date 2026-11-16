@@ -9,6 +9,7 @@ mkdir -p "$scratch/usr/bin" "$scratch/usr/share/swordfish/icons" "$scratch/manua
 ln -s "$root/icons/default-theme" "$scratch/usr/share/swordfish/icons/default-theme"
 ln -s "$root/icons/preferences" "$scratch/usr/share/swordfish/icons/preferences"
 ln -s "$root/textures" "$scratch/usr/share/swordfish/textures"
+ln -s "$root/patterns" "$scratch/usr/share/swordfish/patterns"
 ln -s "$root/themes" "$scratch/usr/share/swordfish/themes"
 ln -s "$root/docs/manual" "$scratch/usr/share/swordfish/manual"
 printf '#!/bin/sh\nprintf "%%s\\n" "$1" >> "$SWORDFISH_TEST_MANUAL_CAPTURE"\n' > "$scratch/manual-launcher/xdg-open"
