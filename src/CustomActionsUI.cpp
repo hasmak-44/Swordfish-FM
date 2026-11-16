@@ -1,6 +1,7 @@
 #include "config.h"
 #include "i18n.h"
 #include "CustomActionsUI.h"
+#include "BackgroundImage.h"
 #include "XFileExplorer.h"
 #include "FileList.h"
 #include "CommandWindow.h"
@@ -919,7 +920,7 @@ CustomActionsUI::CustomActionsUI(XFileExplorer* window, FXDockSite* dock, FXMenu
 {
     model.load(owner->getApp()->reg(), loadError);
     toolbarShown = owner->getApp()->reg().readUnsignedEntry("CUSTOM ACTIONS UI", "toolbar", 1) != 0;
-    toolbar = new FXToolBar(dock, FRAME_NONE | LAYOUT_SIDE_TOP | LAYOUT_DOCK_NEXT | LAYOUT_FILL_X);
+    toolbar = new ThemeToolBar(dock, FRAME_NONE | LAYOUT_SIDE_TOP | LAYOUT_DOCK_NEXT | LAYOUT_FILL_X);
     toolbar->setTarget(this);
     toolbar->setSelector(ID_TOOLBAR_MENU);
     mainPane = new FXMenuPane(owner);

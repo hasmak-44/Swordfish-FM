@@ -19,6 +19,7 @@
 #include <X11/Xatom.h>
 
 #include "AppLogger.h"
+#include "BackgroundImage.h"
 #include "Preview.h"
 #include "RemoteDirectory.h"
 #include "xfedefs.h"
@@ -408,7 +409,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (top[i] == 0)
         {            
             FXToolBarShell* dragshell1 = new FXToolBarShell(this, FRAME_NONE);
-            generaltoolbar = new FXToolBar(topdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+            generaltoolbar = new ThemeToolBar(topdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
             new FXToolBarGrip(generaltoolbar, generaltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
             generaltoolbar->show();
         }
@@ -417,7 +418,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (top[i] == 1)
         {            
             FXToolBarShell* dragshell2 = new FXToolBarShell(this, FRAME_NONE);
-            toolstoolbar = new FXToolBar(topdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+            toolstoolbar = new ThemeToolBar(topdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
             new FXToolBarGrip(toolstoolbar, toolstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
        
@@ -425,7 +426,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (top[i] == 2)
         {
             FXToolBarShell* dragshell3 = new FXToolBarShell(this, FRAME_NONE);
-            paneltoolbar = new FXToolBar(topdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+            paneltoolbar = new ThemeToolBar(topdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
             new FXToolBarGrip(paneltoolbar, paneltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -433,7 +434,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (top[i] == 3)
         {
             FXToolBarShell* dragshell4 = new FXToolBarShell(this, FRAME_NONE);
-            addresstoolbar = new FXToolBar(topdock, dragshell4, address_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+            addresstoolbar = new ThemeToolBar(topdock, dragshell4, address_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
             new FXToolBarGrip(addresstoolbar, addresstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
 
@@ -441,7 +442,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (top[i] == 4)
         {
             FXToolBarShell* dragshell5 = new FXToolBarShell(this, FRAME_NONE);
-            tabtoolbar = new FXToolBar(topdock, dragshell5, tab_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+            tabtoolbar = new ThemeToolBar(topdock, dragshell5, tab_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
             new FXToolBarGrip(tabtoolbar, tabtoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
     }
@@ -453,7 +454,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (bottom[i] == 0)
         {            
             FXToolBarShell* dragshell1 = new FXToolBarShell(this, FRAME_NONE);
-            generaltoolbar = new FXToolBar(bottomdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
+            generaltoolbar = new ThemeToolBar(bottomdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
             new FXToolBarGrip(generaltoolbar, generaltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -461,7 +462,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (bottom[i] == 1)
         {            
             FXToolBarShell* dragshell2 = new FXToolBarShell(this, FRAME_NONE);
-            toolstoolbar = new FXToolBar(bottomdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
+            toolstoolbar = new ThemeToolBar(bottomdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
             new FXToolBarGrip(toolstoolbar, toolstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -469,7 +470,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (bottom[i] == 2)
         {
             FXToolBarShell* dragshell3 = new FXToolBarShell(this, FRAME_NONE);
-            paneltoolbar = new FXToolBar(bottomdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
+            paneltoolbar = new ThemeToolBar(bottomdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
             new FXToolBarGrip(paneltoolbar, paneltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
 
@@ -477,7 +478,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (bottom[i] == 3)
         {
             FXToolBarShell* dragshell4 = new FXToolBarShell(this, FRAME_NONE);
-            addresstoolbar = new FXToolBar(bottomdock, dragshell4, address_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
+            addresstoolbar = new ThemeToolBar(bottomdock, dragshell4, address_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
             new FXToolBarGrip(addresstoolbar, addresstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -485,7 +486,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (bottom[i] == 4)
         {
             FXToolBarShell* dragshell5 = new FXToolBarShell(this, FRAME_NONE);
-            tabtoolbar = new FXToolBar(bottomdock, dragshell5, tab_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
+            tabtoolbar = new ThemeToolBar(bottomdock, dragshell5, tab_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
             new FXToolBarGrip(tabtoolbar, tabtoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
     }
@@ -497,7 +498,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (left[i] == 0)
         {            
             FXToolBarShell* dragshell1 = new FXToolBarShell(this, FRAME_NONE);
-            generaltoolbar = new FXToolBar(leftdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
+            generaltoolbar = new ThemeToolBar(leftdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
             new FXToolBarGrip(generaltoolbar, generaltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -505,7 +506,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (left[i] == 1)
         {            
             FXToolBarShell* dragshell2 = new FXToolBarShell(this, FRAME_NONE);
-            toolstoolbar = new FXToolBar(leftdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
+            toolstoolbar = new ThemeToolBar(leftdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
             new FXToolBarGrip(toolstoolbar, toolstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
        
@@ -513,7 +514,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (left[i] == 2)
         {
             FXToolBarShell* dragshell3 = new FXToolBarShell(this, FRAME_NONE);
-            paneltoolbar = new FXToolBar(leftdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
+            paneltoolbar = new ThemeToolBar(leftdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
             new FXToolBarGrip(paneltoolbar, paneltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -521,7 +522,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (left[i] == 3)
         {
             FXToolBarShell* dragshell4 = new FXToolBarShell(this, FRAME_NONE);
-            addresstoolbar = new FXToolBar(leftdock, dragshell4, address_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
+            addresstoolbar = new ThemeToolBar(leftdock, dragshell4, address_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
             new FXToolBarGrip(addresstoolbar, addresstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
 
@@ -529,7 +530,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (left[i] == 4)
         {
             FXToolBarShell* dragshell5 = new FXToolBarShell(this, FRAME_NONE);
-            tabtoolbar = new FXToolBar(leftdock, dragshell5, tab_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
+            tabtoolbar = new ThemeToolBar(leftdock, dragshell5, tab_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
             new FXToolBarGrip(tabtoolbar, tabtoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
     }
@@ -541,7 +542,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (right[i] == 0)
         {            
             FXToolBarShell* dragshell1 = new FXToolBarShell(this, FRAME_NONE);
-            generaltoolbar = new FXToolBar(rightdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
+            generaltoolbar = new ThemeToolBar(rightdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
             new FXToolBarGrip(generaltoolbar, generaltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -549,7 +550,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (right[i] == 1)
         {            
             FXToolBarShell* dragshell2 = new FXToolBarShell(this, FRAME_NONE);
-            toolstoolbar = new FXToolBar(rightdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
+            toolstoolbar = new ThemeToolBar(rightdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
             new FXToolBarGrip(toolstoolbar, toolstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -557,7 +558,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (right[i] == 2)
         {
             FXToolBarShell* dragshell3 = new FXToolBarShell(this, FRAME_NONE);
-            paneltoolbar = new FXToolBar(rightdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
+            paneltoolbar = new ThemeToolBar(rightdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
             new FXToolBarGrip(paneltoolbar, paneltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
 
@@ -565,7 +566,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (right[i] == 3)
         {
             FXToolBarShell* dragshell4 = new FXToolBarShell(this, FRAME_NONE);
-            addresstoolbar = new FXToolBar(rightdock, dragshell4, address_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
+            addresstoolbar = new ThemeToolBar(rightdock, dragshell4, address_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
             new FXToolBarGrip(addresstoolbar, addresstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -573,7 +574,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (right[i] == 4)
         {
             FXToolBarShell* dragshell5 = new FXToolBarShell(this, FRAME_NONE);
-            tabtoolbar = new FXToolBar(rightdock, dragshell5, tab_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
+            tabtoolbar = new ThemeToolBar(rightdock, dragshell5, tab_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
             new FXToolBarGrip(tabtoolbar, tabtoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
     }
@@ -584,7 +585,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     if (!general_shown)
     {
         FXToolBarShell* dragshell1 = new FXToolBarShell(this, FRAME_NONE);
-        generaltoolbar = new FXToolBar(topdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+        generaltoolbar = new ThemeToolBar(topdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
         new FXToolBarGrip(generaltoolbar, generaltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);        
         
         generaltoolbar->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_HIDE), NULL);
@@ -598,7 +599,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     if (!tools_shown)
     {            
         FXToolBarShell* dragshell2 = new FXToolBarShell(this, FRAME_NONE);
-        toolstoolbar = new FXToolBar(topdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+        toolstoolbar = new ThemeToolBar(topdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
         new FXToolBarGrip(toolstoolbar, toolstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         
         toolstoolbar->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_HIDE), NULL);
@@ -612,7 +613,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     if (!panel_shown)
     {
         FXToolBarShell* dragshell3 = new FXToolBarShell(this, FRAME_NONE);
-        paneltoolbar = new FXToolBar(topdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+        paneltoolbar = new ThemeToolBar(topdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
         new FXToolBarGrip(paneltoolbar, paneltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         
         paneltoolbar->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_HIDE), NULL);
@@ -626,7 +627,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     if (!address_shown)
     {
         FXToolBarShell* dragshell4 = new FXToolBarShell(this, FRAME_NONE);
-        addresstoolbar = new FXToolBar(topdock, dragshell4, address_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+        addresstoolbar = new ThemeToolBar(topdock, dragshell4, address_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
         new FXToolBarGrip(addresstoolbar, addresstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         
         addresstoolbar->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_HIDE), NULL);
@@ -641,7 +642,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     if (!tab_shown)
     {
         FXToolBarShell* dragshell5 = new FXToolBarShell(this, FRAME_NONE);
-        tabtoolbar = new FXToolBar(topdock, dragshell5, tab_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+        tabtoolbar = new ThemeToolBar(topdock, dragshell5, tab_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
         new FXToolBarGrip(tabtoolbar, tabtoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         
         tabtoolbar->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_HIDE), NULL);

@@ -10,6 +10,7 @@
 #include "xfeutils.h"
 #include "ThemeEditor.h"
 #include "BackgroundEffect.h"
+#include "BackgroundImage.h"
 #include "Preferences.h"
 #include "XFileExplorer.h"
 #include "FileList.h"
@@ -53,6 +54,7 @@ FXString propertyName(const FXString& key)
     if (key == "selection_foreground") return _("Selected text");
     if (key == "font") return _("Font, size and style");
     if (key == "effect") return _("Gradient, pattern and texture");
+    if (key == "background_image") return _("Background image");
     if (key == "shading") return _("Bar shading");
     if (key == "opacity") return _("Window opacity");
     return key;
@@ -71,6 +73,8 @@ std::vector<FXString> supportedProperties(const FXString& area)
         result.push_back("selection_foreground");
     }
     if (area != "scrollbars") result.push_back("font");
+    if (area == "list" || area == "tree" || area == "places" || area == "tabs" || area == "toolbars")
+        result.push_back("background_image");
     if (area == "list") result.push_back("effect");
     if (area == "main")
     {
@@ -139,6 +143,8 @@ class ThemeMockup : public FXCanvas
         FXbool selected = false;
         FXbool sensitive = false;
         FXbool vertical = false;
+        FXint imageOwner = -1;
+        FXbool paintImage = false;
         FXint thumbPosition = 0, thumbSize = 0;
         std::vector<Row> rows;
         IconList* list = NULL;
@@ -150,6 +156,7 @@ class ThemeMockup : public FXCanvas
     std::vector<Node> nodes;
     std::vector<FXIcon*> ownedIcons;
     std::map<FXString, FXFont*> fonts;
+    std::map<FXint, std::unique_ptr<FXImage>> imageLayers;
     std::unique_ptr<FXMainWindow> holder;
     FXImage* image = NULL;
     Theme theme;
@@ -281,7 +288,9 @@ class ThemeMockup : public FXCanvas
         }
     }
 
-    void capture(FXWindow* window, FXWindow* root, const FXString& parentArea)
+    void capture(FXWindow* window, FXWindow* root, const FXString& parentArea,
+                 FXint imageOwner = -1, BackgroundImageOwner* imageWidget = NULL,
+                 const FXString& imageArea = FXString::null)
     {
         if (!window->shown() || window->getWidth() <= 0 || window->getHeight() <= 0) return;
         Node node;
@@ -289,6 +298,15 @@ class ThemeMockup : public FXCanvas
         window->translateCoordinatesTo(x, y, root, 0, 0);
         node.rectangle = FXRectangle(x, y, window->getWidth(), window->getHeight());
         node.area = themeWidgetArea(window, parentArea);
+        FXString ownerArea = imageArea;
+        if (BackgroundImageOwner* owner = dynamic_cast<BackgroundImageOwner*>(window))
+        {
+            imageOwner = nodes.size();
+            imageWidget = owner;
+            ownerArea = node.area;
+        }
+        node.imageOwner = imageOwner;
+        node.paintImage = imageWidget && node.area == ownerArea && imageWidget->allowsBackgroundImage(window);
         node.font = getApp()->getNormalFont()->getFont();
         if (FXFrame* frame = dynamic_cast<FXFrame*>(window)) node.frame = frame->getFrameStyle();
         if (IconList* list = dynamic_cast<IconList*>(window))
@@ -363,7 +381,7 @@ class ThemeMockup : public FXCanvas
         FXString area = node.area;
         nodes.push_back(std::move(node));
         for (FXWindow* child = window->getFirst(); child; child = child->getNext())
-            capture(child, root, area);
+            capture(child, root, area, imageOwner, imageWidget, ownerArea);
     }
 
     void text(FXDC& dc, const FXString& label, FXFont* f, FXint x, FXint y, FXint width, FXint height,
@@ -390,6 +408,7 @@ class ThemeMockup : public FXCanvas
         list->setSelTextColor(theme.colorFor("list", "selection_foreground"));
         if (list->backgroundEffect != theme.effect || list->effectAssetRoot != theme.assetRoot)
             list->setBackgroundEffect(theme.effect, theme.assetRoot);
+        list->setBackgroundImage(theme.property("list", "background_image"), theme.property("list", "image_mode"));
         list->font = font(theme.fontFor("list", getApp()->getNormalFont()->getFont()));
         std::unique_ptr<FXImage> layer(new FXImage(getApp(), NULL, IMAGE_KEEP, node.rectangle.w, node.rectangle.h));
         layer->create();
@@ -427,6 +446,33 @@ class ThemeMockup : public FXCanvas
         delete image;
         image = new FXImage(getApp(), NULL, IMAGE_KEEP, sourceWidth, sourceHeight);
         image->create();
+        imageLayers.clear();
+        for (size_t i = 0; i < nodes.size(); ++i)
+        {
+            const Node& host = nodes[i];
+            if (host.imageOwner != static_cast<FXint>(i)) continue;
+            FXString reference = theme.property(host.area, "background_image");
+            if (reference.empty()) continue;
+            FXString path = BackgroundImage::path(reference, theme.assetRoot), error;
+            std::unique_ptr<FXImage> source;
+            if (!path.empty()) source = BackgroundImage::load(getApp(), path, error);
+            if (!source)
+            {
+                appLog(APP_LOG_ERRORS, "theme-preview-image-unavailable", reference + ": " +
+                       (error.empty() ? _("Image was not found in the theme or its library.") : error));
+                continue;
+            }
+            FXint width = host.rectangle.w, height = host.rectangle.h;
+            FXColor* pixels = NULL;
+            if (!FXMALLOC(&pixels, FXColor, static_cast<size_t>(width) * height))
+                throw FXMemoryException(_("Unable to create theme preview"));
+            std::fill(pixels, pixels + static_cast<size_t>(width) * height,
+                      theme.colorFor(host.area, "background"));
+            BackgroundImage::composite(pixels, width, height, *source, theme.property(host.area, "image_mode"));
+            std::unique_ptr<FXImage> layer(new FXImage(getApp(), pixels, IMAGE_KEEP | IMAGE_OWNED, width, height));
+            layer->create();
+            imageLayers[static_cast<FXint>(i)] = std::move(layer);
+        }
         std::map<const Node*, std::unique_ptr<FXImage>> listLayers;
         for (Node& node : nodes)
             if (node.list) listLayers[&node] = drawList(node);
@@ -447,6 +493,16 @@ class ThemeMockup : public FXCanvas
                 dc.setClipRectangle(r);
                 dc.setForeground(background);
                 dc.fillRectangle(r.x, r.y, r.w, r.h);
+                auto backgroundLayer = imageLayers.find(node.imageOwner);
+                if (node.paintImage && !node.selected && backgroundLayer != imageLayers.end())
+                {
+                    const FXRectangle& host = nodes[node.imageOwner].rectangle;
+                    FXint x = FXMAX(r.x, host.x), y = FXMAX(r.y, host.y);
+                    FXint right = FXMIN(r.x + r.w, host.x + host.w), bottom = FXMIN(r.y + r.h, host.y + host.h);
+                    if (right > x && bottom > y)
+                        dc.drawArea(backgroundLayer->second.get(), x - host.x, y - host.y,
+                                    right - x, bottom - y, x, y);
+                }
                 if (node.frame || node.kind == Node::FIELD || node.kind == Node::BUTTON)
                 {
                     dc.setForeground(border);
@@ -681,43 +737,67 @@ public:
         sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_SETSTRINGVALUE), &tip);
         return 1;
     }
-    double minimumContrast(FXColor foreground)
+    double minimumContrast(FXColor foreground, const FXString& area)
     {
-        FXColor base = theme.colorFor("list", "background"), alternate = theme.colorFor("list", "alternate");
-        if (luminances.empty() || contrastEffect != theme.effect || contrastAssetRoot != theme.assetRoot ||
+        if (invalid) rebuild();
+        FXColor base = theme.colorFor(area, "background"), alternate = theme.colorFor("list", "alternate");
+        FXString effect = area + "|" + theme.effect + "|" + theme.property(area, "background_image") +
+                          "|" + theme.property(area, "image_mode");
+        if (luminances.empty() || contrastEffect != effect || contrastAssetRoot != theme.assetRoot ||
             contrastBase != base || contrastAlternate != alternate)
         {
             luminances.clear();
             luminances.push_back(themeLuminance(base));
-            for (Node& node : nodes)
+            if (area == "list")
             {
-                IconList* list = node.list;
-                if (!list) continue;
-                list->setBackColor(base);
-                list->setHighlightColor(alternate);
-                list->setBackgroundEffect(theme.effect, theme.assetRoot);
-                list->buildBackgroundEffect();
-                FXbool details = !(list->getListStyle() & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS));
-                for (FXint layer = 0; layer < 4; ++layer)
+                for (Node& node : nodes)
                 {
-                    if ((layer & 1) && (!details || !list->effectRows)) continue;
-                    if ((layer & 2) && (!details || list->numsortheader < 0)) continue;
-                    FXImage* pixels = list->getEffectLayer(layer);
-                    if (pixels && !pixels->getData()) pixels->restore();
-                    if (!pixels || !pixels->getData())
+                    IconList* list = node.list;
+                    if (!list) continue;
+                    list->setBackColor(base);
+                    list->setHighlightColor(alternate);
+                    list->setBackgroundEffect(theme.effect, theme.assetRoot);
+                    list->setBackgroundImage(theme.property(area, "background_image"), theme.property(area, "image_mode"));
+                    list->buildBackgroundEffect();
+                    FXbool details = !(list->getListStyle() & (ICONLIST_BIG_ICONS | ICONLIST_MINI_ICONS));
+                    for (FXint layer = 0; layer < 4; ++layer)
                     {
-                        appLog(APP_LOG_ERRORS, "theme-preview-readback-failed", "Cannot read rendered background pixels");
-                        luminances.clear();
-                        return -1;
+                        if ((layer & 1) && (!details || !list->effectRows)) continue;
+                        if ((layer & 2) && (!details || list->numsortheader < 0)) continue;
+                        FXImage* pixels = list->getEffectLayer(layer);
+                        if (pixels && !pixels->getData()) pixels->restore();
+                        if (!pixels || !pixels->getData())
+                        {
+                            appLog(APP_LOG_ERRORS, "theme-preview-readback-failed", "Cannot read rendered background pixels");
+                            luminances.clear();
+                            return -1;
+                        }
+                        for (FXint i = 0; i < pixels->getWidth() * pixels->getHeight(); ++i)
+                            luminances.push_back(themeLuminance(pixels->getData()[i]));
+                        pixels->release();
                     }
+                }
+            }
+            else if (!theme.property(area, "background_image").empty())
+            {
+                FXbool found = false;
+                for (const auto& layer : imageLayers)
+                {
+                    if (nodes[layer.first].area != area) continue;
+                    found = true;
+                    FXImage* pixels = layer.second.get();
                     for (FXint i = 0; i < pixels->getWidth() * pixels->getHeight(); ++i)
                         luminances.push_back(themeLuminance(pixels->getData()[i]));
-                    pixels->release();
+                }
+                if (!found)
+                {
+                    luminances.clear();
+                    return -1;
                 }
             }
             std::sort(luminances.begin(), luminances.end());
             luminances.erase(std::unique(luminances.begin(), luminances.end()), luminances.end());
-            contrastEffect = theme.effect;
+            contrastEffect = effect;
             contrastAssetRoot = theme.assetRoot;
             contrastBase = base;
             contrastAlternate = alternate;
@@ -1515,6 +1595,257 @@ FXDEFMAP(BackgroundEditor) BackgroundEditorMap[] = {
 };
 FXIMPLEMENT(BackgroundEditor, DialogBox, BackgroundEditorMap, ARRAYNUMBER(BackgroundEditorMap))
 
+class BackgroundImageEditor : public DialogBox
+{
+    FXDECLARE(BackgroundImageEditor)
+    ThemeEditor* editor = NULL;
+    FXString area, reference;
+    FXListBox* category = NULL;
+    FXListBox* placement = NULL;
+    FXTextField* targetCategory = NULL;
+    FXIconList* gallery = NULL;
+    FXLabel* status = NULL;
+    std::vector<FXString> categories, names;
+    std::vector<FXIcon*> icons;
+    BackgroundImageEditor() {}
+
+    FXString mode() const
+    {
+        return placement->getCurrentItem() == 1 ? "fill" : placement->getCurrentItem() == 2 ? "tile" : "fit";
+    }
+
+    void changed()
+    {
+        editor->previewImage(area, reference, mode());
+    }
+
+    void collect(const FXString& root, const FXString& parent, std::map<FXString, FXString>& entries,
+                 FXString& rejected)
+    {
+        FXString path = parent.empty() ? root : root + PATHSEPSTRING + parent;
+        if (xf_islink(path)) return;
+        FXDir directory;
+        if (!directory.open(path))
+        {
+            if (xf_existfile(path))
+            {
+                rejected += path + ": " + strerror(errno) + "\n";
+                appLog(APP_LOG_ERRORS, "image-directory-unreadable", path);
+            }
+            return;
+        }
+        while (directory.next())
+        {
+            FXString filename = directory.name();
+            if (filename.empty() || filename[0] == '.') continue;
+            FXString file = path + PATHSEPSTRING + filename;
+            if (xf_islink(file)) continue;
+            FXString relative = parent.empty() ? filename : parent + "/" + filename;
+            if (xf_isdirectory(file))
+            {
+                if (relative.contains('/') < 8) collect(root, relative, entries, rejected);
+                else
+                {
+                    rejected += relative + ": " + _("Too many nested image categories.") + "\n";
+                    appLog(APP_LOG_ERRORS, "image-category-too-deep", file);
+                }
+            }
+            else if (xf_isfile(file))
+            {
+                FXString extension = FXPath::extension(filename).lower();
+                if (extension != "png" && extension != "jpg" && extension != "jpeg") continue;
+                FXString key = BackgroundEffect::textureReference(relative);
+                if (!BackgroundImage::validReference(key))
+                {
+                    rejected += relative + ": " + _("Invalid image name or category.") + "\n";
+                    appLog(APP_LOG_ERRORS, "image-rejected", file);
+                }
+                else if (!entries.count(key)) entries[key] = file;
+            }
+        }
+    }
+
+    void refresh()
+    {
+        FXint previous = category->getCurrentItem();
+        FXString selected = previous > 0 && previous < static_cast<FXint>(categories.size()) ?
+                            categories[previous] : FXString::null;
+        gallery->clearItems();
+        for (FXIcon* icon : icons) delete icon;
+        icons.clear();
+        names.clear();
+        extern FXString execpath;
+        FXString roots[] = {
+            editor->getDraft().assetRoot.empty() ? FXString::null :
+                editor->getDraft().assetRoot + PATHSEPSTRING "images",
+            FXPath::directory(execpath) + "/../share/swordfish/images",
+            xf_userdatahome() + PATHSEPSTRING "images"
+        };
+        std::map<FXString, FXString> entries;
+        FXString rejected;
+        for (const FXString& root : roots)
+            if (!root.empty()) collect(root, "", entries, rejected);
+
+        std::set<FXString> found;
+        for (const auto& entry : entries)
+        {
+            FXString relative;
+            if (!BackgroundEffect::textureRelativePath(entry.first, relative)) continue;
+            FXint slash = relative.rfind('/');
+            if (slash >= 0) found.insert(relative.left(slash));
+        }
+        category->clearItems();
+        categories.clear();
+        category->appendItem(_("All categories"));
+        categories.push_back("");
+        category->appendItem(_("Uncategorized"));
+        categories.push_back("");
+        FXint current = previous > 0 ? 1 : 0;
+        for (const FXString& name : found)
+        {
+            category->appendItem(name);
+            categories.push_back(name);
+            if (previous > 1 && name == selected) current = categories.size() - 1;
+        }
+        category->setCurrentItem(current);
+        gallery->appendItem(_("No image"));
+        names.push_back("");
+        for (const auto& entry : entries)
+        {
+            FXString relative;
+            if (!BackgroundEffect::textureRelativePath(entry.first, relative)) continue;
+            FXint slash = relative.rfind('/');
+            FXString group = slash >= 0 ? relative.left(slash) : FXString::null;
+            if (current != 0 && group != categories[current]) continue;
+            FXString error;
+            FXIcon* icon = BackgroundImage::preview(getApp(), entry.second, FXRGB(0xD5, 0xDA, 0xDF), 64, error);
+            if (!icon)
+            {
+                rejected += relative + ": " + error + "\n";
+                appLog(APP_LOG_ERRORS, "image-rejected", entry.second + ": " + error);
+                continue;
+            }
+            icons.push_back(icon);
+            FXString label = slash < 0 ? relative : relative.rafter('/');
+            if (current == 0 && !group.empty()) label += " (" + group + ")";
+            gallery->appendItem(label, icon, icon);
+            names.push_back(entry.first);
+            if (entry.first == reference) gallery->setCurrentItem(names.size() - 1);
+        }
+        if (reference.empty()) gallery->setCurrentItem(0);
+        status->setText(rejected.empty() ?
+            _("PNG or JPEG, up to 32 MB and 32 megapixels. Originals are never moved.") :
+            _("Some images were excluded:\n") + rejected);
+    }
+
+public:
+    enum { ID_SELECT = DialogBox::ID_LAST, ID_PLACEMENT, ID_CATEGORY, ID_IMPORT, ID_REFRESH };
+    BackgroundImageEditor(ThemeEditor* owner, const FXString& selectedArea) :
+        DialogBox(owner, _("Background image"), DECOR_ALL, 0, 0, 720, 600),
+        editor(owner), area(selectedArea), reference(owner->getDraft().property(selectedArea, "background_image"))
+    {
+        FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
+        new FXButton(buttons, _("Apply to mockup"), NULL, this, ID_ACCEPT,
+                     BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT | FRAME_GROOVE);
+        new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("User Manual"), NULL, editor, ThemeEditor::ID_MANUAL, BUTTON_NORMAL | LAYOUT_LEFT);
+        status = new FXLabel(this, "", NULL, JUSTIFY_LEFT | LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
+        new FXLabel(this, _("User images are stored in:") + FXString("\n") +
+                          xf_userdatahome() + PATHSEPSTRING "images", NULL, JUSTIFY_LEFT | LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
+        FXHorizontalFrame* controls = new FXHorizontalFrame(this, LAYOUT_FILL_X);
+        new FXLabel(controls, _("Category:"));
+        category = new FXListBox(controls, this, ID_CATEGORY, FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X);
+        category->setNumVisible(10);
+        new FXLabel(controls, _("Placement:"));
+        placement = new FXListBox(controls, this, ID_PLACEMENT, FRAME_SUNKEN | FRAME_THICK);
+        placement->appendItem(_("Fit (show whole image)"));
+        placement->appendItem(_("Fill (crop to cover)"));
+        placement->appendItem(_("Tile (original size)"));
+        placement->setNumVisible(3);
+        FXString currentMode = owner->getDraft().property(area, "image_mode");
+        placement->setCurrentItem(currentMode == "fill" ? 1 : currentMode == "tile" ? 2 : 0);
+        gallery = new FXIconList(this, this, ID_SELECT,
+                                 ICONLIST_BIG_ICONS | ICONLIST_BROWSESELECT | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        FXHorizontalFrame* files = new FXHorizontalFrame(this, LAYOUT_FILL_X);
+        new FXButton(files, _("Add image..."), NULL, this, ID_IMPORT, BUTTON_NORMAL);
+        new FXButton(files, _("Refresh"), NULL, this, ID_REFRESH, BUTTON_NORMAL);
+        new FXLabel(files, _("Save in category:"));
+        targetCategory = new FXTextField(files, 16, NULL, 0, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
+        targetCategory->setTipText(_("Optional category; use / for subcategories."));
+        refresh();
+    }
+    ~BackgroundImageEditor()
+    {
+        for (FXIcon* icon : icons) delete icon;
+    }
+    long onSelect(FXObject*, FXSelector, void*)
+    {
+        FXint index = gallery->getCurrentItem();
+        if (index >= 0 && index < static_cast<FXint>(names.size()))
+        {
+            reference = names[index];
+            changed();
+        }
+        return 1;
+    }
+    long onPlacement(FXObject*, FXSelector, void*)
+    {
+        if (!reference.empty()) changed();
+        return 1;
+    }
+    long onFiles(FXObject*, FXSelector selector, void*)
+    {
+        FXint id = FXSELID(selector);
+        if (id == ID_CATEGORY)
+        {
+            FXint index = category->getCurrentItem();
+            targetCategory->setText(index > 0 && index < static_cast<FXint>(categories.size()) ?
+                                    categories[index] : FXString::null);
+        }
+        else if (id == ID_IMPORT)
+        {
+            FileDialog file(this, _("Add background image"));
+            const char* filters[] = {_("PNG and JPEG images"), "*.png,*.jpg,*.jpeg", _("All files"), "*", NULL};
+            file.setPatternList(filters);
+            file.setSelectMode(SELECT_FILE_EXISTING);
+            if (!file.execute()) return 1;
+            InputDialog naming(this, "", _("Image name (without extension or a slash):"), _("Image name"));
+            naming.addHelpButton(editor, ThemeEditor::ID_MANUAL);
+            naming.setText(FXPath::title(file.getFilename()));
+            if (!naming.execute()) return 1;
+            FXString name = naming.getText().trim(), group = targetCategory->getText().trim();
+            FXString extension = FXPath::extension(file.getFilename()).lower();
+            FXString relative = group.empty() ? name + "." + extension : group + "/" + name + "." + extension;
+            FXString candidate = name.empty() || name.find_first_of("/\\") >= 0 ?
+                                 FXString::null : BackgroundEffect::textureReference(relative);
+            FXString error;
+            FXString local = BackgroundImage::path(candidate, editor->getDraft().assetRoot);
+            FXString shared = BackgroundImage::path(candidate);
+            if (!editor->getDraft().assetRoot.empty() && !local.empty() && local != shared)
+                error = _("This name is already used by the current theme. Please use another name.");
+            else if (!BackgroundImage::importImage(getApp(), file.getFilename(), candidate, error) && error.empty())
+                error = _("Invalid image name or category.");
+            if (!error.empty())
+            {
+                MessageBox::error(this, BOX_OK, _("Background image"), "%s", error.text());
+                return 1;
+            }
+            reference = candidate;
+            changed();
+            category->setCurrentItem(0);
+        }
+        refresh();
+        return 1;
+    }
+};
+
+FXDEFMAP(BackgroundImageEditor) BackgroundImageEditorMap[] = {
+    FXMAPFUNC(SEL_COMMAND, BackgroundImageEditor::ID_SELECT, BackgroundImageEditor::onSelect),
+    FXMAPFUNC(SEL_COMMAND, BackgroundImageEditor::ID_PLACEMENT, BackgroundImageEditor::onPlacement),
+    FXMAPFUNCS(SEL_COMMAND, BackgroundImageEditor::ID_CATEGORY, BackgroundImageEditor::ID_REFRESH, BackgroundImageEditor::onFiles)
+};
+FXIMPLEMENT(BackgroundImageEditor, DialogBox, BackgroundImageEditorMap, ARRAYNUMBER(BackgroundImageEditorMap))
+
 class ThemeDecision : public DialogBox
 {
     FXDECLARE(ThemeDecision)
@@ -1783,8 +2114,7 @@ long ThemeEditor::onReadability(FXObject*, FXSelector, void*)
 {
     const Theme& shown = compare->getCheck() ? original : draft;
     FXColor foreground = shown.colorFor(area, "foreground");
-    double contrast = area == "list" ? mockup->minimumContrast(foreground) :
-                                       themeContrast(foreground, shown.colorFor(area, "background"));
+    double contrast = mockup->minimumContrast(foreground, area);
     if (contrast < 0)
     {
         readability->setText(_("Readability unavailable: cannot read the rendered preview."));
@@ -1798,10 +2128,8 @@ long ThemeEditor::onReadability(FXObject*, FXSelector, void*)
     readability->setText(FXString().format(_("Readability: %.2f:1 (%s)\nSelection: %.2f:1\n"
                                            "AA: 4.5:1 normal / 3:1 large; AAA: 7:1"), contrast,
                                            grade.text(), selectionContrast));
-    double black = area == "list" ? mockup->minimumContrast(FXRGB(0, 0, 0)) :
-                                     themeContrast(FXRGB(0, 0, 0), shown.colorFor(area, "background"));
-    double white = area == "list" ? mockup->minimumContrast(FXRGB(255, 255, 255)) :
-                                     themeContrast(FXRGB(255, 255, 255), shown.colorFor(area, "background"));
+    double black = mockup->minimumContrast(FXRGB(0, 0, 0), area);
+    double white = mockup->minimumContrast(FXRGB(255, 255, 255), area);
     suggestedColor = black >= white ? FXRGB(0, 0, 0) : FXRGB(255, 255, 255);
     return 1;
 }
@@ -1850,12 +2178,23 @@ long ThemeEditor::onProperty(FXObject*, FXSelector, void*)
     FXString description;
     if (key == "font") description = draft.fontFor(area, getApp()->getNormalFont()->getFont());
     else if (key == "effect") description = _("Gradient / pattern / PNG texture");
+    else if (key == "background_image")
+    {
+        FXString reference = draft.property(area, key), relative;
+        if (reference.empty()) description = _("No image");
+        else
+        {
+            BackgroundEffect::textureRelativePath(reference, relative);
+            FXString mode = draft.property(area, "image_mode");
+            description = relative + " (" + (mode.empty() ? FXString("fit") : mode) + ")";
+        }
+    }
     else if (key == "shading") description = draft.property("main", "shading") + "%";
     else if (key == "opacity") description = (draft.property("main", "opacity").empty() ?
                                                FXString("100") : draft.property("main", "opacity")) + "%";
     else description = draft.overrides(area, key) ? draft.property(area, key) : themeColorText(draft.colorFor(area, key));
     value->setText(description);
-    FXbool inheritable = key != "effect" && key != "shading" && key != "opacity";
+    FXbool inheritable = key != "effect" && key != "background_image" && key != "shading" && key != "opacity";
     if (inheritable) inheritance->show(); else inheritance->hide();
     inheritance->setCheck(!draft.overrides(area, key));
     if (compare->getCheck() || (key == "opacity" && !compositorAvailable(getApp()))) edit->disable();
@@ -1883,7 +2222,13 @@ long ThemeEditor::onEditProperty(FXObject*, FXSelector, void*)
     FXString key = currentProperty();
     Theme before = draft;
     std::vector<Theme> stepsBefore = pendingSteps;
-    if (key == "effect")
+    if (key == "background_image")
+    {
+        BackgroundImageEditor dialog(this, area);
+        if (dialog.execute(PLACEMENT_OWNER)) applyDraft();
+        else { draft = before; pendingSteps = stepsBefore; }
+    }
+    else if (key == "effect")
     {
         BackgroundEditor dialog(this);
         if (dialog.execute(PLACEMENT_OWNER))
@@ -1989,6 +2334,13 @@ void ThemeEditor::previewEffect(const FXString& spec, FXbool stopEdit, const FXS
     refreshPreview();
 }
 
+void ThemeEditor::previewImage(const FXString& selectedArea, const FXString& reference, const FXString& mode)
+{
+    draft.setProperty(selectedArea, "background_image", reference);
+    draft.setProperty(selectedArea, "image_mode", reference.empty() ? FXString::null : mode);
+    refreshPreview();
+}
+
 void ThemeEditor::setGradientPreset(const FXString& name, const FXString& effect)
 {
     draft.properties["gradient." + name] = effect;
@@ -2052,7 +2404,12 @@ long ThemeEditor::onReset(FXObject*, FXSelector selector, void*)
     {
         FXString key = currentProperty();
         if (key == "effect") draft.effect = original.effect;
-        else draft.setProperty(area, key, original.property(area, key));
+        else
+        {
+            draft.setProperty(area, key, original.property(area, key));
+            if (key == "background_image")
+                draft.setProperty(area, "image_mode", original.property(area, "image_mode"));
+        }
     }
     else if (scope == ID_RESET_ELEMENT)
     {
@@ -2090,7 +2447,7 @@ long ThemeEditor::onPreview(FXObject*, FXSelector, void*)
 long ThemeEditor::onFixContrast(FXObject*, FXSelector, void*)
 {
     FXString message = _("Use ") + themeColorText(suggestedColor) + _(" for this element's text?\n"
-        "Only the mockup changes. A mixed light/dark texture may still need a gentler background.");
+        "Only the mockup changes. A mixed light/dark texture or image may still need a gentler background.");
     if (MessageBox::question(this, BOX_YES_NO, _("Suggested contrast fix"), "%s", message.text()) == BOX_CLICKED_YES)
     {
         draft.setProperty(area, "foreground", themeColorText(suggestedColor));

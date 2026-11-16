@@ -1,5 +1,6 @@
 #include <fx.h>
 #include <FXPNGImage.h>
+#include <FXJPGImage.h>
 #include <FXGradientBar.h>
 #include "FileList.h"
 #include "XFileExplorer.h"
@@ -7,6 +8,7 @@
 #include "ThemeEditor.h"
 #include "ColorTools.h"
 #include "BackgroundEffect.h"
+#include "BackgroundImage.h"
 #include "FileDialog.h"
 #include "FontDialog.h"
 #include "InputDialog.h"
@@ -124,6 +126,33 @@ static FXbool itemShowsPixel(FXIconList* list, FXint index, FXColor color)
     return found;
 }
 
+static FXbool windowShowsPixel(FXWindow* window, FXColor color)
+{
+    Display* display = static_cast<Display*>(window->getApp()->getDisplay());
+    XWindowAttributes attributes;
+    if (!XGetWindowAttributes(display, window->id(), &attributes) || attributes.map_state != IsViewable)
+        return false;
+    XImage* image = XGetImage(display, window->id(), 0, 0, window->getWidth(), window->getHeight(), AllPlanes, ZPixmap);
+    if (!image) return false;
+    auto channel = [](unsigned long pixel, unsigned long mask) -> FXuint
+    {
+        unsigned int shift = 0;
+        while (!(mask & 1)) { mask >>= 1; ++shift; }
+        return ((pixel >> shift) & mask) * 255 / mask;
+    };
+    FXbool found = false;
+    for (FXint y = 0; y < window->getHeight() && !found; ++y)
+        for (FXint x = 0; x < window->getWidth() && !found; ++x)
+        {
+            unsigned long pixel = XGetPixel(image, x, y);
+            found = channel(pixel, image->red_mask) == FXREDVAL(color) &&
+                    channel(pixel, image->green_mask) == FXGREENVAL(color) &&
+                    channel(pixel, image->blue_mask) == FXBLUEVAL(color);
+        }
+    XDestroyImage(image);
+    return found;
+}
+
 static void checkManual(FXApp& app, FXObject* target, FXSelector selector, FXObject* sender, bool theme)
 {
     const char* oldPath = getenv("SWORDFISH_HOST_PATH");
@@ -187,6 +216,18 @@ static void solidPng(FXApp& app, const FXString& path, FXColor color)
     assert(FXMALLOC(&pixels, FXColor, 4));
     for (FXint i = 0; i < 4; ++i) pixels[i] = color;
     FXPNGImage image(&app);
+    image.setData(pixels, IMAGE_KEEP | IMAGE_OWNED, 2, 2);
+    FXFileStream output;
+    assert(output.open(path, FXStreamSave));
+    assert(image.savePixels(output));
+}
+
+static void solidJpeg(FXApp& app, const FXString& path, FXColor color)
+{
+    FXColor* pixels = NULL;
+    assert(FXMALLOC(&pixels, FXColor, 4));
+    for (FXint i = 0; i < 4; ++i) pixels[i] = color;
+    FXJPGImage image(&app);
     image.setData(pixels, IMAGE_KEEP | IMAGE_OWNED, 2, 2);
     FXFileStream output;
     assert(output.open(path, FXStreamSave));
@@ -1174,6 +1215,305 @@ public:
         editor.onEditProperty(NULL, 0, NULL);
         editor.hide();
         puts("PASS: categorized pattern masks, safe imports, theme sharing and visible gallery previews");
+
+        FXColor strip[] = {FXRGB(255, 0, 0), FXRGB(0, 0, 255)};
+        FXImage stripImage(&app, strip, IMAGE_KEEP, 2, 1);
+        FXColor pixels[16];
+        std::fill(pixels, pixels + 16, FXRGB(255, 255, 255));
+        BackgroundImage::composite(pixels, 4, 4, stripImage, "fit");
+        assert(pixels[0] == FXRGB(255, 255, 255) && pixels[4] == FXRGB(255, 0, 0));
+        assert(pixels[7] == FXRGB(0, 0, 255) && pixels[15] == FXRGB(255, 255, 255));
+        std::fill(pixels, pixels + 16, FXRGB(255, 255, 255));
+        BackgroundImage::composite(pixels, 4, 4, stripImage, "fill");
+        assert(FXREDVAL(pixels[0]) > FXBLUEVAL(pixels[0]) &&
+               FXBLUEVAL(pixels[3]) > FXREDVAL(pixels[3]) && pixels[0] == pixels[12]);
+        std::fill(pixels, pixels + 16, FXRGB(0, 0, 0));
+        BackgroundImage::composite(pixels, 4, 4, stripImage, "tile");
+        assert(pixels[0] == pixels[2] && pixels[1] == pixels[3] && pixels[0] == pixels[4]);
+        FXColor translucent[] = {FXRGBA(255, 0, 0, 128)};
+        FXImage translucentImage(&app, translucent, IMAGE_KEEP, 1, 1);
+        BackgroundImage::composite(pixels, 4, 4, translucentImage, "tile");
+        assert(pixels[0] == FXRGB(255, 0, 0) && pixels[1] == FXRGB(128, 0, 127));
+
+        FXString globalImages = data + "/images";
+        assert(xf_mkpath(globalImages.text(), 0755) == 0);
+        FXString imageSource = data + "/image-source.png", jpegSource = data + "/image-source.jpg";
+        FXString checkerSource = data + "/image-checker.png";
+        FXColor rose = FXRGB(235, 17, 173);
+        solidPng(app, imageSource, rose);
+        solidJpeg(app, jpegSource, FXRGB(50, 100, 150));
+        checkerPng(app, checkerSource);
+        FXString imageReference = BackgroundEffect::textureReference("Photographs/Rose.png");
+        FXString checkerReference = BackgroundEffect::textureReference("Photographs/Checker.png");
+        FXString jpegReference = BackgroundEffect::textureReference("Photographs/Photo.jpg");
+        FXString imageError;
+        assert(BackgroundImage::importImage(&app, imageSource, imageReference, imageError));
+        assert(BackgroundImage::importImage(&app, checkerSource, checkerReference, imageError));
+        assert(BackgroundImage::importImage(&app, jpegSource, jpegReference, imageError));
+        assert(BackgroundImage::load(&app, BackgroundImage::path(jpegReference), imageError));
+        assert(BackgroundImage::path(imageReference) == globalImages + "/Photographs/Rose.png");
+        imageError.clear();
+        assert(!BackgroundImage::importImage(&app, imageSource, imageReference, imageError) && !imageError.empty());
+        assert(!BackgroundImage::validReference("../escape.png") &&
+               !BackgroundImage::validReference("Photo.gif") &&
+               !BackgroundImage::validReference("a/%2Fescape.png"));
+        assert(symlink(outsideFolder.text(), (globalImages + "/linked-category").text()) == 0);
+        imageError.clear();
+        assert(!BackgroundImage::importImage(&app, imageSource, "linked-category/escape.png", imageError) &&
+               !imageError.empty() && !xf_existfile(outsideFolder + "/escape.png"));
+        {
+            const unsigned char oversized[] = {0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a,
+                                               0, 0, 0, 13, 'I', 'H', 'D', 'R',
+                                               0, 0, 0x20, 1, 0, 0, 0, 2};
+            std::ofstream file((data + "/oversized-image.png").text(), std::ios::binary);
+            file.write(reinterpret_cast<const char*>(oversized), sizeof(oversized));
+            file.close();
+            imageError.clear();
+            assert(!BackgroundImage::load(&app, data + "/oversized-image.png", imageError) && !imageError.empty());
+        }
+        Theme decodedImages;
+        imageError.clear();
+        assert(!decodedImages.decodeProperties("list.image_mode=stretch", imageError));
+        assert(!decodedImages.decodeProperties("menus.background_image=Photo.png", imageError));
+
+        window.applyTheme(patterned);
+        FXColor liveBeforeImage = liveBackground();
+        editor.draft = editor.applied = editor.saved = patterned;
+        editor.draft.setProperty("list", "foreground", "#FFFFFF");
+        editor.applied = editor.saved = editor.draft;
+        editor.selectElement("list");
+        editor.refreshProperties();
+        selectProperty("background_image");
+        editor.refreshPreview();
+        editor.show(PLACEMENT_SCREEN);
+        pump(app);
+        ActionTimer cancelImage([&] {
+            FXWindow* dialog = app.getModalWindow();
+            assert(dialog && FXString(dialog->getClassName()) == "BackgroundImageEditor");
+            FXButton* help = findButton(dialog, "User Manual");
+            assert(help);
+            checkManual(app, help->getTarget(), help->getSelector(), help, true);
+            FXListBox* categories = findListBoxWithItem(dialog, "Photographs");
+            FXListBox* placement = findListBoxWithItem(dialog, "Fill (crop to cover)");
+            FXIconList* gallery = static_cast<FXIconList*>(findClass(dialog, "FXIconList"));
+            assert(categories && placement && gallery);
+            categories->setCurrentItem(categories->findItem("Photographs"));
+            categories->getTarget()->handle(categories, FXSEL(SEL_COMMAND, categories->getSelector()), NULL);
+            pump(app);
+            FXint roseIndex = -1, checkerIndex = -1;
+            for (FXint i = 0; i < gallery->getNumItems(); ++i)
+            {
+                if (gallery->getItemText(i) == "Rose.png") roseIndex = i;
+                if (gallery->getItemText(i) == "Checker.png") checkerIndex = i;
+            }
+            assert(roseIndex > 0 && checkerIndex > 0);
+            FXIcon* sample = gallery->getItemBigIcon(roseIndex);
+            gallery->setCurrentItem(0);
+            gallery->selectItem(0);
+            pump(app);
+            assert(sample && sample->getData() && itemShowsPixel(gallery, roseIndex, sample->getData()[0]));
+            placement->setCurrentItem(1);
+            gallery->setCurrentItem(roseIndex);
+            gallery->getTarget()->handle(gallery, FXSEL(SEL_COMMAND, gallery->getSelector()), NULL);
+            pump(app);
+            assert(editor.getDraft().property("list", "background_image") == imageReference);
+            assert(editor.getDraft().property("list", "image_mode") == "fill");
+            dialog->hide();
+            pump(app);
+            assert(windowShowsPixel(findClass(&editor, "ThemeMockup"), rose));
+            dialog->show();
+            pump(app);
+            assert(liveBackground() == liveBeforeImage);
+            placement->setCurrentItem(2);
+            placement->getTarget()->handle(placement, FXSEL(SEL_COMMAND, placement->getSelector()), NULL);
+            gallery->setCurrentItem(checkerIndex);
+            gallery->getTarget()->handle(gallery, FXSEL(SEL_COMMAND, gallery->getSelector()), NULL);
+            editor.onReadability(NULL, 0, NULL);
+            assert(editor.readability->getText().contains("1.00:1"));
+
+            ActionTimer nameImage([&] {
+                InputDialog* naming = dynamic_cast<InputDialog*>(app.getModalWindow());
+                assert(naming && naming->getTitle() == "Image name");
+                naming->setText("UI Added");
+                naming->handle(naming, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            });
+            ActionTimer chooseImage([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser && chooser->getTitle() == "Add background image");
+                chooser->setFilename(jpegSource);
+                app.addTimeout(&nameImage, 1, 150);
+                chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            });
+            FXButton* add = findButton(dialog, "Add image...");
+            assert(add);
+            app.addTimeout(&chooseImage, 1, 150);
+            add->getTarget()->handle(add, FXSEL(SEL_COMMAND, add->getSelector()), NULL);
+            assert(xf_existfile(globalImages + "/Photographs/UI Added.jpg"));
+            dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
+        });
+        app.addTimeout(&cancelImage, 1, 150);
+        editor.onEditProperty(NULL, 0, NULL);
+        assert(editor.getDraft().property("list", "background_image").empty());
+        assert(liveBackground() == liveBeforeImage);
+        ActionTimer applyImage([&] {
+            FXWindow* dialog = app.getModalWindow();
+            FXListBox* placement = findListBoxWithItem(dialog, "Tile (original size)");
+            FXIconList* gallery = static_cast<FXIconList*>(findClass(dialog, "FXIconList"));
+            assert(placement && gallery);
+            FXint index = -1;
+            for (FXint i = 0; i < gallery->getNumItems(); ++i)
+                if (gallery->getItemText(i) == "Rose.png (Photographs)") index = i;
+            assert(index > 0);
+            placement->setCurrentItem(2);
+            gallery->setCurrentItem(index);
+            gallery->getTarget()->handle(gallery, FXSEL(SEL_COMMAND, gallery->getSelector()), NULL);
+            dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+        });
+        app.addTimeout(&applyImage, 1, 150);
+        editor.onEditProperty(NULL, 0, NULL);
+        assert(editor.getApplied().property("list", "background_image") == imageReference);
+        assert(editor.getApplied().property("list", "image_mode") == "tile");
+        assert(liveBackground() == liveBeforeImage);
+        editor.onUndo(NULL, 0, NULL);
+        assert(editor.getDraft().property("list", "background_image").empty());
+        editor.onRedo(NULL, 0, NULL);
+        assert(editor.getDraft().property("list", "background_image") == imageReference);
+        Theme acceptedImage = editor.getDraft();
+        for (const char* area : {"places", "tabs", "toolbars"})
+        {
+            editor.draft = editor.applied = editor.saved = patterned;
+            editor.draft.setProperty(area, "background_image", imageReference);
+            editor.draft.setProperty(area, "image_mode", "tile");
+            editor.refreshPreview();
+            pump(app);
+            assert(windowShowsPixel(findClass(&editor, "ThemeMockup"), rose));
+        }
+        editor.draft = editor.applied = editor.saved = acceptedImage;
+        editor.hide();
+        puts("PASS: image compositing, categorized PNG/JPEG gallery, preview, contrast and rollback");
+
+        Theme imageTheme = editor.getDraft();
+        imageTheme.name = "Image pack";
+        for (const char* area : {"tree", "places", "tabs", "toolbars"})
+        {
+            imageTheme.setProperty(area, "background_image", imageReference);
+            imageTheme.setProperty(area, "image_mode", "tile");
+        }
+        assert(imported.saveEditedTheme(imageTheme, -1));
+        assert(imageTheme.assetRoot[0] == '/');
+        assert(BackgroundImage::path(imageReference, imageTheme.assetRoot) ==
+               imageTheme.assetRoot + "/images/Photographs/Rose.png");
+        assert(xf_mkpath((redSource + "/images/Photographs").text(), 0755) == 0);
+        solidPng(app, redSource + "/images/Photographs/Rose.png", FXRGB(255, 0, 0));
+        Theme localImage = imageTheme;
+        localImage.assetRoot = redSource;
+        assert(BackgroundImage::path(imageReference, localImage.assetRoot) ==
+               redSource + "/images/Photographs/Rose.png");
+        window.applyTheme(localImage);
+        assert(liveBackground() == FXRGB(255, 0, 0));
+        window.applyTheme(imageTheme);
+        pump(app);
+        assert(liveBackground() == rose);
+        FXWindow* sidebar = findClass(&window, "SidebarTree");
+        FXWindow* toolbar = findClass(&window, "ThemeToolBar");
+        assert(sidebar && toolbar && windowShowsPixel(sidebar, rose) && windowShowsPixel(toolbar, rose));
+        assert(preferences.getBackColor() == DialogColors::background);
+        FXWindow* activeTab = NULL;
+        FXWindow* inactiveTab = NULL;
+        for (FXWindow* child = leftTabs->getFirst(); child; child = child->getNext())
+        {
+            if (FXString(child->getClassName()) != "TabFrame" || !child->shown()) continue;
+            if (leftTabs->allowsBackgroundImage(child)) inactiveTab = child;
+            else activeTab = child;
+        }
+        assert(activeTab && inactiveTab && !windowShowsPixel(activeTab, rose) && windowShowsPixel(inactiveTab, rose));
+        leftTabs->setCurrentTab(leftTabs->getCurrentTab() == 0 ? 1 : 0);
+        pump(app);
+        assert(windowShowsPixel(activeTab, rose) && !windowShowsPixel(inactiveTab, rose));
+        FXWindow* tree = window.getDirPanel()->getList();
+        FXTabBook* sidebarTabs = dynamic_cast<FXTabBook*>(tree->getParent()->getParent());
+        assert(sidebarTabs);
+        sidebarTabs->setCurrent(1, true);
+        sidebarTabs->layout();
+        pump(app);
+        assert(windowShowsPixel(tree, rose));
+        {
+            ThemeEditor treeEditor(&preferences, &window, preferences.Themes, 0, ThemeEditor::EDIT_CURRENT);
+            treeEditor.draft = treeEditor.applied = treeEditor.saved = patterned;
+            treeEditor.draft.setProperty("tree", "background_image", imageReference);
+            treeEditor.draft.setProperty("tree", "image_mode", "tile");
+            treeEditor.create();
+            treeEditor.zoom->setCurrentItem(0);
+            treeEditor.onPreview(NULL, 0, NULL);
+            treeEditor.show(PLACEMENT_SCREEN);
+            pump(app);
+            assert(windowShowsPixel(findClass(&treeEditor, "ThemeMockup"), rose));
+            treeEditor.hide();
+        }
+        FXint previousHeight = tree->getHeight();
+        window.resize(window.getWidth() - 50, window.getHeight() - 60);
+        pump(app);
+        assert(tree->getHeight() != previousHeight && windowShowsPixel(tree, rose));
+        window.applyTheme(patterned);
+        pump(app);
+        assert(liveBackground() == liveBeforeImage && !windowShowsPixel(tree, rose));
+        window.applyTheme(imageTheme);
+        pump(app);
+        assert(liveBackground() == rose && windowShowsPixel(tree, rose));
+
+        PreferencesBox reloadedImages(&window, app.getBackColor(), app.getForeColor(), app.getBackColor(),
+                                      app.getSelbackColor(), FXRGB(255, 0, 0), app.getBaseColor());
+        FXbool foundImages = false;
+        for (const Theme& theme : reloadedImages.Themes)
+            if (theme.name == imageTheme.name)
+                foundImages = theme.assetRoot == imageTheme.assetRoot &&
+                              theme.property("toolbars", "background_image") == imageReference &&
+                              theme.property("list", "image_mode") == "tile";
+        assert(foundImages);
+        ActionTimer chooseImageExport([&] {
+            FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+            assert(chooser && chooser->getTitle() == "Choose where to export the theme folder");
+            chooser->setFilename(exportParent);
+            chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+        });
+        app.addTimeout(&chooseImageExport, 1, 150);
+        imported.onCmdThemeExport(NULL, 0, NULL);
+        FXString imageExport = exportParent + "/Image pack";
+        assert(xf_existfile(imageExport + "/images/Photographs/Rose.png"));
+        copyThemeWithName(imageExport + "/theme.swordfish-theme", imageExport + "/import.swordfish-theme",
+                          "Imported image pack");
+        assert(imported.importThemeFile(imageExport + "/import.swordfish-theme"));
+        imported.onCmdAccept(NULL, FXSEL(SEL_COMMAND, PreferencesBox::ID_APPLY), NULL);
+        Theme importedImage = Theme::current(&app);
+        assert(importedImage.assetRoot == data + "/themes/colors/Imported image pack");
+        assert(BackgroundImage::path(imageReference, importedImage.assetRoot) ==
+               importedImage.assetRoot + "/images/Photographs/Rose.png");
+        assert(liveBackground() == rose);
+        FXString movedImageFolder = portable + "/themes/colors/Imported image pack";
+        assert(xf_mkpath((movedImageFolder + "/images/Photographs").text(), 0755) == 0);
+        assert(FXFile::copyFiles(importedImage.assetRoot + "/theme.swordfish-theme",
+                                 movedImageFolder + "/theme.swordfish-theme", false));
+        assert(FXFile::copyFiles(importedImage.assetRoot + "/images/Photographs/Rose.png",
+                                 movedImageFolder + "/images/Photographs/Rose.png", false));
+        const char* oldPortable = getenv("SWORDFISH_PORTABLE_DATA");
+        FXbool hadPortable = oldPortable != NULL;
+        FXString oldPortableValue = oldPortable ? oldPortable : "";
+        assert(setenv("SWORDFISH_PORTABLE_DATA", portable.text(), 1) == 0);
+        Theme relocatedImage = Theme::current(&app);
+        assert(relocatedImage.assetRoot == movedImageFolder);
+        assert(BackgroundImage::path(imageReference, relocatedImage.assetRoot) ==
+               movedImageFolder + "/images/Photographs/Rose.png");
+        if (hadPortable) assert(setenv("SWORDFISH_PORTABLE_DATA", oldPortableValue.text(), 1) == 0);
+        else assert(unsetenv("SWORDFISH_PORTABLE_DATA") == 0);
+        puts("PASS: live list, sidebar, tree, tabs and toolbar images; resize, persistence and sharing");
+
+        FXString savedImage = imageTheme.assetRoot + "/images/Photographs/Rose.png";
+        assert(unlink(savedImage.text()) == 0);
+        assert(symlink(outsideFile.text(), savedImage.text()) == 0);
+        assert(!imported.saveCustomThemes(imported.Themes));
+        assert(xf_existfile(outsideFile));
+        assert(unlink(savedImage.text()) == 0);
+        assert(FXFile::copyFiles(globalImages + "/Photographs/Rose.png", savedImage, false));
 
         assert(unlink((copied + "/textures/shared.png").text()) == 0);
         assert(symlink(outsideFile.text(), (copied + "/textures/shared.png").text()) == 0);

@@ -21,6 +21,7 @@
 #include "icons.h"
 #include "IconList.h"
 #include "FileList.h"
+#include "BackgroundImage.h"
 
 extern FXString execpath;
 extern FXString xdgconfighome;
@@ -1895,19 +1896,23 @@ FXbool BackgroundEffect::textureRelativePath(const FXString& reference, FXString
     return true;
 }
 
+enum GraphicKind { TEXTURE_GRAPHIC, PATTERN_GRAPHIC, IMAGE_GRAPHIC };
+
 static FXbool prepareTileDestination(const FXString& base, const FXString& reference,
-                                     FXString& destination, FXString& error, FXbool pattern)
+                                     FXString& destination, FXString& error, GraphicKind kind)
 {
     FXString relative;
     if (!BackgroundEffect::textureRelativePath(reference, relative))
     {
-        error = pattern ? _("Invalid pattern name or category.") : _("Invalid texture name or category.");
+        error = kind == IMAGE_GRAPHIC ? _("Invalid image name or category.") :
+                kind == PATTERN_GRAPHIC ? _("Invalid pattern name or category.") : _("Invalid texture name or category.");
         return false;
     }
     FXString directory = FXPath::absolute(base);
     if (xf_islink(directory) || xf_mkpath(directory.text(), 0755) != 0 || !xf_isdirectory(directory))
     {
-        error = (pattern ? _("Cannot create pattern folder: ") : _("Cannot create texture folder: ")) + directory;
+        error = (kind == IMAGE_GRAPHIC ? _("Cannot create image folder: ") :
+                 kind == PATTERN_GRAPHIC ? _("Cannot create pattern folder: ") : _("Cannot create texture folder: ")) + directory;
         return false;
     }
     for (FXint i = 0; i < relative.contains('/'); ++i)
@@ -1915,15 +1920,17 @@ static FXbool prepareTileDestination(const FXString& base, const FXString& refer
         directory += PATHSEPSTRING + relative.section('/', i);
         if (xf_islink(directory) || xf_mkpath(directory.text(), 0755) != 0 || !xf_isdirectory(directory))
         {
-            error = (pattern ? _("Cannot create pattern folder: ") : _("Cannot create texture folder: ")) + directory;
+            error = (kind == IMAGE_GRAPHIC ? _("Cannot create image folder: ") :
+                     kind == PATTERN_GRAPHIC ? _("Cannot create pattern folder: ") : _("Cannot create texture folder: ")) + directory;
             return false;
         }
     }
-    destination = directory + PATHSEPSTRING + relative.rafter('/') + ".png";
+    destination = directory + PATHSEPSTRING + relative.rafter('/') + (kind == IMAGE_GRAPHIC ? "" : ".png");
     if (xf_islink(destination))
     {
-        error = (pattern ? _("Pattern destination is a symbolic link: ") :
-                           _("Texture destination is a symbolic link: ")) + destination;
+        error = (kind == IMAGE_GRAPHIC ? _("Image destination is a symbolic link: ") :
+                 kind == PATTERN_GRAPHIC ? _("Pattern destination is a symbolic link: ") :
+                                           _("Texture destination is a symbolic link: ")) + destination;
         return false;
     }
     return true;
@@ -1932,13 +1939,19 @@ static FXbool prepareTileDestination(const FXString& base, const FXString& refer
 FXbool BackgroundEffect::prepareTextureDestination(const FXString& base, const FXString& reference,
                                                     FXString& destination, FXString& error)
 {
-    return prepareTileDestination(base, reference, destination, error, false);
+    return prepareTileDestination(base, reference, destination, error, TEXTURE_GRAPHIC);
 }
 
 FXbool BackgroundEffect::preparePatternDestination(const FXString& base, const FXString& reference,
                                                     FXString& destination, FXString& error)
 {
-    return prepareTileDestination(base, reference, destination, error, true);
+    return prepareTileDestination(base, reference, destination, error, PATTERN_GRAPHIC);
+}
+
+FXbool BackgroundEffect::prepareImageDestination(const FXString& base, const FXString& reference,
+                                                  FXString& destination, FXString& error)
+{
+    return prepareTileDestination(base, reference, destination, error, IMAGE_GRAPHIC);
 }
 
 FXString BackgroundEffect::texturePath(const FXString& name, const FXString& assetRoot)
@@ -2040,7 +2053,7 @@ static FXbool importTile(FXApp* app, const FXString& source, const FXString& nam
     }
     FXString directory = xf_userdatahome() + PATHSEPSTRING + (pattern ? "patterns" : "textures");
     FXString destination;
-    if (!prepareTileDestination(directory, name, destination, error, pattern)) return false;
+    if (!prepareTileDestination(directory, name, destination, error, pattern ? PATTERN_GRAPHIC : TEXTURE_GRAPHIC)) return false;
     if (!FXFile::copyFiles(source, destination, false))
     {
         error = (pattern ? _("Cannot copy pattern into ") : _("Cannot copy texture into ")) + directory + ": " + strerror(errno);
@@ -2069,6 +2082,15 @@ void IconList::setBackgroundEffect(const FXString& spec, const FXString& assetRo
     backgroundEffect = spec;
     backgroundEffect.trim();
     effectAssetRoot = assetRoot;
+    clearBackgroundEffect();
+    update();
+}
+
+void IconList::setBackgroundImage(const FXString& reference, const FXString& mode)
+{
+    if (backgroundImage == reference && backgroundImageMode == mode) return;
+    backgroundImage = reference;
+    backgroundImageMode = mode;
     clearBackgroundEffect();
     update();
 }
@@ -2283,6 +2305,18 @@ void IconList::buildBackgroundEffect()
             appLog(APP_LOG_ERRORS, "theme-texture-invalid", path);
     }
 
+    if (!backgroundImage.empty())
+    {
+        FXString path = BackgroundImage::path(backgroundImage, effectAssetRoot), error;
+        std::unique_ptr<FXImage> image;
+        if (!path.empty()) image = BackgroundImage::load(getApp(), path, error);
+        if (image)
+            BackgroundImage::composite(effectBase, w, h, *image, backgroundImageMode);
+        else
+            appLog(APP_LOG_ERRORS, "theme-image-unavailable", backgroundImage + ": " +
+                   (error.empty() ? _("Image was not found in the theme or its library.") : error));
+    }
+
     double r = 0, g = 0, b = 0;
     for (int i = 0; i < w * h; i++)
     {
@@ -2353,7 +2387,7 @@ void IconList::fillBackground(FXDC& dc, int x, int y, int w, int h, int layer, F
     {
         return;
     }
-    FXImage* image = backgroundEffect.empty() ? NULL : getEffectLayer(layer);
+    FXImage* image = backgroundEffect.empty() && backgroundImage.empty() ? NULL : getEffectLayer(layer);
     if (!image)
     {
         dc.setForeground(layer ? solid : backColor);

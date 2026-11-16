@@ -3,6 +3,7 @@
 #include "AppLogger.h"
 #include "xfedefs.h"
 #include "IconList.h"
+#include "BackgroundImage.h"
 #include "ComboBox.h"
 #include "TextLabel.h"
 #include "TabButtons.h"
@@ -96,7 +97,11 @@ void apply(FXWindow* window, const Theme& theme, const FXString& parentArea,
     {
         list->setHighlightColor(theme.colorFor("list", "alternate"));
         list->setBackgroundEffect(theme.effect, theme.assetRoot);
+        list->setBackgroundImage(theme.property("list", "background_image"), theme.property("list", "image_mode"));
     }
+    if (BackgroundImageOwner* owner = dynamic_cast<BackgroundImageOwner*>(window))
+        owner->backgroundImage.set(theme.property(area, "background_image"),
+                                   theme.property(area, "image_mode"), theme.assetRoot);
     if (FXScrollBar* scrollbar = dynamic_cast<FXScrollBar*>(window))
         scrollbar->setBackColor(theme.colorFor("scrollbars", "background"));
     if (FXFont* current = widgetFont(window))
@@ -255,7 +260,14 @@ FXbool Theme::decodeProperties(const FXString& text, FXString& error)
             const char* areas[] = {"main", "list", "tree", "places", "headers", "tabs", "toolbars",
                                      "address", "status", "menus", "controls", "scrollbars"};
             for (const char* name : areas) if (area == name) valid = true;
-            if (property == "font") valid = valid && !value.empty() && value.length() <= 512;
+            if (property == "background_image" || property == "image_mode")
+            {
+                FXbool supported = area == "list" || area == "tree" || area == "places" ||
+                                   area == "tabs" || area == "toolbars";
+                valid = valid && supported && (property == "background_image" ?
+                    BackgroundImage::validReference(value) : value == "fit" || value == "fill" || value == "tile");
+            }
+            else if (property == "font") valid = valid && !value.empty() && value.length() <= 512;
             else if (area == "main" && (property == "shading" || property == "opacity"))
             {
                 char* end = NULL;

@@ -26,12 +26,15 @@
 - Pattern PNGs can be imported and organized into categories in a separate
   library. Their lightness and transparency blend the two chosen pattern
   colours; existing built-in shapes continue to work.
+- PNG or JPEG background images can be fitted, cropped to fill or tiled in
+  file lists, the folder tree, Places, tabs and toolbars. The editor previews
+  images without changing the live window until Save.
 - 21 additional categorized textures and 21 pattern images are bundled from
   CC0 Poly Haven assets, with source and author credits included.
 - Custom themes are saved in per-theme folders under
   `$XDG_DATA_HOME/swordfish/themes/colors/` (or
   `portable-data/themes/colors/` in a portable run), with a theme file and
-  copies of referenced textures and pattern images. Export creates the same
+  copies of referenced textures, patterns and background images. Export creates the same
   self-contained folder layout for sharing.
 - The bundled manual has a Theme Editor guide, accessible from the editor,
   background, colour, font, percentage and naming tools.

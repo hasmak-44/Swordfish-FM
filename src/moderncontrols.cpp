@@ -2,6 +2,8 @@
 // These are used to implement modern controls (rounded buttons with gradients and other effects)
 // Modern controls are obtained mainly by redefining the onPaint() functions for various widgets
 
+#include "BackgroundImage.h"
+
 
 // Integer UI scaling factor
 extern FXint scaleint;
@@ -230,8 +232,11 @@ long FXButton::onPaint(FXObject*, FXSelector, void* ptr)
             }
             else
             {
-                dc.setForeground(backColor);
-                dc.fillRectangle(0, 0, width, height);
+                if (!drawBackgroundImage(this, dc, 0, 0, width, height))
+                {
+                    dc.setForeground(backColor);
+                    dc.fillRectangle(0, 0, width, height);
+                }
             }
         }
     }
@@ -2762,8 +2767,11 @@ long FXTreeList::onPaint(FXObject*, FXSelector, void* ptr)
         if (event->rect.y <= y + h)
         {
             // Draw item
-            dc.setForeground(backColor);
-            dc.fillRectangle(0, y, width, h);
+            if (!drawBackgroundImage(this, dc, 0, y, width, h))
+            {
+                dc.setForeground(backColor);
+                dc.fillRectangle(0, y, width, h);
+            }
             item->draw(this, dc, x, y, w, h);
 
             // Show other paraphernalia such as dotted lines and expand-boxes
@@ -2856,8 +2864,11 @@ long FXTreeList::onPaint(FXObject*, FXSelector, void* ptr)
     }
     if (y < event->rect.y + event->rect.h)
     {
-        dc.setForeground(backColor);
-        dc.fillRectangle(event->rect.x, y, event->rect.w, event->rect.y + event->rect.h - y);
+        if (!drawBackgroundImage(this, dc, event->rect.x, y, event->rect.w, event->rect.y + event->rect.h - y))
+        {
+            dc.setForeground(backColor);
+            dc.fillRectangle(event->rect.x, y, event->rect.w, event->rect.y + event->rect.h - y);
+        }
     }
     return 1;
 }
@@ -3466,8 +3477,11 @@ long FXToolBarGrip::onPaint(FXObject*, FXSelector, void* ptr)
     FXDCWindow dc(this, event);
     FXint xx, yy, ww, hh;
 
-    dc.setForeground(backColor);
-    dc.fillRectangle(border, border, width - (border << 1), height - (border << 1));
+    if (!drawBackgroundImage(this, dc, border, border, width - (border << 1), height - (border << 1)))
+    {
+        dc.setForeground(backColor);
+        dc.fillRectangle(border, border, width - (border << 1), height - (border << 1));
+    }
     ww = width - padleft - padright - (border << 1);
     hh = height - padtop - padbottom - (border << 1);
     if (width > height)

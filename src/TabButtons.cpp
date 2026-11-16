@@ -30,8 +30,11 @@ public:
     long onPaint(FXObject*, FXSelector, void*)
     {
         FXDCWindow dc(this);
-        dc.setForeground(backColor);
-        dc.fillRectangle(0, 0, width, height);
+        if (!drawBackgroundImage(this, dc, 0, 0, width, height))
+        {
+            dc.setForeground(backColor);
+            dc.fillRectangle(0, 0, width, height);
+        }
         if (width < 2 || height < 2) return 1;
 
         dc.setForeground(getApp()->getBorderColor());
@@ -548,6 +551,7 @@ static FXString tabLabel(const FXString& pathname)
 
 FXDEFMAP(TabButtons) TabButtonsMap[] =
 {
+    FXMAPFUNC(SEL_PAINT, 0, TabButtons::onPaint),
     FXMAPFUNC(SEL_COMMAND, TabButtons::ID_NEW_TAB, TabButtons::onCmdNewTab),
     FXMAPFUNC(SEL_LEFTBUTTONRELEASE, 0, TabButtons::onCmdNewTab),
     FXMAPFUNC(SEL_RIGHTBUTTONRELEASE, 0, TabButtons::onBlankMenu),
@@ -569,6 +573,22 @@ FXDEFMAP(TabButtons) TabButtonsMap[] =
 };
 
 FXIMPLEMENT(TabButtons, FXHorizontalFrame, TabButtonsMap, ARRAYNUMBER(TabButtonsMap))
+
+long TabButtons::onPaint(FXObject* sender, FXSelector selector, void* pointer)
+{
+    long result = FXPacker::onPaint(sender, selector, pointer);
+    FXDCWindow dc(this, static_cast<FXEvent*>(pointer));
+    drawBackgroundImage(this, dc, 0, 0, width, height);
+    return result;
+}
+
+FXbool TabButtons::allowsBackgroundImage(const FXWindow* window) const
+{
+    for (FXuint i = 0; i < nbActiveTabs; ++i)
+        if (window == tabButtons[i] || window == closeButtons[i] || window == tabButtons[i]->getParent())
+            return i != currentTab;
+    return true;
+}
 
 
 // Set the background color of a tab (frame, label and close button)

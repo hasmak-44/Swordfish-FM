@@ -752,17 +752,18 @@ available in the Theme Editor and its background and colour tools.
 Custom color themes are saved in the user data directory:
 `$XDG_DATA_HOME/swordfish/themes/colors/` (or
 `portable-data/themes/colors/` in a portable run). Each theme has its own
-folder containing `theme.swordfish-theme` and any texture or pattern images it
-uses. Imported themes and graphics remain available after restarting Swordfish.
+folder containing `theme.swordfish-theme` and any textures, patterns or
+background images it uses. Imported themes and graphics remain available
+after restarting Swordfish.
 
 In Preferences → Appearance, use **Export theme** and choose a parent
 directory. Swordfish creates a shareable theme-named folder containing
-`theme.swordfish-theme` and its referenced `textures/` and `patterns/` assets.
-Import that file on another machine with **Import theme**; keep the adjacent
-`textures/` folder with it when sharing themes that use custom textures.
+`theme.swordfish-theme` and its referenced `textures/`, `patterns/` and
+`images/` assets. Import that file on another machine with **Import theme**;
+keep the adjacent graphics folders with it.
 Alternatively, copy the complete theme folder into `portable-data/themes/colors/`.
-Each theme's own textures take precedence over same-named shared or bundled
-textures. Swordfish resolves their absolute paths at runtime, so the folder
+Each theme's own graphics take precedence over same-named shared or bundled
+graphics. Swordfish resolves their absolute paths at runtime, so the folder
 can be moved between machines. Legacy custom textures in
 `~/.config/swordfish/textures/` remain readable.
 Texture PNGs can also be organized into category subfolders under
@@ -773,3 +774,8 @@ same category rules. Exported themes include referenced pattern and texture
 files in their respective subfolders. Additional bundled texture and pattern
 samples are adapted from public-domain Poly Haven assets; their sources,
 authors and licence are listed in `share/swordfish/cc0-theme-assets.md`.
+Background PNG and JPEG images can be imported into categorized subfolders of
+`portable-data/images/`; choose **Background image** for the file list, tree,
+Places, tabs or toolbars, then choose Fit, Fill or Tile. Apply changes only the
+editor mockup; Save activates them. Images may be at most 32 MB, 8192 pixels
+per dimension and 32 megapixels.

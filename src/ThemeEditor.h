@@ -68,6 +68,7 @@ public:
     long onReadability(FXObject*, FXSelector, void*);
     long onManual(FXObject*, FXSelector, void*);
     void previewEffect(const FXString&, FXbool stopEdit = false, const FXString& previous = "");
+    void previewImage(const FXString&, const FXString&, const FXString&);
     void setGradientPreset(const FXString&, const FXString&);
     const Theme& getDraft() const { return draft; }
     const Theme& getApplied() const { return applied; }

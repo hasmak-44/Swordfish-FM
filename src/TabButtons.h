@@ -8,10 +8,11 @@
 #include "xfeutils.h"
 #include "DirPanel.h"
 #include "FilePanel.h"
+#include "BackgroundImage.h"
 
 struct Theme;
 
-class FXAPI TabButtons : public FXHorizontalFrame
+class FXAPI TabButtons : public FXHorizontalFrame, public BackgroundImageOwner
 {
     FXDECLARE(TabButtons)
 
@@ -116,6 +117,8 @@ public:
     long onUpdMoveLeft(FXObject* sender, FXSelector sel, void* ptr);
     long onUpdMoveRight(FXObject* sender, FXSelector sel, void* ptr);
     long onTheme(FXObject*, FXSelector, void*);
+    long onPaint(FXObject*, FXSelector, void*);
+    FXbool allowsBackgroundImage(const FXWindow*) const override;
     
     // Number of active tabs
     FXuint getNumActiveTabs(void)

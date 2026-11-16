@@ -284,6 +284,8 @@ protected:
     // Layers: 0 plain, 1 alternate row, 2 sorted column, 3 sorted column on an alternate row.
     FXString backgroundEffect;
     FXString effectAssetRoot;
+    FXString backgroundImage;
+    FXString backgroundImageMode;
     FXImage* effectLayers[4] = {NULL, NULL, NULL, NULL};
     FXColor* effectBase = NULL;
     int effectWidth = 0;
@@ -462,6 +464,7 @@ public:
 
     // Change the background effect specification (see list_background_effect in theme files)
     void setBackgroundEffect(const FXString& spec, const FXString& assetRoot = FXString::null);
+    void setBackgroundImage(const FXString& reference, const FXString& mode);
     void setHighlightColor(FXColor color);
     virtual void setBackColor(FXColor color);
 

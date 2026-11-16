@@ -18,6 +18,7 @@ swordfish_preview_LDADD = $(PREVIEW_WORKER_LIBS)
 swordfish_SOURCES = ../st/x.c \
               ../st/st.c \
               AppLogger.cpp \
+              BackgroundImage.cpp \
               CustomActions.cpp \
               CustomActionsUI.cpp \
               Preview.cpp \
@@ -85,6 +86,7 @@ swordfish_LDADD = @LIBINTL@ -lutil
 
 
 swfa_SOURCES = ../st/x.c \
+              BackgroundImage.cpp \
               Theme.cpp \
               ../st/st.c \
               AppLogger.cpp \
@@ -127,6 +129,7 @@ swfa_LDADD = @LIBINTL@ -lutil
 
 
 swfi_SOURCES = ../st/x.c \
+              BackgroundImage.cpp \
               Theme.cpp \
               ../st/st.c \
               AppLogger.cpp \
@@ -169,6 +172,7 @@ swfi_LDADD = @LIBINTL@ -lutil
 
 
 swfp_SOURCES = ../st/x.c \
+              BackgroundImage.cpp \
               Theme.cpp \
               ../st/st.c \
               AppLogger.cpp \
@@ -211,6 +215,7 @@ swfp_LDADD = @LIBINTL@ -lutil
 	  
 
 swfw_SOURCES = ../st/x.c \
+              BackgroundImage.cpp \
               Theme.cpp \
               ../st/st.c \
               AppLogger.cpp \
@@ -286,6 +291,7 @@ EXTRA_DIST =  ../libsn/sn-common.h	\
               CustomActions.h \
               CustomActionsUI.h \
               BackgroundEffect.h \
+              BackgroundImage.h \
               Theme.h \
               ThemeEditor.h \
               DragPreview.h \

@@ -4,6 +4,7 @@
 #include "xfeutils.h"
 #include "icons.h"
 #include "FileDict.h"
+#include "BackgroundImage.h"
 #include <map>
 #include <set>
 
@@ -34,7 +35,7 @@ struct SidebarDeviceRequest
     SidebarItem::DeviceAction action;
 };
 
-class SidebarTree : public FXTreeList
+class SidebarTree : public FXTreeList, public BackgroundImageOwner
 {
     FXDECLARE(SidebarTree)
 protected:

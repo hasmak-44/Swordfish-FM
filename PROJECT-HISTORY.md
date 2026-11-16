@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 16 November 2026, through public-domain theme samples
-(section 3.89).
+Last updated: 16 November 2026, through background-image support
+(section 3.90).
 Latest release: `swordfish-0.0.3-beta2`.
 Stable fallback: `swordfish-0.0.2`.
 
@@ -40,7 +40,7 @@ Historical implementation details below do not override the current code.
    automated tests but still need the user's real-machine testing.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.70-3.89. Older beta and RC notes are
+9. For the latest state, read sections 3.70-3.90. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide is a documentation addition after the frozen RC4 application commit.
@@ -3329,6 +3329,20 @@ Validation in the codespace: the theme workflow regression and a staged
 installation passed, with 21 pattern PNGs and 35 texture PNGs installed.
 Desktop acceptance and the portable build remain pending. Background-image
 support remains future work.
+
+### 3.90. Theme background images
+
+The Theme Editor can import categorized PNG and JPEG backgrounds and preview
+Fit, Fill and Tile for file lists, the tree, Places, tabs and toolbars. Active
+tabs and selections remain visible; fixed-colour dialogs are not themed.
+Themes and exports carry referenced images in their own `images/` folders.
+Image dimensions and file size are bounded, theme-local paths take priority,
+and graphics are loaded on demand rather than retaining decoded source images.
+
+Validation in the codespace: clean native build and theme workflow regression,
+including compositing pixels, gallery import, preview and cancel, active tabs,
+resize, theme-local paths, reload, sharing and portable-data relocation.
+Desktop acceptance and the portable build remain pending.
 
 ## 4. The archive-command / false idle-timeout bug
 

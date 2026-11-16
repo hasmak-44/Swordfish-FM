@@ -1,6 +1,8 @@
 #ifndef DIRLIST_H
 #define DIRLIST_H
 
+#include "BackgroundImage.h"
+
 struct FileAssoc;
 class FileDict;
 class DirList;
@@ -123,7 +125,7 @@ public:
 
 
 // Directory tree List
-class FXAPI DirList : public FXTreeList
+class FXAPI DirList : public FXTreeList, public BackgroundImageOwner
 {
     FXDECLARE(DirList)
 protected:
