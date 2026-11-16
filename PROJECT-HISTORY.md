@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 16 November 2026, through tab-group layout snapshots
-(sections 3.70-3.72).
+Last updated: 16 November 2026, through rounded tab corners
+(sections 3.70-3.73).
 Latest release: `swordfish-0.0.3-beta2`.
 Stable fallback: `swordfish-0.0.2`.
 
@@ -40,7 +40,7 @@ Historical implementation details below do not override the current code.
    automated tests but still need the user's real-machine testing.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.70-3.72. Older beta and RC notes are
+9. For the latest state, read sections 3.70-3.73. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide is a documentation addition after the frozen RC4 application commit.
@@ -3057,6 +3057,15 @@ restored layout, orientation, both panes' tab paths, selected tabs and
 per-tab Details/Icons modes. The native build and regression passed. No
 desktop acceptance has been performed.
 
+### 3.73. Rounded upper tab corners (16 November 2026)
+
+The tab strip's outer frame now has rounded upper corners, with its existing
+size, spacing, themed background and border color preserved. The Theme
+Workflow regression checks the corner background and the border at the end of
+the rounded edge. The native build and regression passed, and the captured
+codespace screenshot shows the updated tab shape. Real desktop acceptance is
+still pending.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -3607,8 +3616,9 @@ Do not amend published commits/tags as an automatic workaround.
 ### Durable starting point
 
 0.0.2 remains the frozen stable fallback; 0.0.3 beta 2 is the latest published
-test release. Sections 3.70-3.72 record the current implementation state.
-Groups 2, 3 and 4 are committed locally; none is pushed or released. Start
-from the current branch and worktree, not from an old experimental ZIP,
-obsolete roadmap or incomplete chat summary. Do not publish local work
-without the user's permission.
+test release. Sections 3.70-3.73 record the current implementation state.
+Groups 2 through 5 are committed locally; none is pushed or released. Generated
+autotools files may remain modified after local builds and must not be included
+in feature commits. Start from the current branch and worktree, not from an old
+experimental ZIP, obsolete roadmap or incomplete chat summary. Do not publish
+local work without the user's permission.

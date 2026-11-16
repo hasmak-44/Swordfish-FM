@@ -17,6 +17,51 @@ extern FXString homedir;
 #define TAB_HOVER_DELAY 1000
 
 
+class TabFrame : public FXHorizontalFrame
+{
+    FXDECLARE(TabFrame)
+protected:
+    TabFrame() {}
+public:
+    explicit TabFrame(FXComposite* parent) :
+        FXHorizontalFrame(parent, FRAME_GROOVE | LAYOUT_SIDE_TOP | LAYOUT_LEFT | LAYOUT_FILL_Y,
+                          0, 0, 0, 0, 0, 0, 0, 0, 2, 2) {}
+
+    long onPaint(FXObject*, FXSelector, void*)
+    {
+        FXDCWindow dc(this);
+        dc.setForeground(backColor);
+        dc.fillRectangle(0, 0, width, height);
+        if (width < 2 || height < 2) return 1;
+
+        dc.setForeground(getApp()->getBorderColor());
+        if (width < 8 || height < 5)
+        {
+            dc.drawRectangle(0, 0, width - 1, height - 1);
+            return 1;
+        }
+
+        const FXint radius = 4;
+        const FXPoint corners[] = {
+            FXPoint(radius - 1, 0), FXPoint(radius - 2, 1), FXPoint(radius - 3, 2), FXPoint(0, radius - 1),
+            FXPoint(width - radius, 0), FXPoint(width - radius + 1, 1),
+            FXPoint(width - radius + 2, 2), FXPoint(width - 1, radius - 1)};
+        dc.drawLine(radius, 0, width - radius - 1, 0);
+        dc.drawLine(0, radius, 0, height - 1);
+        dc.drawLine(width - 1, radius, width - 1, height - 1);
+        dc.drawLine(0, height - 1, width - 1, height - 1);
+        dc.drawPoints(corners, ARRAYNUMBER(corners));
+        return 1;
+    }
+};
+
+FXDEFMAP(TabFrame) TabFrameMap[] =
+{
+    FXMAPFUNC(SEL_PAINT, 0, TabFrame::onPaint),
+};
+FXIMPLEMENT(TabFrame, FXHorizontalFrame, TabFrameMap, ARRAYNUMBER(TabFrameMap))
+
+
 class TabCloseButton : public FXButton
 {
     FXDECLARE(TabCloseButton)
@@ -587,8 +632,7 @@ TabButtons::TabButtons(FXComposite* a, FilePanel* fpanel, DirPanel* dpanel, FXui
     int idClose = ID_START_CLOSE;
     for (int i = 0; i < NMAX_TABS; i++)
     {
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(this, FRAME_GROOVE | LAYOUT_SIDE_TOP | LAYOUT_LEFT |
-                                                           LAYOUT_FILL_Y, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2);
+        FXHorizontalFrame* buttons = new TabFrame(this);
         tabButtons.push_back(new TabDragButton(buttons, this, idTab, BUTTON_TOOLBAR));
         closeButtons.push_back(new TabCloseButton(buttons, this, idClose));
 

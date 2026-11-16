@@ -395,6 +395,21 @@ public:
         xf_windowcolors(&childMenu);
         childMenu.create();
         assert(childMenu.getBackColor() == DialogColors::background);
+        FXWindow* tabStrip = findClass(&window, "TabButtons");
+        assert(tabStrip);
+        FXWindow* tabFrame = NULL;
+        for (FXWindow* child = tabStrip->getFirst(); child; child = child->getNext())
+        {
+            if (FXString(child->getClassName()) == FXString("TabFrame") && child->shown())
+            {
+                tabFrame = child;
+                break;
+            }
+        }
+        assert(tabFrame);
+        FXDCWindow tabDC(tabFrame);
+        assert(tabDC.readPixel(0, 0) == tabFrame->getBackColor());
+        assert(tabDC.readPixel(3, 0) == app.getBorderColor());
         screenshot(&window, "theme-active");
 
         ColorDialog picker(&window, "Native colour picker");
