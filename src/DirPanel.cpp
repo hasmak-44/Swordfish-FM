@@ -11,6 +11,10 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <algorithm>
 #if defined(linux)
 #include <mntent.h>
@@ -674,15 +678,21 @@ void DirPanel::syncSidebar()
         if (group == 3)
         {
             signature = networkStatus->getText() + "\n" + networkRefresh->getText();
+            for (const FXString& iface : networkInterfaces)
+            {
+                signature += "\ninterface\t" + iface;
+            }
             for (const NetworkServer& server : networkServers)
             {
                 signature += "\n" + server.key + "\t" + server.host + "\t" + server.name + "\t" +
-                             server.group + "\t" + server.sources + (server.local ? "\t1" : "\t0");
+                             server.group + "\t" + server.sources + (server.local ? "\t1" : "\t0") +
+                             (server.stale ? "\tstale" : "");
             }
             for (const NetworkService& service : networkServices)
             {
                 signature += "\nservice\t" + service.kind + "\t" + service.key + "\t" + service.address + "\t" +
-                             service.name + "\t" + service.url + "\t" + service.sources;
+                             service.name + "\t" + service.url + "\t" + service.sources +
+                             (service.stale ? "\tstale" : "");
             }
         }
         else if (group == 2)
@@ -754,13 +764,29 @@ void DirPanel::syncSidebar()
             sidebar->appendItem(root, new SidebarItem(networkRefresh->getText(), minireloadicon,
                                                       SidebarItem::REFRESH));
             SidebarItem* notice = new SidebarItem(networkStatus->getText(), NULL, SidebarItem::NOTICE);
+            if (!networkInterfaces.empty())
+            {
+                FXString searched;
+                for (const FXString& iface : networkInterfaces)
+                {
+                    searched += (searched.empty() ? "" : ", ") + iface;
+                }
+                notice->tip = FXString(_("Searched: ")) + searched + "\n" +
+                              _("Searches again automatically when the network connection changes.");
+            }
             sidebar->appendItem(root, notice);
+            const FXString staleTip = FXString("\n") + _("Not found by the latest search; it may be offline.");
             for (const NetworkServer& server : networkServers)
             {
                 FXString label = server.local ? server.name + _(" (this computer)") : server.name;
                 SidebarItem* item = new SidebarItem(label, miniservericon, SidebarItem::SERVER,
                                                     server.host, server.key);
                 item->tip = networkServerTip(server.key, server.host, server.group, server.sources);
+                if (server.stale)
+                {
+                    item->muted = true;
+                    item->tip += staleTip;
+                }
                 item->setHasItems(false);
                 sidebar->appendItem(root, item);
             }
@@ -770,6 +796,11 @@ void DirPanel::syncSidebar()
                                                     networkServiceIcon(service.kind), SidebarItem::SERVICE,
                                                     service.url, service.kind);
                 item->tip = networkServiceTip(service.kind, service.address, service.url, service.sources);
+                if (service.stale)
+                {
+                    item->muted = true;
+                    item->tip += staleTip;
+                }
                 item->setHasItems(false);
                 sidebar->appendItem(root, item);
             }
@@ -968,6 +999,11 @@ void DirPanel::highlightLocation()
 
 long DirPanel::onSidebarRefresh(FXObject*, FXSelector, void*)
 {
+    // Every 2 seconds: notice a new or changed network connection
+    if (++networkWatchTicks % 8 == 0)
+    {
+        noteNetworkInterfaces(networkInterfaceSource());
+    }
     syncSidebar();
     highlightLocation();
     getApp()->addTimeout(this, ID_SIDEBAR_REFRESH, 250);
@@ -2122,6 +2158,90 @@ long DirPanel::onCmdToggleSection(FXObject*, FXSelector sel, void*)
     return 1;
 }
 
+// A finished search removes entries it did not find again
+void DirPanel::dropStaleNetworkResults()
+{
+    networkServers.erase(std::remove_if(networkServers.begin(), networkServers.end(),
+                                        [](const NetworkServer& server) { return server.stale; }),
+                         networkServers.end());
+    networkServices.erase(std::remove_if(networkServices.begin(), networkServices.end(),
+                                         [](const NetworkService& service) { return service.stale; }),
+                          networkServices.end());
+}
+
+FXint DirPanel::freshNetworkServers() const
+{
+    return (FXint)std::count_if(networkServers.begin(), networkServers.end(),
+                                [](const NetworkServer& server) { return !server.stale; });
+}
+
+FXint DirPanel::freshNetworkServices() const
+{
+    return (FXint)std::count_if(networkServices.begin(), networkServices.end(),
+                                [](const NetworkService& service) { return !service.stale; });
+}
+
+// Same rule as swordfish-network: up with a link, multicast, not loopback, IPv4
+FXString DirPanel::currentNetworkInterfaces()
+{
+    std::vector<FXString> lines;
+    struct ifaddrs* list = NULL;
+    if (getifaddrs(&list) != 0)
+    {
+        return "";
+    }
+    for (struct ifaddrs* item = list; item; item = item->ifa_next)
+    {
+        if (!item->ifa_addr || item->ifa_addr->sa_family != AF_INET || !(item->ifa_flags & IFF_UP) ||
+            !(item->ifa_flags & IFF_RUNNING) || (item->ifa_flags & IFF_LOOPBACK) || !(item->ifa_flags & IFF_MULTICAST))
+        {
+            continue;
+        }
+        char text[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &reinterpret_cast<struct sockaddr_in*>(item->ifa_addr)->sin_addr, text, sizeof(text));
+        lines.push_back(FXString(item->ifa_name) + " " + text);
+    }
+    freeifaddrs(list);
+    std::sort(lines.begin(), lines.end(), [](const FXString& a, const FXString& b) { return compare(a, b) < 0; });
+    FXString signature;
+    for (const FXString& line : lines)
+    {
+        signature += line + "\n";
+    }
+    return signature;
+}
+
+FXString (*DirPanel::networkInterfaceSource)() = DirPanel::currentNetworkInterfaces;
+
+void DirPanel::noteNetworkInterfaces(const FXString& signature)
+{
+    if (!networkInterfacesKnown || signature != networkInterfaceSignature)
+    {
+        // Wait one more check so DHCP and Wi-Fi roaming can settle
+        networkChangePending = networkInterfacesKnown;
+        networkInterfacesKnown = true;
+        networkInterfaceSignature = signature;
+        return;
+    }
+    if (!networkChangePending || networkPid > 0 || networkReadFd >= 0)
+    {
+        return;
+    }
+    networkChangePending = false;
+    // Disconnected, never searched (nothing starts on its own) or collapsed (expanding searches anyway)
+    if (signature.empty() || !networkSearched || !sidebarRoots[3] || !sidebarRoots[3]->isExpanded())
+    {
+        return;
+    }
+    FXString interfaces = signature;
+    appLog(APP_LOG_UI, "network-discovery-network-changed", interfaces.substitute('\n', ';'));
+    startNetworkDiscovery();
+    if (networkPid > 0)
+    {
+        networkStatus->setText(_("Network connection changed. Searching again..."));
+    }
+}
+
 // Start or stop SMB network discovery without blocking the interface
 long DirPanel::onCmdRefreshNetwork(FXObject*, FXSelector, void*)
 {
@@ -2150,8 +2270,11 @@ void DirPanel::startNetworkDiscovery()
         return;
     }
 
-    networkServers.clear();
-    networkServices.clear();
+    for (NetworkServer& server : networkServers) server.stale = true;
+    for (NetworkService& service : networkServices) service.stale = true;
+    networkInterfaces.clear();
+    networkSearched = true;
+    networkChangePending = false;
     networkLineBuffer.clear();
     networkError.clear();
     networkWarning.clear();
@@ -2226,6 +2349,16 @@ void DirPanel::appendNetworkResult(FXString line)
         if (networkWarning.empty())
         {
             networkWarning = message.left(300);
+        }
+        return;
+    }
+    if (record == "INTERFACE")
+    {
+        const FXString name = line.section('\t', 1), address = line.section('\t', 2);
+        if (line.contains('\t') == 2 && safeDiscoveredHost(name) && safeDiscoveredHost(address) &&
+            networkInterfaces.size() < 32)
+        {
+            networkInterfaces.push_back(name + " (" + address + ")");
         }
         return;
     }
@@ -2403,6 +2536,10 @@ void DirPanel::finishNetworkDiscovery()
     }
     getApp()->removeTimeout(this, ID_NETWORK_TIMEOUT);
     networkRefresh->setText(_("Refresh"));
+    if (networkError.empty() && networkDone && WIFEXITED(networkExitStatus) && WEXITSTATUS(networkExitStatus) == 0)
+    {
+        dropStaleNetworkResults();
+    }
     if (!networkError.empty())
     {
         networkStatus->setText(networkError);
@@ -2420,7 +2557,7 @@ void DirPanel::finishNetworkDiscovery()
     {
         networkStatus->setText(_("SMB discovery ended unexpectedly."));
     }
-    else if (!networkServers.empty() || !networkServices.empty())
+    else if (freshNetworkServers() > 0 || freshNetworkServices() > 0)
     {
         networkStatus->setText(networkFoundText());
     }
@@ -2442,13 +2579,14 @@ void DirPanel::finishNetworkDiscovery()
 
 FXString DirPanel::networkFoundText() const
 {
-    if (networkServices.empty())
-        return FXStringVal((FXint)networkServers.size()) +
+    const FXint servers = freshNetworkServers(), services = freshNetworkServices();
+    if (services == 0)
+        return FXStringVal(servers) +
                _(" computer(s) sharing files found. Click a computer to view its shares.");
-    if (networkServers.empty())
-        return FXStringVal((FXint)networkServices.size()) + _(" network device(s) found. Click one to open it.");
-    return FXStringVal((FXint)networkServers.size()) + _(" computer(s) sharing files and ") +
-           FXStringVal((FXint)networkServices.size()) + _(" other device(s) found. Click one to open it.");
+    if (servers == 0)
+        return FXStringVal(services) + _(" network device(s) found. Click one to open it.");
+    return FXStringVal(servers) + _(" computer(s) sharing files and ") +
+           FXStringVal(services) + _(" other device(s) found. Click one to open it.");
 }
 
 // Opens a web page with the desktop's browser (outside the portable bundle's environment).
@@ -2553,9 +2691,9 @@ long DirPanel::onNetworkTimeout(FXObject*, FXSelector, void*)
 {
     stopNetworkDiscovery();
     networkRefresh->setText(_("Refresh"));
-    networkStatus->setText(networkServers.empty() && networkServices.empty() ?
+    networkStatus->setText(freshNetworkServers() == 0 && freshNetworkServices() == 0 ?
                            _("Search timed out. Click Refresh to try again.") :
-                           networkServices.empty() ? FXStringVal((FXint)networkServers.size()) +
+                           freshNetworkServices() == 0 ? FXStringVal(freshNetworkServers()) +
                            _(" computer(s) sharing files found; the search timed out.") :
                            networkFoundText() + _(" (the search timed out)"));
     appLog(APP_LOG_UI, "network-discovery-timeout", "protocol=smb");

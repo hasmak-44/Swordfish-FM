@@ -20,6 +20,8 @@ public:
     enum DeviceAction { NO_ACTION, UNMOUNT_DEVICE, MOUNT_DEVICE, EJECT_DEVICE };
     DeviceAction deviceAction = NO_ACTION;
     FXbool canEject = false;
+    // Dimmed but still clickable, e.g. a network entry not confirmed by the latest search
+    FXbool muted = false;
     virtual void draw(const FXTreeList* list, FXDC& dc, FXint x, FXint y, FXint w, FXint h) const;
     SidebarItem(const FXString& text, FXIcon* icon, Kind type, const FXString& location = "",
                 const FXString& name = "") :

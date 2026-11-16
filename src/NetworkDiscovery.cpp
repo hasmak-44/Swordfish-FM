@@ -1719,6 +1719,20 @@ void startServices()
     }, NULL);
 }
 
+// Up with a link (an idle bridge such as docker0 is up but not running), multicast, not loopback.
+bool searchableInterface(unsigned flags)
+{
+    return (flags & IFF_UP) && (flags & IFF_RUNNING) && !(flags & IFF_LOOPBACK) && (flags & IFF_MULTICAST);
+}
+
+// INTERFACE name address: the networks this search covers, shown to the user.
+void reportInterfaces()
+{
+    for (const Interface& iface : state->interfaces)
+        std::fprintf(out, "INTERFACE\t%s\t%s\n", clean(iface.name, 64).c_str(), clean(iface.address).c_str());
+    std::fflush(out);
+}
+
 void readInterfaces()
 {
     struct ifaddrs* list = NULL;
@@ -1733,8 +1747,7 @@ void readInterfaces()
         char text[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &reinterpret_cast<struct sockaddr_in*>(item->ifa_addr)->sin_addr, text, sizeof(text));
         state->localAddresses.insert(text);
-        if ((item->ifa_flags & IFF_UP) && !(item->ifa_flags & IFF_LOOPBACK) && (item->ifa_flags & IFF_MULTICAST))
-            state->interfaces.push_back(Interface{item->ifa_name, text});
+        if (searchableInterface(item->ifa_flags)) state->interfaces.push_back(Interface{item->ifa_name, text});
     }
     freeifaddrs(list);
 }
@@ -1745,6 +1758,7 @@ int run()
     state->loop = g_main_loop_new(NULL, false);
     readInterfaces();
     if (state->interfaces.empty()) status("ws-discovery", "no active IPv4 network interface");
+    reportInterfaces();
     startGvfs();
     startWsd();
     startServices();

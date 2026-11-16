@@ -49,6 +49,7 @@ static FXApp* testApp;
 static Window observedWindow;
 static bool busyCursor;
 static DirPanel* networkPanel;
+static FXString simulatedInterfaces = "eth0 192.168.1.106\n";
 static bool expanding;
 static int remoteFilesystemCalls;
 static FXString simulatedMount;
@@ -1688,6 +1689,9 @@ int main(int argc, char** argv)
     SidebarItem* hp = static_cast<SidebarItem*>(dell->getNext());
     assert(hp->path == "mx-hp.local" &&
            hp->tip == "Address: mx-hp.local (192.168.1.102)\nFound by: GVFS, WS-Discovery");
+    assert(!dell->muted && !hp->muted);
+    assert(static_cast<SidebarItem*>(network->getFirst()->getNext())->tip ==
+           "Searched: eth0 (192.168.1.106)\nSearches again automatically when the network connection changes.");
     // A single click browses the server in the active tab without mounting anything.
     TabButtons* tabs = window->getCurrentPanel()->getTabButtons();
     const FXuint previousTab = tabs->getCurrentTab();
@@ -1785,6 +1789,13 @@ int main(int argc, char** argv)
     panel->onSidebarRefresh(NULL, 0, NULL);
     assert(network->getFirst()->getText() == "Refresh");
     assert(network->getFirst()->getNext()->getText().find("Search stopped") == 0);
+    {
+        // A stopped search keeps the earlier results, greyed, until a search confirms them
+        SidebarItem* earlier = static_cast<SidebarItem*>(network->getFirst()->getNext()->getNext());
+        assert(earlier && earlier->getText() == "DELL-740" && earlier->muted);
+        assert(earlier->tip.find("\nNot found by the latest search; it may be offline.") > 0);
+        assert(network->getNumChildren() == 5);
+    }
     pump(app, 200);
     puts("PASS: Network section searches only on demand, merges updates, sorts this computer last, ignores bad records, stops");
     {
@@ -1814,6 +1825,8 @@ int main(int argc, char** argv)
             row = row->getNext();
         }
         assert(!row);
+        for (row = network->getFirst()->getNext()->getNext(); row; row = row->getNext())
+            assert(!static_cast<SidebarItem*>(row)->muted);
         assert(devices[2]->path == "http://192.168.1.50/" && devices[2]->key == "printer" &&
                devices[2]->tip == "Address: 192.168.1.50\nOpens the settings page: http://192.168.1.50/\n"
                                   "Found by: Zeroconf, UPnP");
@@ -2021,6 +2034,43 @@ int main(int argc, char** argv)
         pump(app, 300);
         assert(!RemoteDirectory::loading(mediaPanel->getList()));
         puts("PASS: media downloads save local copies in the background, show progress, cancel cleanly and report failures once");
+    }
+    {
+        // A changed network connection searches again once it has settled, only after a user search
+        DirPanel::networkInterfaceSource = []() { return simulatedInterfaces; };
+        auto waitForSearch = [&]()
+        {
+            for (int waited = 0; waited < 40 && network->getFirst()->getText() != "Refresh"; ++waited)
+            {
+                pump(app, 100);
+                panel->onSidebarRefresh(NULL, 0, NULL);
+            }
+            assert(network->getFirst()->getText() == "Refresh");
+        };
+        panel->noteNetworkInterfaces(simulatedInterfaces);
+        panel->noteNetworkInterfaces(simulatedInterfaces);
+        panel->onSidebarRefresh(NULL, 0, NULL);
+        waitForSearch();
+        simulatedInterfaces = "wlan0 10.0.0.5\n";
+        panel->noteNetworkInterfaces(simulatedInterfaces);
+        panel->onSidebarRefresh(NULL, 0, NULL);
+        assert(network->getFirst()->getText() == "Refresh");
+        panel->noteNetworkInterfaces(simulatedInterfaces);
+        panel->onSidebarRefresh(NULL, 0, NULL);
+        assert(network->getFirst()->getText() == "Stop");
+        assert(network->getFirst()->getNext()->getText() == "Network connection changed. Searching again...");
+        // Earlier results stay listed, greyed, while the new search runs
+        assert(network->getNumChildren() > 2 && static_cast<SidebarItem*>(network->getLast())->muted);
+        waitForSearch();
+        assert(!static_cast<SidebarItem*>(network->getLast())->muted);
+        // Disconnecting does not search; the same connection again does not search either
+        simulatedInterfaces = "";
+        panel->noteNetworkInterfaces(simulatedInterfaces);
+        panel->noteNetworkInterfaces(simulatedInterfaces);
+        panel->noteNetworkInterfaces(simulatedInterfaces);
+        panel->onSidebarRefresh(NULL, 0, NULL);
+        assert(network->getFirst()->getText() == "Refresh");
+        puts("PASS: Network searches again after a settled connection change, keeping earlier results greyed meanwhile");
     }
     assert(sharePanel->navigatePane(fixture + "/empty"));
     SidebarItem destination("mounted share", minifoldericon, SidebarItem::DEVICE, fixture + "/large");

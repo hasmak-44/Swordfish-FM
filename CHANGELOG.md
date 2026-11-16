@@ -54,6 +54,12 @@
   (Preferences → Appearance → Custom Tool Bar). Right-click the custom toolbar
   to change its display or icon size immediately. Built-in toolbars are
   unchanged.
+- Network: after you have searched once, Swordfish searches again by itself
+  when the network connection changes (Wi-Fi joined or switched, cable
+  plugged in). Earlier results stay listed, greyed, until the new search
+  finds them again. Hover the status line to see which networks were
+  searched; interfaces without a link (such as an idle Docker bridge) are
+  skipped.
 
 ### Fixed
 - Closing a writable archive folder (tar) now waits until the changes are

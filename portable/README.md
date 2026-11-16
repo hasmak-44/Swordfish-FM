@@ -424,7 +424,14 @@ can be mistaken for host settings, breaking discovery and network-share unmounti
 Launcher regression checks run with `python3 tests/portable-launcher-regression.py`.
 In post-RC4 development builds, expand or click Network to discover
 computers through GVFS/DNS-SD and WS-Discovery. Discovery never mounts anything
-or requests credentials, and does not run at startup.
+or requests credentials, and does not run at startup. After you have searched
+once, a change of network connection (Wi-Fi joined or switched, cable plugged
+in) starts a new search by itself once it has settled for a few seconds, while
+Network is expanded. Refresh keeps earlier results, greyed, until the new search
+finds them again; a finished search removes entries it no longer finds, while a
+stopped or timed-out search leaves them greyed. Hover the status line to see the
+network interfaces searched; IPv4 interfaces without a link (for example an idle
+Docker bridge) are skipped. IPv6-only devices are not discovered.
 
 Single-click a discovered computer to list its shared folders in the active tab;
 no new tab is opened, and clicking it again reuses the same tab.

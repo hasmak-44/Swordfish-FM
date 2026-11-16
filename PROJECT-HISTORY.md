@@ -3183,6 +3183,32 @@ Validation in the codespace: clean native build and folder/device integration
 regression covering the no-device hint, visible AFC backend warning, inventory
 recovery, and MTP/AFC mount flows. Physical device validation remains pending.
 
+### 3.80. Network discovery refresh clarity (16 November 2026)
+
+Discovery protocols, record formats and click behavior are unchanged; the user
+asked that existing network discovery must not break. Additions only:
+
+- `swordfish-network --discover` skips interfaces that are up but have no link
+  (`IFF_RUNNING` unset, e.g. an idle `docker0`) and prints `INTERFACE name
+  address` records. Bridges with a link (VMs/containers) are still searched.
+- Hovering the Network status line lists the searched interfaces.
+- Refresh keeps earlier entries, greyed (`SidebarItem::muted`, same dimmed
+  drawing as unmounted devices), until the new search confirms them. Only a
+  complete, successful search (DONE, exit 0) removes unconfirmed entries; a
+  stopped, timed-out or failed search leaves them greyed with a tooltip.
+- The sidebar timer compares the IPv4 interface list every two seconds. A
+  change stable for one more check starts a new search only if the user
+  already searched this session and Network is expanded; disconnecting (no
+  interfaces) never searches. Nothing new runs at startup.
+
+IPv6 discovery was deliberately not added: SMB/FTP/DLNA/browser paths would all
+need bracketed-literal handling and link-local addresses rarely work in URIs.
+
+Validation in the codespace: clean native build, network-discovery regression
+(interface rule) and folder/device integration regression (interfaces tooltip,
+greyed results after Stop, settled-change auto-search, no search on
+disconnect). Real Wi-Fi switching remains to be checked on a desktop.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

@@ -56,6 +56,7 @@ protected:
         FXString group;
         FXString sources;
         FXbool local;
+        FXbool stale = false;
     };
     // Advertised non-SMB devices: ftp, sftp, media (UPnP/DLNA), printer, router
     struct NetworkService
@@ -66,10 +67,21 @@ protected:
         FXString name;
         FXString url;
         FXString sources;
+        FXbool stale = false;
     };
     FXButton* networkRefresh = NULL;
     std::vector<NetworkServer> networkServers;
     std::vector<NetworkService> networkServices;
+    // "name (address)" of each interface the current search covers
+    std::vector<FXString> networkInterfaces;
+    FXString networkInterfaceSignature;
+    FXbool networkInterfacesKnown = false;
+    FXbool networkChangePending = false;
+    FXbool networkSearched = false;
+    FXuint networkWatchTicks = 0;
+    FXint freshNetworkServers() const;
+    FXint freshNetworkServices() const;
+    void dropStaleNetworkResults();
     FXString networkFoundText() const;
     void openNetworkService(const FXString& kind, const FXString& url, const FXString& name);
     FXLabel* networkStatus = NULL;
@@ -319,6 +331,11 @@ public:
     void setInactive();
     void showImagePreview(const FXString& pathname);
     FXbool handleNetworkExit(pid_t child, int status);
+    // Sorted "name address" lines of the IPv4 interfaces discovery would search; searches again
+    // once a change has been stable for one check, if the user already searched this session.
+    void noteNetworkInterfaces(const FXString& signature);
+    static FXString currentNetworkInterfaces();
+    static FXString (*networkInterfaceSource)();
 
     // Toggle dirsize refresh and force refresh if flag is true
     void setAllowDirsizeRefresh(FXbool flag);

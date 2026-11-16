@@ -183,6 +183,7 @@ def entry(name, mode=stat.S_IFDIR | 0o755, target="", symlink=False):
 
 if sys.argv[1:] == ["--discover"]:
     records = [
+        "INTERFACE\teth0\t192.168.1.106",
         "SERVER\t192.168.1.106\tmx-ryzen.local\tMX-RYZEN\t\tgvfs\t1",
         "SERVER\t192.168.1.104\t192.168.1.104\t192.168.1.104\t\tws-discovery\t0",
         "SERVER\t192.168.1.102\tmx-hp.local\tMX-HP\t\tgvfs,ws-discovery\t0",

@@ -93,7 +93,12 @@ static void parsers()
     assert(clean("a\tb\nc") == "a b c");
     assert(clean("ok\xff\xfe") == "ok");
     assert(clean(std::string(300, 'x')).size() == 128);
-    puts("PASS: smb URI hosts, Windows computer values, probe matches, DTD refusal, metadata HTTP/chunked, record cleaning");
+
+    assert(searchableInterface(IFF_UP | IFF_RUNNING | IFF_MULTICAST | IFF_BROADCAST));
+    assert(!searchableInterface(IFF_UP | IFF_MULTICAST | IFF_BROADCAST));
+    assert(!searchableInterface(IFF_UP | IFF_RUNNING | IFF_MULTICAST | IFF_LOOPBACK));
+    assert(!searchableInterface(IFF_UP | IFF_RUNNING));
+    puts("PASS: smb URI hosts, Windows computer values, probe matches, DTD refusal, metadata HTTP/chunked, record cleaning, linkless interfaces skipped");
 }
 
 static std::string request;

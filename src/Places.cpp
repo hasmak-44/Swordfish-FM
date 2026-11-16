@@ -113,7 +113,7 @@ static void drawUnmountedDevice(const SidebarItem& item, const FXTreeList* list,
 
 void SidebarItem::draw(const FXTreeList* list, FXDC& dc, FXint x, FXint y, FXint w, FXint h) const
 {
-    if (kind == DEVICE && deviceAction == MOUNT_DEVICE && isEnabled())
+    if (((kind == DEVICE && deviceAction == MOUNT_DEVICE) || muted) && isEnabled())
         drawUnmountedDevice(*this, list, dc, x, y, h);
     else
         FXTreeItem::draw(list, dc, x, y, w, h);
