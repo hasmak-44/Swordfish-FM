@@ -3020,7 +3020,7 @@ shortcuts is still pending.
   folder-expansion regressions passed. Dialog hover and maximize still require
   desktop confirmation.
 
-**Built-in themes** (completed in the current local group-3 changes):
+**Built-in themes** (local commit `0367f77`):
 
 - Removed the Swordfish, GNOME, KDE, XFCE and Gray On Blue colour themes.
 - Promoted the 14 previously importable sample themes to built-ins, including
@@ -3591,8 +3591,7 @@ Do not amend published commits/tags as an automatic workaround.
 
 0.0.2 remains the frozen stable fallback; 0.0.3 beta 2 is the latest published
 test release. Sections 3.70-3.71 record the current implementation state.
-Group 2 is committed locally; group 3 is being committed locally before work
-continues. Nothing from this task is pushed or released. Start from the
-current branch and worktree, not from an old experimental ZIP, obsolete
-roadmap or incomplete chat summary. Do not publish local work without the
-user's permission.
+Groups 2 and 3 are committed locally; neither is pushed or released. Start
+from the current branch and worktree, not from an old experimental ZIP,
+obsolete roadmap or incomplete chat summary. Do not publish local work
+without the user's permission.
