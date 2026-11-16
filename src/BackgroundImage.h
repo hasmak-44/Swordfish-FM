@@ -40,7 +40,8 @@ FXint backgroundImageOpacity(const FXString&);
 void setWindowBackground(FXWindow*, const FXString&, const FXString&, FXint, const FXString&);
 const BackgroundOverlay* windowBackground(const FXWindow*, FXint&, FXint&, FXuint* = NULL);
 void trackBackgroundOrigin(FXWindow*);
-FXbool drawBackgroundImage(FXWindow*, FXDC&, FXint, FXint, FXint, FXint);
+// A fully transparent base means the target's own background colour
+FXbool drawBackgroundImage(FXWindow*, FXDC&, FXint, FXint, FXint, FXint, FXColor base = 0);
 FXbool drawBackgroundGaps(FXWindow*, FXDC&, FXint, FXint, FXint, FXint);
 
 class ThemeToolBar : public FXToolBar, public BackgroundImageOwner

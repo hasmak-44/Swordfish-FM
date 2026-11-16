@@ -385,7 +385,7 @@ void trackBackgroundOrigin(FXWindow* window)
     windowLayer.origins[window] = std::make_pair(x, y);
 }
 
-FXbool drawBackgroundImage(FXWindow* target, FXDC& dc, FXint x, FXint y, FXint w, FXint h)
+FXbool drawBackgroundImage(FXWindow* target, FXDC& dc, FXint x, FXint y, FXint w, FXint h, FXColor base)
 {
     if (w <= 0 || h <= 0) return false;
     for (FXWindow* owner = target; owner; owner = owner->getParent())
@@ -397,7 +397,7 @@ FXbool drawBackgroundImage(FXWindow* target, FXDC& dc, FXint x, FXint y, FXint w
     FXColor* pixels = NULL;
     if (!FXMALLOC(&pixels, FXColor, static_cast<size_t>(w) * h))
         throw FXMemoryException(_("Unable to render background image"));
-    std::fill(pixels, pixels + static_cast<size_t>(w) * h, target->getBackColor());
+    std::fill(pixels, pixels + static_cast<size_t>(w) * h, FXALPHAVAL(base) ? base : target->getBackColor());
     overlay->blend(pixels, w, h, originX + x, originY + y);
     FXImage image(target->getApp(), pixels, IMAGE_OWNED, w, h);
     image.create();

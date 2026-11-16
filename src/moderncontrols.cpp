@@ -1267,8 +1267,11 @@ long FXMenuTitle::onPaint(FXObject*, FXSelector, void* ptr)
         }
         else
         {
-            dc.setForeground(backColor);
-            dc.fillRectangle(0, 0, width, height);
+            if (!drawBackgroundImage(this, dc, 0, 0, width, height, getParent()->getBackColor()))
+            {
+                dc.setForeground(backColor);
+                dc.fillRectangle(0, 0, width, height);
+            }
         }
 
         if (icon)
@@ -1291,8 +1294,11 @@ long FXMenuTitle::onPaint(FXObject*, FXSelector, void* ptr)
     }
     else
     {
-        dc.setForeground(backColor);
-        dc.fillRectangle(0, 0, width, height);
+        if (!drawBackgroundImage(this, dc, 0, 0, width, height, getParent()->getBackColor()))
+        {
+            dc.setForeground(backColor);
+            dc.fillRectangle(0, 0, width, height);
+        }
         if (icon)
         {
             dc.drawIconSunken(icon, xx, yy + (height - icon->getHeight()) / 2);
