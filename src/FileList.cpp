@@ -38,6 +38,7 @@
 #include "InputDialog.h"
 #include "StringList.h"
 #include "FileList.h"
+#include "FilePanel.h"
 #include "XFileExplorer.h"
 #include <algorithm>
 #include <vector>
@@ -400,6 +401,8 @@ FXDEFMAP(FileList) FileListMap[] =
     FXMAPFUNC(SEL_DRAGGED, 0, FileList::onDragged),
     FXMAPFUNC(SEL_LEFTBUTTONPRESS, 0, FileList::onLeftBtnPress),
     FXMAPFUNC(SEL_LEFTBUTTONRELEASE, 0, FileList::onLeftBtnRelease),
+    FXMAPFUNC(SEL_RIGHTBUTTONPRESS, 0, FileList::onRightBtnPress),
+    FXMAPFUNC(SEL_RIGHTBUTTONRELEASE, 0, FileList::onRightBtnRelease),
     FXMAPFUNC(SEL_TIMEOUT, FileList::ID_RENAME_TIMER, FileList::onRenameTimer),
     FXMAPFUNC(SEL_KEYPRESS, 0, FileList::onKeyPress),
     FXMAPFUNC(SEL_TIMEOUT, FileList::ID_REFRESH_TIMER, FileList::onCmdRefreshTimer),
@@ -416,6 +419,8 @@ FXDEFMAP(FileList) FileListMap[] =
     FXMAPFUNC(SEL_COMMAND, FileList::ID_DRAG_MOVE, FileList::onCmdDragMove),
     FXMAPFUNC(SEL_COMMAND, FileList::ID_DRAG_LINK, FileList::onCmdDragLink),
     FXMAPFUNC(SEL_COMMAND, FileList::ID_DRAG_REJECT, FileList::onCmdDragReject),
+    FXMAPFUNC(SEL_COMMAND, FileList::ID_DRAG_ARCHIVE, FileList::onCmdDragArchive),
+    FXMAPFUNC(SEL_COMMAND, FileList::ID_DRAG_EXTRACT, FileList::onCmdDragExtract),
     FXMAPFUNC(SEL_COMMAND, FileList::ID_DIRECTORY_UP, FileList::onCmdDirectoryUp),
     FXMAPFUNC(SEL_COMMAND, FileList::ID_COL_NAME, FileList::onCmdSortByName),
     FXMAPFUNC(SEL_COMMAND, FileList::ID_COL_DIRNAME, FileList::onCmdSortByDirName),
@@ -973,6 +978,10 @@ void FileList::create()
     if (!urilistType)
     {
         urilistType = getApp()->registerDragType(urilistTypeName);
+    }
+    if (!rightDragType)
+    {
+        rightDragType = getApp()->registerDragType("application/x-swordfish-right-drag");
     }
     getApp()->addTimeout(this, ID_REFRESH_TIMER, REFRESH_INTERVAL);
 }
@@ -1538,6 +1547,7 @@ long FileList::onDNDMotion(FXObject* sender, FXSelector sel, void* ptr)
 long FileList::onCmdDragCopy(FXObject* sender, FXSelector sel, void* ptr)
 {
     dropaction = DRAG_COPY;
+    dropMenuAction = DROP_MENU_NONE;
     return 1;
 }
 
@@ -1546,6 +1556,7 @@ long FileList::onCmdDragCopy(FXObject* sender, FXSelector sel, void* ptr)
 long FileList::onCmdDragMove(FXObject* sender, FXSelector sel, void* ptr)
 {
     dropaction = DRAG_MOVE;
+    dropMenuAction = DROP_MENU_NONE;
     return 1;
 }
 
@@ -1554,6 +1565,7 @@ long FileList::onCmdDragMove(FXObject* sender, FXSelector sel, void* ptr)
 long FileList::onCmdDragLink(FXObject* sender, FXSelector sel, void* ptr)
 {
     dropaction = DRAG_LINK;
+    dropMenuAction = DROP_MENU_NONE;
     return 1;
 }
 
@@ -1562,7 +1574,72 @@ long FileList::onCmdDragLink(FXObject* sender, FXSelector sel, void* ptr)
 long FileList::onCmdDragReject(FXObject* sender, FXSelector sel, void* ptr)
 {
     dropaction = DRAG_REJECT;
+    dropMenuAction = DROP_MENU_NONE;
     return 1;
+}
+
+
+long FileList::onCmdDragArchive(FXObject*, FXSelector, void*)
+{
+    dropaction = DRAG_REJECT;
+    dropMenuAction = DROP_MENU_ARCHIVE;
+    return 1;
+}
+
+
+long FileList::onCmdDragExtract(FXObject*, FXSelector, void*)
+{
+    dropaction = DRAG_REJECT;
+    dropMenuAction = DROP_MENU_EXTRACT;
+    return 1;
+}
+
+
+long FileList::onRightBtnPress(FXObject* sender, FXSelector sel, void* ptr)
+{
+    FXEvent* event = static_cast<FXEvent*>(ptr);
+    int index = getItemAt(event->win_x, event->win_y, event->state);
+    rightButtonDown = false;
+    rightDragStarted = false;
+
+    if ((index >= 0) && items[index]->isEnabled())
+    {
+        setCurrentItem(index, true);
+        if (!isItemSelected(index)) selectItem(index, true);
+        rightButtonDown = isItemSelected(index) && items[index]->isDraggable() &&
+                          (getItemFilename(index) != "..");
+    }
+
+    long result = IconList::onRightBtnPress(sender, sel, ptr);
+    if (rightButtonDown)
+    {
+        flags &= ~FLAG_SCROLLING;
+        flags |= FLAG_PRESSED | FLAG_TRYDRAG;
+    }
+    return result;
+}
+
+
+long FileList::onRightBtnRelease(FXObject* sender, FXSelector sel, void* ptr)
+{
+    if (rightDragStarted)
+    {
+        ungrab();
+        stopAutoScroll();
+        flags |= FLAG_UPDATE;
+        flags &= ~(FLAG_PRESSED | FLAG_TRYDRAG | FLAG_LASSO | FLAG_DODRAG | FLAG_SCROLLING);
+        handle(this, FXSEL(SEL_ENDDRAG, 0), ptr);
+        rightButtonDown = false;
+        rightDragStarted = false;
+        return 1;
+    }
+
+    if (rightButtonDown)
+    {
+        flags &= ~(FLAG_PRESSED | FLAG_TRYDRAG);
+    }
+    rightButtonDown = false;
+    return IconList::onRightBtnRelease(sender, sel, ptr);
 }
 
 
@@ -1622,17 +1699,34 @@ long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
     // Archive managers offer XdndDirectSave0 instead of a list of existing files
     FXbool xdsdrop = !offeredDNDType(FROM_DRAGNDROP, urilistType) &&
                      offeredDNDType(FROM_DRAGNDROP, xf_xdsdragtype(getApp()));
+    FXbool rightdnd = offeredDNDType(FROM_DRAGNDROP, rightDragType);
 
     // Get DND data
     // This is done before displaying the popup menu to fix a drag and drop problem
     // with Konqueror and Dolphin file managers
     FXbool dnd = !xdsdrop && getDNDData(FROM_DRAGNDROP, urilistType, data, len);
+    std::vector<FXString> rightDropPaths;
+    if (rightdnd && dnd)
+    {
+        const char* p = reinterpret_cast<const char*>(data);
+        while (*p)
+        {
+            while (*p == '\r' || *p == '\n') ++p;
+            if (!*p) break;
+            const char* q = p;
+            while (*q && *q != '\r' && *q != '\n') ++q;
+            FXString uri(p, q - p);
+            FXString path(FXURL::decode(FXURL::fileFromURL(uri)));
+            if (!path.empty()) rightDropPaths.push_back(path);
+            p = q;
+        }
+    }
 
     int xx, yy, index = -1;
 
     // Display the dnd dialog if the control or shift key were not pressed
     // Direct save drops are always extracted (copied), so there is nothing to choose
-    if (confirm_dnd && !ctrlshiftkey && !xdsdrop)
+    if ((rightdnd || (confirm_dnd && !ctrlshiftkey)) && !xdsdrop && (dnd || !rightdnd))
     {
         // Get item index
         FXuint state;
@@ -1647,6 +1741,29 @@ long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuCommand(&menu, _("Copy Here"), minicopyicon, this, FileList::ID_DRAG_COPY);
         new FXMenuCommand(&menu, _("Move Here"), minimoveicon, this, FileList::ID_DRAG_MOVE);
         new FXMenuCommand(&menu, _("Link Here"), minilinktoicon, this, FileList::ID_DRAG_LINK);
+        if (rightdnd && !rightDropPaths.empty())
+        {
+            new FXMenuSeparator(&menu);
+            if (rightDropPaths.size() == 1)
+            {
+                FXString name = FXPath::name(rightDropPaths.front());
+                FXString ext1 = name.rafter('.', 1).lower();
+                FXString ext2 = name.rafter('.', 2).lower();
+                FXbool archive = (ext2 == "tar.gz") || (ext2 == "tar.bz2") || (ext2 == "tar.xz") ||
+                                 (ext2 == "tar.zst") || (ext2 == "tar.z") || (ext1 == "tar") ||
+                                 (ext1 == "tgz") || (ext1 == "tbz") || (ext1 == "tbz2") ||
+                                 (ext1 == "txz") || (ext1 == "tzst") || (ext1 == "taz") ||
+                                 (ext1 == "zip") || (ext1 == "7z") || (ext1 == "rar") ||
+                                 (ext1 == "lzh") || (ext1 == "ace") || (ext1 == "arj");
+                if (archive)
+                {
+                    new FXMenuCommand(&menu, _("Extract Here"), miniarchexticon, this,
+                                      FileList::ID_DRAG_EXTRACT);
+                }
+            }
+            new FXMenuCommand(&menu, _("Create Archive Here..."), miniarchaddicon, this,
+                              FileList::ID_DRAG_ARCHIVE);
+        }
         new FXMenuSeparator(&menu);
         new FXMenuCommand(&menu, _("Cancel"), NULL, this, FileList::ID_DRAG_REJECT);
 
@@ -1662,6 +1779,30 @@ long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
     }
     // Restore original directory
     setDirectory(orgdirectory);
+
+    if (dropMenuAction != DROP_MENU_NONE)
+    {
+        DropMenuAction action = dropMenuAction;
+        dropMenuAction = DROP_MENU_NONE;
+        if (dnd)
+        {
+            FileDropRequest request;
+            request.targetDirectory = dropdirectory;
+            request.sources = rightDropPaths;
+            FXSelector command = (action == DROP_MENU_ARCHIVE) ? FilePanel::ID_DROP_CREATE_ARCHIVE :
+                                                                  FilePanel::ID_DROP_EXTRACT_ARCHIVE;
+            if (getTarget() && getTarget()->tryHandle(this, FXSEL(SEL_COMMAND, command), &request))
+            {
+                FXFREE(&data);
+            }
+            else
+            {
+                MessageBox::error(this, BOX_OK, _("Error"), _("Unable to perform this drop operation"));
+                FXFREE(&data);
+            }
+        }
+        return 1;
+    }
 
     if (xdsdrop)
     {
@@ -1963,6 +2104,14 @@ long FileList::onDNDRequest(FXObject* sender, FXSelector sel, void* ptr)
     FXuchar* data;
     FXuint len;
 
+    if (rightDragStarted && event->target == rightDragType)
+    {
+        const FXuchar marker = 1;
+        FXMEMDUP(&data, &marker, FXuchar, 1);
+        setDNDData(FROM_DRAGNDROP, event->target, data, 1);
+        return 1;
+    }
+
     // Perhaps the target wants to supply its own data
     if (IconList::onDNDRequest(sender, sel, ptr))
     {
@@ -2001,7 +2150,12 @@ long FileList::onBeginDrag(FXObject* sender, FXSelector sel, void* ptr)
     {
         return 1;
     }
-    if (beginDrag(&urilistType, 1))
+    FXbool rightDrag = rightButtonDown;
+    FXDragType rightDragTypes[] = { urilistType, rightDragType };
+    rightDragStarted = rightDrag;
+    FXbool started = rightDrag ? beginDrag(rightDragTypes, ARRAYNUMBER(rightDragTypes)) :
+                                 beginDrag(&urilistType, 1);
+    if (started)
     {
         xf_keepdraggrab(this);
         dragfiles = FXString::null;
@@ -2022,6 +2176,7 @@ long FileList::onBeginDrag(FXObject* sender, FXSelector sel, void* ptr)
         }
         return 1;
     }
+    rightDragStarted = false;
     return 0;
 }
 

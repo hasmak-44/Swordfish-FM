@@ -3066,6 +3066,22 @@ the rounded edge. The native build and regression passed, and the captured
 codespace screenshot shows the updated tab shape. Real desktop acceptance is
 still pending.
 
+### 3.74. Right-button drag-and-drop menu (16 November 2026)
+
+Right-clicking an unselected file now adds it to the selection without
+clearing other selected items. Releasing the right button without dragging
+continues to open the normal context menu. Dropping a right-button drag opens
+a Copy Here / Move Here / Link Here menu, with Extract Here for one recognized
+archive and Create Archive Here for the dragged items. New archives default to
+`.tar.gz`; supported output formats are tar variants, zip, 7z and rar. The
+archive actions are dispatched to the active file panel, while normal
+copy/move/link drops continue through the existing file-list path.
+
+The native build passed. The folder-expansion regression passed, including its
+right-click multi-selection assertion, and the Theme Workflow regression
+passed. The automated checks do not exercise a real native right-button
+drag/drop or archive operation; desktop interaction testing remains pending.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

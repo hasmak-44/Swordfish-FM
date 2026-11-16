@@ -186,6 +186,8 @@ FXDEFMAP(FilePanel) FilePanelMap[] =
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_MEDIA_PLAY_WITH, FilePanel::onCmdMediaPlayWith),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_MEDIA_COPY_ADDRESS, FilePanel::onCmdMediaCopyAddress),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_MEDIA_OPEN_WITH, FilePanel::onCmdMediaOpenWith),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_DROP_CREATE_ARCHIVE, FilePanel::onCmdCreateArchiveFromDrop),
+    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_DROP_EXTRACT_ARCHIVE, FilePanel::onCmdExtractArchiveFromDrop),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_SHOW_BIG_ICONS, FilePanel::onCmdShow),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_SHOW_MINI_ICONS, FilePanel::onCmdShow),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_SHOW_DETAILS, FilePanel::onCmdShow),
@@ -7155,6 +7157,212 @@ long FilePanel::onCmdXTerm(FXObject*, FXSelector, void*)
     }
     current->list->setFocus();
     return 1;
+}
+
+
+long FilePanel::onCmdCreateArchiveFromDrop(FXObject*, FXSelector, void* ptr)
+{
+    if (!ptr)
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("No dropped items were provided"));
+        return 0;
+    }
+    const FileDropRequest* request = static_cast<const FileDropRequest*>(ptr);
+    createArchiveFromDrop(request->targetDirectory, request->sources);
+    return 1;
+}
+
+
+long FilePanel::onCmdExtractArchiveFromDrop(FXObject*, FXSelector, void* ptr)
+{
+    if (!ptr)
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("No dropped archive was provided"));
+        return 0;
+    }
+    const FileDropRequest* request = static_cast<const FileDropRequest*>(ptr);
+    if (request->sources.size() != 1)
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Only one archive can be extracted at a time"));
+        return 0;
+    }
+    extractArchiveFromDrop(request->targetDirectory, request->sources.front());
+    return 1;
+}
+
+
+void FilePanel::createArchiveFromDrop(const FXString& targetdir, const std::vector<FXString>& sources)
+{
+    if (requiresMountedShare()) return;
+    if (sources.empty())
+    {
+        MessageBox::warning(this, BOX_OK, _("Warning"), _("No files were selected to add to the archive"));
+        return;
+    }
+    if (!xf_isdirectory(targetdir))
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("%s is not a folder"), targetdir.text());
+        return;
+    }
+    if (!xf_iswritable(targetdir))
+    {
+        MessageBox::error(getApp(), BOX_OK_SU, _("Error"), _("Can't write to %s: Permission denied"), targetdir.text());
+        return;
+    }
+
+    FXString archiveName = sources.size() == 1 ? FXPath::name(sources.front()) : FXString("archive");
+    FXString archive = targetdir + PATHSEPSTRING + archiveName + ".tar.gz";
+    if (archdialog == NULL)
+    {
+        archdialog = new ArchInputDialog(this, "");
+    }
+    archdialog->setText(archive);
+    archdialog->CursorEnd();
+    if (!archdialog->execute()) return;
+    archive = archdialog->getText();
+    if (archive.empty())
+    {
+        MessageBox::warning(this, BOX_OK, _("Warning"), _("File name is empty, operation cancelled"));
+        return;
+    }
+    archive = xf_filepath(archive, targetdir);
+
+    FXString ext1 = FXPath::extension(archive).lower();
+    FXString ext2 = archive.rafter('.', 2).lower();
+    FXString command;
+    if ((ext2 == "tar.gz") || (ext2 == "tar.bz2") || (ext2 == "tar.xz") || (ext2 == "tar.zst") ||
+        (ext1 == "tgz") || (ext1 == "tbz") || (ext1 == "tbz2") || (ext1 == "txz") ||
+        (ext1 == "tzst") || (ext1 == "taz"))
+    {
+        command = "tar -acvf ";
+    }
+    else if (ext1 == "tar")
+    {
+        command = "tar -cvf ";
+    }
+    else if (ext1 == "zip")
+    {
+        command = "zip -r ";
+    }
+    else if (ext1 == "7z")
+    {
+        command = "7z a ";
+    }
+    else if (ext1 == "rar")
+    {
+        command = "rar a ";
+    }
+    else
+    {
+        MessageBox::warning(this, BOX_OK, _("Warning"),
+                            _("Choose a tar, zip, 7z, or rar archive name"));
+        return;
+    }
+    FXString archiveDirectory = FXPath::directory(archive);
+    if (!xf_isdirectory(archiveDirectory))
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("%s is not a folder"), archiveDirectory.text());
+        return;
+    }
+    if (!xf_iswritable(archiveDirectory))
+    {
+        MessageBox::error(getApp(), BOX_OK_SU, _("Error"), _("Can't write to %s: Permission denied"),
+                          archiveDirectory.text());
+        return;
+    }
+
+    command += xf_quote(archive) + " ";
+    for (const FXString& source : sources)
+    {
+        if (!xf_existfile(source))
+        {
+            MessageBox::error(this, BOX_OK, _("Error"), _("Dropped file %s no longer exists"), source.text());
+            return;
+        }
+        command += xf_quote(source) + " ";
+    }
+
+    File* file = new File(this, _("Create archive"), ARCHIVE);
+    file->create();
+    file->archive(xf_quote(archive), command);
+    delete file;
+    if (current->list->getDirectory() == targetdir) onCmdRefresh(0, 0, 0);
+}
+
+
+void FilePanel::extractArchiveFromDrop(const FXString& targetdir, const FXString& archive)
+{
+    if (requiresMountedShare()) return;
+    if (!xf_isdirectory(targetdir))
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("%s is not a folder"), targetdir.text());
+        return;
+    }
+    if (!xf_iswritable(targetdir))
+    {
+        MessageBox::error(getApp(), BOX_OK_SU, _("Error"), _("Can't write to %s: Permission denied"), targetdir.text());
+        return;
+    }
+    if (!xf_isfile(archive))
+    {
+        MessageBox::error(this, BOX_OK, _("Error"), _("Archive %s no longer exists"), archive.text());
+        return;
+    }
+
+    FXString name = FXPath::name(archive);
+    FXString ext1 = FXPath::extension(name).lower();
+    FXString ext2 = name.rafter('.', 2).lower();
+    FXString command;
+    if ((ext2 == "tar.gz") || (ext2 == "tar.bz2") || (ext2 == "tar.xz") || (ext2 == "tar.zst") ||
+        (ext2 == "tar.z"))
+    {
+        command = "tar -axvf ";
+    }
+    else if ((ext1 == "tgz") || (ext1 == "tbz2") || (ext1 == "tbz") || (ext1 == "txz") ||
+             (ext1 == "taz") || (ext1 == "tzst"))
+    {
+        command = "tar -axvf ";
+    }
+    else if (ext1 == "tar")
+    {
+        command = "tar -xvf ";
+    }
+    else if (ext1 == "zip")
+    {
+        command = "unzip -o ";
+    }
+    else if (ext1 == "7z")
+    {
+        command = "7z x -y ";
+    }
+    else if (ext1 == "rar")
+    {
+        command = "unrar x -o+ ";
+    }
+    else if (ext1 == "lzh")
+    {
+        command = "lha -xf ";
+    }
+    else if (ext1 == "ace")
+    {
+        command = "unace x ";
+    }
+    else if (ext1 == "arj")
+    {
+        command = "arj x -y ";
+    }
+    else
+    {
+        MessageBox::warning(this, BOX_OK, _("Warning"), _("This archive format cannot be extracted here"));
+        return;
+    }
+
+    command += xf_quote(archive) + " ";
+    File* file = new File(this, _("Extract Archive"), EXTRACT);
+    file->create();
+    file->extract(xf_quote(archive), targetdir, command);
+    delete file;
+    if (current->list->getDirectory() == targetdir) onCmdRefresh(0, 0, 0);
 }
 
 

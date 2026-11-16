@@ -827,6 +827,33 @@ int main(int argc, char** argv)
            static_cast<FileItem*>(list->getItem(link))->isSymlink());
     assert(broken >= 0 && !list->isItemDirectory(broken) &&
            static_cast<FileItem*>(list->getItem(broken))->isSymlink());
+    int rightX = -1, rightY = -1;
+    for (int y = 0; y < list->getHeight() && rightY < 0; ++y)
+    {
+        for (int x = 0; x < list->getWidth(); ++x)
+        {
+            if (list->getItemAt(x, y) == link)
+            {
+                rightX = x;
+                rightY = y;
+                break;
+            }
+        }
+    }
+    assert(rightX >= 0 && rightY >= 0);
+    int emptySelection = find(list, "empty");
+    assert(emptySelection >= 0);
+    list->selectItem(folder, true);
+    list->selectItem(emptySelection, true);
+    FXEvent rightPress = {};
+    rightPress.win_x = rightX;
+    rightPress.win_y = rightY;
+    assert(list->onRightBtnPress(list, FXSEL(SEL_RIGHTBUTTONPRESS, 0), &rightPress));
+    assert(list->isItemSelected(folder) && list->isItemSelected(emptySelection) && list->isItemSelected(link));
+    assert(list->onRightBtnRelease(list, FXSEL(SEL_RIGHTBUTTONRELEASE, 0), &rightPress));
+    for (int i = 0; i < list->getNumItems(); ++i)
+        if (list->isItemSelected(i)) list->deselectItem(i, true);
+    puts("PASS: right-click selects an unselected item without clearing the existing multi-selection");
     expanding = true;
     list->toggleExpand(folder, 1);
     expanding = false;

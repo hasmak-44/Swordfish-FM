@@ -145,6 +145,11 @@ protected:
     FXString dropdirectory;                             // Drop directory
     FXDragAction dropaction;                            // Drop action
     FXString dragfiles;                                 // Dragged files
+    FXDragType rightDragType = 0;
+    FXbool rightButtonDown = false;
+    FXbool rightDragStarted = false;
+    enum DropMenuAction { DROP_MENU_NONE, DROP_MENU_ARCHIVE, DROP_MENU_EXTRACT };
+    DropMenuAction dropMenuAction = DROP_MENU_NONE;
     FileDict* associations = NULL;                      // Association table
     FXString pattern;                                   // Pattern of file names
     FXuint matchmode = 0;                               // File wildcard match mode
@@ -251,6 +256,8 @@ public:
     long onRemoteChanged(FXObject*, FXSelector, void*);
     long onLeftBtnPress(FXObject*, FXSelector, void*);
     long onLeftBtnRelease(FXObject*, FXSelector, void*);
+    long onRightBtnPress(FXObject*, FXSelector, void*);
+    long onRightBtnRelease(FXObject*, FXSelector, void*);
     long onRenameTimer(FXObject*, FXSelector, void*);
     FXbool beginInlineRename(int index);
 
@@ -334,6 +341,8 @@ public:
     long onCmdDragMove(FXObject*, FXSelector, void*);
     long onCmdDragLink(FXObject*, FXSelector, void*);
     long onCmdDragReject(FXObject*, FXSelector, void*);
+    long onCmdDragArchive(FXObject*, FXSelector, void*);
+    long onCmdDragExtract(FXObject*, FXSelector, void*);
     long onUpdRefreshTimer(FXObject*, FXSelector, void*);
     long onCmdCloseFilter(FXObject*, FXSelector, void*);
     long onFolderSizeTimer(FXObject*, FXSelector, void*);
@@ -482,6 +491,8 @@ public:
         ID_DROP_SCROLL_TIMER,
         ID_COLUMN_TOGGLE,
         ID_COLUMN_TOGGLE_LAST = ID_COLUMN_TOGGLE + 11,
+        ID_DRAG_ARCHIVE,
+        ID_DRAG_EXTRACT,
         ID_LAST
     };
 public:

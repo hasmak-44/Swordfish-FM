@@ -2,6 +2,7 @@
 #define FILEPANEL_H
 
 #include <map>
+#include <vector>
 
 #include "Properties.h"
 #include "FileList.h"
@@ -18,6 +19,12 @@
 typedef std::map<FXString, int>   progsmap;
 
 class TabButtons;
+
+struct FileDropRequest
+{
+    FXString targetDirectory;
+    std::vector<FXString> sources;
+};
 
 class FilePanel : public FXVerticalFrame
 {
@@ -112,6 +119,8 @@ public:
     void execFile(FXString, FXbool explicitAction = false);
     void runInTerminal(FXString);
     int readScriptDir(FXWindow*, FXMenuPane*, FXString);
+    void createArchiveFromDrop(const FXString&, const std::vector<FXString>&);
+    void extractArchiveFromDrop(const FXString&, const FXString&);
 
     enum
     {
@@ -215,11 +224,15 @@ public:
         ID_MEDIA_PLAY_WITH,
         ID_MEDIA_COPY_ADDRESS,
         ID_MEDIA_OPEN_WITH,
+        ID_DROP_CREATE_ARCHIVE,
+        ID_DROP_EXTRACT_ARCHIVE,
         ID_LAST,
     };
 public:
     long onCmdZoom(FXObject*, FXSelector, void*);
     long onUpdZoom(FXObject*, FXSelector, void*);
+    long onCmdCreateArchiveFromDrop(FXObject*, FXSelector, void*);
+    long onCmdExtractArchiveFromDrop(FXObject*, FXSelector, void*);
     long onClipboardGained(FXObject*, FXSelector, void*);
     long onClipboardLost(FXObject*, FXSelector, void*);
     long onClipboardRequest(FXObject*, FXSelector, void*);
