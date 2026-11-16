@@ -3256,6 +3256,17 @@ theme workflow regression with a fake browser launcher checking both the
 theme guide and the original manual URL. Desktop browser behavior remains
 to be checked.
 
+### 3.84. Protect unrecognized theme folders
+
+The first file-library implementation could remove a theme file merely
+because it was not in the current list, including invalid or duplicate files
+that were deliberately skipped while loading. Saving now removes only files
+that this Preferences instance actually loaded or saved and that still match
+the expected theme name. It does not follow symlinked theme folders. A save
+failure explicitly warns that the library may have been partially written.
+The theme workflow regression checks that unrecognized and duplicate files
+survive removal of a loaded theme.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

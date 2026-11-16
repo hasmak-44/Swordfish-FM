@@ -428,6 +428,24 @@ public:
             fclose(file);
             assert(foundName && foundDetails);
         }
+        FXString unknownFolder = xf_userdatahome() + "/themes/colors/z-unrecognized";
+        FXString duplicateFolder = xf_userdatahome() + "/themes/colors/z-duplicate";
+        FXString outsideFolder = xf_userdatahome() + "/outside-theme";
+        FXString linkedFolder = xf_userdatahome() + "/themes/colors/z-linked";
+        assert(xf_mkpath(unknownFolder.text(), 0755) == 0);
+        assert(xf_mkpath(duplicateFolder.text(), 0755) == 0);
+        assert(xf_mkpath(outsideFolder.text(), 0755) == 0);
+        FXString unknownFile = unknownFolder + "/theme.swordfish-theme";
+        FXString duplicateFile = duplicateFolder + "/theme.swordfish-theme";
+        {
+            std::ofstream output(unknownFile.text());
+            output << "not a valid theme\n";
+            assert(output.good());
+        }
+        assert(FXFile::copyFiles(savedThemeFile, duplicateFile, false));
+        FXString outsideFile = outsideFolder + "/theme.swordfish-theme";
+        assert(FXFile::copyFiles(savedThemeFile, outsideFile, false));
+        assert(symlink(outsideFolder.text(), linkedFolder.text()) == 0);
         PreferencesBox loadedPreferences(&window, app.getBackColor(), app.getForeColor(), app.getBackColor(),
                                         app.getSelbackColor(), FXRGB(255, 0, 0), app.getBaseColor());
         bool foundReloadedTheme = false;
@@ -435,6 +453,11 @@ public:
             if (theme.name == saved.name && theme.encodeProperties() == saved.encodeProperties())
                 foundReloadedTheme = true;
         assert(foundReloadedTheme);
+        vector_Theme withoutCustom = loadedPreferences.Themes;
+        withoutCustom.erase(withoutCustom.begin() + NUM_DEFAULT_THEMES, withoutCustom.end());
+        assert(loadedPreferences.saveCustomThemes(withoutCustom));
+        assert(!xf_existfile(savedThemeFile));
+        assert(xf_existfile(unknownFile) && xf_existfile(duplicateFile) && xf_existfile(outsideFile));
         FXRegistry disk(app.getAppName(), app.getVendorName());
         assert(disk.read());
         assert(disk.readStringEntry("SETTINGS", "theme_name", "") == saved.name);

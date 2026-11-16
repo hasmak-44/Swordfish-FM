@@ -265,7 +265,7 @@ static void importThemeFolderTextures(FXApp* app, const FXString& file, const Th
     }
 }
 
-static void loadCustomThemeFolders(FXApp* app, vector_Theme& themes)
+static void loadCustomThemeFolders(FXApp* app, vector_Theme& themes, std::map<FXString, FXString>& libraryFiles)
 {
     FXString root = colorThemeLibraryPath();
     FXDir directory;
@@ -277,7 +277,7 @@ static void loadCustomThemeFolders(FXApp* app, vector_Theme& themes)
         FXString entry = directory.name();
         if (entry == "." || entry == ".." || entry[0] == '.') continue;
         FXString path = root + PATHSEPSTRING + entry;
-        if (xf_isdirectory(path)) folders.push_back(path);
+        if (xf_isdirectory(path) && !xf_islink(path)) folders.push_back(path);
     }
     std::sort(folders.begin(), folders.end());
     for (const FXString& folder : folders)
@@ -300,6 +300,7 @@ static void loadCustomThemeFolders(FXApp* app, vector_Theme& themes)
         }
         importThemeFolderTextures(app, file, theme);
         themes.push_back(theme);
+        libraryFiles[theme.name] = file;
     }
 }
 
@@ -819,7 +820,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
             appLog(APP_LOG_ERRORS, "builtin-theme-load-failed", error);
     }
 
-    loadCustomThemeFolders(getApp(), Themes);
+    loadCustomThemeFolders(getApp(), Themes, themeLibraryFiles);
 
     // Custom themes
     if (getApp()->reg().readStringEntry("THEMES", "theme0", NULL))
@@ -4077,7 +4078,7 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     if (!saveCustomThemes(Themes))
     {
         MessageBox::error(this, BOX_OK, _("Preferences"),
-                          _("The custom theme library could not be written. Its previous version was kept."));
+                          _("The custom theme library could not be written completely. Check the library and try again."));
     }
 
     // UI DPI
@@ -4510,17 +4511,21 @@ void PreferencesBox::rememberPreferences()
 FXbool PreferencesBox::saveCustomThemes(const vector_Theme& themes)
 {
     FXString root = colorThemeLibraryPath();
-    std::set<FXString> savedFolders;
+    std::map<FXString, FXString> savedFiles;
     for (FXuint i = NUM_DEFAULT_THEMES; i < themes.size(); ++i)
     {
         const Theme& theme = themes[i];
         FXString base = themeFolderName(theme.name);
         FXString folder = root + PATHSEPSTRING + base;
-        for (FXuint suffix = 2; xf_existfile(folder + PATHSEPSTRING "theme.swordfish-theme"); ++suffix)
+        for (FXuint suffix = 2; ; ++suffix)
         {
+            FXString file = folder + PATHSEPSTRING "theme.swordfish-theme";
+            if (!xf_islink(folder) && !xf_existfile(file)) break;
             Theme existing;
             FXString ignored;
-            if (loadThemeFile(folder + PATHSEPSTRING "theme.swordfish-theme", existing, ignored) &&
+            auto tracked = themeLibraryFiles.find(theme.name);
+            if (!xf_islink(folder) && tracked != themeLibraryFiles.end() && tracked->second == file &&
+                loadThemeFile(file, existing, ignored) &&
                 existing.name == theme.name)
                 break;
             folder = root + PATHSEPSTRING + base + "-" + FXStringVal(suffix);
@@ -4537,27 +4542,31 @@ FXbool PreferencesBox::saveCustomThemes(const vector_Theme& themes)
             appLog(APP_LOG_ERRORS, "theme-library-save-failed", error);
             return false;
         }
-        savedFolders.insert(FXPath::name(folder));
+        savedFiles[theme.name] = folder + PATHSEPSTRING "theme.swordfish-theme";
     }
 
-    FXDir directory;
-    if (directory.open(root))
+    for (const auto& entry : themeLibraryFiles)
     {
-        while (directory.next())
+        auto saved = savedFiles.find(entry.first);
+        if (saved != savedFiles.end() && saved->second == entry.second) continue;
+        if (!xf_existfile(entry.second)) continue;
+        Theme existing;
+        FXString error;
+        if (xf_islink(FXPath::directory(entry.second)) ||
+            !loadThemeFile(entry.second, existing, error) || existing.name != entry.first)
         {
-            FXString entry = directory.name();
-            if (entry == "." || entry == ".." || entry[0] == '.' || savedFolders.count(entry)) continue;
-            FXString folder = root + PATHSEPSTRING + entry;
-            FXString file = folder + PATHSEPSTRING "theme.swordfish-theme";
-            if (!xf_isdirectory(folder) || !xf_existfile(file)) continue;
-            if (unlink(file.text()) != 0)
-            {
-                appLog(APP_LOG_ERRORS, "theme-library-remove-failed", file + ": " + strerror(errno));
-                return false;
-            }
-            rmdir(folder.text());
+            appLog(APP_LOG_ERRORS, "theme-library-remove-failed", entry.second + ": " +
+                   _("The theme file or folder no longer matches the loaded theme."));
+            return false;
         }
+        if (unlink(entry.second.text()) != 0)
+        {
+            appLog(APP_LOG_ERRORS, "theme-library-remove-failed", entry.second + ": " + strerror(errno));
+            return false;
+        }
+        rmdir(FXPath::directory(entry.second).text());
     }
+    themeLibraryFiles = savedFiles;
     getApp()->reg().deleteSection("THEMES");
     return true;
 }

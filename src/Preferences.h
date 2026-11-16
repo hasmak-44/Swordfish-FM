@@ -54,6 +54,7 @@ private:
     void rememberPreferences();
     FXbool saveCustomThemes(const vector_Theme&);
     vector_Theme themesPrevious;
+    std::map<FXString, FXString> themeLibraryFiles;
     friend class ThemeWorkflowRegression;
     FXList* themesList = NULL;
     FXTextField* iconpath = NULL;

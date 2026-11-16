@@ -71,6 +71,8 @@
   skipped.
 
 ### Fixed
+- Saving the custom theme library no longer removes unrecognized or duplicate
+  theme files from folders that were not loaded into Preferences.
 - Closing a writable archive folder (tar) now waits until the changes are
   saved, then checks the saved archive. If it is missing, empty, in another
   format or unreadable, the original archive is restored. The `.orig` backup
