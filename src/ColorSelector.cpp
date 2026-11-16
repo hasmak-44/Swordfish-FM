@@ -1101,20 +1101,23 @@ ColorSelector::ColorSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXui
     new DialogTabItem(panels, _("Picker"));
     tools = new ColorTools(panels, this);
 
+    // The legacy wheel and slider modes duplicate the Picker tab. Their widgets stay alive in a
+    // hidden holder because the shared update handlers still keep them synchronised.
+    FXVerticalFrame* legacymodes = new FXVerticalFrame(main, LAYOUT_FIX_WIDTH | LAYOUT_FIX_HEIGHT, 0, 0, 1, 1);
+    legacymodes->hide();
+
     // HSV Dial Mode
-    new DialogTabItem(panels, _("\tHue, Saturation, Value"), dialmodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
 
     // Color wheel
-    FXHorizontalFrame* dialblock = new FXHorizontalFrame(panels, FRAME_GROOVE | LAYOUT_FILL_Y | LAYOUT_FILL_X |
+    FXHorizontalFrame* dialblock = new FXHorizontalFrame(legacymodes, FRAME_GROOVE | LAYOUT_FILL_Y | LAYOUT_FILL_X |
                                                          LAYOUT_TOP | LAYOUT_LEFT, 0, 0, 0, 0, 15, 15, 5, 5, 5, 8);
     wheel = new FXColorRing(dialblock, this, ID_DIAL_WHEEL, LAYOUT_CENTER_Y | LAYOUT_FIX_WIDTH | LAYOUT_FIX_HEIGHT,
                             0, 0, 120, 120, 1, 1, 1, 1);
 
     // RGB Mode
-    new DialogTabItem(panels, _("\tRed, Green, Blue"), rgbmodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
 
     // RGB Sliders
-    FXMatrix* rgbblock = new FXMatrix(panels, 3, FRAME_GROOVE | LAYOUT_FILL_Y | LAYOUT_FILL_X | LAYOUT_TOP |
+    FXMatrix* rgbblock = new FXMatrix(legacymodes, 3, FRAME_GROOVE | LAYOUT_FILL_Y | LAYOUT_FILL_X | LAYOUT_TOP |
                                       LAYOUT_LEFT | MATRIX_BY_COLUMNS, 0, 0, 0, 0, 10, 10, 10, 10, 5, 8);
 
     // Red
@@ -1162,10 +1165,9 @@ ColorSelector::ColorSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXui
     rgbaslider[3]->setRange(0, 255);
 
     // HSV Mode
-    new DialogTabItem(panels, _("\tHue, Saturation, Value"), hsvmodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
 
     // RGB Sliders
-    FXMatrix* hsvblock = new FXMatrix(panels, 3, FRAME_GROOVE | LAYOUT_FILL_Y | LAYOUT_FILL_X | LAYOUT_TOP |
+    FXMatrix* hsvblock = new FXMatrix(legacymodes, 3, FRAME_GROOVE | LAYOUT_FILL_Y | LAYOUT_FILL_X | LAYOUT_TOP |
                                       LAYOUT_LEFT | MATRIX_BY_COLUMNS, 0, 0, 0, 0, 10, 10, 10, 10, 5, 8);
 
     // Hue Slider
@@ -1214,10 +1216,9 @@ ColorSelector::ColorSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXui
     hsvaslider[3]->setRange(0, 255);
 
     // CMY Mode
-    new DialogTabItem(panels, _("\tCyan, Magenta, Yellow"), cmymodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
 
     // RGB Sliders
-    FXMatrix* cmyblock = new FXMatrix(panels, 3, FRAME_GROOVE | LAYOUT_FILL_Y | LAYOUT_FILL_X | LAYOUT_TOP |
+    FXMatrix* cmyblock = new FXMatrix(legacymodes, 3, FRAME_GROOVE | LAYOUT_FILL_Y | LAYOUT_FILL_X | LAYOUT_TOP |
                                       LAYOUT_LEFT | MATRIX_BY_COLUMNS, 0, 0, 0, 0, 10, 10, 10, 10, 5, 8);
 
     // Cyan Slider
@@ -1266,7 +1267,7 @@ ColorSelector::ColorSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXui
     cmyslider[3]->setRange(0, 255);
 
     // Named Color Mode
-    new DialogTabItem(panels, _("\tBy Name"), listmodeicon, TAB_TOP_NORMAL, 0, 0, 0, 0, 6, 6, 0, 0);
+    new DialogTabItem(panels, _("By name"), listmodeicon, TAB_TOP_NORMAL);
 
     // Name list
     FXHorizontalFrame* outer = new FXHorizontalFrame(panels, FRAME_GROOVE | LAYOUT_FILL_Y | LAYOUT_FILL_X);
@@ -1333,7 +1334,8 @@ void ColorSelector::create()
     colorwells[23]->setRGBA(getApp()->reg().readColorEntry("SETTINGS", wellname[23], FXRGBA(0, 128, 128, 255)));
 
     // Switch to correct pane
-    panels->setCurrent(getApp()->reg().readIntEntry("SETTINGS", "activecolorpane", 0));
+    // "activecolorpane" indexed the older six-pane layout, so the two-pane layout uses its own key.
+    panels->setCurrent(getApp()->reg().readIntEntry("SETTINGS", "colorselectorpane", 0) == 1 ? 1 : 0);
 }
 
 
@@ -1730,7 +1732,7 @@ long ColorSelector::onCmdCustomWell(FXObject*, FXSelector, void* ptr)
 // Switching active pane
 long ColorSelector::onCmdActivePane(FXObject*, FXSelector, void* ptr)
 {
-    getApp()->reg().writeIntEntry("SETTINGS", "activecolorpane", (FXint)(FXival)ptr);
+    getApp()->reg().writeIntEntry("SETTINGS", "colorselectorpane", (FXint)(FXival)ptr);
     return 1;
 }
 

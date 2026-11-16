@@ -814,6 +814,10 @@ class BackgroundEditor : public DialogBox
         if (effect.pattern > 0) patterns->setCurrentItem(effect.pattern - 1);
         syncing = false;
     }
+    // Theme colours made the samples nearly invisible on dark themes, so samples use a fixed neutral pair.
+    static constexpr FXColor previewLight = FXRGB(0xD5, 0xDA, 0xDF);
+    static constexpr FXColor previewDark = FXRGB(0x6E, 0x77, 0x80);
+    static constexpr FXint previewSize = 64;
     void loadTextures()
     {
         textures->clearItems();
@@ -857,10 +861,12 @@ class BackgroundEditor : public DialogBox
                 }
                 names.insert(name);
                 BackgroundEffect preview = effect;
+                preview.fill = "solid";
+                preview.colors = {previewLight};
                 preview.texture = name;
-                preview.strength = 65;
-                FXIcon* icon = BackgroundEffect::preview(this, preview.serialize(),
-                                                          editor->getDraft().colorFor("list", "background"));
+                preview.strength = 80;
+                preview.rows = false;
+                FXIcon* icon = BackgroundEffect::preview(this, preview.serialize(), previewLight, previewSize);
                 icons.push_back(icon);
                 textures->appendItem(name, icon, icon);
                 textureNames.push_back(name);
@@ -969,9 +975,10 @@ public:
             sample.fill = "pattern";
             sample.pattern = i + 1;
             sample.texture.clear();
-            sample.colors = {owner->getDraft().colorFor("list", "background"),
-                               makeShadowColor(owner->getDraft().colorFor("list", "background"))};
-            FXIcon* icon = BackgroundEffect::preview(this, sample.serialize(), sample.colors[0]);
+            sample.size = 12;
+            sample.rows = false;
+            sample.colors = {previewLight, previewDark};
+            FXIcon* icon = BackgroundEffect::preview(this, sample.serialize(), previewLight, previewSize);
             icons.push_back(icon);
             patterns->appendItem(names[i], icon, icon);
         }
@@ -1367,7 +1374,10 @@ ThemeEditor::ThemeEditor(PreferencesBox* owner, XFileExplorer* source, const vec
     FXScrollWindow* view = new FXScrollWindow(workspace, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_SUNKEN | FRAME_THICK);
     mockup = new ThemeMockup(view, source, this);
     mockup->setLayoutHints(LAYOUT_FILL_X | LAYOUT_FILL_Y);
-    FXVerticalFrame* sheet = new FXVerticalFrame(workspace, LAYOUT_FIX_WIDTH | LAYOUT_FILL_Y, 0, 0, 290);
+    // The property column scrolls vertically so short or small windows never truncate its controls.
+    FXScrollWindow* sheetScroll = new FXScrollWindow(workspace, HSCROLLING_OFF | LAYOUT_FIX_WIDTH | LAYOUT_FILL_Y,
+                                                     0, 0, 300 + getApp()->getScrollBarSize());
+    FXVerticalFrame* sheet = new FXVerticalFrame(sheetScroll, LAYOUT_FIX_WIDTH | LAYOUT_FILL_Y, 0, 0, 300);
     instructions = new FXLabel(sheet, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
     properties = new FXList(sheet, this, ID_PROPERTY,
                               LIST_BROWSESELECT | FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X);
@@ -1383,9 +1393,9 @@ ThemeEditor::ThemeEditor(PreferencesBox* owner, XFileExplorer* source, const vec
     new FXButton(apply, _("Discard pending"), NULL, this, ID_DISCARD, BUTTON_NORMAL);
     readability = new FXLabel(sheet, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
     contrastFix = new FXButton(sheet, _("Use suggested text colour"), NULL, this, ID_FIX_CONTRAST, BUTTON_NORMAL | LAYOUT_FILL_X);
-    new FXLabel(sheet, _("Effects are available only for file lists.\nOther elements expose supported properties only.\n"
-                         "Alpha colours blend over the inherited colour.\n"
-                         "Window opacity additionally requires an X11 compositor."),
+    new FXLabel(sheet, _("Effects are available only for file\nlists. Other elements expose\nsupported properties only.\n"
+                         "Alpha colours blend over the\ninherited colour. Window opacity\n"
+                         "also requires an X11 compositor."),
                   NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
     start(selected, mode);
     onPreview(NULL, 0, NULL);

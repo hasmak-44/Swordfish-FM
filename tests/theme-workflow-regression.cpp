@@ -175,6 +175,17 @@ public:
         pump(app);
         screenshot(&editor, "theme-editor");
         {
+            FXScrollWindow* column = dynamic_cast<FXScrollWindow*>(editor.properties->getParent()->getParent());
+            assert(column);
+            FXint width = editor.getWidth(), height = editor.getHeight();
+            editor.resize(1000, 560);
+            pump(app);
+            assert(column->verticalScrollBar()->shown());
+            screenshot(&editor, "theme-editor-small");
+            editor.resize(width, height);
+            pump(app);
+        }
+        {
             FXWindow* mockup = findClass(&editor, "ThemeMockup");
             Display* display = static_cast<Display*>(app.getDisplay());
             int x, y;
@@ -215,6 +226,38 @@ public:
             assert(editor.getDraft().effect == validEffect);
             assert(gradient->getSegmentUpper(0) > gradient->getSegmentLower(0));
             screenshot(dialog, "background-editor");
+            FXTabBook* effectTabs = static_cast<FXTabBook*>(findClass(dialog, "FXTabBook"));
+            assert(effectTabs && effectTabs->numChildren() >= 6);
+            const char* tabShots[] = {"background-pattern", "background-texture"};
+            for (FXint tab = 1; tab <= 2; ++tab)
+            {
+                effectTabs->setCurrent(tab, true);
+                pump(app);
+                screenshot(dialog, tabShots[tab - 1]);
+                FXIconList* samples = static_cast<FXIconList*>(findClass(effectTabs->childAtIndex(tab * 2 + 1),
+                                                                         "FXIconList"));
+                assert(samples && samples->getNumItems() > 0);
+                FXint checked = 0;
+                for (FXint item = 0; item < samples->getNumItems(); ++item)
+                {
+                    // Samples must stay readable on the dark fixed field regardless of the edited theme.
+                    FXIcon* icon = samples->getItemBigIcon(item);
+                    if (!icon) continue;
+                    assert(icon->getData());
+                    ++checked;
+                    FXint low = 255, high = 0, total = 0, count = icon->getWidth() * icon->getHeight();
+                    for (FXint i = 0; i < count; ++i)
+                    {
+                        FXColor pixel = icon->getData()[i];
+                        FXint luma = (FXREDVAL(pixel) * 3 + FXGREENVAL(pixel) * 6 + FXBLUEVAL(pixel)) / 10;
+                        low = FXMIN(low, luma);
+                        high = FXMAX(high, luma);
+                        total += luma;
+                    }
+                    assert(total / count > 110 && high - low > (tab == 1 ? 40 : 12));
+                }
+                assert(checked >= 8);
+            }
             dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
         });
         app.addTimeout(&background, 1, 150);
@@ -287,6 +330,12 @@ public:
         picker.show(PLACEMENT_SCREEN);
         pump(app);
         screenshot(&picker, "colour-picker");
+        {
+            FXTabBook* modes = static_cast<FXTabBook*>(findClass(&picker, "FXTabBook"));
+            assert(modes && modes->numChildren() == 4);
+            for (FXWindow* tab = modes->getFirst(); tab; tab = tab->getNext()->getNext())
+                assert(tab->shown() && !static_cast<FXTabItem*>(tab)->getText().empty());
+        }
         ColorTools* tools = static_cast<ColorTools*>(findClass(&picker, "ColorTools"));
         assert(tools);
         tools->codes[0]->setText("#12");
