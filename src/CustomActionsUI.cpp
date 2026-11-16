@@ -400,6 +400,7 @@ public:
         FXTabBook* tabs = new FXTabBook(this, NULL, 0, LAYOUT_FILL_X | LAYOUT_FILL_Y);
         new DialogTabItem(tabs, _("Basic"));
         FXScrollWindow* scroll = new FXScrollWindow(tabs, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_THICK | FRAME_RAISED);
+        xf_readablescrolling(scroll);
         FXVerticalFrame* body = new FXVerticalFrame(scroll, LAYOUT_FILL_X | LAYOUT_FILL_Y);
         FXMatrix* form = new FXMatrix(body, 2, MATRIX_BY_COLUMNS | LAYOUT_FILL_X);
         new FXLabel(form, _("Name:"), NULL, JUSTIFY_LEFT);
@@ -481,6 +482,7 @@ public:
                         NULL, JUSTIFY_LEFT);
             new DialogTabItem(tabs, _("Appearance Conditions"));
             FXScrollWindow* appearance = new FXScrollWindow(tabs, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_THICK | FRAME_RAISED);
+            xf_readablescrolling(appearance);
             FXVerticalFrame* conditions = new FXVerticalFrame(appearance, LAYOUT_FILL_X | LAYOUT_FILL_Y);
             FXGroupBox* placement = new FXGroupBox(conditions, _("Toolbar"), GROUPBOX_NORMAL | LAYOUT_FILL_X);
             toolbar = new FXCheckButton(placement, _("Show on custom toolbar"));

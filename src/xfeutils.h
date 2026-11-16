@@ -798,6 +798,20 @@ void xf_dialogcolors(FXWindow*);
 // Make a fixed-palette top window resizable and maximizable, and scroll its contents when it
 // is smaller than their default size instead of truncating them
 void xf_scrollabledialog(FXTopWindow*);
+// Make one wheel/arrow step move a readable line instead of FOX's one-pixel default
+void xf_readablescrolling(FXScrollWindow*);
+
+// Scroll area that should receive a wheel step over window: the innermost one that can still move,
+// or NULL when the default FOX dispatch applies (widgets with their own wheel use, or nothing can move)
+FXScrollArea* xf_wheeltarget(FXWindow* window, FXint code);
+
+// Application that chains wheel scrolling to the enclosing scroll area when the inner one is at its end
+class XFApp : public FXApp
+{
+public:
+    XFApp(const FXString& name, const FXString& vendor) : FXApp(name, vendor) {}
+    virtual bool dispatchEvent(FXRawEvent& ev);
+};
 void xf_windowcolors(FXWindow*);
 
 #endif

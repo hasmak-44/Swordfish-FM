@@ -2246,7 +2246,7 @@ int main(int argc, char* argv[])
     args = argv;
 
     // Make application
-    FXApp* application = new FXApp(appname, vdrname);
+    FXApp* application = new XFApp(appname, vdrname);
 
     // Open display
     application->init(argc, argv);

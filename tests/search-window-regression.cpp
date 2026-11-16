@@ -82,6 +82,7 @@ static void checkPreferencesScrolling(FXApp& app, FXWindow* window)
             const FXTime deadline = FXThread::time() + 500000000LL;
             while (FXThread::time() < deadline) { app.runOneEvent(false); usleep(1000); }
             assert(list->getYPosition() < 0 && outer->getYPosition() == outerPosition);
+
         }
     }
     if (FXScrollWindow* scroll = dynamic_cast<FXScrollWindow*>(window))
@@ -118,6 +119,58 @@ static void checkPreferencesScrolling(FXApp& app, FXWindow* window)
     }
     for (FXWindow* child = window->getFirst(); child; child = child->getNext())
         checkPreferencesScrolling(app, child);
+}
+
+static void dispatchWheel(FXApp& app, FXWindow* window, FXuint button)
+{
+    XEvent raw = {};
+    raw.xbutton.type = ButtonPress;
+    raw.xbutton.display = (Display*)app.getDisplay();
+    raw.xbutton.window = window->id();
+    raw.xbutton.button = button;
+    raw.xbutton.subwindow = 1;
+    raw.xbutton.x = window->getWidth() / 2;
+    raw.xbutton.y = window->getHeight() / 2;
+    static_cast<XFApp&>(app).dispatchEvent(raw);
+    const FXTime deadline = FXThread::time() + 500000000LL;
+    while (FXThread::time() < deadline) { app.runOneEvent(false); usleep(1000); }
+}
+
+// Firefox-style chaining: a nested list at its end passes the wheel on to the page around it
+static void checkWheelChaining(FXApp& app, FXWindow* owner)
+{
+    FXDialogBox* dialog = new FXDialogBox(owner, "Wheel chaining", DECOR_ALL, 0, 0, 400, 300);
+    FXScrollWindow* page = new FXScrollWindow(dialog, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    xf_readablescrolling(page);
+    FXVerticalFrame* content = new FXVerticalFrame(page, LAYOUT_FILL_X);
+    new FXFrame(content, LAYOUT_FIX_HEIGHT, 0, 0, 0, 200);
+    FXList* list = new FXList(content, NULL, 0, LAYOUT_FILL_X | LAYOUT_FIX_HEIGHT, 0, 0, 0, 100);
+    for (FXint i = 0; i < 50; ++i) list->appendItem(FXStringVal(i));
+    FXSpinner* spinner = new FXSpinner(content, 4, NULL, 0, FRAME_SUNKEN);
+    new FXFrame(content, LAYOUT_FIX_HEIGHT, 0, 0, 0, 600);
+    dialog->create();
+    dialog->show(PLACEMENT_OWNER);
+    dialog->layout();
+    app.flush(true);
+    app.repaint();
+    assert(page->getContentHeight() > page->getViewportHeight());
+    assert(list->getContentHeight() > list->getViewportHeight());
+
+    page->setPosition(0, -60);
+    list->setPosition(0, 0);
+    assert(xf_wheeltarget(list, 120) == page);
+    dispatchWheel(app, list, Button4);
+    assert(list->getYPosition() == 0 && page->getYPosition() > -60);
+
+    const FXint pagePosition = page->getYPosition();
+    assert(xf_wheeltarget(list, -120) == NULL);
+    dispatchWheel(app, list, Button5);
+    assert(list->getYPosition() < 0 && page->getYPosition() == pagePosition);
+
+    assert(xf_wheeltarget(spinner, 120) == NULL);
+    page->setPosition(0, 0);
+    assert(xf_wheeltarget(page->contentWindow(), 120) == NULL);
+    delete dialog;
 }
 
 static FXTabBook* findPreferencesTabs(FXWindow* window)
@@ -794,7 +847,7 @@ int main(int argc, char** argv)
 {
     assert(argc == 3);
     FXString prefix = argv[1], fixture = argv[2];
-    FXApp app("SwordfishSearchTest", "SwordfishSearchTest");
+    XFApp app("SwordfishSearchTest", "SwordfishSearchTest");
     app.init(argc, argv);
     homedir = FXSystem::getHomeDirectory();
     xdgconfighome = homedir + "/config";
@@ -1066,6 +1119,8 @@ int main(int argc, char** argv)
     }
     preferences->hide();
     puts("PASS: every Preferences page scrolls by readable lines and reaches both ends; nested lists scroll independently");
+    checkWheelChaining(app, explorer);
+    puts("PASS: wheel over a nested list at its end scrolls the page; otherwise the list or spinner keeps the wheel");
     const std::vector<FXuint> beforeLeft = explorer->getLeftPanel()->getList()->getColumnLayout();
     const std::vector<FXuint> beforeRight = explorer->getRightPanel()->getList()->getColumnLayout();
     PaneColumnsRegression panePreferences(preferences);

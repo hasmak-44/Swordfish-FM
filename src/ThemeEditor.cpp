@@ -1372,11 +1372,13 @@ ThemeEditor::ThemeEditor(PreferencesBox* owner, XFileExplorer* source, const vec
                 reinterpret_cast<void*>(static_cast<FXival>(100 + i * 32 + property)));
     }
     FXScrollWindow* view = new FXScrollWindow(workspace, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_SUNKEN | FRAME_THICK);
+    xf_readablescrolling(view);
     mockup = new ThemeMockup(view, source, this);
     mockup->setLayoutHints(LAYOUT_FILL_X | LAYOUT_FILL_Y);
     // The property column scrolls vertically so short or small windows never truncate its controls.
     FXScrollWindow* sheetScroll = new FXScrollWindow(workspace, HSCROLLING_OFF | LAYOUT_FIX_WIDTH | LAYOUT_FILL_Y,
                                                      0, 0, 300 + getApp()->getScrollBarSize());
+    xf_readablescrolling(sheetScroll);
     FXVerticalFrame* sheet = new FXVerticalFrame(sheetScroll, LAYOUT_FIX_WIDTH | LAYOUT_FILL_Y, 0, 0, 300);
     instructions = new FXLabel(sheet, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
     properties = new FXList(sheet, this, ID_PROPERTY,

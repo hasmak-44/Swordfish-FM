@@ -171,6 +171,7 @@ FontSelector::FontSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXuint
     FXHorizontalFrame* box = new FXHorizontalFrame(bottom, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_NONE,
                                                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     FXScrollWindow* scroll = new FXScrollWindow(box, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    xf_readablescrolling(scroll);
     preview = new FXLabel(scroll, "ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz\n0123456789",
                           NULL, JUSTIFY_CENTER_X | JUSTIFY_CENTER_Y);
     preview->setBackColor(getApp()->getBackColor());

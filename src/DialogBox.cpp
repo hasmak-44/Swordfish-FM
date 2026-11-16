@@ -7,6 +7,7 @@
 
 #include "DialogBox.h"
 #include "xfeutils.h"
+#include <X11/Xlib.h>
 
 
 // Main window
@@ -118,7 +119,10 @@ class DialogScroller : public FXScrollWindow
 protected:
     DialogScroller() {}
 public:
-    explicit DialogScroller(FXComposite* parent) : FXScrollWindow(parent, LAYOUT_FILL_X | LAYOUT_FILL_Y) {}
+    explicit DialogScroller(FXComposite* parent) : FXScrollWindow(parent, LAYOUT_FILL_X | LAYOUT_FILL_Y)
+    {
+        xf_readablescrolling(this);
+    }
     virtual FXint getDefaultWidth()
     {
         return contentWindow() ? contentWindow()->getDefaultWidth() : 1;
@@ -129,6 +133,81 @@ public:
     }
 };
 FXIMPLEMENT(DialogScroller, FXScrollWindow, NULL, 0)
+
+
+void xf_readablescrolling(FXScrollWindow* scroll)
+{
+    scroll->verticalScrollBar()->setLine(scroll->getApp()->getNormalFont()->getFontHeight());
+    scroll->horizontalScrollBar()->setLine(scroll->getApp()->getNormalFont()->getFontWidth());
+}
+
+
+static FXbool canwheelscroll(FXScrollArea* area, FXint code)
+{
+    FXScrollBar* bar = area->verticalScrollBar();
+    FXint maximum = FXMAX(0, bar->getRange() - bar->getPage());
+    return code > 0 ? bar->getPosition() > 0 : bar->getPosition() < maximum;
+}
+
+
+FXScrollArea* xf_wheeltarget(FXWindow* window, FXint code)
+{
+    FXScrollArea* inner = NULL;
+    for (; window && !inner; window = window->getParent())
+    {
+        if (dynamic_cast<FXSpinner*>(window) || dynamic_cast<FXRealSpinner*>(window) ||
+            dynamic_cast<FXSlider*>(window) || dynamic_cast<FXComboBox*>(window) ||
+            dynamic_cast<FXListBox*>(window) || dynamic_cast<FXDial*>(window))
+        {
+            return NULL;
+        }
+        inner = dynamic_cast<FXScrollArea*>(window);
+    }
+    if (!inner || canwheelscroll(inner, code))
+    {
+        return NULL;
+    }
+    for (FXWindow* parent = inner->getParent(); parent; parent = parent->getParent())
+    {
+        FXScrollArea* outer = dynamic_cast<FXScrollArea*>(parent);
+        if (outer && canwheelscroll(outer, code))
+        {
+            return outer;
+        }
+        if (parent->isMemberOf(FXMETACLASS(FXTopWindow)))
+        {
+            break;
+        }
+    }
+    return NULL;
+}
+
+
+bool XFApp::dispatchEvent(FXRawEvent& ev)
+{
+    const unsigned int buttons = Button1Mask | Button2Mask | Button3Mask;
+    if (ev.xany.type == ButtonPress && (ev.xbutton.button == Button4 || ev.xbutton.button == Button5) &&
+        !(ev.xbutton.state & (buttons | ControlMask | ShiftMask)))
+    {
+        FXWindow* window = findWindowWithId(ev.xbutton.window);
+        FXbool grabbed = false;
+        for (FXWindow* w = window; w; w = w->getParent())
+        {
+            grabbed |= w->grabbed();
+        }
+        FXScrollArea* target = (window && !grabbed) ?
+                               xf_wheeltarget(window, ev.xbutton.button == Button4 ? 120 : -120) : NULL;
+        if (target)
+        {
+            FXint x, y;
+            window->translateCoordinatesTo(x, y, target, ev.xbutton.x, ev.xbutton.y);
+            ev.xbutton.window = target->id();
+            ev.xbutton.x = x;
+            ev.xbutton.y = y;
+        }
+    }
+    return FXApp::dispatchEvent(ev);
+}
 
 
 void xf_scrollabledialog(FXTopWindow* window)

@@ -486,7 +486,7 @@ int main(int argc, char* argv[])
     args = argv;
 
     // Application creation
-    FXApp* application = new FXApp(appname, vdrname);
+    FXApp* application = new XFApp(appname, vdrname);
     application->init(argc, argv);
 
     FXbool firstRun = true;

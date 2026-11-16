@@ -3103,6 +3103,31 @@ native clean build and Theme Workflow regression passed. The search-window
 runner's later Preferences wheel-scrolling assertion also fails on the
 previous commit and was not changed here. Desktop testing remains pending.
 
+### 3.76. Readable dialog scrolling and Firefox-style wheel chaining (16 November 2026)
+
+Long-standing complaint (most visible on the old Appearance page): in fixed-colour
+dialogs the page barely moved with the wheel, and a nested list grabbed the wheel
+even at its end, so the page around it never scrolled.
+
+- Cause of the slow page: `DialogScroller` (the scroll window wrapped around every
+  fixed-colour dialog) kept FOX's 1-pixel scroll line, so one wheel notch moved
+  about 5 px. New `xf_readablescrolling()` sets font-height/width line steps; it is
+  used by `DialogScroller`, the Custom Actions editor, the Font dialog preview and
+  the Theme Editor view/sheet. Preferences pages already had readable steps.
+- Wheel chaining (user choice: "chain", like Firefox): the application object is
+  now `XFApp` (main app plus the archive, image and package helpers). For an
+  unmodified wheel press with no mouse button held and no grab,
+  `xf_wheeltarget()` finds the innermost scroll area under the pointer; if it is
+  already at its top/bottom in that direction, the wheel goes to the nearest
+  enclosing scroll area in the same window that can still move. Spinners,
+  sliders, dials, combo and list boxes keep the wheel (they use it to change
+  their value); Ctrl/Shift wheel behaviour is unchanged.
+- Test: `tests/search-window-regression.cpp` `checkWheelChaining` dispatches real
+  X wheel events: a list at its top passes the wheel to the page, a list that can
+  still move keeps it, and spinners are never bypassed.
+
+Desktop acceptance pending: wheel over Preferences/Theme Editor lists and pages.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
