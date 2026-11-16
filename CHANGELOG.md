@@ -24,8 +24,10 @@
 - The texture gallery scans category subfolders and can filter and import
   textures by category, retaining those paths when themes are shared.
 - Pattern PNGs can be imported and organized into categories in a separate
-  library. Their lightness and transparency blend the two chosen pattern
-  colours; existing built-in shapes continue to work.
+  library. They keep their own colours by default, or their lightness can
+  blend the two chosen pattern colours; existing built-in shapes continue to
+  work. Pattern and texture gallery thumbnails show each PNG in its true
+  colours.
 - PNG or JPEG background images can be fitted, cropped to fill or tiled in
   file lists, the folder tree, Places, tabs and toolbars. The editor previews
   images without changing the live window until Save.

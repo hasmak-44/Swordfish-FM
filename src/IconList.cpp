@@ -1555,7 +1555,8 @@ int IconList::getBackgroundGutter() const
 // direction: vertical, horizontal, diagonal or radial. pattern: stripes, vertical-stripes,
 // diagonal-stripes, checks, grid, dots, diamonds or crosshatch; size: pattern cell in pixels.
 // texture: name of a seamless PNG tile; strength: 0-100. texture_colors: theme (greyscale tint, default) or
-// original (the tile's own colours and alpha). rows: on or off (alternate row tint).
+// original (the tile's own colours and alpha). pattern_image: PNG pattern; pattern_colors: original
+// (default) or theme (the PNG's lightness blends the two colours). rows: on or off (alternate row tint).
 // The effect is anchored to the window, so it stays put while the items scroll over it.
 namespace
 {
@@ -1703,6 +1704,10 @@ EffectSpec parseEffect(const FXString& spec)
         {
             effect.originalColors = value.lower() == "original";
         }
+        else if (key == "pattern_colors")
+        {
+            effect.patternOriginalColors = value.lower() != "theme";
+        }
         else if (key == "rows")
         {
             effect.rows = value.lower() != "off";
@@ -1829,7 +1834,8 @@ FXString BackgroundEffect::serialize() const
     if (angled || direction == "linear") result += FXString().format(" angle=%.2f", angle);
     static const char* const names[] = {"", "stripes", "vertical-stripes", "diagonal-stripes", "checks",
                                         "grid", "dots", "diamonds", "crosshatch"};
-    if (!patternImage.empty()) result += " pattern_image=" + patternImage;
+    if (!patternImage.empty())
+        result += " pattern_image=" + patternImage + " pattern_colors=" + (patternOriginalColors ? "original" : "theme");
     else if (pattern > 0 && pattern < static_cast<int>(ARRAYNUMBER(names))) result += " pattern=" + FXString(names[pattern]);
     result += FXString().format(" size=%.0f", size);
     if (!texture.empty()) result += " texture=" + texture;
@@ -2232,9 +2238,14 @@ void IconList::buildBackgroundEffect()
                 FXint px = (x % patternWidth) * patternImage->getWidth() / patternWidth;
                 FXint py = (y % patternHeight) * patternImage->getHeight() / patternHeight;
                 FXColor mask = patternImage->getData()[py * patternImage->getWidth() + px];
-                double luminance = (FXREDVAL(mask) * 299 + FXGREENVAL(mask) * 587 + FXBLUEVAL(mask) * 114) /
-                                   255000.0;
-                color = mixColor(stops[0], stops[1], luminance * FXALPHAVAL(mask) / 255.0);
+                if (effect.patternOriginalColors)
+                    color = mixColor(stops[0], mask, FXALPHAVAL(mask) / 255.0);
+                else
+                {
+                    double luminance = (FXREDVAL(mask) * 299 + FXGREENVAL(mask) * 587 + FXBLUEVAL(mask) * 114) /
+                                       255000.0;
+                    color = mixColor(stops[0], stops[1], luminance * FXALPHAVAL(mask) / 255.0);
+                }
             }
             else if (effect.fill == "pattern" && effect.patternImage.empty() && effect.pattern != PATTERN_NONE)
             {

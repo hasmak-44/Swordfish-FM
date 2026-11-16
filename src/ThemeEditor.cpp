@@ -3,6 +3,7 @@
 #include <fx.h>
 #include <fxkeys.h>
 #include <FXPNGIcon.h>
+#include <FXPNGImage.h>
 #include <FXGradientBar.h>
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -30,6 +31,61 @@
 
 namespace
 {
+// Gallery thumbnails show the PNG as an image viewer would: true colours, scaled to fit,
+// transparency over a checkerboard. Returns NULL if the file cannot be decoded.
+FXIcon* tileThumbnail(FXApp* app, const FXString& path, FXint size)
+{
+    FXFileStream stream;
+    FXPNGImage image(app, NULL, IMAGE_KEEP);
+    if (!stream.open(path, FXStreamLoad) || !image.loadPixels(stream) || !image.getData() ||
+        image.getWidth() <= 0 || image.getHeight() <= 0)
+        return NULL;
+    const FXint sw = image.getWidth(), sh = image.getHeight();
+    const FXColor* source = image.getData();
+    const double scale = FXMIN(1.0, FXMIN(static_cast<double>(size) / sw, static_cast<double>(size) / sh));
+    const FXint dw = FXMAX(1, static_cast<FXint>(sw * scale + 0.5)), dh = FXMAX(1, static_cast<FXint>(sh * scale + 0.5));
+    const FXint ox = (size - dw) / 2, oy = (size - dh) / 2;
+    FXColor* pixels = NULL;
+    if (!FXMALLOC(&pixels, FXColor, size * size)) return NULL;
+    for (FXint y = 0; y < size; ++y)
+        for (FXint x = 0; x < size; ++x)
+            pixels[y * size + x] = ((x / 8 + y / 8) & 1) ? FXRGB(0xC8, 0xC8, 0xC8) : FXRGB(0xF4, 0xF4, 0xF4);
+    for (FXint y = 0; y < dh; ++y)
+    {
+        FXint top = y * sh / dh, bottom = FXMAX(top + 1, (y + 1) * sh / dh);
+        for (FXint x = 0; x < dw; ++x)
+        {
+            FXint left = x * sw / dw, right = FXMAX(left + 1, (x + 1) * sw / dw);
+            double r = 0, g = 0, b = 0, a = 0;
+            for (FXint sy = top; sy < bottom; ++sy)
+                for (FXint sx = left; sx < right; ++sx)
+                {
+                    FXColor c = source[sy * sw + sx];
+                    double alpha = FXALPHAVAL(c);
+                    r += FXREDVAL(c) * alpha;
+                    g += FXGREENVAL(c) * alpha;
+                    b += FXBLUEVAL(c) * alpha;
+                    a += alpha;
+                }
+            FXint count = (right - left) * (bottom - top);
+            FXColor& out = pixels[(y + oy) * size + x + ox];
+            double coverage = a / (255.0 * count);
+            if (a > 0)
+            {
+                r /= a;
+                g /= a;
+                b /= a;
+            }
+            out = FXRGB(static_cast<FXint>(r * coverage + FXREDVAL(out) * (1 - coverage) + 0.5),
+                        static_cast<FXint>(g * coverage + FXGREENVAL(out) * (1 - coverage) + 0.5),
+                        static_cast<FXint>(b * coverage + FXBLUEVAL(out) * (1 - coverage) + 0.5));
+        }
+    }
+    FXIcon* icon = new FXIcon(app, pixels, 0, IMAGE_KEEP | IMAGE_OWNED, size, size);
+    icon->create();
+    return icon;
+}
+
 const char* const areaKeys[] = {"main", "list", "tree", "places", "headers", "tabs", "toolbars",
                                 "address", "status", "menus", "controls", "scrollbars"};
 const char* const areaNames[] = {N_("Main window"), N_("File list"), N_("Folder tree"), N_("Places"),
@@ -840,6 +896,7 @@ class BackgroundEditor : public DialogBox
     FXSpinner* patternSize = NULL;
     FXSpinner* strength = NULL;
     FXCheckButton* originalColors = NULL;
+    FXCheckButton* patternOriginalColors = NULL;
     FXCheckButton* rows = NULL;
     FXTextField* presetName = NULL;
     FXListBox* presets = NULL;
@@ -904,6 +961,7 @@ class BackgroundEditor : public DialogBox
         patternSize->setValue(effect.size);
         strength->setValue(effect.strength);
         originalColors->setCheck(effect.originalColors);
+        patternOriginalColors->setCheck(effect.patternOriginalColors);
         rows->setCheck(effect.rows);
         for (FXint i = 0; i < static_cast<FXint>(patternNames.size()); ++i)
             if ((!effect.patternImage.empty() && effect.patternImage == patternNames[i]) ||
@@ -1041,16 +1099,13 @@ class BackgroundEditor : public DialogBox
                 appLog(APP_LOG_ERRORS, "pattern-rejected", entry.second + ": " + error);
                 continue;
             }
-            BackgroundEffect sample = effect;
-            sample.fill = "pattern";
-            sample.pattern = 0;
-            sample.patternImage = entry.first;
-            sample.texture.clear();
-            sample.size = 64;
-            sample.rows = false;
-            sample.colors = {previewLight, previewDark};
-            FXIcon* icon = BackgroundEffect::preview(this, sample.serialize(), previewLight, previewSize,
-                                                      editor->getDraft().assetRoot);
+            FXIcon* icon = tileThumbnail(getApp(), entry.second, previewSize);
+            if (!icon)
+            {
+                rejected += relative + ": " + _("Unable to read PNG image.") + "\n";
+                appLog(APP_LOG_ERRORS, "pattern-rejected", entry.second);
+                continue;
+            }
             patternIcons.push_back(icon);
             FXString label = slash < 0 ? relative : relative.rafter('/');
             if (categoryIndex == 0 && !category.empty()) label += " (" + category + ")";
@@ -1126,14 +1181,13 @@ class BackgroundEditor : public DialogBox
                 appLog(APP_LOG_ERRORS, "texture-rejected", entry.second + ": " + error);
                 continue;
             }
-            BackgroundEffect preview = effect;
-            preview.fill = "solid";
-            preview.colors = {previewLight};
-            preview.texture = entry.first;
-            preview.strength = 80;
-            preview.rows = false;
-            FXIcon* icon = BackgroundEffect::preview(this, preview.serialize(), previewLight, previewSize,
-                                                      editor->getDraft().assetRoot);
+            FXIcon* icon = tileThumbnail(getApp(), entry.second, previewSize);
+            if (!icon)
+            {
+                rejected += relative + ": " + _("Unable to read PNG image.") + "\n";
+                appLog(APP_LOG_ERRORS, "texture-rejected", entry.second);
+                continue;
+            }
             textureIcons.push_back(icon);
             FXString label = slash < 0 ? relative : relative.rafter('/');
             if (categoryIndex == 0 && !category.empty()) label += " (" + category + ")";
@@ -1251,6 +1305,9 @@ public:
         patternSize->setRange(4, 256);
         new FXButton(patternControls, _("First colour..."), NULL, this, ID_STOP_COLOR, BUTTON_NORMAL);
         new FXButton(patternControls, _("Second colour..."), NULL, this, ID_STOP_COLOR + 100, BUTTON_NORMAL);
+        patternOriginalColors = new FXCheckButton(patternPage,
+                                                  _("Use original PNG colours (off: recolour with First/Second colour)"),
+                                                  this, ID_LIVE);
         FXHorizontalFrame* patternFiles = new FXHorizontalFrame(patternPage, LAYOUT_FILL_X);
         new FXButton(patternFiles, _("Add PNG..."), NULL, this, ID_ADD_PATTERN, BUTTON_NORMAL);
         new FXButton(patternFiles, _("Refresh"), NULL, this, ID_REFRESH_PATTERN, BUTTON_NORMAL);
@@ -1321,6 +1378,7 @@ public:
         effect.size = patternSize->getValue();
         effect.strength = strength->getValue();
         effect.originalColors = originalColors->getCheck();
+        effect.patternOriginalColors = patternOriginalColors->getCheck();
         effect.rows = rows->getCheck();
         if (sender == patterns) { effect.fill = "pattern"; fill->setCurrentItem(2); }
         changed();

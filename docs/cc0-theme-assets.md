@@ -8,8 +8,7 @@ authors are credited here even though CC0 does not require attribution.
 
 Each sample was made from the original 1K JPG diffuse colour map, resized to
 fit within 256 x 256 pixels while preserving its aspect ratio, and stripped of
-metadata. Pattern samples were also
-converted to greyscale and auto-leveled. The two Fabric Pattern samples used
+metadata. Pattern samples keep their original colours. The two Fabric Pattern samples used
 the original `col_01` and `col_03` maps respectively, rather than a diffuse
 map. The original download size and MD5 were checked against Poly Haven's API.
 

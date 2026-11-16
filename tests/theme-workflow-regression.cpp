@@ -580,31 +580,40 @@ public:
                        itemShowsPixel(samples, sampleIndex, visibleSample->getData()[0]));
                 screenshot(dialog, tabShots[tab - 1]);
                 FXint checked = 0;
-                FXbool readable = true;
                 for (FXint item = 0; item < samples->getNumItems(); ++item)
+                    if (samples->getItemBigIcon(item))
+                    {
+                        assert(samples->getItemBigIcon(item)->getData());
+                        ++checked;
+                    }
+                assert(checked >= 8);
+                if (tab == 2)
                 {
-                    // Samples must stay readable on the dark fixed field regardless of the edited theme.
-                    FXIcon* icon = samples->getItemBigIcon(item);
-                    if (!icon) continue;
-                    assert(icon->getData());
-                    ++checked;
-                    FXint low = 255, high = 0, total = 0, count = icon->getWidth() * icon->getHeight();
-                    for (FXint i = 0; i < count; ++i)
+                    // Thumbnails show the PNG's true colours, not a theme or greyscale tint.
+                    FXFileStream stream;
+                    FXPNGImage source(&app, NULL, IMAGE_KEEP);
+                    assert(stream.open(FXPath::directory(execpath) + "/../share/swordfish/textures/Wood/Oak-Veneer-01.png",
+                                       FXStreamLoad) && source.loadPixels(stream));
+                    double expected[3] = {0, 0, 0}, actual[3] = {0, 0, 0};
+                    FXint sourceCount = source.getWidth() * source.getHeight();
+                    for (FXint i = 0; i < sourceCount; ++i)
                     {
-                        FXColor pixel = icon->getData()[i];
-                        FXint luma = (FXREDVAL(pixel) * 3 + FXGREENVAL(pixel) * 6 + FXBLUEVAL(pixel)) / 10;
-                        low = FXMIN(low, luma);
-                        high = FXMAX(high, luma);
-                        total += luma;
+                        expected[0] += FXREDVAL(source.getData()[i]) / static_cast<double>(sourceCount);
+                        expected[1] += FXGREENVAL(source.getData()[i]) / static_cast<double>(sourceCount);
+                        expected[2] += FXBLUEVAL(source.getData()[i]) / static_cast<double>(sourceCount);
                     }
-                    if (total / count <= 110 || high - low <= (tab == 1 ? 40 : 12))
+                    FXIcon* oak = samples->getItemBigIcon(bundledIndex);
+                    FXint oakCount = oak->getWidth() * oak->getHeight();
+                    for (FXint i = 0; i < oakCount; ++i)
                     {
-                        fprintf(stderr, "Unreadable gallery sample: %s (mean %d, range %d)\n",
-                                samples->getItemText(item).text(), total / count, high - low);
-                        readable = false;
+                        actual[0] += FXREDVAL(oak->getData()[i]) / static_cast<double>(oakCount);
+                        actual[1] += FXGREENVAL(oak->getData()[i]) / static_cast<double>(oakCount);
+                        actual[2] += FXBLUEVAL(oak->getData()[i]) / static_cast<double>(oakCount);
                     }
+                    for (FXint channel = 0; channel < 3; ++channel)
+                        assert(fabs(expected[channel] - actual[channel]) < 4);
+                    assert(actual[0] - actual[2] > 40);
                 }
-                assert(checked >= 8 && readable);
             }
             ActionTimer textureNamingHelp([&]()
             {
@@ -1274,13 +1283,20 @@ public:
         Theme patterned = Theme::current(&app);
         patterned.name = "Pattern pack";
         patterned.assetRoot.clear();
-        patterned.effect = "fill=pattern colors=#102030,#E0C080 pattern_image=" + patternReference +
-                           " size=4 rows=off";
+        FXString originalPattern = "fill=pattern colors=#102030,#E0C080 pattern_image=" + patternReference +
+                                   " size=4 rows=off";
+        assert(BackgroundEffect::parse(originalPattern).patternOriginalColors);
+        std::unique_ptr<FXIcon> originalPreview(
+            BackgroundEffect::preview(&window, originalPattern, FXRGB(0, 0, 0), 8));
+        assert(originalPreview->getData()[0] == FXRGB(0, 0, 0));
+        assert(originalPreview->getData()[2] == FXRGB(255, 255, 255));
+        patterned.effect = originalPattern + " pattern_colors=theme";
         patterned.properties["gradient.Pattern preset"] =
             "fill=pattern colors=#000000,#FFFFFF pattern_image=" + patternOther + " size=4 rows=off";
         BackgroundEffect roundTrip = BackgroundEffect::parse(patterned.effect);
-        assert(roundTrip.patternImage == patternReference &&
-               BackgroundEffect::parse(roundTrip.serialize()).patternImage == patternReference);
+        assert(roundTrip.patternImage == patternReference && !roundTrip.patternOriginalColors &&
+               BackgroundEffect::parse(roundTrip.serialize()).patternImage == patternReference &&
+               !BackgroundEffect::parse(roundTrip.serialize()).patternOriginalColors);
         std::unique_ptr<FXIcon> patternPreview(
             BackgroundEffect::preview(&window, patterned.effect, FXRGB(0, 0, 0), 8));
         assert(patternPreview->getData()[0] == FXRGB(16, 32, 48));

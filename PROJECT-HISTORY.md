@@ -3356,6 +3356,21 @@ Validation in the codespace: clean native rebuild and theme workflow regression
 covering switching, duplication, cancellation, stale files and save rollback.
 Desktop acceptance and the portable build remain pending.
 
+### 3.92. True-colour pattern and texture thumbnails
+
+User review found that gallery thumbnails looked monochrome or dark rather
+than like the PNGs in an image viewer. Textures had been previewed through the
+greyscale tint, and bundled patterns had been converted to greyscale masks.
+Thumbnails are now area-averaged reductions of the original PNG over a
+transparency checkerboard. Bundled patterns were restored from the verified
+Poly Haven colour maps. PNG patterns keep their own colours by default
+(`pattern_colors=original`); clearing the option recolours them with the two
+pattern colours by lightness. Built-in shapes are unchanged.
+
+Validation in the codespace: clean native rebuild and theme workflow regression,
+including a true-colour comparison against the source PNG. Desktop acceptance
+and the portable build remain pending.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

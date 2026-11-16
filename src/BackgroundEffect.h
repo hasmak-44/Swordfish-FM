@@ -19,6 +19,7 @@ struct BackgroundEffect
     FXString texture;
     FXint strength = 40;
     FXbool originalColors = false;
+    FXbool patternOriginalColors = true;
     FXbool rows = true;
 
     static BackgroundEffect parse(const FXString&);
