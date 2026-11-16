@@ -269,12 +269,8 @@ static FXbool copyThemeTiles(FXApp* app, const Theme& theme, const FXString& fol
 
 static void themeImageNames(const Theme& theme, std::set<FXString>& names)
 {
-    const char* areas[] = {"list", "tree", "places", "tabs", "toolbars"};
-    for (const char* area : areas)
-    {
-        FXString name = theme.property(area, "background_image");
-        if (!name.empty()) names.insert(name);
-    }
+    FXString name = theme.property("main", "background_image");
+    if (!name.empty()) names.insert(name);
 }
 
 static FXbool copyThemeImages(FXApp* app, const Theme& theme, const FXString& folder, FXString& error)

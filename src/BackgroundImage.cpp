@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <sys/stat.h>
 
 extern FXString execpath;
@@ -117,7 +118,7 @@ FXColor blendPixel(FXColor base, FXColor source)
                  (FXBLUEVAL(source) * alpha + FXBLUEVAL(base) * (255 - alpha) + 127) / 255);
 }
 
-FXColor sampleImage(const FXImage& image, double x, double y, FXColor base)
+FXColor sampleImage(const FXImage& image, double x, double y, double opacity)
 {
     const FXint width = image.getWidth(), height = image.getHeight();
     x = FXCLAMP(0.0, x, static_cast<double>(width - 1));
@@ -137,9 +138,30 @@ FXColor sampleImage(const FXImage& image, double x, double y, FXColor base)
         green += weight * FXGREENVAL(pixels[i]);
         blue += weight * FXBLUEVAL(pixels[i]);
     }
-    return FXRGB(static_cast<FXint>(red + (1 - alpha) * FXREDVAL(base) + 0.5),
-                 static_cast<FXint>(green + (1 - alpha) * FXGREENVAL(base) + 0.5),
-                 static_cast<FXint>(blue + (1 - alpha) * FXBLUEVAL(base) + 0.5));
+    if (alpha <= 0) return 0;
+    return FXRGBA(static_cast<FXint>(red / alpha + 0.5), static_cast<FXint>(green / alpha + 0.5),
+                  static_cast<FXint>(blue / alpha + 0.5), static_cast<FXint>(alpha * opacity * 255 + 0.5));
+}
+
+struct WindowLayer
+{
+    FXWindow* anchor = NULL;
+    FXString reference, mode, root;
+    FXint opacity = 100;
+    std::unique_ptr<FXImage> source;
+    BackgroundOverlay overlay;
+    FXbool failed = false;
+    FXuint serial = 1;
+    std::map<const FXWindow*, std::pair<FXint, FXint>> origins;
+} windowLayer;
+
+void refreshDescendants(FXWindow* window)
+{
+    for (FXWindow* child = window->getFirst(); child; child = child->getNext())
+    {
+        child->update();
+        refreshDescendants(child);
+    }
 }
 }
 
@@ -213,32 +235,61 @@ FXbool BackgroundImage::importImage(FXApp* app, const FXString& source, const FX
 void BackgroundImage::composite(FXColor* pixels, FXint width, FXint height, const FXImage& source,
                                 const FXString& mode)
 {
-    if (!pixels || width <= 0 || height <= 0 || !source.getData() ||
-        source.getWidth() <= 0 || source.getHeight() <= 0) return;
+    BackgroundOverlay overlay;
+    overlay.render(source, width, height, mode, 100);
+    overlay.blend(pixels, width, height, 0, 0);
+}
+
+void BackgroundOverlay::render(const FXImage& source, FXint w, FXint h, const FXString& mode, FXint percent)
+{
+    pixels.clear();
+    width = height = 0;
+    if (w <= 0 || h <= 0 || !source.getData() || source.getWidth() <= 0 || source.getHeight() <= 0) return;
+    width = w;
+    height = h;
+    pixels.assign(static_cast<size_t>(w) * h, 0);
+    const double opacity = FXCLAMP(0, percent, 100) / 100.0;
     if (mode == "tile")
     {
-        for (FXint y = 0; y < height; ++y)
-            for (FXint x = 0; x < width; ++x)
+        for (FXint y = 0; y < h; ++y)
+            for (FXint x = 0; x < w; ++x)
             {
-                FXint index = y * width + x;
-                pixels[index] = blendPixel(pixels[index], source.getPixel(x % source.getWidth(), y % source.getHeight()));
+                FXColor color = source.getPixel(x % source.getWidth(), y % source.getHeight());
+                pixels[static_cast<size_t>(y) * w + x] = FXRGBA(FXREDVAL(color), FXGREENVAL(color), FXBLUEVAL(color),
+                    static_cast<FXint>(FXALPHAVAL(color) * opacity + 0.5));
             }
         return;
     }
-    double sx = width / static_cast<double>(source.getWidth());
-    double sy = height / static_cast<double>(source.getHeight());
+    double sx = w / static_cast<double>(source.getWidth());
+    double sy = h / static_cast<double>(source.getHeight());
     double scale = mode == "fill" ? FXMAX(sx, sy) : FXMIN(sx, sy);
-    double left = (width - source.getWidth() * scale) / 2.0;
-    double top = (height - source.getHeight() * scale) / 2.0;
-    for (FXint y = 0; y < height; ++y)
-        for (FXint x = 0; x < width; ++x)
+    double left = (w - source.getWidth() * scale) / 2.0;
+    double top = (h - source.getHeight() * scale) / 2.0;
+    for (FXint y = 0; y < h; ++y)
+        for (FXint x = 0; x < w; ++x)
         {
             double px = x + 0.5, py = y + 0.5;
             if (px < left || py < top || px >= left + source.getWidth() * scale ||
                 py >= top + source.getHeight() * scale) continue;
-            FXint index = y * width + x;
-            pixels[index] = sampleImage(source, (px - left) / scale - 0.5,
-                                         (py - top) / scale - 0.5, pixels[index]);
+            pixels[static_cast<size_t>(y) * w + x] =
+                sampleImage(source, (px - left) / scale - 0.5, (py - top) / scale - 0.5, opacity);
+        }
+}
+
+void BackgroundOverlay::blend(FXColor* target, FXint w, FXint h, FXint x, FXint y) const
+{
+    if (!target || pixels.empty()) return;
+    FXint x0 = FXMAX(0, -x), y0 = FXMAX(0, -y);
+    FXint x1 = FXMIN(w, width - x), y1 = FXMIN(h, height - y);
+    for (FXint row = y0; row < y1; ++row)
+        for (FXint column = x0; column < x1; ++column)
+        {
+            FXColor color = pixels[static_cast<size_t>(row + y) * width + column + x];
+            if (FXALPHAVAL(color))
+            {
+                FXColor& base = target[static_cast<size_t>(row) * w + column];
+                base = blendPixel(base, color);
+            }
         }
 }
 
@@ -255,68 +306,141 @@ FXIcon* BackgroundImage::preview(FXApp* app, const FXString& file, FXColor backg
     return icon;
 }
 
-void BackgroundImageLayer::set(const FXString& image, const FXString& placement, const FXString& assetRoot)
+FXint backgroundImageOpacity(const FXString& value)
 {
-    FXString selectedMode = placement.empty() ? FXString("fit") : placement;
-    if (reference == image && mode == selectedMode && root == assetRoot) return;
-    reference = image;
-    mode = selectedMode;
-    root = assetRoot;
-    rendered.reset();
-    width = height = 0;
-    failed = false;
+    return value.empty() ? 100 : FXCLAMP(0, FXIntVal(value), 100);
 }
 
-FXbool BackgroundImageLayer::draw(FXWindow* owner, FXWindow* target, FXDC& dc,
-                                  FXint x, FXint y, FXint w, FXint h)
+void setWindowBackground(FXWindow* anchor, const FXString& reference, const FXString& placement,
+                         FXint opacity, const FXString& root)
 {
-    if (reference.empty() || failed || w <= 0 || h <= 0) return false;
-    FXint newWidth = FXMAX(1, owner->getWidth()), newHeight = FXMAX(1, owner->getHeight());
-    if (!rendered || newWidth != width || newHeight != height || background != owner->getBackColor())
+    WindowLayer& layer = windowLayer;
+    FXString mode = placement.empty() ? FXString("fit") : placement;
+    if (layer.anchor == anchor && layer.reference == reference && layer.mode == mode &&
+        layer.opacity == opacity && layer.root == root) return;
+    if (layer.reference != reference || layer.root != root) layer.source.reset();
+    layer.anchor = anchor;
+    layer.reference = reference;
+    layer.mode = mode;
+    layer.opacity = opacity;
+    layer.root = root;
+    layer.overlay = BackgroundOverlay();
+    layer.failed = false;
+    layer.origins.clear();
+    ++layer.serial;
+}
+
+const BackgroundOverlay* windowBackground(const FXWindow* target, FXint& x, FXint& y, FXuint* serial)
+{
+    WindowLayer& layer = windowLayer;
+    x = y = 0;
+    if (!layer.anchor || layer.reference.empty() || layer.failed || layer.opacity <= 0) return NULL;
+    // Child window positions are client-side, which avoids a server round trip on every paint
+    const FXWindow* window = target;
+    for (; window && window != layer.anchor; window = window->getParent())
     {
-        FXString file = BackgroundImage::path(reference, root), error;
-        std::unique_ptr<FXImage> source;
-        if (!file.empty()) source = BackgroundImage::load(owner->getApp(), file, error);
+        x += window->getX();
+        y += window->getY();
+    }
+    if (!window) return NULL;
+    FXint width = FXMAX(1, layer.anchor->getWidth()), height = FXMAX(1, layer.anchor->getHeight());
+    if (layer.overlay.width != width || layer.overlay.height != height)
+    {
+        std::unique_ptr<FXImage> loaded;
+        FXImage* source = layer.source.get();
         if (!source)
         {
-            appLog(APP_LOG_ERRORS, "theme-image-unavailable", reference + ": " +
-                   (error.empty() ? _("Image was not found in the theme or its library.") : error));
-            rendered.reset();
-            failed = true;
-            return false;
+            FXString file = BackgroundImage::path(layer.reference, layer.root), error;
+            if (!file.empty()) loaded = BackgroundImage::load(layer.anchor->getApp(), file, error);
+            if (!loaded)
+            {
+                appLog(APP_LOG_ERRORS, "theme-image-unavailable", layer.reference + ": " +
+                       (error.empty() ? _("Image was not found in the theme or its library.") : error));
+                layer.failed = true;
+                return NULL;
+            }
+            source = loaded.get();
         }
-        width = newWidth;
-        height = newHeight;
-        background = owner->getBackColor();
-        FXColor* pixels = NULL;
-        if (!FXMALLOC(&pixels, FXColor, static_cast<size_t>(width) * height))
-            throw FXMemoryException(_("Unable to render background image"));
-        std::fill(pixels, pixels + static_cast<size_t>(width) * height, background);
-        BackgroundImage::composite(pixels, width, height, *source, mode);
-        rendered.reset(new FXImage(owner->getApp(), pixels, IMAGE_OWNED, width, height));
-        rendered->create();
+        FXbool resized = !layer.overlay.pixels.empty();
+        layer.overlay.render(*source, width, height, layer.mode, layer.opacity);
+        // Large originals are decoded again on the next window resize instead of being kept in memory
+        if (loaded && static_cast<FXlong>(loaded->getWidth()) * loaded->getHeight() <= 16 * 1024 * 1024)
+            layer.source = std::move(loaded);
+        ++layer.serial;
+        layer.origins.clear();
+        if (resized) refreshDescendants(layer.anchor);
     }
-    FXint originX = 0, originY = 0;
-    if (target != owner) target->translateCoordinatesTo(originX, originY, owner, 0, 0);
-    FXint x0 = FXMAX(x, -originX), y0 = FXMAX(y, -originY);
-    FXint x1 = FXMIN(x + w, width - originX), y1 = FXMIN(y + h, height - originY);
-    if (x0 != x || y0 != y || x1 != x + w || y1 != y + h)
-    {
-        dc.setForeground(target->getBackColor());
-        dc.fillRectangle(x, y, w, h);
-    }
-    if (x1 > x0 && y1 > y0)
-        dc.drawArea(rendered.get(), x0 + originX, y0 + originY, x1 - x0, y1 - y0, x0, y0);
-    return true;
+    if (serial) *serial = layer.serial;
+    return &layer.overlay;
+}
+
+void trackBackgroundOrigin(FXWindow* window)
+{
+    FXint x, y;
+    if (!windowBackground(window, x, y)) return;
+    auto known = windowLayer.origins.find(window);
+    // Children that were moved without being resized are not repainted by the server
+    if (known != windowLayer.origins.end() && (known->second.first != x || known->second.second != y))
+        refreshDescendants(window);
+    windowLayer.origins[window] = std::make_pair(x, y);
 }
 
 FXbool drawBackgroundImage(FXWindow* target, FXDC& dc, FXint x, FXint y, FXint w, FXint h)
 {
+    if (w <= 0 || h <= 0) return false;
     for (FXWindow* owner = target; owner; owner = owner->getParent())
         if (BackgroundImageOwner* imageOwner = dynamic_cast<BackgroundImageOwner*>(owner))
-            return imageOwner->allowsBackgroundImage(target) &&
-                   imageOwner->backgroundImage.draw(owner, target, dc, x, y, w, h);
-    return false;
+            if (!imageOwner->allowsBackgroundImage(target)) return false;
+    FXint originX, originY;
+    const BackgroundOverlay* overlay = windowBackground(target, originX, originY);
+    if (!overlay) return false;
+    FXColor* pixels = NULL;
+    if (!FXMALLOC(&pixels, FXColor, static_cast<size_t>(w) * h))
+        throw FXMemoryException(_("Unable to render background image"));
+    std::fill(pixels, pixels + static_cast<size_t>(w) * h, target->getBackColor());
+    overlay->blend(pixels, w, h, originX + x, originY + y);
+    FXImage image(target->getApp(), pixels, IMAGE_OWNED, w, h);
+    image.create();
+    dc.drawImage(&image, x, y);
+    return true;
+}
+
+FXbool drawBackgroundGaps(FXWindow* target, FXDC& dc, FXint x, FXint y, FXint w, FXint h)
+{
+    FXint originX, originY;
+    if (w <= 0 || h <= 0 || !windowBackground(target, originX, originY)) return false;
+    // Containers are mostly covered by their children, so only the visible gaps are rendered
+    std::vector<FXRectangle> gaps(1, FXRectangle(x, y, w, h));
+    for (FXWindow* child = target->getFirst(); child && !gaps.empty(); child = child->getNext())
+    {
+        if (!child->shown()) continue;
+        FXint left = child->getX(), top = child->getY();
+        FXint right = left + child->getWidth(), bottom = top + child->getHeight();
+        std::vector<FXRectangle> remaining;
+        for (const FXRectangle& gap : gaps)
+        {
+            FXint gapRight = gap.x + gap.w, gapBottom = gap.y + gap.h;
+            if (left >= gapRight || right <= gap.x || top >= gapBottom || bottom <= gap.y)
+            {
+                remaining.push_back(gap);
+                continue;
+            }
+            FXint coverTop = FXMAX(top, static_cast<FXint>(gap.y));
+            FXint coverBottom = FXMIN(bottom, gapBottom);
+            if (top > gap.y) remaining.push_back(FXRectangle(gap.x, gap.y, gap.w, top - gap.y));
+            if (bottom < gapBottom) remaining.push_back(FXRectangle(gap.x, bottom, gap.w, gapBottom - bottom));
+            if (left > gap.x) remaining.push_back(FXRectangle(gap.x, coverTop, left - gap.x, coverBottom - coverTop));
+            if (right < gapRight) remaining.push_back(FXRectangle(right, coverTop, gapRight - right, coverBottom - coverTop));
+        }
+        gaps.swap(remaining);
+    }
+    for (const FXRectangle& gap : gaps)
+        if (!drawBackgroundImage(target, dc, gap.x, gap.y, gap.w, gap.h))
+        {
+            dc.setForeground(target->getBackColor());
+            dc.fillRectangle(gap.x, gap.y, gap.w, gap.h);
+        }
+    return true;
 }
 
 ThemeToolBar::ThemeToolBar(FXComposite* parent, FXComposite* shell, FXuint opts) :
@@ -327,10 +451,7 @@ ThemeToolBar::ThemeToolBar(FXComposite* parent, FXuint opts) :
 
 long ThemeToolBar::onPaint(FXObject* sender, FXSelector selector, void* pointer)
 {
-    long result = FXPacker::onPaint(sender, selector, pointer);
-    FXDCWindow dc(this, static_cast<FXEvent*>(pointer));
-    drawBackgroundImage(this, dc, border, border, width - 2 * border, height - 2 * border);
-    return result;
+    return FXPacker::onPaint(sender, selector, pointer);
 }
 
 FXDEFMAP(ThemeToolBar) ThemeToolBarMap[] = {

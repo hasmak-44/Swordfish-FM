@@ -188,6 +188,17 @@ static FXbool windowShowsPixel(FXWindow* window, FXColor color)
     return found;
 }
 
+// A full theme apply repaints the whole window; slow Xvfb hosts may need more than one pump.
+static FXbool showsPixelSoon(FXApp& app, FXWindow* window, FXColor color)
+{
+    for (FXint attempt = 0; attempt < 10; ++attempt)
+    {
+        if (windowShowsPixel(window, color)) return true;
+        pump(app);
+    }
+    return windowShowsPixel(window, color);
+}
+
 static void checkManual(FXApp& app, FXObject* target, FXSelector selector, FXObject* sender, bool theme)
 {
     const char* oldPath = getenv("SWORDFISH_HOST_PATH");
@@ -1534,13 +1545,22 @@ public:
         imageError.clear();
         assert(!decodedImages.decodeProperties("list.image_mode=stretch", imageError));
         assert(!decodedImages.decodeProperties("menus.background_image=Photo.png", imageError));
+        assert(!decodedImages.decodeProperties("main.image_opacity=101", imageError));
+        assert(decodedImages.decodeProperties("main.image_opacity=40", imageError));
+        assert(decodedImages.decodeProperties("tree.background_image=" + imageReference +
+                                              "&tree.image_mode=tile&tabs.background_image=" + checkerReference,
+                                              imageError));
+        assert(decodedImages.property("main", "background_image") == imageReference &&
+               decodedImages.property("main", "image_mode") == "tile" &&
+               decodedImages.property("tree", "background_image").empty() &&
+               decodedImages.property("tabs", "background_image").empty());
 
         window.applyTheme(patterned);
         FXColor liveBeforeImage = liveBackground();
         editor.draft = editor.applied = editor.saved = patterned;
-        editor.draft.setProperty("list", "foreground", "#FFFFFF");
+        editor.draft.setProperty("main", "foreground", "#FFFFFF");
         editor.applied = editor.saved = editor.draft;
-        editor.selectElement("list");
+        editor.selectElement("main");
         editor.refreshProperties();
         selectProperty("background_image");
         editor.refreshPreview();
@@ -1577,8 +1597,16 @@ public:
             gallery->setCurrentItem(roseIndex);
             gallery->getTarget()->handle(gallery, FXSEL(SEL_COMMAND, gallery->getSelector()), NULL);
             pump(app);
-            assert(editor.getDraft().property("list", "background_image") == imageReference);
-            assert(editor.getDraft().property("list", "image_mode") == "fill");
+            assert(editor.getDraft().property("main", "background_image") == imageReference);
+            assert(editor.getDraft().property("main", "image_mode") == "fill");
+            FXSpinner* opacity = dynamic_cast<FXSpinner*>(findClass(dialog, "FXSpinner"));
+            assert(opacity && opacity->getValue() == 100);
+            opacity->setValue(40);
+            opacity->getTarget()->handle(opacity, FXSEL(SEL_COMMAND, opacity->getSelector()), NULL);
+            assert(editor.getDraft().property("main", "image_opacity") == "40");
+            opacity->setValue(100);
+            opacity->getTarget()->handle(opacity, FXSEL(SEL_COMMAND, opacity->getSelector()), NULL);
+            assert(editor.getDraft().property("main", "image_opacity").empty());
             dialog->hide();
             pump(app);
             assert(windowShowsPixel(findClass(&editor, "ThemeMockup"), rose));
@@ -1614,7 +1642,7 @@ public:
         });
         app.addTimeout(&cancelImage, 1, 150);
         editor.onEditProperty(NULL, 0, NULL);
-        assert(editor.getDraft().property("list", "background_image").empty());
+        assert(editor.getDraft().property("main", "background_image").empty());
         assert(liveBackground() == liveBeforeImage);
         ActionTimer applyImage([&] {
             FXWindow* dialog = app.getModalWindow();
@@ -1628,34 +1656,18 @@ public:
         });
         app.addTimeout(&applyImage, 1, 150);
         editor.onEditProperty(NULL, 0, NULL);
-        assert(editor.getApplied().property("list", "background_image") == imageReference);
-        assert(editor.getApplied().property("list", "image_mode") == "tile");
+        assert(editor.getApplied().property("main", "background_image") == imageReference);
+        assert(editor.getApplied().property("main", "image_mode") == "tile");
         assert(liveBackground() == liveBeforeImage);
         editor.onUndo(NULL, 0, NULL);
-        assert(editor.getDraft().property("list", "background_image").empty());
+        assert(editor.getDraft().property("main", "background_image").empty());
         editor.onRedo(NULL, 0, NULL);
-        assert(editor.getDraft().property("list", "background_image") == imageReference);
-        Theme acceptedImage = editor.getDraft();
-        for (const char* area : {"places", "tabs", "toolbars"})
-        {
-            editor.draft = editor.applied = editor.saved = patterned;
-            editor.draft.setProperty(area, "background_image", imageReference);
-            editor.draft.setProperty(area, "image_mode", "tile");
-            editor.refreshPreview();
-            pump(app);
-            assert(windowShowsPixel(findClass(&editor, "ThemeMockup"), rose));
-        }
-        editor.draft = editor.applied = editor.saved = acceptedImage;
+        assert(editor.getDraft().property("main", "background_image") == imageReference);
         editor.hide();
         puts("PASS: image compositing, categorized PNG/JPEG gallery, preview, contrast and rollback");
 
         Theme imageTheme = editor.getDraft();
         imageTheme.name = "Image pack";
-        for (const char* area : {"tree", "places", "tabs", "toolbars"})
-        {
-            imageTheme.setProperty(area, "background_image", imageReference);
-            imageTheme.setProperty(area, "image_mode", "tile");
-        }
         assert(imported.saveEditedTheme(imageTheme, -1));
         assert(imageTheme.assetRoot[0] == '/');
         assert(BackgroundImage::path(imageReference, imageTheme.assetRoot) ==
@@ -1673,7 +1685,7 @@ public:
         assert(liveBackground() == rose);
         FXWindow* sidebar = findClass(&window, "SidebarTree");
         FXWindow* toolbar = findClass(&window, "ThemeToolBar");
-        assert(sidebar && toolbar && windowShowsPixel(sidebar, rose) && windowShowsPixel(toolbar, rose));
+        assert(sidebar && toolbar && showsPixelSoon(app, sidebar, rose) && showsPixelSoon(app, toolbar, rose));
         assert(preferences.getBackColor() == DialogColors::background);
         FXWindow* activeTab = NULL;
         FXWindow* inactiveTab = NULL;
@@ -1697,8 +1709,8 @@ public:
         {
             ThemeEditor treeEditor(&preferences, &window, preferences.Themes, 0, ThemeEditor::EDIT_CURRENT);
             treeEditor.draft = treeEditor.applied = treeEditor.saved = patterned;
-            treeEditor.draft.setProperty("tree", "background_image", imageReference);
-            treeEditor.draft.setProperty("tree", "image_mode", "tile");
+            treeEditor.draft.setProperty("main", "background_image", imageReference);
+            treeEditor.draft.setProperty("main", "image_mode", "tile");
             treeEditor.create();
             treeEditor.zoom->setCurrentItem(0);
             treeEditor.onPreview(NULL, 0, NULL);
@@ -1717,6 +1729,56 @@ public:
         window.applyTheme(imageTheme);
         pump(app);
         assert(liveBackground() == rose && windowShowsPixel(tree, rose));
+        {
+            // One image spans the window: each pane shows the part under its own position
+            FXString rampSource = data + "/image-ramp.png";
+            FXColor* ramp = NULL;
+            assert(FXMALLOC(&ramp, FXColor, 4096));
+            for (FXint x = 0; x < 4096; ++x) ramp[x] = FXRGB(x & 255, x >> 8, 0);
+            {
+                FXPNGImage image(&app);
+                image.setData(ramp, IMAGE_KEEP | IMAGE_OWNED, 4096, 1);
+                FXFileStream output;
+                assert(output.open(rampSource, FXStreamSave) && image.savePixels(output));
+            }
+            FXString rampReference = BackgroundEffect::textureReference("Photographs/Ramp.png");
+            assert(BackgroundImage::importImage(&app, rampSource, rampReference, imageError));
+            Theme rampTheme = imageTheme;
+            rampTheme.setProperty("main", "background_image", rampReference);
+            rampTheme.setProperty("main", "image_mode", "tile");
+            window.applyTheme(rampTheme);
+            pump(app);
+            auto paneBackground = [&](IconList* list) -> FXColor
+            {
+                FXImage image(&app, NULL, IMAGE_KEEP, 1, 1);
+                image.create();
+                {
+                    FXDCWindow dc(&image);
+                    list->fillBackground(dc, 0, 0, 1, 1);
+                }
+                image.restore();
+                return image.getData()[0];
+            };
+            FXint leftX, rightX, unused;
+            IconList* leftList = window.getLeftPanel()->getList();
+            IconList* rightList = window.getRightPanel()->getList();
+            leftList->translateCoordinatesTo(leftX, unused, &window, 0, 0);
+            rightList->translateCoordinatesTo(rightX, unused, &window, 0, 0);
+            assert(leftX != rightX);
+            assert(paneBackground(leftList) == FXRGB(leftX & 255, leftX >> 8, 0));
+            assert(paneBackground(rightList) == FXRGB(rightX & 255, rightX >> 8, 0));
+            rampTheme.setProperty("main", "background_image", imageReference);
+            rampTheme.setProperty("main", "image_opacity", "50");
+            window.applyTheme(rampTheme);
+            pump(app);
+            auto half = [](FXuint base, FXuint image) { return (image * 128 + base * 127 + 127) / 255; };
+            assert(liveBackground() == FXRGB(half(FXREDVAL(liveBeforeImage), FXREDVAL(rose)),
+                                             half(FXGREENVAL(liveBeforeImage), FXGREENVAL(rose)),
+                                             half(FXBLUEVAL(liveBeforeImage), FXBLUEVAL(rose))));
+            window.applyTheme(imageTheme);
+            pump(app);
+            assert(liveBackground() == rose);
+        }
 
         PreferencesBox reloadedImages(&window, app.getBackColor(), app.getForeColor(), app.getBackColor(),
                                       app.getSelbackColor(), FXRGB(255, 0, 0), app.getBaseColor());
@@ -1727,8 +1789,8 @@ public:
                 Theme loaded;
                 assert(theme.deferred && reloadedImages.resolveTheme(theme, loaded));
                 foundImages = loaded.assetRoot == imageTheme.assetRoot &&
-                              loaded.property("toolbars", "background_image") == imageReference &&
-                              loaded.property("list", "image_mode") == "tile";
+                              loaded.property("main", "background_image") == imageReference &&
+                              loaded.property("main", "image_mode") == "tile";
             }
         assert(foundImages);
         ActionTimer chooseImageExport([&] {

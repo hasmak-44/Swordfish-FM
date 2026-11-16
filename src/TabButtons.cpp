@@ -576,10 +576,7 @@ FXIMPLEMENT(TabButtons, FXHorizontalFrame, TabButtonsMap, ARRAYNUMBER(TabButtons
 
 long TabButtons::onPaint(FXObject* sender, FXSelector selector, void* pointer)
 {
-    long result = FXPacker::onPaint(sender, selector, pointer);
-    FXDCWindow dc(this, static_cast<FXEvent*>(pointer));
-    drawBackgroundImage(this, dc, 0, 0, width, height);
-    return result;
+    return FXPacker::onPaint(sender, selector, pointer);
 }
 
 FXbool TabButtons::allowsBackgroundImage(const FXWindow* window) const

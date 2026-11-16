@@ -5,6 +5,7 @@
 
 class IconList;
 class FileList;
+class BackgroundOverlay;
 
 
 // Icon List options
@@ -284,8 +285,13 @@ protected:
     // Layers: 0 plain, 1 alternate row, 2 sorted column, 3 sorted column on an alternate row.
     FXString backgroundEffect;
     FXString effectAssetRoot;
-    FXString backgroundImage;
-    FXString backgroundImageMode;
+    const BackgroundOverlay* previewOverlay = NULL;  // Theme editor mockup image, instead of the window image
+    int previewOverlayX = 0;
+    int previewOverlayY = 0;
+    const BackgroundOverlay* effectOverlay = NULL;
+    int effectOverlayX = 0;
+    int effectOverlayY = 0;
+    FXuint effectOverlaySerial = 0;
     FXImage* effectLayers[4] = {NULL, NULL, NULL, NULL};
     FXColor* effectBase = NULL;
     int effectWidth = 0;
@@ -296,6 +302,7 @@ protected:
     void buildBackgroundEffect();
     FXImage* getEffectLayer(int layer);
     void clearBackgroundEffect();
+    const BackgroundOverlay* imageOverlay(int& x, int& y, FXuint& serial) const;
 
 protected:
     IconList()
@@ -464,7 +471,6 @@ public:
 
     // Change the background effect specification (see list_background_effect in theme files)
     void setBackgroundEffect(const FXString& spec, const FXString& assetRoot = FXString::null);
-    void setBackgroundImage(const FXString& reference, const FXString& mode);
     void setHighlightColor(FXColor color);
     virtual void setBackColor(FXColor color);
 

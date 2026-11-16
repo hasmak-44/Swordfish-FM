@@ -2092,13 +2092,16 @@ void IconList::setBackgroundEffect(const FXString& spec, const FXString& assetRo
     update();
 }
 
-void IconList::setBackgroundImage(const FXString& reference, const FXString& mode)
+const BackgroundOverlay* IconList::imageOverlay(int& x, int& y, FXuint& serial) const
 {
-    if (backgroundImage == reference && backgroundImageMode == mode) return;
-    backgroundImage = reference;
-    backgroundImageMode = mode;
-    clearBackgroundEffect();
-    update();
+    if (previewOverlay)
+    {
+        x = previewOverlayX;
+        y = previewOverlayY;
+        serial = 0;
+        return previewOverlay->pixels.empty() ? NULL : previewOverlay;
+    }
+    return windowBackground(this, x, y, &serial);
 }
 
 
@@ -2316,16 +2319,10 @@ void IconList::buildBackgroundEffect()
             appLog(APP_LOG_ERRORS, "theme-texture-invalid", path);
     }
 
-    if (!backgroundImage.empty())
+    effectOverlay = imageOverlay(effectOverlayX, effectOverlayY, effectOverlaySerial);
+    if (effectOverlay)
     {
-        FXString path = BackgroundImage::path(backgroundImage, effectAssetRoot), error;
-        std::unique_ptr<FXImage> image;
-        if (!path.empty()) image = BackgroundImage::load(getApp(), path, error);
-        if (image)
-            BackgroundImage::composite(effectBase, w, h, *image, backgroundImageMode);
-        else
-            appLog(APP_LOG_ERRORS, "theme-image-unavailable", backgroundImage + ": " +
-                   (error.empty() ? _("Image was not found in the theme or its library.") : error));
+        effectOverlay->blend(effectBase, w, h, effectOverlayX, effectOverlayY);
     }
 
     double r = 0, g = 0, b = 0;
@@ -2359,8 +2356,12 @@ FXIcon* BackgroundEffect::preview(FXComposite* parent, const FXString& spec, FXC
 
 FXImage* IconList::getEffectLayer(int layer)
 {
+    int overlayX = 0, overlayY = 0;
+    FXuint overlaySerial = 0;
+    const BackgroundOverlay* overlay = imageOverlay(overlayX, overlayY, overlaySerial);
     if (!effectBase || effectWidth != FXMAX(1, getWidth()) || effectHeight != FXMAX(1, getHeight()) ||
-        effectBackColor != backColor)
+        effectBackColor != backColor || overlay != effectOverlay || (overlay && (overlayX != effectOverlayX ||
+        overlayY != effectOverlayY || overlaySerial != effectOverlaySerial)))
     {
         buildBackgroundEffect();
     }
@@ -2398,7 +2399,10 @@ void IconList::fillBackground(FXDC& dc, int x, int y, int w, int h, int layer, F
     {
         return;
     }
-    FXImage* image = backgroundEffect.empty() && backgroundImage.empty() ? NULL : getEffectLayer(layer);
+    int overlayX, overlayY;
+    FXuint overlaySerial;
+    FXImage* image = backgroundEffect.empty() && !imageOverlay(overlayX, overlayY, overlaySerial) ?
+                     NULL : getEffectLayer(layer);
     if (!image)
     {
         dc.setForeground(layer ? solid : backColor);

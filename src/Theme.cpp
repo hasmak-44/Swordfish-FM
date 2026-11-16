@@ -97,11 +97,7 @@ void apply(FXWindow* window, const Theme& theme, const FXString& parentArea,
     {
         list->setHighlightColor(theme.colorFor("list", "alternate"));
         list->setBackgroundEffect(theme.effect, theme.assetRoot);
-        list->setBackgroundImage(theme.property("list", "background_image"), theme.property("list", "image_mode"));
     }
-    if (BackgroundImageOwner* owner = dynamic_cast<BackgroundImageOwner*>(window))
-        owner->backgroundImage.set(theme.property(area, "background_image"),
-                                   theme.property(area, "image_mode"), theme.assetRoot);
     if (FXScrollBar* scrollbar = dynamic_cast<FXScrollBar*>(window))
         scrollbar->setBackColor(theme.colorFor("scrollbars", "background"));
     if (FXFont* current = widgetFont(window))
@@ -273,18 +269,19 @@ FXbool Theme::decodeProperties(const FXString& text, FXString& error)
             for (const char* name : areas) if (area == name) valid = true;
             if (property == "background_image" || property == "image_mode")
             {
-                FXbool supported = area == "list" || area == "tree" || area == "places" ||
+                // Images used to be set per area; those keys are still read and moved to the main window
+                FXbool supported = area == "main" || area == "list" || area == "tree" || area == "places" ||
                                    area == "tabs" || area == "toolbars";
                 valid = valid && supported && (property == "background_image" ?
                     BackgroundImage::validReference(value) : value == "fit" || value == "fill" || value == "tile");
             }
             else if (property == "font") valid = valid && !value.empty() && value.length() <= 512;
-            else if (area == "main" && (property == "shading" || property == "opacity"))
+            else if (area == "main" && (property == "shading" || property == "opacity" || property == "image_opacity"))
             {
                 char* end = NULL;
                 long number = strtol(value.text(), &end, 10);
                 valid = valid && !value.empty() && end && !*end &&
-                        number >= (property == "opacity" ? 20 : 0) && number <= (property == "opacity" ? 100 : 20);
+                        number >= (property == "opacity" ? 20 : 0) && number <= (property == "shading" ? 20 : 100);
             }
             else
             {
@@ -302,6 +299,18 @@ FXbool Theme::decodeProperties(const FXString& text, FXString& error)
             return false;
         }
         parsed[key] = value;
+    }
+    const char* legacyAreas[] = {"list", "tree", "places", "tabs", "toolbars"};
+    for (const char* legacy : legacyAreas)
+    {
+        FXString image = FXString(legacy) + ".background_image", mode = FXString(legacy) + ".image_mode";
+        if (!parsed.count("main.background_image") && parsed.count(image))
+        {
+            parsed["main.background_image"] = parsed[image];
+            if (parsed.count(mode)) parsed["main.image_mode"] = parsed[mode];
+        }
+        parsed.erase(image);
+        parsed.erase(mode);
     }
     properties.swap(parsed);
     return true;

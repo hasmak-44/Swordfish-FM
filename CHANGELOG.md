@@ -28,9 +28,11 @@
   blend the two chosen pattern colours; existing built-in shapes continue to
   work. Pattern and texture gallery thumbnails show each PNG in its true
   colours.
-- PNG or JPEG background images can be fitted, cropped to fill or tiled in
-  file lists, the folder tree, Places, tabs and toolbars. The editor previews
-  images without changing the live window until Save.
+- A PNG or JPEG background image can be fitted, cropped to fill or tiled
+  across the whole main window, as if the window were transparent over a
+  desktop picture, with adjustable opacity. Older themes with per-area images
+  use their first image for the window. The editor previews images without
+  changing the live window until Save.
 - 21 additional categorized textures and 21 pattern images are bundled from
   CC0 Poly Haven assets, with source and author credits included.
 - Custom themes are saved in per-theme folders under
@@ -87,6 +89,11 @@
   skipped.
 
 ### Fixed
+- A first run no longer shows black text on black: the default colours in
+  the installed configuration were written in a form the toolkit could not
+  read.
+- The background image chooser no longer hides its Add image and Save in
+  category controls when the dialog is short.
 - Saving the custom theme library no longer removes unrecognized or duplicate
   theme files from folders that were not loaded into Preferences.
 - Closing a writable archive folder (tar) now waits until the changes are

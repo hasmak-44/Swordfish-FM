@@ -2213,6 +2213,36 @@ long FXProgressBar::onPaint(FXObject*, FXSelector, void* ptr)
 
 
 // This hack draws a rectangle with rounded corners and supports dark theme
+// Packer and frame backgrounds show their part of the main window background image
+long FXPacker::onPaint(FXObject*, FXSelector, void* ptr)
+{
+    FXEvent* ev = (FXEvent*)ptr;
+    FXDCWindow dc(this, ev);
+    if (!drawBackgroundGaps(this, dc, ev->rect.x, ev->rect.y, ev->rect.w, ev->rect.h))
+    {
+        dc.setForeground(backColor);
+        dc.fillRectangle(ev->rect.x, ev->rect.y, ev->rect.w, ev->rect.h);
+    }
+    drawFrame(dc, 0, 0, width, height);
+    trackBackgroundOrigin(this);
+    return 1;
+}
+
+
+long FXFrame::onPaint(FXObject*, FXSelector, void* ptr)
+{
+    FXEvent* ev = (FXEvent*)ptr;
+    FXDCWindow dc(this, ev);
+    if (!drawBackgroundImage(this, dc, border, border, width - (border << 1), height - (border << 1)))
+    {
+        dc.setForeground(backColor);
+        dc.fillRectangle(border, border, width - (border << 1), height - (border << 1));
+    }
+    drawFrame(dc, 0, 0, width, height);
+    return 1;
+}
+
+
 void FXPacker::drawGrooveRectangle(FXDCWindow& dc, FXint x, FXint y, FXint w, FXint h)
 {
     FXColor bordercolor, shadecolor, shadowcolor;
@@ -3166,8 +3196,11 @@ long FXHeader::onPaint(FXObject*, FXSelector, void* ptr)
     dc.setFont(font);
 
     // Paint background
-    dc.setForeground(backColor);
-    dc.fillRectangle(ev->rect.x, ev->rect.y, ev->rect.w, ev->rect.h);
+    if (!drawBackgroundImage(this, dc, ev->rect.x, ev->rect.y, ev->rect.w, ev->rect.h))
+    {
+        dc.setForeground(backColor);
+        dc.fillRectangle(ev->rect.x, ev->rect.y, ev->rect.w, ev->rect.h);
+    }
 
     // Vertical
     if (options & HEADER_VERTICAL)
@@ -3910,8 +3943,11 @@ long FXLabel::onPaint(FXObject*, FXSelector, void* ptr)
     FXDCWindow dc(this, ev);
     FXint tw = 0, th = 0, iw = 0, ih = 0, tx, ty, ix, iy;
 
-    dc.setForeground(backColor);
-    dc.fillRectangle(0, 0, width, height);
+    if (!drawBackgroundImage(this, dc, 0, 0, width, height))
+    {
+        dc.setForeground(backColor);
+        dc.fillRectangle(0, 0, width, height);
+    }
     if (!label.empty())
     {
         tw = labelWidth(label);

@@ -3770,6 +3770,8 @@ void XFileExplorer::applyTheme(const Theme& theme, FXWindow* subtree)
             normal->create();
         }
     }
+    setWindowBackground(this, theme.property("main", "background_image"), theme.property("main", "image_mode"),
+                        backgroundImageOpacity(theme.property("main", "image_opacity")), theme.assetRoot);
     applyThemeWidgets(subtree ? subtree : this, theme, themeFonts);
     if (!getuid())
     {

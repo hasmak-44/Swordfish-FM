@@ -3403,6 +3403,33 @@ task list requires. A single portable test build of this state was made for
 desktop acceptance of the keyboard shortcuts, USB/network discovery and theme
 work.
 
+### 3.95. Startup colours, chooser fit and a window-wide background image
+
+The first test build started with black text on black. `swordfishrc.in`
+stored colours as decimal integers, which FOX's `readColorEntry` cannot parse;
+they loaded as 0 and were saved back as `None`. The defaults are now
+`#RRGGBB` values from Ocean Depth. (Users of that build should delete
+`portable-data`, or the `None` colour lines in `xferc`.)
+
+The background image chooser created its Add image / Refresh / Save in
+category row after the gallery, so a short dialog cut it off; it is now packed
+at the bottom first and the gallery takes the remaining space.
+
+Desktop feedback showed per-area images repeated in each file panel. The user
+asked for the whole UI to look transparent over one picture. The image is
+now a single `main.background_image` (with `image_mode` and a new
+`image_opacity`, 5-100% in the chooser). `BackgroundImage::setWindowBackground`
+renders one straight-alpha overlay at the main window size; packers, frames,
+labels, headers, toolbar buttons, tree rows, tab frames and the file list
+blend their window-space slice over their own colour. Packers draw it only in
+the gaps between their shown children, so nested containers do not repaint
+the same area repeatedly. Window origins are computed client-side; a moved
+but not resized child gets no expose, so origin changes are tracked and its
+descendants are repainted. Dialogs are separate shells and keep solid colours.
+Legacy per-area images migrate to the window on load. A regression applies a
+horizontal colour ramp and checks that the left and right panels show their
+own window positions of a single image, plus opacity and migration.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

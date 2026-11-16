@@ -3,6 +3,7 @@
 
 #include <fx.h>
 #include <memory>
+#include <vector>
 
 class BackgroundImage
 {
@@ -15,27 +16,32 @@ public:
     static FXIcon* preview(FXApp*, const FXString&, FXColor, FXint, FXString&);
 };
 
-class BackgroundImageLayer
+// Image pixels scaled to a window, with straight alpha that already includes the chosen opacity
+class BackgroundOverlay
 {
-    FXString reference, mode, root;
-    std::unique_ptr<FXImage> rendered;
-    FXColor background = 0;
-    FXint width = 0, height = 0;
-    FXbool failed = false;
 public:
-    void set(const FXString&, const FXString&, const FXString&);
-    FXbool draw(FXWindow*, FXWindow*, FXDC&, FXint, FXint, FXint, FXint);
+    std::vector<FXColor> pixels;
+    FXint width = 0, height = 0;
+    void render(const FXImage&, FXint, FXint, const FXString&, FXint);
+    void blend(FXColor*, FXint, FXint, FXint, FXint) const;
 };
 
+// Widgets that keep some of their children (such as the current tab) solid
 class BackgroundImageOwner
 {
 public:
-    BackgroundImageLayer backgroundImage;
     virtual FXbool allowsBackgroundImage(const FXWindow*) const { return true; }
     virtual ~BackgroundImageOwner() {}
 };
 
+FXint backgroundImageOpacity(const FXString&);
+
+// One image spans the whole main window; each widget blends its own part over its background colour
+void setWindowBackground(FXWindow*, const FXString&, const FXString&, FXint, const FXString&);
+const BackgroundOverlay* windowBackground(const FXWindow*, FXint&, FXint&, FXuint* = NULL);
+void trackBackgroundOrigin(FXWindow*);
 FXbool drawBackgroundImage(FXWindow*, FXDC&, FXint, FXint, FXint, FXint);
+FXbool drawBackgroundGaps(FXWindow*, FXDC&, FXint, FXint, FXint, FXint);
 
 class ThemeToolBar : public FXToolBar, public BackgroundImageOwner
 {
