@@ -36,6 +36,7 @@
 #include "../st/x.h"
 
 #include <X11/Xlib.h>
+#include <X11/XKBlib.h>
 
 
 // Get available space on the file system where the file is located
@@ -306,6 +307,19 @@ FXHotKey xf_parseaccel(const FXString& string)
         if (mods & SHIFTMASK)
         {
             code = Ascii::toUpper(string[pos]) + KEY_space - ' ';
+
+            // Shift with a digit or symbol sends the shifted key of the current layout (Shift-1 is
+            // usually '!'), so match that key instead
+            Display* dpy = FXApp::instance() ? (Display*)FXApp::instance()->getDisplay() : NULL;
+            if (dpy && !Ascii::isLetter(string[pos]))
+            {
+                KeyCode keycode = XKeysymToKeycode(dpy, code);
+                KeySym shifted = keycode ? XkbKeycodeToKeysym(dpy, keycode, 0, 1) : NoSymbol;
+                if (shifted != NoSymbol)
+                {
+                    code = (FXuint)shifted;
+                }
+            }
         }
         else
         {

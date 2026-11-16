@@ -275,6 +275,23 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     // Panel mode
     panel_mode = pm;
 
+    // The former Ctrl-F1..F4 and Ctrl-F8 defaults are taken by desktop workspace switching
+    static const char* const movedkeys[][3] =
+    {
+        {"one_panel", "Ctrl-F1", "Alt-Shift-1"},
+        {"tree_panel", "Ctrl-F2", "Alt-Shift-2"},
+        {"two_panels", "Ctrl-F3", "Alt-Shift-3"},
+        {"tree_two_panels", "Ctrl-F4", "Alt-Shift-4"},
+        {"go_to_trash", "Ctrl-F8", "Alt-Shift-T"},
+    };
+    for (FXuint i = 0; i < ARRAYNUMBER(movedkeys); i++)
+    {
+        if (getApp()->reg().readStringEntry("KEYBINDINGS", movedkeys[i][0], "") == FXString(movedkeys[i][1]))
+        {
+            getApp()->reg().writeStringEntry("KEYBINDINGS", movedkeys[i][0], movedkeys[i][2]);
+        }
+    }
+
     // Menu bar
     menubar = new FXMenuBar(this, LAYOUT_SIDE_TOP | LAYOUT_FILL_X | FRAME_NONE);
     new FXButton(menubar, "\tPreferences\tChange SwordFish settings", miniprefsicon, this, ID_PREFS,
@@ -1299,36 +1316,36 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     // Panel toolbar
 
     // Show one file panel
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "one_panel", "Ctrl-F1");
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "one_panel", "Alt-Shift-1");
     btn = new FXButton(paneltoolbar, TAB + _("Show One File Panel") + PARS(key), minionepanelicon, this,
                        XFileExplorer::ID_SHOW_ONE_PANEL,
                        BUTTON_TOOLBAR | FRAME_NONE | LAYOUT_CENTER_Y | LAYOUT_LEFT | ICON_BEFORE_TEXT);
     hotkey = xf_parseaccel(key);
-    btn->addHotKey(hotkey);
+    getAccelTable()->addAccel(hotkey, this, FXSEL(SEL_COMMAND, XFileExplorer::ID_SHOW_ONE_PANEL));
 
     // Show folders panel and file panel
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "tree_panel", "Ctrl-F2");
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "tree_panel", "Alt-Shift-2");
     btn = new FXButton(paneltoolbar, TAB + _("Show Folder Panel and File Panel") + PARS(key), minitreeonepanelicon,
                        this, XFileExplorer::ID_SHOW_FOLDERS_ONE_PANEL,
                        BUTTON_TOOLBAR | FRAME_NONE | LAYOUT_CENTER_Y | LAYOUT_LEFT | ICON_BEFORE_TEXT);
     hotkey = xf_parseaccel(key);
-    btn->addHotKey(hotkey);
+    getAccelTable()->addAccel(hotkey, this, FXSEL(SEL_COMMAND, XFileExplorer::ID_SHOW_FOLDERS_ONE_PANEL));
 
     // Show two file panels
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "two_panels", "Ctrl-F3");
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "two_panels", "Alt-Shift-3");
     btn = new FXButton(paneltoolbar, TAB + _("Show Two File Panels") + PARS(key), minitwopanelsicon, this,
                        XFileExplorer::ID_SHOW_TWO_PANELS,
                        BUTTON_TOOLBAR | FRAME_NONE | LAYOUT_CENTER_Y | LAYOUT_LEFT | ICON_BEFORE_TEXT);
     hotkey = xf_parseaccel(key);
-    btn->addHotKey(hotkey);
+    getAccelTable()->addAccel(hotkey, this, FXSEL(SEL_COMMAND, XFileExplorer::ID_SHOW_TWO_PANELS));
 
     // Show folders panel and two file panels
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "tree_two_panels", "Ctrl-F4");
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "tree_two_panels", "Alt-Shift-4");
     btn = new FXButton(paneltoolbar, TAB + _("Show Folder Panel and Two File Panels") + PARS(key),
                        minitreetwopanelsicon, this, XFileExplorer::ID_SHOW_FOLDERS_TWO_PANELS,
                        BUTTON_TOOLBAR | FRAME_NONE | LAYOUT_CENTER_Y | LAYOUT_LEFT | ICON_BEFORE_TEXT);
     hotkey = xf_parseaccel(key);
-    btn->addHotKey(hotkey);
+    getAccelTable()->addAccel(hotkey, this, FXSEL(SEL_COMMAND, XFileExplorer::ID_SHOW_FOLDERS_TWO_PANELS));
 
     toolbarSeparator(paneltoolbar);
 
@@ -1577,19 +1594,19 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     new FXMenuSeparator(viewmenu);
 
     mc = new FXMenuRadio(viewmenu, _("&One Panel"), this, XFileExplorer::ID_SHOW_ONE_PANEL);
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "one_panel", "Ctrl-F1");
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "one_panel", "Alt-Shift-1");
     mc->setAccelText(key);
 
     mc = new FXMenuRadio(viewmenu, _("Folde&rs and Panel"), this, XFileExplorer::ID_SHOW_FOLDERS_ONE_PANEL);
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "tree_panel", "Ctrl-F2");
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "tree_panel", "Alt-Shift-2");
     mc->setAccelText(key);
 
     mc = new FXMenuRadio(viewmenu, _("Two &Panels"), this, XFileExplorer::ID_SHOW_TWO_PANELS);
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "two_panels", "Ctrl-F3");
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "two_panels", "Alt-Shift-3");
     mc->setAccelText(key);
 
     mc = new FXMenuRadio(viewmenu, _("Fold&ers and Two Panels"), this, XFileExplorer::ID_SHOW_FOLDERS_TWO_PANELS);
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "tree_two_panels", "Ctrl-F4");
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "tree_two_panels", "Alt-Shift-4");
     mc->setAccelText(key);
 
     new FXMenuSeparator(viewmenu);
@@ -1765,7 +1782,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     trashmenu = new FXMenuPane(this);
 
     mc = new FXMenuCommand(trashmenu, _("&Go to Trash"), minitotrashicon, lpanel, FilePanel::ID_GO_TRASH);
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "go_to_trash", "Ctrl-F8");
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "go_to_trash", "Alt-Shift-T");
     mc->setAccelText(key);
     hotkey = xf_parseaccel(key);
     getAccelTable()->addAccel(hotkey, mc, FXSEL(SEL_COMMAND, FXMenuCommand::ID_ACCEL));

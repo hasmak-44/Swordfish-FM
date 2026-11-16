@@ -3287,19 +3287,19 @@ long PreferencesBox::onCmdChangeKeyBindings(FXObject*, FXSelector, void*)
     str = _("Unmount file system (Linux only)") + TAB + key;
     xfeBindingsDict->insert("unmount", str.text());
 #endif
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "one_panel", "Ctrl-F1");
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "one_panel", "Alt-Shift-1");
     str = _("One panel mode") + TAB + key;
     xfeBindingsDict->insert("one_panel", str.text());
 
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "tree_panel", "Ctrl-F2");
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "tree_panel", "Alt-Shift-2");
     str = _("Folders and panel mode") + TAB + key;
     xfeBindingsDict->insert("tree_panel", str.text());
 
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "two_panels", "Ctrl-F3");
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "two_panels", "Alt-Shift-3");
     str = _("Two panels mode") + TAB + key;
     xfeBindingsDict->insert("two_panels", str.text());
 
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "tree_two_panels", "Ctrl-F4");
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "tree_two_panels", "Alt-Shift-4");
     str = _("Folders and two panels mode") + TAB + key;
     xfeBindingsDict->insert("tree_two_panels", str.text());
 
@@ -3335,7 +3335,7 @@ long PreferencesBox::onCmdChangeKeyBindings(FXObject*, FXSelector, void*)
     str = _("Switch panels") + TAB + key;
     xfeBindingsDict->insert("switch_panels", str.text());
 
-    key = getApp()->reg().readStringEntry("KEYBINDINGS", "go_to_trash", "Ctrl-F8");
+    key = getApp()->reg().readStringEntry("KEYBINDINGS", "go_to_trash", "Alt-Shift-T");
     str = _("Go to trash can") + TAB + key;
     xfeBindingsDict->insert("go_to_trash", str.text());
 
@@ -3531,10 +3531,10 @@ long PreferencesBox::onCmdRestoreKeyBindings(FXObject*, FXSelector, void*)
     getApp()->reg().writeStringEntry("KEYBINDINGS", "mount", "Ctrl-M");
     getApp()->reg().writeStringEntry("KEYBINDINGS", "unmount", "Ctrl-U");
 #endif
-    getApp()->reg().writeStringEntry("KEYBINDINGS", "one_panel", "Ctrl-F1");
-    getApp()->reg().writeStringEntry("KEYBINDINGS", "tree_panel", "Ctrl-F2");
-    getApp()->reg().writeStringEntry("KEYBINDINGS", "two_panels", "Ctrl-F3");
-    getApp()->reg().writeStringEntry("KEYBINDINGS", "tree_two_panels", "Ctrl-F4");
+    getApp()->reg().writeStringEntry("KEYBINDINGS", "one_panel", "Alt-Shift-1");
+    getApp()->reg().writeStringEntry("KEYBINDINGS", "tree_panel", "Alt-Shift-2");
+    getApp()->reg().writeStringEntry("KEYBINDINGS", "two_panels", "Alt-Shift-3");
+    getApp()->reg().writeStringEntry("KEYBINDINGS", "tree_two_panels", "Alt-Shift-4");
     getApp()->reg().writeStringEntry("KEYBINDINGS", "clear_address", "Ctrl-L");
     getApp()->reg().writeStringEntry("KEYBINDINGS", "rename", "F2");
     getApp()->reg().writeStringEntry("KEYBINDINGS", "copy_to", "F5");
@@ -3544,7 +3544,7 @@ long PreferencesBox::onCmdRestoreKeyBindings(FXObject*, FXSelector, void*)
     getApp()->reg().writeStringEntry("KEYBINDINGS", "add_bookmark", "Ctrl-B");
     getApp()->reg().writeStringEntry("KEYBINDINGS", "synchronize_panels", "Ctrl-Y");
     getApp()->reg().writeStringEntry("KEYBINDINGS", "switch_panels", "Ctrl-K");
-    getApp()->reg().writeStringEntry("KEYBINDINGS", "go_to_trash", "Ctrl-F8");
+    getApp()->reg().writeStringEntry("KEYBINDINGS", "go_to_trash", "Alt-Shift-T");
     getApp()->reg().writeStringEntry("KEYBINDINGS", "empty_trash_can", "Ctrl-Del");
     getApp()->reg().writeStringEntry("KEYBINDINGS", "view", "Shift-F4");
     getApp()->reg().writeStringEntry("KEYBINDINGS", "edit", "F4");

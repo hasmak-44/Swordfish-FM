@@ -216,12 +216,12 @@
     * Copy files to location            - F5
     * Move files to location            - F6
     * File properties                   - F9
-    * One panel mode                    - Ctrl-F1
-    * Tree and panel mode               - Ctrl-F2
-    * Two panels mode                   - Ctrl-F3
-    * Tree and two panels mode          - Ctrl-F4
+    * One panel mode                    - Alt-Shift-1
+    * Tree and panel mode               - Alt-Shift-2
+    * Two panels mode                   - Alt-Shift-3
+    * Tree and two panels mode          - Alt-Shift-4
     * Toggle display hidden folders     - Ctrl-F5
-    * Go to trash can                   - Ctrl-F8
+    * Go to trash can                   - Alt-Shift-T
     * Create new root window            - Shift-F3
     * View                              - Shift-F4
     * Move files to trash can           - Del
