@@ -3371,6 +3371,23 @@ Validation in the codespace: clean native rebuild and theme workflow regression,
 including a true-colour comparison against the source PNG. Desktop acceptance
 and the portable build remain pending.
 
+### 3.93. Thumbnail-grid theme graphic choosers
+
+User review asked for the pattern, texture and background-image choosers to
+match the file list's thumbnail view (`texture-grid.png`). A shared
+`ThemeGallery` (an `FXIconList` in big-icon column mode) draws file-list tile
+borders and stretches its cell width so the grid fills the view, including when
+maximized. Category drop-downs were replaced by folder navigation: folders
+first, a `..` tile, an Up button, Backspace, and a Location label. Clicks and
+Enter open folders; arrow keys only move the cursor. FOX's browse-mode
+auto-selection of the first folder is cleared so only the applied graphic is
+highlighted. The chooser opens in the applied graphic's folder, and "Save in
+category" follows the current folder.
+
+Validation in the codespace: clean native rebuild and theme workflow regression
+(folder order, grid fill and resize, keyboard and Up navigation, imports into
+the current folder). Desktop acceptance and the portable build remain pending.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

@@ -44,6 +44,9 @@
   texture in its own colours instead of tinting it with the theme colour.
 
 ### Changed
+- Pattern, texture and background-image choosers use a thumbnail grid like
+  the file list: bordered tiles, category folders first, `..`/Up/Backspace
+  navigation, and more columns when the editor is resized or maximized.
 - Unused saved themes retain only list details in memory; their full settings
   are loaded when needed.
 - The Network sidebar groups discovered devices under headings: Media

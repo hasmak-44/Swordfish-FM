@@ -22,6 +22,7 @@
 #include "FileDialog.h"
 #include "MessageBox.h"
 #include "AppLogger.h"
+#include "icons.h"
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -153,6 +154,79 @@ FXbool sameTheme(const Theme& a, const Theme& b)
 {
     return a == b && a.name == b.name && a.tip == b.tip;
 }
+
+// Gallery folders are the "/"-separated parents of a graphic reference ("" is the top level).
+FXString referenceFolder(const FXString& reference)
+{
+    FXString relative;
+    if (reference.empty() || !BackgroundEffect::textureRelativePath(reference, relative)) return FXString::null;
+    FXint slash = relative.rfind('/');
+    return slash >= 0 ? relative.left(slash) : FXString::null;
+}
+
+FXString parentFolder(const FXString& folder)
+{
+    FXint slash = folder.rfind('/');
+    return slash >= 0 ? folder.left(slash) : FXString::null;
+}
+
+// Splits gallery entries into the subfolders and the graphics directly inside folder.
+// Returns false when nothing lives in folder any more.
+FXbool listFolder(const std::map<FXString, FXString>& entries, const FXString& folder,
+                  std::set<FXString>& subfolders, std::vector<std::pair<FXString, FXString>>& files)
+{
+    FXbool found = folder.empty();
+    for (const auto& entry : entries)
+    {
+        FXString relative;
+        if (!BackgroundEffect::textureRelativePath(entry.first, relative)) continue;
+        if (!folder.empty())
+        {
+            if (relative.left(folder.length() + 1) != folder + "/") continue;
+            relative = relative.mid(folder.length() + 1, relative.length());
+        }
+        found = true;
+        FXint slash = relative.find('/');
+        if (slash >= 0) subfolders.insert(relative.left(slash));
+        else files.push_back(std::make_pair(entry.first, relative));
+    }
+    return found;
+}
+
+void showLocation(FXButton* up, FXLabel* location, const FXString& top, const FXString& folder)
+{
+    FXString path = folder;
+    path.substitute("/", " / ");
+    location->setText(folder.empty() ? top : top + " / " + path);
+    if (folder.empty()) up->disable();
+    else up->enable();
+}
+
+// Tiles match the file list's thumbnail view (IconItem::drawBigIcon with thumbnail tiles).
+class ThemeGalleryItem : public FXIconItem
+{
+public:
+    using FXIconItem::FXIconItem;
+    FXint getHeight(const FXIconList* list) const override
+    {
+        return FXIconItem::getHeight(list) + 8;
+    }
+protected:
+    void drawBigIcon(const FXIconList* list, FXDC& dc, FXint x, FXint y, FXint w, FXint h) const override
+    {
+        FXColor back = list->getBackColor();
+        FXColor shade = makeShadowColor(back);
+        dc.setForeground(FXRGB((FXREDVAL(back) * 7 + FXREDVAL(shade)) / 8,
+                               (FXGREENVAL(back) * 7 + FXGREENVAL(shade)) / 8,
+                               (FXBLUEVAL(back) * 7 + FXBLUEVAL(shade)) / 8));
+        dc.fillRectangle(x + 3, y + 3, w - 6, h - 6);
+        dc.setForeground(FXRGB((FXREDVAL(back) * 3 + FXREDVAL(shade)) / 4,
+                               (FXGREENVAL(back) * 3 + FXGREENVAL(shade)) / 4,
+                               (FXBLUEVAL(back) * 3 + FXBLUEVAL(shade)) / 4));
+        dc.drawRectangle(x + 3, y + 3, w - 7, h - 7);
+        FXIconItem::drawBigIcon(list, dc, x, y + 4, w, h - 8);
+    }
+};
 
 class SnapshotIconList : public IconList
 {
@@ -876,6 +950,144 @@ FXDEFMAP(ThemeMockup) ThemeMockupMap[] = {
 };
 FXIMPLEMENT(ThemeMockup, FXCanvas, ThemeMockupMap, ARRAYNUMBER(ThemeMockupMap))
 
+// Thumbnail chooser shared by the pattern, texture and background-image pickers: a grid of tiles
+// that stretches to the full width, with a ".." item and folders listed before the graphics.
+class ThemeGallery : public FXIconList
+{
+    FXDECLARE(ThemeGallery)
+    static constexpr FXint minimumTile = 108;
+    static constexpr FXint iconSize = 64;
+    std::vector<FXString> folders;
+    FXIcon* folderIcon = NULL;
+    FXIcon* upIcon = NULL;
+    FXbool keyboard = false;
+    FXbool swallowRepeat = false;
+    ThemeGallery() {}
+    FXIcon* scaled(FXIcon* source, FXIcon*& cache)
+    {
+        if (cache || !source) return cache ? cache : source;
+        if (!source->getData()) source->restore();
+        FXColor* pixels = NULL;
+        if (!source->getData() ||
+            !FXMEMDUP(&pixels, source->getData(), FXColor, source->getWidth() * source->getHeight()))
+            return source;
+        cache = new FXIcon(getApp(), pixels, source->getTransparentColor(), IMAGE_OWNED | IMAGE_KEEP,
+                           source->getWidth(), source->getHeight());
+        FXint longest = FXMAX(source->getWidth(), source->getHeight());
+        cache->scale(FXMAX(1, source->getWidth() * iconSize / longest),
+                     FXMAX(1, source->getHeight() * iconSize / longest), 1);
+        cache->create();
+        return cache;
+    }
+protected:
+    FXIconItem* createItem(const FXString& text, FXIcon* big, FXIcon* mini, void* data) override
+    {
+        return new ThemeGalleryItem(text, big, mini, data);
+    }
+public:
+    enum { FOLDER = 1, UP = 2 };
+    ThemeGallery(FXComposite* parent, FXObject* target, FXSelector selector) :
+        FXIconList(parent, target, selector,
+                   ICONLIST_BIG_ICONS | ICONLIST_BROWSESELECT | ICONLIST_COLUMNS | LAYOUT_FILL_X | LAYOUT_FILL_Y)
+    {
+        setItemSpace(minimumTile);
+    }
+    ~ThemeGallery()
+    {
+        clearItems();
+        delete folderIcon;
+        delete upIcon;
+    }
+    void reset()
+    {
+        clearItems();
+        folders.clear();
+    }
+    void addUp(const FXString& parent)
+    {
+        appendItem("..", scaled(bigfolderupicon, upIcon), NULL, reinterpret_cast<void*>(UP));
+        folders.push_back(parent);
+    }
+    void addFolder(const FXString& name, const FXString& path)
+    {
+        appendItem(name, scaled(bigfoldericon, folderIcon), NULL, reinterpret_cast<void*>(FOLDER));
+        folders.push_back(path);
+    }
+    void addChoice(const FXString& label, FXIcon* icon)
+    {
+        appendItem(label, icon, icon);
+        folders.push_back(FXString::null);
+    }
+    FXbool isFolder(FXint index) const
+    {
+        return 0 <= index && index < getNumItems() && getItemData(index);
+    }
+    // Arrow keys and type-ahead only move the cursor; clicks, Enter and Backspace open folders.
+    FXbool opens(FXint index) const
+    {
+        return isFolder(index) && !keyboard;
+    }
+    const FXString& folderAt(FXint index) const
+    {
+        return folders[index];
+    }
+    // Only the applied graphic is highlighted; FOX's browse mode would otherwise select the first folder.
+    void settle()
+    {
+        if (getCurrentItem() < 0 || isFolder(getCurrentItem())) killSelection();
+    }
+    // The second click of a double-click must not act on the tile that replaced the opened folder.
+    void opened()
+    {
+        swallowRepeat = true;
+        if (getNumItems()) makeItemVisible(FXMAX(0, getCurrentItem()));
+    }
+    void layout() override
+    {
+        // Always reserve the scrollbar so the column count cannot oscillate as it appears.
+        FXint usable = width - vertical->getDefaultWidth();
+        FXint columns = FXMAX(1, usable / minimumTile);
+        FXint space = FXMAX(minimumTile, usable / columns);
+        if (space != itemSpace)
+        {
+            itemSpace = space;
+            flags |= FLAG_RECALC;
+        }
+        FXIconList::layout();
+    }
+    long onGalleryKey(FXObject* sender, FXSelector selector, void* data)
+    {
+        FXEvent* event = static_cast<FXEvent*>(data);
+        keyboard = event->code != KEY_Return && event->code != KEY_KP_Enter;
+        if (event->code == KEY_BackSpace && isEnabled() && getNumItems() && getItemData(0) == reinterpret_cast<void*>(UP))
+        {
+            keyboard = false;
+            setCurrentItem(0);
+            if (target) target->tryHandle(this, FXSEL(SEL_COMMAND, message), reinterpret_cast<void*>(0));
+            return 1;
+        }
+        return FXIconList::onKeyPress(sender, selector, data);
+    }
+    long onGalleryPress(FXObject* sender, FXSelector selector, void* data)
+    {
+        FXEvent* event = static_cast<FXEvent*>(data);
+        keyboard = false;
+        if (event->click_count > 1 && swallowRepeat)
+        {
+            handle(this, FXSEL(SEL_FOCUS_SELF, 0), data);
+            return 1;
+        }
+        swallowRepeat = false;
+        return FXIconList::onLeftBtnPress(sender, selector, data);
+    }
+};
+
+FXDEFMAP(ThemeGallery) ThemeGalleryMap[] = {
+    FXMAPFUNC(SEL_KEYPRESS, 0, ThemeGallery::onGalleryKey),
+    FXMAPFUNC(SEL_LEFTBUTTONPRESS, 0, ThemeGallery::onGalleryPress)
+};
+FXIMPLEMENT(ThemeGallery, FXIconList, ThemeGalleryMap, ARRAYNUMBER(ThemeGalleryMap))
+
 class BackgroundEditor : public DialogBox
 {
     FXDECLARE(BackgroundEditor)
@@ -887,12 +1099,15 @@ class BackgroundEditor : public DialogBox
     FXGradientBar* gradient = NULL;
     FXList* stops = NULL;
     FXRealSpinner* position = NULL;
-    FXIconList* patterns = NULL;
-    FXListBox* patternCategory = NULL;
+    ThemeGallery* patterns = NULL;
+    FXButton* patternUp = NULL;
+    FXLabel* patternLocation = NULL;
     FXTextField* patternTargetCategory = NULL;
-    FXIconList* textures = NULL;
-    FXListBox* textureCategory = NULL;
+    ThemeGallery* textures = NULL;
+    FXButton* textureUp = NULL;
+    FXLabel* textureLocation = NULL;
     FXTextField* textureTargetCategory = NULL;
+    FXString patternFolder, textureFolder;
     FXSpinner* patternSize = NULL;
     FXSpinner* strength = NULL;
     FXCheckButton* originalColors = NULL;
@@ -903,10 +1118,9 @@ class BackgroundEditor : public DialogBox
     FXLabel* status = NULL;
     FXLabel* patternStatus = NULL;
     FXLabel* textureStatus = NULL;
-    std::vector<FXString> patternNames, patternCategories;
+    std::vector<FXString> patternNames;
     std::vector<FXint> patternNumbers;
     std::vector<FXString> textureNames, presetEffects;
-    std::vector<FXString> textureCategories;
     std::vector<FXIcon*> patternIcons;
     std::vector<FXIcon*> textureIcons;
     FXString gradientBefore;
@@ -1022,10 +1236,7 @@ class BackgroundEditor : public DialogBox
 
     void loadPatterns()
     {
-        FXint previous = patternCategory->getCurrentItem();
-        FXString selected = previous >= 3 && previous < static_cast<FXint>(patternCategories.size()) ?
-                            patternCategories[previous] : FXString::null;
-        patterns->clearItems();
+        patterns->reset();
         for (FXIcon* icon : patternIcons) delete icon;
         patternIcons.clear();
         patternNames.clear();
@@ -1040,34 +1251,23 @@ class BackgroundEditor : public DialogBox
         for (const FXString& directory : directories)
             if (!directory.empty()) collectTiles(directory, "", true, entries, rejected, true);
 
-        std::set<FXString> categories;
-        for (const auto& entry : entries)
+        std::set<FXString> subfolders;
+        std::vector<std::pair<FXString, FXString>> files;
+        if (!listFolder(entries, patternFolder, subfolders, files))
         {
-            FXString relative;
-            if (!BackgroundEffect::textureRelativePath(entry.first, relative)) continue;
-            FXint slash = relative.rfind('/');
-            if (slash >= 0) categories.insert(relative.left(slash));
+            patternFolder.clear();
+            listFolder(entries, patternFolder, subfolders, files);
         }
-        patternCategory->clearItems();
-        patternCategories.clear();
-        patternCategory->appendItem(_("All categories"));
-        patternCategories.push_back("");
-        patternCategory->appendItem(_("Built-in shapes"));
-        patternCategories.push_back("");
-        patternCategory->appendItem(_("Uncategorized"));
-        patternCategories.push_back("");
-        FXint categoryIndex = previous == 1 || previous == 2 ? previous : 0;
-        for (const FXString& category : categories)
-        {
-            patternCategory->appendItem(category);
-            patternCategories.push_back(category);
-            if (previous >= 3 && category == selected) categoryIndex = patternCategories.size() - 1;
-        }
-        patternCategory->setCurrentItem(categoryIndex);
+        showLocation(patternUp, patternLocation, _("Patterns"), patternFolder);
+        if (!patternFolder.empty()) patterns->addUp(parentFolder(patternFolder));
+        for (const FXString& name : subfolders)
+            patterns->addFolder(name, patternFolder.empty() ? name : patternFolder + "/" + name);
+        patternNames.assign(patterns->getNumItems(), FXString::null);
+        patternNumbers.assign(patterns->getNumItems(), 0);
 
         const char* names[] = {_("Horizontal stripes"), _("Vertical stripes"), _("Diagonal stripes"), _("Checks"),
                                _("Grid"), _("Dots"), _("Diamonds"), _("Crosshatch")};
-        if (categoryIndex <= 1)
+        if (patternFolder.empty())
             for (FXint i = 0; i < static_cast<FXint>(ARRAYNUMBER(names)); ++i)
             {
                 BackgroundEffect sample = effect;
@@ -1080,55 +1280,46 @@ class BackgroundEditor : public DialogBox
                 sample.colors = {previewLight, previewDark};
                 FXIcon* icon = BackgroundEffect::preview(this, sample.serialize(), previewLight, previewSize);
                 patternIcons.push_back(icon);
-                patterns->appendItem(names[i], icon, icon);
+                patterns->addChoice(names[i], icon);
                 patternNames.push_back("");
                 patternNumbers.push_back(i + 1);
-                if (effect.patternImage.empty() && effect.pattern == i + 1) patterns->setCurrentItem(i);
+                if (effect.patternImage.empty() && effect.pattern == i + 1)
+                    patterns->setCurrentItem(patternNames.size() - 1);
             }
-        for (const auto& entry : entries)
+        for (const auto& file : files)
         {
-            FXString relative;
-            if (!BackgroundEffect::textureRelativePath(entry.first, relative)) continue;
-            FXint slash = relative.rfind('/');
-            FXString category = slash >= 0 ? relative.left(slash) : FXString::null;
-            if (categoryIndex == 1 || (categoryIndex > 1 && category != patternCategories[categoryIndex])) continue;
+            const FXString& path = entries[file.first];
             FXString error;
-            if (!BackgroundEffect::validatePattern(getApp(), entry.second, error))
+            if (!BackgroundEffect::validatePattern(getApp(), path, error))
             {
-                rejected += relative + ": " + error + "\n";
-                appLog(APP_LOG_ERRORS, "pattern-rejected", entry.second + ": " + error);
+                rejected += file.second + ": " + error + "\n";
+                appLog(APP_LOG_ERRORS, "pattern-rejected", path + ": " + error);
                 continue;
             }
-            FXIcon* icon = tileThumbnail(getApp(), entry.second, previewSize);
+            FXIcon* icon = tileThumbnail(getApp(), path, previewSize);
             if (!icon)
             {
-                rejected += relative + ": " + _("Unable to read PNG image.") + "\n";
-                appLog(APP_LOG_ERRORS, "pattern-rejected", entry.second);
+                rejected += file.second + ": " + _("Unable to read PNG image.") + "\n";
+                appLog(APP_LOG_ERRORS, "pattern-rejected", path);
                 continue;
             }
             patternIcons.push_back(icon);
-            FXString label = slash < 0 ? relative : relative.rafter('/');
-            if (categoryIndex == 0 && !category.empty()) label += " (" + category + ")";
-            patterns->appendItem(label, icon, icon);
-            patternNames.push_back(entry.first);
+            patterns->addChoice(file.second, icon);
+            patternNames.push_back(file.first);
             patternNumbers.push_back(0);
-            if (entry.first == effect.patternImage) patterns->setCurrentItem(patternNames.size() - 1);
+            if (file.first == effect.patternImage) patterns->setCurrentItem(patternNames.size() - 1);
         }
+        patterns->settle();
         patternStatus->setText(rejected.empty() ? _("PNG patterns: at most 1024 x 1024 pixels. Originals are never moved.") :
                                                   _("Some patterns were excluded:\n") + rejected);
     }
 
     void loadTextures()
     {
-        FXint previousCategory = textureCategory->getCurrentItem();
-        FXbool all = previousCategory <= 0 || previousCategory >= static_cast<FXint>(textureCategories.size());
-        FXString selectedCategory = all ? FXString::null : textureCategories[previousCategory];
-        textures->clearItems();
+        textures->reset();
         for (FXIcon* icon : textureIcons) delete icon;
         textureIcons.clear();
         textureNames.clear();
-        textures->appendItem(_("No texture"));
-        textureNames.push_back("");
         extern FXString execpath, xdgconfighome;
         FXString directories[] = {editor->getDraft().assetRoot.empty() ? FXString::null :
                                       editor->getDraft().assetRoot + PATHSEPSTRING "textures",
@@ -1144,59 +1335,58 @@ class BackgroundEditor : public DialogBox
             collectTiles(directories[folder], "", folder != 1, entries, rejected, false);
         }
 
-        std::set<FXString> categories;
-        for (const auto& entry : entries)
+        std::set<FXString> subfolders;
+        std::vector<std::pair<FXString, FXString>> files;
+        if (!listFolder(entries, textureFolder, subfolders, files))
         {
-            FXString relative;
-            if (!BackgroundEffect::textureRelativePath(entry.first, relative)) continue;
-            FXint slash = relative.rfind('/');
-            if (slash >= 0) categories.insert(relative.left(slash));
+            textureFolder.clear();
+            listFolder(entries, textureFolder, subfolders, files);
         }
-        textureCategory->clearItems();
-        textureCategories.clear();
-        textureCategory->appendItem(_("All categories"));
-        textureCategories.push_back("");
-        textureCategory->appendItem(_("Uncategorized"));
-        textureCategories.push_back("");
-        FXint categoryIndex = all ? 0 : 1;
-        for (const FXString& category : categories)
+        showLocation(textureUp, textureLocation, _("Textures"), textureFolder);
+        if (!textureFolder.empty()) textures->addUp(parentFolder(textureFolder));
+        for (const FXString& name : subfolders)
+            textures->addFolder(name, textureFolder.empty() ? name : textureFolder + "/" + name);
+        textureNames.assign(textures->getNumItems(), FXString::null);
+        if (textureFolder.empty())
         {
-            textureCategory->appendItem(category);
-            textureCategories.push_back(category);
-            if (!all && category == selectedCategory) categoryIndex = textureCategories.size() - 1;
+            textures->addChoice(_("No texture"), NULL);
+            textureNames.push_back("");
+            if (effect.texture.empty()) textures->setCurrentItem(textureNames.size() - 1);
         }
-        textureCategory->setCurrentItem(categoryIndex);
-
-        for (const auto& entry : entries)
+        for (const auto& file : files)
         {
-            FXString relative;
-            if (!BackgroundEffect::textureRelativePath(entry.first, relative)) continue;
-            FXint slash = relative.rfind('/');
-            FXString category = slash >= 0 ? relative.left(slash) : FXString::null;
-            if (categoryIndex != 0 && category != textureCategories[categoryIndex]) continue;
+            const FXString& path = entries[file.first];
             FXString error;
-            if (!BackgroundEffect::validateTexture(getApp(), entry.second, error))
+            if (!BackgroundEffect::validateTexture(getApp(), path, error))
             {
-                rejected += relative + ": " + error + "\n";
-                appLog(APP_LOG_ERRORS, "texture-rejected", entry.second + ": " + error);
+                rejected += file.second + ": " + error + "\n";
+                appLog(APP_LOG_ERRORS, "texture-rejected", path + ": " + error);
                 continue;
             }
-            FXIcon* icon = tileThumbnail(getApp(), entry.second, previewSize);
+            FXIcon* icon = tileThumbnail(getApp(), path, previewSize);
             if (!icon)
             {
-                rejected += relative + ": " + _("Unable to read PNG image.") + "\n";
-                appLog(APP_LOG_ERRORS, "texture-rejected", entry.second);
+                rejected += file.second + ": " + _("Unable to read PNG image.") + "\n";
+                appLog(APP_LOG_ERRORS, "texture-rejected", path);
                 continue;
             }
             textureIcons.push_back(icon);
-            FXString label = slash < 0 ? relative : relative.rafter('/');
-            if (categoryIndex == 0 && !category.empty()) label += " (" + category + ")";
-            textures->appendItem(label, icon, icon);
-            textureNames.push_back(entry.first);
-            if (entry.first == effect.texture) textures->setCurrentItem(textureNames.size() - 1);
+            textures->addChoice(file.second, icon);
+            textureNames.push_back(file.first);
+            if (file.first == effect.texture) textures->setCurrentItem(textureNames.size() - 1);
         }
+        textures->settle();
         textureStatus->setText(rejected.empty() ? _("PNG tiles: at most 1024 x 1024 pixels. Originals are never moved.") :
                                                   _("Some textures were excluded:\n") + rejected);
+    }
+
+    void openFolder(FXbool pattern, const FXString& folder)
+    {
+        (pattern ? patternFolder : textureFolder) = folder;
+        (pattern ? patternTargetCategory : textureTargetCategory)->setText(folder);
+        if (pattern) loadPatterns();
+        else loadTextures();
+        (pattern ? patterns : textures)->opened();
     }
 public:
     enum
@@ -1212,10 +1402,10 @@ public:
         ID_TEXTURE,
         ID_ADD_PATTERN,
         ID_REFRESH_PATTERN,
-        ID_PATTERN_CATEGORY,
+        ID_PATTERN_UP,
         ID_ADD_TEXTURE,
         ID_REFRESH,
-        ID_TEXTURE_CATEGORY,
+        ID_TEXTURE_UP,
         ID_PRESET,
         ID_SAVE_PRESET,
         ID_RANDOM,
@@ -1292,13 +1482,12 @@ public:
         presets->setNumVisible(8);
         new DialogTabItem(pages, _("Pattern"));
         FXVerticalFrame* patternPage = new FXVerticalFrame(pages, FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
-        FXHorizontalFrame* patternCategoryControls = new FXHorizontalFrame(patternPage, LAYOUT_FILL_X);
-        new FXLabel(patternCategoryControls, _("Category:"));
-        patternCategory = new FXListBox(patternCategoryControls, this, ID_PATTERN_CATEGORY,
-                                         FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X);
-        patternCategory->setNumVisible(10);
-        patterns = new FXIconList(patternPage, this, ID_LIVE,
-                                   ICONLIST_BIG_ICONS | ICONLIST_BROWSESELECT | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        FXHorizontalFrame* patternNavigation = new FXHorizontalFrame(patternPage, LAYOUT_FILL_X);
+        patternUp = new FXButton(patternNavigation, _("Up") + FXString("\t") + _("Go to the parent folder (Backspace)"),
+                                 minifolderupicon, this, ID_PATTERN_UP, BUTTON_NORMAL | ICON_BEFORE_TEXT);
+        new FXLabel(patternNavigation, _("Location:"));
+        patternLocation = new FXLabel(patternNavigation, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        patterns = new ThemeGallery(patternPage, this, ID_LIVE);
         FXHorizontalFrame* patternControls = new FXHorizontalFrame(patternPage, LAYOUT_FILL_X);
         new FXLabel(patternControls, _("Pattern size (pixels):"));
         patternSize = new FXSpinner(patternControls, 4, this, ID_LIVE, FRAME_SUNKEN | FRAME_THICK);
@@ -1319,13 +1508,12 @@ public:
         patternStatus = new FXLabel(patternPage, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
         new DialogTabItem(pages, _("Texture"));
         FXVerticalFrame* texturePage = new FXVerticalFrame(pages, FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
-        FXHorizontalFrame* categoryControls = new FXHorizontalFrame(texturePage, LAYOUT_FILL_X);
-        new FXLabel(categoryControls, _("Category:"));
-        textureCategory = new FXListBox(categoryControls, this, ID_TEXTURE_CATEGORY,
-                                         FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X);
-        textureCategory->setNumVisible(10);
-        textures = new FXIconList(texturePage, this, ID_TEXTURE,
-                                   ICONLIST_BIG_ICONS | ICONLIST_BROWSESELECT | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        FXHorizontalFrame* textureNavigation = new FXHorizontalFrame(texturePage, LAYOUT_FILL_X);
+        textureUp = new FXButton(textureNavigation, _("Up") + FXString("\t") + _("Go to the parent folder (Backspace)"),
+                                 minifolderupicon, this, ID_TEXTURE_UP, BUTTON_NORMAL | ICON_BEFORE_TEXT);
+        new FXLabel(textureNavigation, _("Location:"));
+        textureLocation = new FXLabel(textureNavigation, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        textures = new ThemeGallery(texturePage, this, ID_TEXTURE);
         FXHorizontalFrame* textureControls = new FXHorizontalFrame(texturePage, LAYOUT_FILL_X);
         new FXButton(textureControls, _("Add PNG..."), NULL, this, ID_ADD_TEXTURE, BUTTON_NORMAL);
         new FXButton(textureControls, _("Refresh"), NULL, this, ID_REFRESH, BUTTON_NORMAL);
@@ -1342,6 +1530,10 @@ public:
         new FXLabel(opacity, _("Texture opacity / strength (%):"));
         strength = new FXSpinner(opacity, 4, this, ID_LIVE, FRAME_SUNKEN | FRAME_THICK);
         strength->setRange(0, 100);
+        patternFolder = referenceFolder(effect.patternImage);
+        textureFolder = referenceFolder(effect.texture);
+        patternTargetCategory->setText(patternFolder);
+        textureTargetCategory->setText(textureFolder);
         loadPatterns();
         sync();
         loadTextures();
@@ -1354,6 +1546,12 @@ public:
     long onLive(FXObject* sender, FXSelector, void*)
     {
         if (syncing) return 1;
+        if (sender == patterns && patterns->isFolder(patterns->getCurrentItem()))
+        {
+            if (patterns->opens(patterns->getCurrentItem()))
+                openFolder(true, patterns->folderAt(patterns->getCurrentItem()));
+            return 1;
+        }
         effect.fill = fill->getCurrentItem() == 1 ? "gradient" : fill->getCurrentItem() == 2 ? "pattern" : "solid";
         effect.direction = direction->getCurrentItem() == 1 ? "radial" : "linear";
         effect.angled = effect.direction == "linear";
@@ -1362,8 +1560,9 @@ public:
             (sender == fill && effect.fill == "pattern" && effect.pattern == 0 && effect.patternImage.empty()))
         {
             FXint index = patterns->getCurrentItem();
-            if (index < 0 && patterns->getNumItems() > 0) index = 0;
-            if (index < 0 || index >= static_cast<FXint>(patternNumbers.size()))
+            if (index < 0)
+                while (++index < patterns->getNumItems() && patterns->isFolder(index)) {}
+            if (index < 0 || index >= static_cast<FXint>(patternNumbers.size()) || patterns->isFolder(index))
             {
                 if (sender == patterns) return 1;
                 effect.pattern = 1;
@@ -1515,7 +1714,11 @@ public:
     long onTexture(FXObject*, FXSelector, void*)
     {
         FXint index = textures->getCurrentItem();
-        if (index >= 0 && index < static_cast<FXint>(textureNames.size()))
+        if (textures->isFolder(index))
+        {
+            if (textures->opens(index)) openFolder(false, textures->folderAt(index));
+        }
+        else if (index >= 0 && index < static_cast<FXint>(textureNames.size()))
         {
             effect.texture = textureNames[index];
             changed();
@@ -1525,14 +1728,12 @@ public:
     long onTileFiles(FXObject*, FXSelector selector, void*)
     {
         FXint id = FXSELID(selector);
-        FXbool pattern = id == ID_ADD_PATTERN || id == ID_REFRESH_PATTERN || id == ID_PATTERN_CATEGORY;
-        FXListBox* categories = pattern ? patternCategory : textureCategory;
+        FXbool pattern = id == ID_ADD_PATTERN || id == ID_REFRESH_PATTERN || id == ID_PATTERN_UP;
         FXTextField* target = pattern ? patternTargetCategory : textureTargetCategory;
-        const std::vector<FXString>& names = pattern ? patternCategories : textureCategories;
-        if (id == ID_PATTERN_CATEGORY || id == ID_TEXTURE_CATEGORY)
+        if (id == ID_PATTERN_UP || id == ID_TEXTURE_UP)
         {
-            FXint index = categories->getCurrentItem();
-            target->setText(index > 0 && index < static_cast<FXint>(names.size()) ? names[index] : FXString::null);
+            openFolder(pattern, parentFolder(pattern ? patternFolder : textureFolder));
+            return 1;
         }
         if (id == ID_ADD_PATTERN || id == ID_ADD_TEXTURE)
         {
@@ -1581,7 +1782,7 @@ public:
             }
             else effect.texture = reference;
             changed();
-            categories->setCurrentItem(0);
+            (pattern ? patternFolder : textureFolder) = referenceFolder(reference);
         }
         if (pattern) loadPatterns();
         else loadTextures();
@@ -1643,10 +1844,10 @@ FXDEFMAP(BackgroundEditor) BackgroundEditorMap[] = {
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_TEXTURE, BackgroundEditor::onTexture),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_ADD_PATTERN, BackgroundEditor::onTileFiles),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_REFRESH_PATTERN, BackgroundEditor::onTileFiles),
-    FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_PATTERN_CATEGORY, BackgroundEditor::onTileFiles),
+    FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_PATTERN_UP, BackgroundEditor::onTileFiles),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_ADD_TEXTURE, BackgroundEditor::onTileFiles),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_REFRESH, BackgroundEditor::onTileFiles),
-    FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_TEXTURE_CATEGORY, BackgroundEditor::onTileFiles),
+    FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_TEXTURE_UP, BackgroundEditor::onTileFiles),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_PRESET, BackgroundEditor::onPreset),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_SAVE_PRESET, BackgroundEditor::onPreset),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_RANDOM, BackgroundEditor::onPreset)
@@ -1657,13 +1858,14 @@ class BackgroundImageEditor : public DialogBox
 {
     FXDECLARE(BackgroundImageEditor)
     ThemeEditor* editor = NULL;
-    FXString area, reference;
-    FXListBox* category = NULL;
+    FXString area, reference, folder;
+    FXButton* up = NULL;
+    FXLabel* location = NULL;
     FXListBox* placement = NULL;
     FXTextField* targetCategory = NULL;
-    FXIconList* gallery = NULL;
+    ThemeGallery* gallery = NULL;
     FXLabel* status = NULL;
-    std::vector<FXString> categories, names;
+    std::vector<FXString> names;
     std::vector<FXIcon*> icons;
     BackgroundImageEditor() {}
 
@@ -1725,10 +1927,7 @@ class BackgroundImageEditor : public DialogBox
 
     void refresh()
     {
-        FXint previous = category->getCurrentItem();
-        FXString selected = previous > 0 && previous < static_cast<FXint>(categories.size()) ?
-                            categories[previous] : FXString::null;
-        gallery->clearItems();
+        gallery->reset();
         for (FXIcon* icon : icons) delete icon;
         icons.clear();
         names.clear();
@@ -1744,60 +1943,48 @@ class BackgroundImageEditor : public DialogBox
         for (const FXString& root : roots)
             if (!root.empty()) collect(root, "", entries, rejected);
 
-        std::set<FXString> found;
-        for (const auto& entry : entries)
+        std::set<FXString> subfolders;
+        std::vector<std::pair<FXString, FXString>> files;
+        if (!listFolder(entries, folder, subfolders, files))
         {
-            FXString relative;
-            if (!BackgroundEffect::textureRelativePath(entry.first, relative)) continue;
-            FXint slash = relative.rfind('/');
-            if (slash >= 0) found.insert(relative.left(slash));
+            folder.clear();
+            listFolder(entries, folder, subfolders, files);
         }
-        category->clearItems();
-        categories.clear();
-        category->appendItem(_("All categories"));
-        categories.push_back("");
-        category->appendItem(_("Uncategorized"));
-        categories.push_back("");
-        FXint current = previous > 0 ? 1 : 0;
-        for (const FXString& name : found)
+        showLocation(up, location, _("Images"), folder);
+        if (!folder.empty()) gallery->addUp(parentFolder(folder));
+        for (const FXString& name : subfolders)
+            gallery->addFolder(name, folder.empty() ? name : folder + "/" + name);
+        names.assign(gallery->getNumItems(), FXString::null);
+        if (folder.empty())
         {
-            category->appendItem(name);
-            categories.push_back(name);
-            if (previous > 1 && name == selected) current = categories.size() - 1;
+            gallery->addChoice(_("No image"), NULL);
+            names.push_back("");
+            if (reference.empty()) gallery->setCurrentItem(names.size() - 1);
         }
-        category->setCurrentItem(current);
-        gallery->appendItem(_("No image"));
-        names.push_back("");
-        for (const auto& entry : entries)
+        for (const auto& file : files)
         {
-            FXString relative;
-            if (!BackgroundEffect::textureRelativePath(entry.first, relative)) continue;
-            FXint slash = relative.rfind('/');
-            FXString group = slash >= 0 ? relative.left(slash) : FXString::null;
-            if (current != 0 && group != categories[current]) continue;
+            const FXString& path = entries[file.first];
             FXString error;
-            FXIcon* icon = BackgroundImage::preview(getApp(), entry.second, FXRGB(0xD5, 0xDA, 0xDF), 64, error);
+            FXIcon* icon = BackgroundImage::preview(getApp(), path, FXRGB(0xD5, 0xDA, 0xDF), 64, error);
             if (!icon)
             {
-                rejected += relative + ": " + error + "\n";
-                appLog(APP_LOG_ERRORS, "image-rejected", entry.second + ": " + error);
+                rejected += file.second + ": " + error + "\n";
+                appLog(APP_LOG_ERRORS, "image-rejected", path + ": " + error);
                 continue;
             }
             icons.push_back(icon);
-            FXString label = slash < 0 ? relative : relative.rafter('/');
-            if (current == 0 && !group.empty()) label += " (" + group + ")";
-            gallery->appendItem(label, icon, icon);
-            names.push_back(entry.first);
-            if (entry.first == reference) gallery->setCurrentItem(names.size() - 1);
+            gallery->addChoice(file.second, icon);
+            names.push_back(file.first);
+            if (file.first == reference) gallery->setCurrentItem(names.size() - 1);
         }
-        if (reference.empty()) gallery->setCurrentItem(0);
+        gallery->settle();
         status->setText(rejected.empty() ?
             _("PNG or JPEG, up to 32 MB and 32 megapixels. Originals are never moved.") :
             _("Some images were excluded:\n") + rejected);
     }
 
 public:
-    enum { ID_SELECT = DialogBox::ID_LAST, ID_PLACEMENT, ID_CATEGORY, ID_IMPORT, ID_REFRESH };
+    enum { ID_SELECT = DialogBox::ID_LAST, ID_PLACEMENT, ID_UP, ID_IMPORT, ID_REFRESH };
     BackgroundImageEditor(ThemeEditor* owner, const FXString& selectedArea) :
         DialogBox(owner, _("Background image"), DECOR_ALL, 0, 0, 720, 600),
         editor(owner), area(selectedArea), reference(owner->getDraft().property(selectedArea, "background_image"))
@@ -1811,9 +1998,10 @@ public:
         new FXLabel(this, _("User images are stored in:") + FXString("\n") +
                           xf_userdatahome() + PATHSEPSTRING "images", NULL, JUSTIFY_LEFT | LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
         FXHorizontalFrame* controls = new FXHorizontalFrame(this, LAYOUT_FILL_X);
-        new FXLabel(controls, _("Category:"));
-        category = new FXListBox(controls, this, ID_CATEGORY, FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X);
-        category->setNumVisible(10);
+        up = new FXButton(controls, _("Up") + FXString("\t") + _("Go to the parent folder (Backspace)"),
+                          minifolderupicon, this, ID_UP, BUTTON_NORMAL | ICON_BEFORE_TEXT);
+        new FXLabel(controls, _("Location:"));
+        location = new FXLabel(controls, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
         new FXLabel(controls, _("Placement:"));
         placement = new FXListBox(controls, this, ID_PLACEMENT, FRAME_SUNKEN | FRAME_THICK);
         placement->appendItem(_("Fit (show whole image)"));
@@ -1822,14 +2010,15 @@ public:
         placement->setNumVisible(3);
         FXString currentMode = owner->getDraft().property(area, "image_mode");
         placement->setCurrentItem(currentMode == "fill" ? 1 : currentMode == "tile" ? 2 : 0);
-        gallery = new FXIconList(this, this, ID_SELECT,
-                                 ICONLIST_BIG_ICONS | ICONLIST_BROWSESELECT | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        gallery = new ThemeGallery(this, this, ID_SELECT);
         FXHorizontalFrame* files = new FXHorizontalFrame(this, LAYOUT_FILL_X);
         new FXButton(files, _("Add image..."), NULL, this, ID_IMPORT, BUTTON_NORMAL);
         new FXButton(files, _("Refresh"), NULL, this, ID_REFRESH, BUTTON_NORMAL);
         new FXLabel(files, _("Save in category:"));
         targetCategory = new FXTextField(files, 16, NULL, 0, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
         targetCategory->setTipText(_("Optional category; use / for subcategories."));
+        folder = referenceFolder(reference);
+        targetCategory->setText(folder);
         refresh();
     }
     ~BackgroundImageEditor()
@@ -1839,12 +2028,23 @@ public:
     long onSelect(FXObject*, FXSelector, void*)
     {
         FXint index = gallery->getCurrentItem();
-        if (index >= 0 && index < static_cast<FXint>(names.size()))
+        if (gallery->isFolder(index))
+        {
+            if (gallery->opens(index)) openFolder(gallery->folderAt(index));
+        }
+        else if (index >= 0 && index < static_cast<FXint>(names.size()))
         {
             reference = names[index];
             changed();
         }
         return 1;
+    }
+    void openFolder(const FXString& path)
+    {
+        folder = path;
+        targetCategory->setText(folder);
+        refresh();
+        gallery->opened();
     }
     long onPlacement(FXObject*, FXSelector, void*)
     {
@@ -1854,11 +2054,10 @@ public:
     long onFiles(FXObject*, FXSelector selector, void*)
     {
         FXint id = FXSELID(selector);
-        if (id == ID_CATEGORY)
+        if (id == ID_UP)
         {
-            FXint index = category->getCurrentItem();
-            targetCategory->setText(index > 0 && index < static_cast<FXint>(categories.size()) ?
-                                    categories[index] : FXString::null);
+            openFolder(parentFolder(folder));
+            return 1;
         }
         else if (id == ID_IMPORT)
         {
@@ -1890,7 +2089,7 @@ public:
             }
             reference = candidate;
             changed();
-            category->setCurrentItem(0);
+            folder = referenceFolder(reference);
         }
         refresh();
         return 1;
@@ -1900,7 +2099,7 @@ public:
 FXDEFMAP(BackgroundImageEditor) BackgroundImageEditorMap[] = {
     FXMAPFUNC(SEL_COMMAND, BackgroundImageEditor::ID_SELECT, BackgroundImageEditor::onSelect),
     FXMAPFUNC(SEL_COMMAND, BackgroundImageEditor::ID_PLACEMENT, BackgroundImageEditor::onPlacement),
-    FXMAPFUNCS(SEL_COMMAND, BackgroundImageEditor::ID_CATEGORY, BackgroundImageEditor::ID_REFRESH, BackgroundImageEditor::onFiles)
+    FXMAPFUNCS(SEL_COMMAND, BackgroundImageEditor::ID_UP, BackgroundImageEditor::ID_REFRESH, BackgroundImageEditor::onFiles)
 };
 FXIMPLEMENT(BackgroundImageEditor, DialogBox, BackgroundImageEditorMap, ARRAYNUMBER(BackgroundImageEditorMap))
 

@@ -2,6 +2,7 @@
 #include <FXPNGImage.h>
 #include <FXJPGImage.h>
 #include <FXGradientBar.h>
+#include <fxkeys.h>
 #include "FileList.h"
 #include "XFileExplorer.h"
 #include "Preferences.h"
@@ -97,6 +98,39 @@ static FXListBox* findListBoxWithItem(FXWindow* parent, const FXString& text)
     for (FXWindow* child = parent->getFirst(); child; child = child->getNext())
         if (FXListBox* result = findListBoxWithItem(child, text)) return result;
     return NULL;
+}
+
+static FXLabel* findLabel(FXWindow* parent, const FXString& text)
+{
+    FXLabel* label = dynamic_cast<FXLabel*>(parent);
+    if (label && !dynamic_cast<FXButton*>(parent) && label->getText() == text) return label;
+    for (FXWindow* child = parent->getFirst(); child; child = child->getNext())
+        if (FXLabel* result = findLabel(child, text)) return result;
+    return NULL;
+}
+
+// Clicks a gallery tile: opens a folder or applies a graphic.
+static void activateItem(FXIconList* gallery, const FXString& text)
+{
+    FXint index = gallery->findItem(text);
+    assert(index >= 0);
+    gallery->setCurrentItem(index);
+    gallery->getTarget()->handle(gallery, FXSEL(SEL_COMMAND, gallery->getSelector()), (void*)(FXival)index);
+}
+
+static void pressKey(FXIconList* gallery, FXuint code)
+{
+    FXEvent event;
+    event.type = SEL_KEYPRESS;
+    event.code = code;
+    event.state = 0;
+    gallery->handle(gallery, FXSEL(SEL_KEYPRESS, 0), &event);
+}
+
+static FXbool galleryFillsWidth(FXIconList* gallery)
+{
+    return gallery->getItemSpace() >= 108 &&
+           gallery->getWidth() - gallery->getNumCols() * gallery->getItemSpace() < 40;
 }
 
 static FXbool itemShowsPixel(FXIconList* list, FXint index, FXColor color)
@@ -560,17 +594,41 @@ public:
                 effectTabs->layout();
                 pump(app);
                 FXWindow* page = effectTabs->childAtIndex(tab * 2 + 1);
-                FXIconList* samples = static_cast<FXIconList*>(findClass(page, "FXIconList"));
+                FXIconList* samples = static_cast<FXIconList*>(findClass(page, "ThemeGallery"));
                 assert(page->shown() && samples && samples->shown());
-                assert(samples->getNumItems() >= (tab == 1 ? 29 : 36));
-                const FXString bundledName = tab == 1 ? "Gingham-Check (Fabric)" : "Oak-Veneer-01 (Wood)";
-                FXint bundledIndex = -1;
+                // Top level lists the category folders first, like the file list's thumbnail view.
+                FXint firstChoice = samples->findItem(tab == 1 ? "Horizontal stripes" : "No texture");
+                assert(firstChoice > 0 && samples->findItem(tab == 1 ? "Fabric" : "Wood") >= 0);
                 for (FXint item = 0; item < samples->getNumItems(); ++item)
-                    if (samples->getItemText(item) == bundledName) bundledIndex = item;
-                assert(bundledIndex >= 0 && samples->getItemBigIcon(bundledIndex) &&
+                    assert((samples->getItemData(item) != NULL) == (item < firstChoice));
+                assert(samples->getNumCols() > 1 && galleryFillsWidth(samples));
+                screenshot(dialog, tab == 1 ? "background-pattern-folders" : "background-texture-folders");
+                if (tab == 1)
+                {
+                    FXint columns = samples->getNumCols();
+                    dialog->resize(dialog->getWidth() + 360, dialog->getHeight());
+                    pump(app);
+                    assert(samples->getNumCols() > columns && galleryFillsWidth(samples));
+                    dialog->resize(dialog->getWidth() - 360, dialog->getHeight());
+                    pump(app);
+                    assert(samples->getNumCols() == columns);
+                    // Arrow keys only move the cursor; Enter opens and Backspace goes back up.
+                    samples->setCurrentItem(0);
+                    pressKey(samples, KEY_Right);
+                    assert(samples->getCurrentItem() == 1 && samples->findItem("Horizontal stripes") >= 0);
+                    pressKey(samples, KEY_Return);
+                    assert(samples->getItemText(0) == ".." && samples->findItem("Horizontal stripes") < 0);
+                    pressKey(samples, KEY_BackSpace);
+                    assert(samples->findItem("Horizontal stripes") >= 0 && samples->getItemText(0) != "..");
+                }
+                activateItem(samples, tab == 1 ? "Fabric" : "Wood");
+                pump(app);
+                assert(samples->getItemText(0) == ".." && samples->getItemData(0) && !samples->isItemSelected(0));
+                FXint bundledIndex = samples->findItem(tab == 1 ? "Gingham-Check" : "Oak-Veneer-01");
+                assert(bundledIndex > 0 && samples->getItemBigIcon(bundledIndex) &&
                        samples->getItemBigIcon(bundledIndex)->getData());
-                FXint sampleIndex = tab == 1 ? 0 : 1;
-                FXint otherIndex = tab == 1 ? 1 : 0;
+                FXint sampleIndex = bundledIndex;
+                FXint otherIndex = 0;
                 samples->setCurrentItem(otherIndex);
                 samples->selectItem(otherIndex);
                 samples->makeItemVisible(sampleIndex);
@@ -586,7 +644,7 @@ public:
                         assert(samples->getItemBigIcon(item)->getData());
                         ++checked;
                     }
-                assert(checked >= 8);
+                assert(checked >= 6);
                 if (tab == 2)
                 {
                     // Thumbnails show the PNG's true colours, not a theme or greyscale tint.
@@ -1218,14 +1276,20 @@ public:
             pages->setCurrent(2, true);
             pump(app);
             FXWindow* page = pages->childAtIndex(5);
-            FXListBox* categories = findListBoxWithItem(page, "Natural Stone");
-            FXIconList* gallery = static_cast<FXIconList*>(findClass(page, "FXIconList"));
-            assert(page->shown() && categories && gallery && gallery->shown());
-            categories->setCurrentItem(categories->findItem("Natural Stone"));
-            categories->getTarget()->handle(categories, FXSEL(SEL_COMMAND, categories->getSelector()), NULL);
+            FXIconList* gallery = static_cast<FXIconList*>(findClass(page, "ThemeGallery"));
+            assert(page->shown() && gallery && gallery->shown());
+            // Opens in the applied texture's folder, with the folder named and the target category preset.
+            assert(gallery->getNumItems() == 2 && gallery->getItemText(0) == "..");
+            assert(gallery->getItemText(1) == "River 1" && gallery->getCurrentItem() == 1);
+            assert(findLabel(page, "Textures / Natural Stone"));
+            FXButton* up = findButton(page, "Up");
+            assert(up && up->isEnabled());
+            up->getTarget()->handle(up, FXSEL(SEL_COMMAND, up->getSelector()), NULL);
+            assert(gallery->findItem("Natural Stone") >= 0 && gallery->findItem("River 1") < 0 && !up->isEnabled());
+            assert(findLabel(page, "Textures"));
+            activateItem(gallery, "Natural Stone");
             pump(app);
-            assert(gallery->getNumItems() == 2);
-            assert(gallery->getItemText(1) == "River 1");
+            assert(gallery->getNumItems() == 2 && up->isEnabled());
             FXIcon* sample = gallery->getItemBigIcon(1);
             assert(sample && sample->getData());
             gallery->setCurrentItem(0);
@@ -1358,35 +1422,29 @@ public:
             pages->layout();
             pump(app);
             FXWindow* page = pages->childAtIndex(3);
-            FXListBox* categories = findListBoxWithItem(page, "Geometric");
-            FXIconList* gallery = static_cast<FXIconList*>(findClass(page, "FXIconList"));
-            assert(page->shown() && categories && gallery && gallery->shown());
-            categories->setCurrentItem(categories->findItem("Geometric"));
-            categories->getTarget()->handle(categories, FXSEL(SEL_COMMAND, categories->getSelector()), NULL);
+            FXIconList* gallery = static_cast<FXIconList*>(findClass(page, "ThemeGallery"));
+            assert(page->shown() && gallery && gallery->shown());
+            assert(findLabel(page, "Patterns / Geometric"));
+            assert(gallery->getNumItems() == 3 && gallery->getItemText(0) == ".." &&
+                   gallery->getItemText(1) == "Checker Board");
+            FXIcon* sample = gallery->getItemBigIcon(1);
+            gallery->setCurrentItem(2);
+            gallery->selectItem(2);
             pump(app);
-            assert(gallery->getNumItems() == 2 && gallery->getItemText(0) == "Checker Board");
-            FXIcon* sample = gallery->getItemBigIcon(0);
-            gallery->setCurrentItem(1);
-            gallery->selectItem(1);
-            pump(app);
-            assert(sample && sample->getData() && itemShowsPixel(gallery, 0, sample->getData()[0]));
-            gallery->setCurrentItem(0);
-            gallery->getTarget()->handle(gallery, FXSEL(SEL_COMMAND, gallery->getSelector()), NULL);
+            assert(sample && sample->getData() && itemShowsPixel(gallery, 1, sample->getData()[0]));
+            activateItem(gallery, "Checker Board");
             assert(BackgroundEffect::parse(editor.getDraft().effect).patternImage == patternReference);
-            categories->setCurrentItem(categories->findItem("Built-in shapes"));
-            categories->getTarget()->handle(categories, FXSEL(SEL_COMMAND, categories->getSelector()), NULL);
-            assert(gallery->getNumItems() == 8);
+            activateItem(gallery, "..");
+            assert(gallery->findItem("Geometric") >= 0 && gallery->findItem("Crosshatch") >= 0);
             FXSpinner* size = static_cast<FXSpinner*>(findClass(page, "FXSpinner"));
             assert(size);
             size->setValue(12);
             size->getTarget()->handle(size, FXSEL(SEL_COMMAND, size->getSelector()), NULL);
             assert(BackgroundEffect::parse(editor.getDraft().effect).patternImage == patternReference);
-            gallery->setCurrentItem(4);
-            gallery->getTarget()->handle(gallery, FXSEL(SEL_COMMAND, gallery->getSelector()), NULL);
+            activateItem(gallery, "Grid");
             BackgroundEffect shape = BackgroundEffect::parse(editor.getDraft().effect);
             assert(shape.patternImage.empty() && shape.pattern == 5);
-            categories->setCurrentItem(categories->findItem("Geometric"));
-            categories->getTarget()->handle(categories, FXSEL(SEL_COMMAND, categories->getSelector()), NULL);
+            activateItem(gallery, "Geometric");
             ActionTimer namePattern([&] {
                 InputDialog* naming = dynamic_cast<InputDialog*>(app.getModalWindow());
                 assert(naming && naming->getTitle() == "Pattern name");
@@ -1407,6 +1465,8 @@ public:
             assert(xf_existfile(globalPatterns + "/Geometric/UI Added.png"));
             assert(BackgroundEffect::parse(editor.getDraft().effect).patternImage ==
                    BackgroundEffect::textureReference("Geometric/UI Added"));
+            assert(gallery->getItemText(0) == ".." && gallery->findItem("UI Added") > 0 &&
+                   gallery->getCurrentItem() == gallery->findItem("UI Added"));
             dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
         });
         app.addTimeout(&patternDialog, 1, 150);
@@ -1492,13 +1552,15 @@ public:
             FXButton* help = findButton(dialog, "User Manual");
             assert(help);
             checkManual(app, help->getTarget(), help->getSelector(), help, true);
-            FXListBox* categories = findListBoxWithItem(dialog, "Photographs");
             FXListBox* placement = findListBoxWithItem(dialog, "Fill (crop to cover)");
-            FXIconList* gallery = static_cast<FXIconList*>(findClass(dialog, "FXIconList"));
-            assert(categories && placement && gallery);
-            categories->setCurrentItem(categories->findItem("Photographs"));
-            categories->getTarget()->handle(categories, FXSEL(SEL_COMMAND, categories->getSelector()), NULL);
+            FXIconList* gallery = static_cast<FXIconList*>(findClass(dialog, "ThemeGallery"));
+            assert(placement && gallery && findLabel(dialog, "Images"));
+            assert(gallery->findItem("No image") > gallery->findItem("Photographs") && gallery->findItem("Photographs") >= 0);
+            screenshot(dialog, "background-image-folders");
+            activateItem(gallery, "Photographs");
             pump(app);
+            assert(findLabel(dialog, "Images / Photographs") && gallery->findItem("No image") < 0);
+            screenshot(dialog, "background-image");
             FXint roseIndex = -1, checkerIndex = -1;
             for (FXint i = 0; i < gallery->getNumItems(); ++i)
             {
@@ -1557,15 +1619,11 @@ public:
         ActionTimer applyImage([&] {
             FXWindow* dialog = app.getModalWindow();
             FXListBox* placement = findListBoxWithItem(dialog, "Tile (original size)");
-            FXIconList* gallery = static_cast<FXIconList*>(findClass(dialog, "FXIconList"));
+            FXIconList* gallery = static_cast<FXIconList*>(findClass(dialog, "ThemeGallery"));
             assert(placement && gallery);
-            FXint index = -1;
-            for (FXint i = 0; i < gallery->getNumItems(); ++i)
-                if (gallery->getItemText(i) == "Rose.png (Photographs)") index = i;
-            assert(index > 0);
+            activateItem(gallery, "Photographs");
             placement->setCurrentItem(2);
-            gallery->setCurrentItem(index);
-            gallery->getTarget()->handle(gallery, FXSEL(SEL_COMMAND, gallery->getSelector()), NULL);
+            activateItem(gallery, "Rose.png");
             dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
         });
         app.addTimeout(&applyImage, 1, 150);
