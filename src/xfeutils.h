@@ -777,6 +777,14 @@ namespace DialogColors
     const FXColor field = FXRGB(30, 36, 45);
     const FXColor accent = FXRGB(15, 86, 217);
     const FXColor text = FXRGB(255, 255, 255);
+    const FXColor scrollthumb = FXRGB(0x66, 0x6f, 0x73);
+}
+
+// User data marking a scroll bar that paints its thumb with DialogColors::scrollthumb
+inline void* xf_dialogscrollbartag()
+{
+    static char tag;
+    return &tag;
 }
 
 void xf_widgetcolors(FXWindow*, FXColor, FXColor, FXColor, FXColor, FXColor, FXColor);

@@ -1071,7 +1071,7 @@ long FXScrollBar::onPaint(FXObject*, FXSelector, void* ptr)
     FXDCWindow dc(this, ev);
 
     {
-        scrollbarcolor = backColor;
+        scrollbarcolor = (getUserData() == xf_dialogscrollbartag()) ? DialogColors::scrollthumb : backColor;
 
         // Compute gradient colors from the base color
         // Decompose the base color

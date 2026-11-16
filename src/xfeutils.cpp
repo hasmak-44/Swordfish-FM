@@ -3590,6 +3590,10 @@ void xf_dialogcolors(FXWindow* window)
         list->setBackgroundEffect("");
         list->setHighlightColor(DialogColors::field);
     }
+    if (FXScrollBar* bar = dynamic_cast<FXScrollBar*>(window))
+    {
+        bar->setUserData(xf_dialogscrollbartag());
+    }
     for (FXWindow* child = window->getFirst(); child; child = child->getNext())
     {
         xf_dialogcolors(child);

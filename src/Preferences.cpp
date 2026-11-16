@@ -934,17 +934,8 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     FXbool preserve_date_warn = getApp()->reg().readUnsignedEntry("OPTIONS", "preserve_date_warn", true);
     preserve_date_warning->setCheck(preserve_date_warn);
 
-    FXbool root_warn = getApp()->reg().readUnsignedEntry("OPTIONS", "root_warn", true);
-
-    // User is non root
-    if (getuid())
-    {
-        root_warning->disable();
-    }
-    else
-    {
-        root_warning->setCheck(root_warn);
-    }
+    // Only shown when running as root, but selectable by any user so it can be preset
+    root_warning->setCheck(getApp()->reg().readUnsignedEntry("OPTIONS", "root_warn", true));
 
     FXVerticalFrame* settings = addPage(PANELS, _("Tabs"));
 
