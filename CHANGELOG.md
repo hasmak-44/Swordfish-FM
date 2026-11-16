@@ -24,11 +24,14 @@
   textures; legacy textures in `~/.config/swordfish/textures/` remain readable.
 - The texture gallery scans category subfolders and can filter and import
   textures by category, retaining those paths when themes are shared.
+- Pattern PNGs can be imported and organized into categories in a separate
+  library. Their lightness and transparency blend the two chosen pattern
+  colours; existing built-in shapes continue to work.
 - Custom themes are saved in per-theme folders under
   `$XDG_DATA_HOME/swordfish/themes/colors/` (or
   `portable-data/themes/colors/` in a portable run), with a theme file and
-  copies of referenced textures. Export creates the same self-contained folder
-  layout for sharing.
+  copies of referenced textures and pattern images. Export creates the same
+  self-contained folder layout for sharing.
 - The bundled manual has a Theme Editor guide, accessible from the editor,
   background, colour, font, percentage and naming tools.
 - `texture_colors=original` in `list_background_effect` shows a colour

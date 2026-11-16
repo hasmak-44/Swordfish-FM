@@ -221,34 +221,44 @@ static FXbool writeThemeFile(const FXString& file, const Theme& theme, FXString&
     return true;
 }
 
-static void themeTextureNames(const Theme& theme, std::set<FXString>& names)
+static void themeTileNames(const Theme& theme, FXbool pattern, std::set<FXString>& names)
 {
-    FXString name = BackgroundEffect::parse(theme.effect).texture;
+    BackgroundEffect effect = BackgroundEffect::parse(theme.effect);
+    FXString name = pattern ? effect.patternImage : effect.texture;
     if (!name.empty()) names.insert(name);
     for (const auto& entry : theme.properties)
     {
         if (entry.first.left(9) != "gradient.") continue;
-        name = BackgroundEffect::parse(entry.second).texture;
+        effect = BackgroundEffect::parse(entry.second);
+        name = pattern ? effect.patternImage : effect.texture;
         if (!name.empty()) names.insert(name);
     }
 }
 
-static FXbool copyThemeTextures(const Theme& theme, const FXString& folder, FXString& error)
+static FXbool copyThemeTiles(FXApp* app, const Theme& theme, const FXString& folder, FXbool pattern, FXString& error)
 {
     std::set<FXString> names;
-    themeTextureNames(theme, names);
+    themeTileNames(theme, pattern, names);
     if (names.empty()) return true;
 
-    FXString textureFolder = folder + PATHSEPSTRING "textures";
+    FXString tileFolder = folder + PATHSEPSTRING + (pattern ? "patterns" : "textures");
     for (const FXString& name : names)
     {
-        FXString source = BackgroundEffect::texturePath(name, theme.assetRoot);
+        FXString source = pattern ? BackgroundEffect::patternPath(name, theme.assetRoot) :
+                                    BackgroundEffect::texturePath(name, theme.assetRoot);
+        if (!source.empty() && !(pattern ? BackgroundEffect::validatePattern(app, source, error) :
+                                           BackgroundEffect::validateTexture(app, source, error)))
+            return false;
         FXString destination;
-        if (source.empty() || !BackgroundEffect::prepareTextureDestination(textureFolder, name, destination, error) ||
+        FXbool prepared = !source.empty() &&
+            (pattern ? BackgroundEffect::preparePatternDestination(tileFolder, name, destination, error) :
+                       BackgroundEffect::prepareTextureDestination(tileFolder, name, destination, error));
+        if (source.empty() || !prepared ||
             (xf_realpath(source) != xf_realpath(destination) &&
                                !FXFile::copyFiles(source, destination, true)))
         {
-            if (error.empty()) error = _("Cannot include texture in theme folder: ") + name;
+            if (error.empty()) error = (pattern ? _("Cannot include pattern in theme folder: ") :
+                                                  _("Cannot include texture in theme folder: ")) + name;
             return false;
         }
     }
@@ -2080,37 +2090,46 @@ long PreferencesBox::onCmdThemeExport(FXObject*, FXSelector, void*)
         return 1;
     }
 
-    std::set<FXString> textureNames;
-    FXString texture = BackgroundEffect::parse(theme.effect).texture;
-    if (!texture.empty()) textureNames.insert(texture);
-    for (const auto& entry : theme.properties)
+    for (FXint kind = 0; kind < 2; ++kind)
     {
-        if (entry.first.left(9) != "gradient.") continue;
-        texture = BackgroundEffect::parse(entry.second).texture;
-        if (!texture.empty()) textureNames.insert(texture);
-    }
-    for (const FXString& name : textureNames)
-    {
-        FXString source = BackgroundEffect::texturePath(name, theme.assetRoot);
-        FXString directory = folder + PATHSEPSTRING "textures";
-        FXString relative, error;
-        if (!BackgroundEffect::textureRelativePath(name, relative))
+        FXbool pattern = kind == 1;
+        std::set<FXString> names;
+        themeTileNames(theme, pattern, names);
+        for (const FXString& name : names)
         {
-            MessageBox::error(this, BOX_OK, _("Export theme"), _("Invalid texture name: %s"), name.text());
-            return 1;
-        }
-        FXString destination = directory + PATHSEPSTRING + relative + ".png";
-        if (xf_existfile(destination) && xf_realpath(source) != xf_realpath(destination) &&
-            MessageBox::question(this, BOX_YES_NO, _("Replace texture"),
-                _("Texture \"%s\" already exists in the export folder. Replace it?"), name.text()) != BOX_CLICKED_YES)
-            return 1;
-        if (source.empty() || !BackgroundEffect::prepareTextureDestination(directory, name, destination, error) ||
-            (xf_realpath(source) != xf_realpath(destination) &&
-             !FXFile::copyFiles(source, destination, true)))
-        {
-            MessageBox::error(this, BOX_OK, _("Export theme"), _("Cannot export texture \"%s\" to %s."),
-                                name.text(), destination.text());
-            return 1;
+            FXString source = pattern ? BackgroundEffect::patternPath(name, theme.assetRoot) :
+                                        BackgroundEffect::texturePath(name, theme.assetRoot);
+            FXString directory = folder + PATHSEPSTRING + (pattern ? "patterns" : "textures");
+            FXString relative, error;
+            if (!BackgroundEffect::textureRelativePath(name, relative))
+            {
+                MessageBox::error(this, BOX_OK, _("Export theme"), _("Invalid graphic name: %s"), name.text());
+                return 1;
+            }
+            FXString destination = directory + PATHSEPSTRING + relative + ".png";
+            if (source.empty()) error = _("Graphic was not found in the theme or its library.");
+            if (source.empty() || !(pattern ? BackgroundEffect::validatePattern(getApp(), source, error) :
+                                              BackgroundEffect::validateTexture(getApp(), source, error)))
+            {
+                MessageBox::error(this, BOX_OK, _("Export theme"), _("Cannot read graphic \"%s\": %s"),
+                                  name.text(), error.text());
+                return 1;
+            }
+            if (xf_existfile(destination) && xf_realpath(source) != xf_realpath(destination) &&
+                MessageBox::question(this, BOX_YES_NO, _("Replace graphic"),
+                    _("Graphic \"%s\" already exists in the export folder. Replace it?"), name.text()) != BOX_CLICKED_YES)
+                return 1;
+            FXbool prepared = pattern ? BackgroundEffect::preparePatternDestination(directory, name, destination, error) :
+                                        BackgroundEffect::prepareTextureDestination(directory, name, destination, error);
+            if (!prepared ||
+                (xf_realpath(source) != xf_realpath(destination) &&
+                 !FXFile::copyFiles(source, destination, true)))
+            {
+                if (error.empty()) error = strerror(errno);
+                MessageBox::error(this, BOX_OK, _("Export theme"), _("Cannot export graphic \"%s\" to %s.\n%s"),
+                                  name.text(), destination.text(), error.text());
+                return 1;
+            }
         }
     }
     FXString writeError;
@@ -2154,44 +2173,42 @@ long PreferencesBox::onCmdThemeImport(FXObject*, FXSelector, void*)
 }
 
 
-// Validate a theme pack's texture without modifying the shared texture library.
-FXbool PreferencesBox::importThemeTexture(const FXString& themefile, const FXString& effect)
+// Validate a theme pack's tiles without modifying the shared libraries.
+FXbool PreferencesBox::importThemeTiles(const FXString& themefile, const FXString& effect)
 {
-    FXString name;
     FXString spec = effect;
     spec.simplify();
     for (int i = 0; i < spec.contains(' ') + 1; i++)
     {
         FXString token = spec.section(' ', i);
-        if (token.before('=') == "texture")
+        FXString key = token.before('=');
+        FXbool pattern = key == "pattern_image";
+        if (key != "texture" && !pattern) continue;
+        FXString name = token.after('=');
+        if (name.empty()) continue;
+        if (!BackgroundEffect::validTextureName(name))
         {
-            name = token.after('=');
+            MessageBox::error(this, BOX_OK, _("Import theme"), _("Invalid graphic name: %s"), name.text());
+            return false;
         }
-    }
-    if (name.empty())
-    {
-        return true;
-    }
-    if (!BackgroundEffect::validTextureName(name))
-    {
-        MessageBox::error(this, BOX_OK, _("Import theme"), _("Invalid texture name: %s"), name.text());
-        return false;
-    }
-    FXString base = FXPath::absolute(FXPath::directory(themefile));
-    FXString source = BackgroundEffect::texturePath(name, base);
-    if (source.empty())
-    {
-        MessageBox::error(this, BOX_OK, _("Import theme"),
-                          _("Texture \"%s\" was not found next to the theme file or in the texture library."),
-                          name.text());
-        return false;
-    }
-
-    FXString error;
-    if (!BackgroundEffect::validateTexture(getApp(), source, error))
-    {
-        MessageBox::error(this, BOX_OK, _("Texture import"), "%s\n\n%s", error.text(), source.text());
-        return false;
+        FXString base = FXPath::absolute(FXPath::directory(themefile));
+        FXString source = pattern ? BackgroundEffect::patternPath(name, base) :
+                                    BackgroundEffect::texturePath(name, base);
+        if (source.empty())
+        {
+            MessageBox::error(this, BOX_OK, _("Import theme"),
+                              _("Graphic \"%s\" was not found next to the theme file or in its library."),
+                              name.text());
+            return false;
+        }
+        FXString error;
+        FXbool valid = pattern ? BackgroundEffect::validatePattern(getApp(), source, error) :
+                                 BackgroundEffect::validateTexture(getApp(), source, error);
+        if (!valid)
+        {
+            MessageBox::error(this, BOX_OK, _("Import theme"), "%s\n\n%s", error.text(), source.text());
+            return false;
+        }
     }
     return true;
 }
@@ -2210,9 +2227,9 @@ FXbool PreferencesBox::importThemeFile(const FXString& file)
     }
     if (imported.tip.empty()) imported.tip = _("Custom theme, right click to rename or remove");
     imported.assetRoot = FXPath::absolute(FXPath::directory(file));
-    if (!importThemeTexture(file, imported.effect)) return false;
+    if (!importThemeTiles(file, imported.effect)) return false;
     for (const auto& entry : imported.properties)
-        if (entry.first.left(9) == "gradient." && !importThemeTexture(file, entry.second)) return false;
+        if (entry.first.left(9) == "gradient." && !importThemeTiles(file, entry.second)) return false;
 
     // Offer to replace a custom theme with the same name
     for (FXuint n = 0; n < Themes.size(); n++)
@@ -4568,7 +4585,8 @@ FXbool PreferencesBox::saveCustomThemes(const vector_Theme& themes)
             return false;
         }
         FXString error;
-        if (!copyThemeTextures(theme, folder, error) ||
+        if (!copyThemeTiles(getApp(), theme, folder, false, error) ||
+            !copyThemeTiles(getApp(), theme, folder, true, error) ||
             !writeThemeFile(file, theme, error))
         {
             appLog(APP_LOG_ERRORS, "theme-library-save-failed", error);

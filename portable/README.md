@@ -752,12 +752,12 @@ available in the Theme Editor and its background and colour tools.
 Custom color themes are saved in the user data directory:
 `$XDG_DATA_HOME/swordfish/themes/colors/` (or
 `portable-data/themes/colors/` in a portable run). Each theme has its own
-folder containing `theme.swordfish-theme` and any texture images it uses.
-Imported themes and textures remain available after restarting Swordfish.
+folder containing `theme.swordfish-theme` and any texture or pattern images it
+uses. Imported themes and graphics remain available after restarting Swordfish.
 
 In Preferences → Appearance, use **Export theme** and choose a parent
 directory. Swordfish creates a shareable theme-named folder containing
-`theme.swordfish-theme` and its `textures/` assets.
+`theme.swordfish-theme` and its referenced `textures/` and `patterns/` assets.
 Import that file on another machine with **Import theme**; keep the adjacent
 `textures/` folder with it when sharing themes that use custom textures.
 Alternatively, copy the complete theme folder into `portable-data/themes/colors/`.
@@ -768,3 +768,6 @@ can be moved between machines. Legacy custom textures in
 Texture PNGs can also be organized into category subfolders under
 `portable-data/textures/`; the editor can filter categories and copy new
 textures into them. Textures in the folder root are uncategorized.
+PNG pattern masks use the separate `portable-data/patterns/` folder and the
+same category rules. Exported themes include referenced pattern and texture
+files in their respective subfolders.

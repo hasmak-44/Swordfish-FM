@@ -206,6 +206,21 @@ static void checkerPng(FXApp& app, const FXString& path)
     assert(image.savePixels(output));
 }
 
+static void patternMaskPng(FXApp& app, const FXString& path)
+{
+    FXColor* pixels = NULL;
+    assert(FXMALLOC(&pixels, FXColor, 4));
+    pixels[0] = FXRGB(0, 0, 0);
+    pixels[1] = FXRGB(255, 255, 255);
+    pixels[2] = FXRGBA(255, 255, 255, 0);
+    pixels[3] = FXRGBA(255, 255, 255, 128);
+    FXPNGImage image(&app);
+    image.setData(pixels, IMAGE_KEEP | IMAGE_OWNED, 2, 2);
+    FXFileStream output;
+    assert(output.open(path, FXStreamSave));
+    assert(image.savePixels(output));
+}
+
 static void copyThemeWithName(const FXString& source, const FXString& destination, const FXString& name)
 {
     std::ifstream input(source.text());
@@ -553,7 +568,7 @@ public:
                 app.addTimeout(&textureNamingHelp, 1, 150);
                 chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
             });
-            FXButton* addTexture = findButton(dialog, "Add PNG...");
+            FXButton* addTexture = findButton(effectTabs->childAtIndex(5), "Add PNG...");
             assert(addTexture);
             app.addTimeout(&chooseTexture, 1, 150);
             addTexture->getTarget()->handle(addTexture, FXSEL(SEL_COMMAND, addTexture->getSelector()), NULL);
@@ -986,6 +1001,166 @@ public:
         editor.onEditProperty(NULL, 0, NULL);
         editor.hide();
         puts("PASS: categorized texture import, safe references, theme copies and visible gallery thumbnails");
+
+        FXString patternReference = BackgroundEffect::textureReference("Geometric/Checker Board");
+        FXString patternOther = BackgroundEffect::textureReference("Geometric/Other");
+        FXString differentCategory = BackgroundEffect::textureReference("Organic/Checker Board");
+        FXString globalPatterns = data + "/patterns";
+        patternMaskPng(app, redSource + "/textures/mask.png");
+        FXString patternError;
+        assert(BackgroundEffect::importPattern(&app, redSource + "/textures/mask.png",
+                                                patternReference, false, patternError));
+        assert(BackgroundEffect::importPattern(&app, redSource + "/textures/checker.png",
+                                                patternOther, false, patternError));
+        assert(BackgroundEffect::importPattern(&app, redSource + "/textures/checker.png",
+                                                differentCategory, false, patternError));
+        assert(BackgroundEffect::patternPath(patternReference) == globalPatterns + "/Geometric/Checker Board.png");
+        assert(BackgroundEffect::patternPath(differentCategory) == globalPatterns + "/Organic/Checker Board.png");
+        patternError.clear();
+        assert(!BackgroundEffect::importPattern(&app, redSource + "/textures/checker.png",
+                                                 patternReference, false, patternError));
+        assert(!patternError.empty());
+        assert(symlink(outsideFolder.text(), (globalPatterns + "/linked-category").text()) == 0);
+        patternError.clear();
+        assert(!BackgroundEffect::importPattern(&app, redSource + "/textures/checker.png",
+                                                 "linked-category/escape", false, patternError));
+        assert(!patternError.empty() && !xf_existfile(outsideFolder + "/escape.png"));
+        assert(BackgroundEffect::patternPath("../escape").empty());
+        {
+            const unsigned char oversized[] = {0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a,
+                                               0, 0, 0, 13, 'I', 'H', 'D', 'R',
+                                               0, 0, 4, 1, 0, 0, 0, 2};
+            std::ofstream file((data + "/oversized-pattern.png").text(), std::ios::binary);
+            file.write(reinterpret_cast<const char*>(oversized), sizeof(oversized));
+            file.close();
+            patternError.clear();
+            assert(!BackgroundEffect::validatePattern(&app, data + "/oversized-pattern.png", patternError));
+            assert(!patternError.empty());
+        }
+
+        Theme patterned = Theme::current(&app);
+        patterned.name = "Pattern pack";
+        patterned.assetRoot.clear();
+        patterned.effect = "fill=pattern colors=#102030,#E0C080 pattern_image=" + patternReference +
+                           " size=4 rows=off";
+        patterned.properties["gradient.Pattern preset"] =
+            "fill=pattern colors=#000000,#FFFFFF pattern_image=" + patternOther + " size=4 rows=off";
+        BackgroundEffect roundTrip = BackgroundEffect::parse(patterned.effect);
+        assert(roundTrip.patternImage == patternReference &&
+               BackgroundEffect::parse(roundTrip.serialize()).patternImage == patternReference);
+        std::unique_ptr<FXIcon> patternPreview(
+            BackgroundEffect::preview(&window, patterned.effect, FXRGB(0, 0, 0), 8));
+        assert(patternPreview->getData()[0] == FXRGB(16, 32, 48));
+        assert(patternPreview->getData()[2] == FXRGB(224, 192, 128));
+        assert(patternPreview->getData()[16] == FXRGB(16, 32, 48));
+        FXColor half = patternPreview->getData()[18];
+        assert(FXREDVAL(half) == 120 && FXGREENVAL(half) == 112 && FXBLUEVAL(half) == 88);
+        assert(xf_mkpath((blueSource + "/patterns/Geometric").text(), 0755) == 0);
+        solidPng(app, blueSource + "/patterns/Geometric/Checker Board.png", FXRGB(255, 255, 255));
+        std::unique_ptr<FXIcon> localPattern(
+            BackgroundEffect::preview(&window, patterned.effect, FXRGB(0, 0, 0), 8, blueSource));
+        assert(localPattern->getData()[0] == FXRGB(224, 192, 128));
+        assert(imported.saveEditedTheme(patterned, -1));
+        assert(xf_existfile(patterned.assetRoot + "/patterns/Geometric/Checker Board.png"));
+        assert(xf_existfile(patterned.assetRoot + "/patterns/Geometric/Other.png"));
+        assert(BackgroundEffect::patternPath(patternReference, patterned.assetRoot) ==
+               patterned.assetRoot + "/patterns/Geometric/Checker Board.png");
+        assert(liveBackground() == FXRGB(16, 32, 48));
+        PreferencesBox reloadedPatterns(&window, app.getBackColor(), app.getForeColor(), app.getBackColor(),
+                                        app.getSelbackColor(), FXRGB(255, 0, 0), app.getBaseColor());
+        FXbool foundPattern = false;
+        for (const Theme& theme : reloadedPatterns.Themes)
+            if (theme.name == patterned.name)
+                foundPattern = theme.assetRoot == patterned.assetRoot &&
+                               BackgroundEffect::parse(theme.effect).patternImage == patternReference;
+        assert(foundPattern);
+
+        ActionTimer choosePatternExport([&] {
+            FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+            assert(chooser && chooser->getTitle() == "Choose where to export the theme folder");
+            chooser->setFilename(exportParent);
+            chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+        });
+        app.addTimeout(&choosePatternExport, 1, 150);
+        imported.onCmdThemeExport(NULL, 0, NULL);
+        FXString patternExport = exportParent + "/Pattern pack";
+        assert(xf_existfile(patternExport + "/patterns/Geometric/Checker Board.png"));
+        assert(xf_existfile(patternExport + "/patterns/Geometric/Other.png"));
+        copyThemeWithName(patternExport + "/theme.swordfish-theme", patternExport + "/import.swordfish-theme",
+                          "Imported pattern pack");
+        assert(imported.importThemeFile(patternExport + "/import.swordfish-theme"));
+        assert(imported.currTheme.assetRoot == patternExport);
+        assert(BackgroundEffect::patternPath(patternReference, imported.currTheme.assetRoot) ==
+               patternExport + "/patterns/Geometric/Checker Board.png");
+
+        editor.draft = editor.applied = editor.saved = patterned;
+        editor.show(PLACEMENT_SCREEN);
+        pump(app);
+        ActionTimer patternDialog([&] {
+            FXWindow* dialog = app.getModalWindow();
+            assert(dialog);
+            FXTabBook* pages = static_cast<FXTabBook*>(findClass(dialog, "FXTabBook"));
+            assert(pages);
+            pages->setCurrent(1, true);
+            pages->layout();
+            pump(app);
+            FXWindow* page = pages->childAtIndex(3);
+            FXListBox* categories = findListBoxWithItem(page, "Geometric");
+            FXIconList* gallery = static_cast<FXIconList*>(findClass(page, "FXIconList"));
+            assert(page->shown() && categories && gallery && gallery->shown());
+            categories->setCurrentItem(categories->findItem("Geometric"));
+            categories->getTarget()->handle(categories, FXSEL(SEL_COMMAND, categories->getSelector()), NULL);
+            pump(app);
+            assert(gallery->getNumItems() == 2 && gallery->getItemText(0) == "Checker Board");
+            FXIcon* sample = gallery->getItemBigIcon(0);
+            gallery->setCurrentItem(1);
+            gallery->selectItem(1);
+            pump(app);
+            assert(sample && sample->getData() && itemShowsPixel(gallery, 0, sample->getData()[0]));
+            gallery->setCurrentItem(0);
+            gallery->getTarget()->handle(gallery, FXSEL(SEL_COMMAND, gallery->getSelector()), NULL);
+            assert(BackgroundEffect::parse(editor.getDraft().effect).patternImage == patternReference);
+            categories->setCurrentItem(categories->findItem("Built-in shapes"));
+            categories->getTarget()->handle(categories, FXSEL(SEL_COMMAND, categories->getSelector()), NULL);
+            assert(gallery->getNumItems() == 8);
+            FXSpinner* size = static_cast<FXSpinner*>(findClass(page, "FXSpinner"));
+            assert(size);
+            size->setValue(12);
+            size->getTarget()->handle(size, FXSEL(SEL_COMMAND, size->getSelector()), NULL);
+            assert(BackgroundEffect::parse(editor.getDraft().effect).patternImage == patternReference);
+            gallery->setCurrentItem(4);
+            gallery->getTarget()->handle(gallery, FXSEL(SEL_COMMAND, gallery->getSelector()), NULL);
+            BackgroundEffect shape = BackgroundEffect::parse(editor.getDraft().effect);
+            assert(shape.patternImage.empty() && shape.pattern == 5);
+            categories->setCurrentItem(categories->findItem("Geometric"));
+            categories->getTarget()->handle(categories, FXSEL(SEL_COMMAND, categories->getSelector()), NULL);
+            ActionTimer namePattern([&] {
+                InputDialog* naming = dynamic_cast<InputDialog*>(app.getModalWindow());
+                assert(naming && naming->getTitle() == "Pattern name");
+                naming->setText("UI Added");
+                naming->handle(naming, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            });
+            ActionTimer choosePattern([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser && chooser->getTitle() == "Add PNG pattern");
+                chooser->setFilename(redSource + "/textures/checker.png");
+                app.addTimeout(&namePattern, 1, 150);
+                chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            });
+            FXButton* addPattern = findButton(page, "Add PNG...");
+            assert(addPattern);
+            app.addTimeout(&choosePattern, 1, 150);
+            addPattern->getTarget()->handle(addPattern, FXSEL(SEL_COMMAND, addPattern->getSelector()), NULL);
+            assert(xf_existfile(globalPatterns + "/Geometric/UI Added.png"));
+            assert(BackgroundEffect::parse(editor.getDraft().effect).patternImage ==
+                   BackgroundEffect::textureReference("Geometric/UI Added"));
+            dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
+        });
+        app.addTimeout(&patternDialog, 1, 150);
+        editor.properties->setCurrentItem(editor.propertyKeys.size() - 1);
+        editor.onEditProperty(NULL, 0, NULL);
+        editor.hide();
+        puts("PASS: categorized pattern masks, safe imports, theme sharing and visible gallery previews");
 
         assert(unlink((copied + "/textures/shared.png").text()) == 0);
         assert(symlink(outsideFile.text(), (copied + "/textures/shared.png").text()) == 0);

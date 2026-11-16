@@ -429,7 +429,7 @@ public:
     long onCmdThemeExport(FXObject*, FXSelector, void*);
     long onCmdThemeImport(FXObject*, FXSelector, void*);
     FXbool importThemeFile(const FXString&);
-    FXbool importThemeTexture(const FXString&, const FXString&);
+    FXbool importThemeTiles(const FXString&, const FXString&);
     long onUpdThemeExport(FXObject*, FXSelector, void*);
     long onCmdIconTheme(FXObject*, FXSelector, void*);
     void fillIconThemeList();

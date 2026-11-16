@@ -1544,6 +1544,7 @@ int IconList::getBackgroundGutter() const
 #include <cmath>
 #include <fstream>
 #include <iterator>
+#include <memory>
 
 // Theme background effects
 //
@@ -1676,6 +1677,12 @@ EffectSpec parseEffect(const FXString& spec)
                 }
             }
         }
+        else if (key == "pattern_image")
+        {
+            FXString relative;
+            if (BackgroundEffect::textureRelativePath(value, relative))
+                effect.patternImage = BackgroundEffect::textureReference(relative);
+        }
         else if (key == "size")
         {
             effect.size = FXCLAMP(4, FXIntVal(value), 256);
@@ -1746,17 +1753,18 @@ FXbool patternCovers(int pattern, double x, double y, double s)
 }
 
 // A theme's own copy takes precedence; otherwise bundled tiles precede user tiles.
-FXString findTexture(const FXString& name, const FXString& assetRoot)
+FXString findTile(const FXString& name, const FXString& assetRoot, FXbool pattern)
 {
     FXString relative;
     if (!BackgroundEffect::textureRelativePath(name, relative)) return FXString::null;
+    FXString kind = pattern ? "patterns" : "textures";
     FXString candidates[] =
     {
-        assetRoot.empty() ? FXString::null : assetRoot + PATHSEPSTRING "textures" PATHSEPSTRING + relative,
-        assetRoot.empty() ? FXString::null : assetRoot + PATHSEPSTRING + relative,
-        FXPath::directory(execpath) + "/../share/swordfish/textures/" + relative,
-        xf_userdatahome() + PATHSEPSTRING "textures" PATHSEPSTRING + relative,
-        xdgconfighome + PATHSEPSTRING XFECONFIGPATH "/textures/" + relative
+        assetRoot.empty() ? FXString::null : assetRoot + PATHSEPSTRING + kind + PATHSEPSTRING + relative,
+        assetRoot.empty() || pattern ? FXString::null : assetRoot + PATHSEPSTRING + relative,
+        FXPath::directory(execpath) + "/../share/swordfish/" + kind + "/" + relative,
+        xf_userdatahome() + PATHSEPSTRING + kind + PATHSEPSTRING + relative,
+        pattern ? FXString::null : xdgconfighome + PATHSEPSTRING XFECONFIGPATH "/textures/" + relative
     };
     for (const FXString& candidate : candidates)
     {
@@ -1820,7 +1828,8 @@ FXString BackgroundEffect::serialize() const
     if (angled || direction == "linear") result += FXString().format(" angle=%.2f", angle);
     static const char* const names[] = {"", "stripes", "vertical-stripes", "diagonal-stripes", "checks",
                                         "grid", "dots", "diamonds", "crosshatch"};
-    if (pattern > 0 && pattern < static_cast<int>(ARRAYNUMBER(names))) result += " pattern=" + FXString(names[pattern]);
+    if (!patternImage.empty()) result += " pattern_image=" + patternImage;
+    else if (pattern > 0 && pattern < static_cast<int>(ARRAYNUMBER(names))) result += " pattern=" + FXString(names[pattern]);
     result += FXString().format(" size=%.0f", size);
     if (!texture.empty()) result += " texture=" + texture;
     result += FXString().format(" strength=%d texture_colors=%s rows=%s", strength,
@@ -1886,19 +1895,19 @@ FXbool BackgroundEffect::textureRelativePath(const FXString& reference, FXString
     return true;
 }
 
-FXbool BackgroundEffect::prepareTextureDestination(const FXString& base, const FXString& reference,
-                                                    FXString& destination, FXString& error)
+static FXbool prepareTileDestination(const FXString& base, const FXString& reference,
+                                     FXString& destination, FXString& error, FXbool pattern)
 {
     FXString relative;
-    if (!textureRelativePath(reference, relative))
+    if (!BackgroundEffect::textureRelativePath(reference, relative))
     {
-        error = _("Invalid texture name or category.");
+        error = pattern ? _("Invalid pattern name or category.") : _("Invalid texture name or category.");
         return false;
     }
     FXString directory = FXPath::absolute(base);
     if (xf_islink(directory) || xf_mkpath(directory.text(), 0755) != 0 || !xf_isdirectory(directory))
     {
-        error = _("Cannot create texture folder: ") + directory;
+        error = (pattern ? _("Cannot create pattern folder: ") : _("Cannot create texture folder: ")) + directory;
         return false;
     }
     for (FXint i = 0; i < relative.contains('/'); ++i)
@@ -1906,25 +1915,43 @@ FXbool BackgroundEffect::prepareTextureDestination(const FXString& base, const F
         directory += PATHSEPSTRING + relative.section('/', i);
         if (xf_islink(directory) || xf_mkpath(directory.text(), 0755) != 0 || !xf_isdirectory(directory))
         {
-            error = _("Cannot create texture folder: ") + directory;
+            error = (pattern ? _("Cannot create pattern folder: ") : _("Cannot create texture folder: ")) + directory;
             return false;
         }
     }
     destination = directory + PATHSEPSTRING + relative.rafter('/') + ".png";
     if (xf_islink(destination))
     {
-        error = _("Texture destination is a symbolic link: ") + destination;
+        error = (pattern ? _("Pattern destination is a symbolic link: ") :
+                           _("Texture destination is a symbolic link: ")) + destination;
         return false;
     }
     return true;
 }
 
-FXString BackgroundEffect::texturePath(const FXString& name, const FXString& assetRoot)
+FXbool BackgroundEffect::prepareTextureDestination(const FXString& base, const FXString& reference,
+                                                    FXString& destination, FXString& error)
 {
-    return validTextureName(name) ? findTexture(name, assetRoot) : FXString::null;
+    return prepareTileDestination(base, reference, destination, error, false);
 }
 
-static FXbool validTextureHeader(const FXString& path, FXString& error)
+FXbool BackgroundEffect::preparePatternDestination(const FXString& base, const FXString& reference,
+                                                    FXString& destination, FXString& error)
+{
+    return prepareTileDestination(base, reference, destination, error, true);
+}
+
+FXString BackgroundEffect::texturePath(const FXString& name, const FXString& assetRoot)
+{
+    return validTextureName(name) ? findTile(name, assetRoot, false) : FXString::null;
+}
+
+FXString BackgroundEffect::patternPath(const FXString& name, const FXString& assetRoot)
+{
+    return validTextureName(name) ? findTile(name, assetRoot, true) : FXString::null;
+}
+
+static FXbool validTileHeader(const FXString& path, FXString& error, FXbool pattern)
 {
     FILE* file = fopen(path.text(), "rb");
     if (!file)
@@ -1946,7 +1973,22 @@ static FXbool validTextureHeader(const FXString& path, FXString& error)
     if (failed || stat(path.text(), &status) != 0 || !S_ISREG(status.st_mode) || status.st_size > 16 * 1024 * 1024 ||
         !png || !width || !height || width > 1024 || height > 1024)
     {
-        error = _("A texture must be a PNG image of at most 1024 x 1024 pixels and 16 MB.");
+        error = pattern ? _("A pattern must be a PNG image of at most 1024 x 1024 pixels and 16 MB.") :
+                          _("A texture must be a PNG image of at most 1024 x 1024 pixels and 16 MB.");
+        return false;
+    }
+    return true;
+}
+
+static FXbool validateTile(FXApp* app, const FXString& path, FXString& error, FXbool pattern)
+{
+    if (!validTileHeader(path, error, pattern)) return false;
+    FXFileStream stream;
+    FXPNGImage image(app, NULL, IMAGE_KEEP);
+    if (!stream.open(path, FXStreamLoad) || !image.loadPixels(stream) || !image.getData())
+    {
+        error = (pattern ? _("The PNG pattern could not be decoded: ") :
+                           _("The PNG texture could not be decoded: ")) + path;
         return false;
     }
     return true;
@@ -1954,27 +1996,24 @@ static FXbool validTextureHeader(const FXString& path, FXString& error)
 
 FXbool BackgroundEffect::validateTexture(FXApp* app, const FXString& path, FXString& error)
 {
-    if (!validTextureHeader(path, error)) return false;
-    FXFileStream stream;
-    FXPNGImage image(app, NULL, IMAGE_KEEP);
-    if (!stream.open(path, FXStreamLoad) || !image.loadPixels(stream) || !image.getData())
-    {
-        error = _("The PNG texture could not be decoded: ") + path;
-        return false;
-    }
-    return true;
+    return validateTile(app, path, error, false);
 }
 
-FXbool BackgroundEffect::importTexture(FXApp* app, const FXString& source, const FXString& name,
-                                       FXbool allowIdentical, FXString& error)
+FXbool BackgroundEffect::validatePattern(FXApp* app, const FXString& path, FXString& error)
 {
-    if (!validTextureName(name))
+    return validateTile(app, path, error, true);
+}
+
+static FXbool importTile(FXApp* app, const FXString& source, const FXString& name,
+                         FXbool allowIdentical, FXString& error, FXbool pattern)
+{
+    if (!BackgroundEffect::validTextureName(name))
     {
-        error = _("Invalid texture name or category.");
+        error = pattern ? _("Invalid pattern name or category.") : _("Invalid texture name or category.");
         return false;
     }
-    if (!validateTexture(app, source, error)) return false;
-    FXString existing = texturePath(name);
+    if (!validateTile(app, source, error, pattern)) return false;
+    FXString existing = pattern ? BackgroundEffect::patternPath(name) : BackgroundEffect::texturePath(name);
     if (!existing.empty())
     {
         FXbool same = allowIdentical;
@@ -1990,24 +2029,38 @@ FXbool BackgroundEffect::importTexture(FXApp* app, const FXString& source, const
             }
             if (a.bad() || b.bad())
             {
-                error = _("Cannot read texture: ") + existing;
+                error = (pattern ? _("Cannot read pattern: ") : _("Cannot read texture: ")) + existing;
                 return false;
             }
         }
         if (same) return true;
-        error = _("Texture name already exists. Please use another name.");
+        error = pattern ? _("Pattern name already exists. Please use another name.") :
+                          _("Texture name already exists. Please use another name.");
         return false;
     }
-    FXString directory = xf_userdatahome() + PATHSEPSTRING "textures";
+    FXString directory = xf_userdatahome() + PATHSEPSTRING + (pattern ? "patterns" : "textures");
     FXString destination;
-    if (!prepareTextureDestination(directory, name, destination, error)) return false;
+    if (!prepareTileDestination(directory, name, destination, error, pattern)) return false;
     if (!FXFile::copyFiles(source, destination, false))
     {
-        error = _("Cannot copy texture into ") + directory + ": " + strerror(errno);
+        error = (pattern ? _("Cannot copy pattern into ") : _("Cannot copy texture into ")) + directory + ": " + strerror(errno);
         return false;
     }
-    appLog(APP_LOG_SETTINGS, "theme-texture-imported", name + " from \"" + source + "\"");
+    appLog(APP_LOG_SETTINGS, pattern ? "theme-pattern-imported" : "theme-texture-imported",
+           name + " from \"" + source + "\"");
     return true;
+}
+
+FXbool BackgroundEffect::importTexture(FXApp* app, const FXString& source, const FXString& name,
+                                       FXbool allowIdentical, FXString& error)
+{
+    return importTile(app, source, name, allowIdentical, error, false);
+}
+
+FXbool BackgroundEffect::importPattern(FXApp* app, const FXString& source, const FXString& name,
+                                      FXbool allowIdentical, FXString& error)
+{
+    return importTile(app, source, name, allowIdentical, error, true);
 }
 
 
@@ -2083,6 +2136,30 @@ void IconList::buildBackgroundEffect()
         for (size_t i = 0; i < stops.size(); ++i) positions.push_back(i / static_cast<double>(stops.size() - 1));
     }
 
+    std::unique_ptr<FXPNGImage> patternImage;
+    FXint patternWidth = 0, patternHeight = 0;
+    if (effect.fill == "pattern" && !effect.patternImage.empty())
+    {
+        FXString path = findTile(effect.patternImage, effectAssetRoot, true), error;
+        if (path.empty())
+            appLog(APP_LOG_ERRORS, "theme-pattern-missing", effect.patternImage);
+        else if (!validTileHeader(path, error, true))
+            appLog(APP_LOG_ERRORS, "theme-pattern-invalid", path + ": " + error);
+        else
+        {
+            std::unique_ptr<FXPNGImage> image(new FXPNGImage(getApp(), NULL, IMAGE_KEEP));
+            FXFileStream stream;
+            if (!stream.open(path, FXStreamLoad) || !image->loadPixels(stream) || !image->getData())
+                appLog(APP_LOG_ERRORS, "theme-pattern-invalid", path);
+            else
+            {
+                patternWidth = FXMAX(1, static_cast<FXint>(effect.size));
+                patternHeight = FXMAX(1, static_cast<FXint>(effect.size * image->getHeight() / image->getWidth() + 0.5));
+                patternImage = std::move(image);
+            }
+        }
+    }
+
     const double radians = effect.angle * 3.14159265358979323846 / 180.0;
     const double angleX = cos(radians), angleY = sin(radians);
     for (int y = 0; y < h; y++)
@@ -2128,7 +2205,16 @@ void IconList::buildBackgroundEffect()
                 }
                 color = mixColor(stops[stop], stops[stop + 1], position);
             }
-            else if (effect.fill == "pattern" && effect.pattern != PATTERN_NONE)
+            else if (effect.fill == "pattern" && patternImage)
+            {
+                FXint px = (x % patternWidth) * patternImage->getWidth() / patternWidth;
+                FXint py = (y % patternHeight) * patternImage->getHeight() / patternHeight;
+                FXColor mask = patternImage->getData()[py * patternImage->getWidth() + px];
+                double luminance = (FXREDVAL(mask) * 299 + FXGREENVAL(mask) * 587 + FXBLUEVAL(mask) * 114) /
+                                   255000.0;
+                color = mixColor(stops[0], stops[1], luminance * FXALPHAVAL(mask) / 255.0);
+            }
+            else if (effect.fill == "pattern" && effect.patternImage.empty() && effect.pattern != PATTERN_NONE)
             {
                 // 4x supersampling keeps diagonal and round edges smooth
                 int hits = 0;
@@ -2144,7 +2230,7 @@ void IconList::buildBackgroundEffect()
     }
 
     // Tinted tiles modulate brightness around their own average, keeping the colours underneath
-    FXString path = effect.texture.empty() ? FXString() : findTexture(effect.texture, effectAssetRoot);
+    FXString path = effect.texture.empty() ? FXString() : findTile(effect.texture, effectAssetRoot, false);
     if (!effect.texture.empty() && effect.strength > 0 && path.empty())
         appLog(APP_LOG_ERRORS, "theme-texture-missing", effect.texture);
     if (!path.empty() && effect.strength > 0)
@@ -2152,7 +2238,7 @@ void IconList::buildBackgroundEffect()
         FXFileStream stream;
         FXPNGImage tile(getApp(), NULL, IMAGE_KEEP);
         FXString error;
-        if (!validTextureHeader(path, error))
+        if (!validTileHeader(path, error, false))
             appLog(APP_LOG_ERRORS, "theme-texture-invalid", path + ": " + error);
         else if (stream.open(path, FXStreamLoad) && tile.loadPixels(stream) && tile.getData() &&
             tile.getWidth() > 0 && tile.getHeight() > 0 && tile.getWidth() <= 1024 && tile.getHeight() <= 1024)

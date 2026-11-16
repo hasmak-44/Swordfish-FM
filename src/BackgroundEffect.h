@@ -14,6 +14,7 @@ struct BackgroundEffect
     FXdouble angle = 90;
     FXbool angled = false;
     FXint pattern = 0;
+    FXString patternImage;
     FXdouble size = 24;
     FXString texture;
     FXint strength = 40;
@@ -26,9 +27,13 @@ struct BackgroundEffect
     static FXString textureReference(const FXString&);
     static FXbool textureRelativePath(const FXString&, FXString&);
     static FXbool prepareTextureDestination(const FXString&, const FXString&, FXString&, FXString&);
+    static FXbool preparePatternDestination(const FXString&, const FXString&, FXString&, FXString&);
     static FXString texturePath(const FXString&, const FXString& = FXString::null);
+    static FXString patternPath(const FXString&, const FXString& = FXString::null);
     static FXbool validateTexture(FXApp*, const FXString&, FXString&);
+    static FXbool validatePattern(FXApp*, const FXString&, FXString&);
     static FXbool importTexture(FXApp*, const FXString&, const FXString&, FXbool, FXString&);
+    static FXbool importPattern(FXApp*, const FXString&, const FXString&, FXbool, FXString&);
     static FXIcon* preview(FXComposite*, const FXString&, FXColor, FXint = 48,
                            const FXString& = FXString::null);
 };
