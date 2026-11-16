@@ -3170,6 +3170,19 @@ Validation in the codespace: clean native build and folder/device integration
 regression covering AFC inventory, mounted/unmounted transitions, mount error
 and success flows, sidebar behavior, and GVFS URI reconstruction.
 
+### 3.79. USB phone discovery diagnostics (16 November 2026)
+
+The Devices sidebar now gives setup guidance when no MTP/AFC phone is detected.
+Host backend warnings and monitor failures are surfaced as a notice with
+details on hover, in addition to the existing application log. Phone mount
+failures continue to show an error dialog and are logged. This does not claim
+that a connected phone was detected when its host backend does not advertise
+it.
+
+Validation in the codespace: clean native build and folder/device integration
+regression covering the no-device hint, visible AFC backend warning, inventory
+recovery, and MTP/AFC mount flows. Physical device validation remains pending.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

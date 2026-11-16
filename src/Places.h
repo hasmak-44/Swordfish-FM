@@ -150,6 +150,8 @@ protected:
     std::map<FXString, FXString> pendingUsbVolumes;
     std::set<FXString> mountedUsbVolumes;
     std::set<FXString> pendingMountedUsbVolumes;
+    FXString usbStatus;
+    FXString pendingUsbStatus;
     FXString usbBuffer;
     FXbool usbSnapshotInvalid = false;
     int usbFd = -1;
@@ -161,6 +163,7 @@ protected:
     static FXString blockDevices();
     void startUsbMonitor();
     void stopUsbMonitor();
+    void setUsbStatus(const FXString&);
 
 public:
     MountsList(FXWindow*, FXComposite*, FXObject*, FXSelector, FXColor listbackcolor = FXRGB(255, 255, 255),
@@ -189,6 +192,16 @@ public:
     FXString getItemPathname(FXString key)
     {
         return mounts->find(key.text());
+    }
+
+    FXString getUsbStatus() const
+    {
+        return usbStatus;
+    }
+
+    FXbool hasPortableDevices() const
+    {
+        return !usbVolumes.empty();
     }
 
     // Deselect all items

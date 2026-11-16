@@ -286,6 +286,10 @@ device is locked, untrusted, or unsupported by the host backend, it may not
 appear or mounting may fail; host monitor/backend errors are recorded in the
 application log.
 
+When no MTP/AFC phone is detected, the Devices sidebar shows a setup hint.
+Host backend warnings appear there with details on hover. Mount failures are
+reported in an error dialog and recorded in the application log.
+
 Device rows have separate controls at the right:
 
 - The pause button unmounts the selected filesystem. When it is unmounted but

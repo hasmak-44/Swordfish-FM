@@ -805,6 +805,7 @@ void MountsList::startUsbMonitor()
     if (pipe2(pipefd, O_CLOEXEC) != 0)
     {
         appLog(APP_LOG_ERRORS, "usb-monitor-start-failed", strerror(errno));
+        setUsbStatus(FXString(_("Unable to start device discovery: ")) + strerror(errno));
         getApp()->addTimeout(this, ID_USB_RESTART, 10000);
         return;
     }
@@ -832,6 +833,7 @@ void MountsList::startUsbMonitor()
     if (usbPid < 0)
     {
         appLog(APP_LOG_ERRORS, "usb-monitor-start-failed", strerror(errno));
+        setUsbStatus(FXString(_("Unable to start device discovery: ")) + strerror(errno));
         ::close(pipefd[0]);
         getApp()->addTimeout(this, ID_USB_RESTART, 10000);
         return;
@@ -860,7 +862,13 @@ void MountsList::stopUsbMonitor()
     usbBuffer.clear();
     pendingUsbVolumes.clear();
     pendingMountedUsbVolumes.clear();
+    pendingUsbStatus.clear();
     usbSnapshotInvalid = false;
+}
+
+void MountsList::setUsbStatus(const FXString& status)
+{
+    usbStatus = status;
 }
 
 long MountsList::onUsbRestart(FXObject*, FXSelector, void*)
@@ -877,6 +885,7 @@ long MountsList::onUsbRead(FXObject*, FXSelector, void*)
     {
         if (count < 0 && errno == EINTR) return 1;
         appLog(APP_LOG_ERRORS, "usb-monitor-stopped", count < 0 ? strerror(errno) : "unexpected end of output");
+        setUsbStatus(_("Device discovery stopped; retrying."));
         stopUsbMonitor();
         getApp()->addTimeout(this, ID_USB_RESTART, 10000);
         return 1;
@@ -885,6 +894,7 @@ long MountsList::onUsbRead(FXObject*, FXSelector, void*)
     if (usbBuffer.length() > 65536)
     {
         appLog(APP_LOG_ERRORS, "usb-monitor-invalid-output", "record too long");
+        setUsbStatus(_("Device discovery returned invalid data; retrying."));
         stopUsbMonitor();
         getApp()->addTimeout(this, ID_USB_RESTART, 10000);
         return 1;
@@ -896,6 +906,8 @@ long MountsList::onUsbRead(FXObject*, FXSelector, void*)
         usbBuffer = usbBuffer.mid(newline + 1, usbBuffer.length());
         if (line == "DONE")
         {
+            setUsbStatus(pendingUsbStatus);
+            pendingUsbStatus.clear();
             if (!usbSnapshotInvalid &&
                 (usbVolumes != pendingUsbVolumes || mountedUsbVolumes != pendingMountedUsbVolumes))
             {
@@ -909,11 +921,16 @@ long MountsList::onUsbRead(FXObject*, FXSelector, void*)
         }
         else if (line.left(7) == "STATUS\t")
         {
-            appLog(APP_LOG_ERRORS, "usb-monitor-status", line.mid(7, line.length()));
+            FXString message = line.mid(7, line.length());
+            appLog(APP_LOG_ERRORS, "usb-monitor-status", message);
+            if (!pendingUsbStatus.empty()) pendingUsbStatus += "\n";
+            pendingUsbStatus += message;
         }
         else if (line.left(6) == "ERROR\t")
         {
             appLog(APP_LOG_ERRORS, "usb-monitor-error", line.mid(6, line.length()));
+            if (!pendingUsbStatus.empty()) pendingUsbStatus += "\n";
+            pendingUsbStatus += line.mid(6, line.length());
             usbSnapshotInvalid = true;
         }
         else if (line.left(7) == "DEVICE\t" && line.contains('\t') == 3)
@@ -930,11 +947,17 @@ long MountsList::onUsbRead(FXObject*, FXSelector, void*)
                 if (line.section('\t', 3) == "mounted")
                     pendingMountedUsbVolumes.insert(location);
                 else if (line.section('\t', 3) != "unmounted")
+                {
+                    if (!pendingUsbStatus.empty()) pendingUsbStatus += "\n";
+                    pendingUsbStatus += _("Device monitor returned invalid data; previous results were retained.");
                     usbSnapshotInvalid = true;
+                }
             }
             else
             {
                 appLog(APP_LOG_ERRORS, "usb-monitor-invalid-output", line);
+                if (!pendingUsbStatus.empty()) pendingUsbStatus += "\n";
+                pendingUsbStatus += _("Device monitor returned invalid data; previous results were retained.");
                 usbSnapshotInvalid = true;
             }
             g_free(name);
@@ -943,6 +966,8 @@ long MountsList::onUsbRead(FXObject*, FXSelector, void*)
         else
         {
             appLog(APP_LOG_ERRORS, "usb-monitor-invalid-output", line);
+            if (!pendingUsbStatus.empty()) pendingUsbStatus += "\n";
+            pendingUsbStatus += _("Device monitor returned invalid data; previous results were retained.");
             usbSnapshotInvalid = true;
         }
     }

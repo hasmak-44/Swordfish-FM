@@ -1516,13 +1516,30 @@ int main(int argc, char** argv)
         usbSnapshot("");
         for (int i = 0; i < 50 && mounts->disconnected("mtp://first/"); ++i) pump(app, 100);
         assert(!mounts->disconnected("mtp://first/"));
+        panel->onSidebarRefresh(NULL, 0, NULL);
+        SidebarItem* deviceRoot = static_cast<SidebarItem*>(navigation->getFirstItem()->getNext()->getNext());
+        auto findDeviceNotice = [deviceRoot]() -> SidebarItem*
+        {
+            for (FXTreeItem* item = deviceRoot->getFirst(); item; item = item->getNext())
+                if (static_cast<SidebarItem*>(item)->kind == SidebarItem::NOTICE)
+                    return static_cast<SidebarItem*>(item);
+            return NULL;
+        };
+        assert(findDeviceNotice() &&
+               findDeviceNotice()->getText() == "Phone not listed? Check USB setup.");
+        usbSnapshot("STATUS\tHost GVFS AFC backend is unavailable; install the desktop GVFS AFC support and libimobiledevice.\n");
+        for (int i = 0; i < 50 && mounts->getUsbStatus().empty(); ++i) pump(app, 100);
+        assert(mounts->getUsbStatus().contains("AFC backend is unavailable"));
+        panel->onSidebarRefresh(NULL, 0, NULL);
+        assert(findDeviceNotice() && findDeviceNotice()->getText() == "Phone discovery issue (hover for details)");
+        assert(findDeviceNotice()->tip.contains("AFC backend is unavailable"));
         usbSnapshot("DEVICE\tRG9jdW1lbnRzIG9uIGlQaG9uZQ==\tYWZjOi8vZmlyc3Q6My8=\tunmounted\n");
         for (int i = 0; i < 50 && !mounts->disconnected("afc://first:3/"); ++i) pump(app, 100);
         assert(mounts->disconnected("afc://first:3/"));
         panel->onSidebarRefresh(NULL, 0, NULL);
+        assert(!findDeviceNotice());
         SidebarItem* iphone = NULL;
-        for (FXTreeItem* item = navigation->getFirstItem()->getNext()->getNext()->getFirst();
-             item; item = item->getNext())
+        for (FXTreeItem* item = deviceRoot->getFirst(); item; item = item->getNext())
             if (static_cast<SidebarItem*>(item)->path == "afc://first:3/")
                 iphone = static_cast<SidebarItem*>(item);
         assert(iphone && iphone->deviceAction == SidebarItem::MOUNT_DEVICE && !iphone->canEject);

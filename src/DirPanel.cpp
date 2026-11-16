@@ -685,6 +685,11 @@ void DirPanel::syncSidebar()
                              service.name + "\t" + service.url + "\t" + service.sources;
             }
         }
+        else if (group == 2)
+        {
+            signature = mountslist->getUsbStatus() + "\n" +
+                        (mountslist->hasPortableDevices() ? "portable-device-found" : "no-portable-device");
+        }
         for (FXint i = 0; group < 3 && i < sources[group]->getNumItems(); ++i)
         {
             FXString name = sources[group]->getItemText(i);
@@ -818,6 +823,24 @@ void DirPanel::syncSidebar()
             item->setHasItems(kind != SidebarItem::DEVICE ||
                               (path.left(5) != "/dev/" && !mountslist->disconnected(path)));
             sidebar->appendItem(root, item);
+        }
+        if (group == 2)
+        {
+            SidebarItem* notice = NULL;
+            if (!mountslist->getUsbStatus().empty())
+            {
+                notice = new SidebarItem(_("Phone discovery issue (hover for details)"), NULL,
+                                         SidebarItem::NOTICE);
+                notice->tip = mountslist->getUsbStatus();
+            }
+            else if (!mountslist->hasPortableDevices())
+            {
+                notice = new SidebarItem(_("Phone not listed? Check USB setup."), NULL, SidebarItem::NOTICE);
+                notice->tip = _("Android: unlock the phone and select file transfer. "
+                                "iPhone/iPad: unlock it and approve Trust This Computer. "
+                                "The host needs GVFS MTP/AFC support.");
+            }
+            if (notice) sidebar->appendItem(root, notice);
         }
         if (group == 1)
         {
