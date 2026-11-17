@@ -89,6 +89,8 @@
   skipped.
 
 ### Fixed
+- Clicking anywhere inside the No texture or No image tile now removes the
+  graphic; the pattern gallery also has a No pattern choice.
 - A first run no longer shows black text on black: the default colours in
   the installed configuration were written in a form the toolkit could not
   read.

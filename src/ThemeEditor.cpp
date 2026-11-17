@@ -211,6 +211,13 @@ public:
         return FXIconItem::getHeight(list) + 8;
     }
 protected:
+    FXint hitItem(const FXIconList* list, FXint x, FXint y, FXint w, FXint h) const override
+    {
+        FXint hit = FXIconItem::hitItem(list, x, y, w, h);
+        if (hit) return hit;
+        return x + w > 3 && x < list->getItemSpace() - 3 &&
+               y + h > 3 && y < list->getItemHeight() - 3 ? 1 : 0;
+    }
     void drawBigIcon(const FXIconList* list, FXDC& dc, FXint x, FXint y, FXint w, FXint h) const override
     {
         FXColor back = list->getBackColor();
@@ -1171,8 +1178,10 @@ class BackgroundEditor : public DialogBox
         patternOriginalColors->setCheck(effect.patternOriginalColors);
         rows->setCheck(effect.rows);
         for (FXint i = 0; i < static_cast<FXint>(patternNames.size()); ++i)
-            if ((!effect.patternImage.empty() && effect.patternImage == patternNames[i]) ||
-                (effect.patternImage.empty() && effect.pattern > 0 && effect.pattern == patternNumbers[i]))
+            if (!patterns->isFolder(i) &&
+                ((effect.fill != "pattern" && patternNames[i].empty() && patternNumbers[i] == 0) ||
+                 (effect.fill == "pattern" && ((!effect.patternImage.empty() && effect.patternImage == patternNames[i]) ||
+                  (effect.patternImage.empty() && patternNames[i].empty() && effect.pattern == patternNumbers[i])))))
                 patterns->setCurrentItem(i);
         syncing = false;
     }
@@ -1261,6 +1270,12 @@ class BackgroundEditor : public DialogBox
         const char* names[] = {_("Horizontal stripes"), _("Vertical stripes"), _("Diagonal stripes"), _("Checks"),
                                _("Grid"), _("Dots"), _("Diamonds"), _("Crosshatch")};
         if (patternFolder.empty())
+        {
+            patterns->addChoice(_("No pattern"), NULL);
+            patternNames.push_back("");
+            patternNumbers.push_back(0);
+            if (effect.fill != "pattern" || (effect.patternImage.empty() && effect.pattern == 0))
+                patterns->setCurrentItem(patternNames.size() - 1);
             for (FXint i = 0; i < static_cast<FXint>(ARRAYNUMBER(names)); ++i)
             {
                 BackgroundEffect sample = effect;
@@ -1276,9 +1291,10 @@ class BackgroundEditor : public DialogBox
                 patterns->addChoice(names[i], icon);
                 patternNames.push_back("");
                 patternNumbers.push_back(i + 1);
-                if (effect.patternImage.empty() && effect.pattern == i + 1)
+                if (effect.fill == "pattern" && effect.patternImage.empty() && effect.pattern == i + 1)
                     patterns->setCurrentItem(patternNames.size() - 1);
             }
+        }
         for (const auto& file : files)
         {
             const FXString& path = entries[file.first];
@@ -1300,7 +1316,8 @@ class BackgroundEditor : public DialogBox
             patterns->addChoice(file.second, icon);
             patternNames.push_back(file.first);
             patternNumbers.push_back(0);
-            if (file.first == effect.patternImage) patterns->setCurrentItem(patternNames.size() - 1);
+            if (effect.fill == "pattern" && file.first == effect.patternImage)
+                patterns->setCurrentItem(patternNames.size() - 1);
         }
         patterns->settle();
         patternStatus->setText(rejected.empty() ? _("PNG patterns: at most 1024 x 1024 pixels. Originals are never moved.") :
@@ -1553,8 +1570,14 @@ public:
             (sender == fill && effect.fill == "pattern" && effect.pattern == 0 && effect.patternImage.empty()))
         {
             FXint index = patterns->getCurrentItem();
-            if (index < 0)
-                while (++index < patterns->getNumItems() && patterns->isFolder(index)) {}
+            if (sender == fill && (index < 0 || index >= static_cast<FXint>(patternNumbers.size()) ||
+                patterns->isFolder(index) ||
+                (patternNumbers[index] == 0 && patternNames[index].empty())))
+            {
+                index = -1;
+                while (++index < patterns->getNumItems() &&
+                       (patterns->isFolder(index) || (patternNumbers[index] == 0 && patternNames[index].empty()))) {}
+            }
             if (index < 0 || index >= static_cast<FXint>(patternNumbers.size()) || patterns->isFolder(index))
             {
                 if (sender == patterns) return 1;
@@ -1572,8 +1595,21 @@ public:
         effect.originalColors = originalColors->getCheck();
         effect.patternOriginalColors = patternOriginalColors->getCheck();
         effect.rows = rows->getCheck();
-        if (sender == patterns) { effect.fill = "pattern"; fill->setCurrentItem(2); }
+        if (sender == patterns)
+        {
+            if (effect.pattern == 0 && effect.patternImage.empty())
+            {
+                if (effect.fill == "pattern") effect.fill = "solid";
+                fill->setCurrentItem(effect.fill == "gradient" ? 1 : 0);
+            }
+            else
+            {
+                effect.fill = "pattern";
+                fill->setCurrentItem(2);
+            }
+        }
         changed();
+        if (sender == fill) sync();
         return 1;
     }
     long onStop(FXObject*, FXSelector, void*)

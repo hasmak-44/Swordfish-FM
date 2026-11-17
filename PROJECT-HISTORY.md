@@ -3430,6 +3430,20 @@ Legacy per-area images migrate to the window on load. A regression applies a
 horizontal colour ramp and checks that the left and right panels show their
 own window positions of a single image, plus opacity and migration.
 
+### 3.96. Removing theme graphics (17 November 2026)
+
+The user reported that the No pattern, No texture and No background choices
+did not remove graphics. The bordered No texture and No image tiles had no
+icons, and FOX accepted clicks only on their text, not the empty tile. All
+gallery tiles now respond across their bordered area. The pattern gallery had
+no No pattern choice; it now has one. Removing an active pattern switches its
+fill to Solid, without removing a texture; an existing gradient is preserved.
+
+The theme workflow regression checks pointer clicks on the empty tile areas,
+keyboard selection, pattern/texture independence, cancellation, undo/redo,
+preview isolation and saving, reloading and applying a theme with all three
+graphics removed. Desktop confirmation is pending.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

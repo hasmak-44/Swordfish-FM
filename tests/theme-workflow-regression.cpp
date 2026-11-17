@@ -118,6 +118,30 @@ static void activateItem(FXIconList* gallery, const FXString& text)
     gallery->getTarget()->handle(gallery, FXSEL(SEL_COMMAND, gallery->getSelector()), (void*)(FXival)index);
 }
 
+static void clickItem(FXApp& app, FXIconList* gallery, const FXString& text)
+{
+    FXint index = gallery->findItem(text);
+    assert(index >= 0);
+    gallery->makeItemVisible(index);
+    pump(app);
+    FXEvent event = {};
+    FXint x = gallery->getXPosition() + (index % gallery->getNumCols()) * gallery->getItemSpace() +
+              gallery->getItemSpace() / 2;
+    FXint y = gallery->getYPosition() + (index / gallery->getNumCols()) * gallery->getItemHeight() + 8;
+    assert(x >= 0 && x < gallery->getWidth() && y >= 0 && y < gallery->getHeight());
+    assert(gallery->getItemAt(x, y) == index);
+    event.win_x = event.click_x = x;
+    event.win_y = event.click_y = y;
+    gallery->translateCoordinatesTo(event.root_x, event.root_y, app.getRootWindow(), x, y);
+    event.rootclick_x = event.root_x;
+    event.rootclick_y = event.root_y;
+    event.code = event.click_button = 1;
+    event.click_count = 1;
+    gallery->handle(gallery, FXSEL(SEL_LEFTBUTTONPRESS, 0), &event);
+    gallery->handle(gallery, FXSEL(SEL_LEFTBUTTONRELEASE, 0), &event);
+    pump(app);
+}
+
 static void pressKey(FXIconList* gallery, FXuint code)
 {
     FXEvent event;
@@ -608,7 +632,7 @@ public:
                 FXIconList* samples = static_cast<FXIconList*>(findClass(page, "ThemeGallery"));
                 assert(page->shown() && samples && samples->shown());
                 // Top level lists the category folders first, like the file list's thumbnail view.
-                FXint firstChoice = samples->findItem(tab == 1 ? "Horizontal stripes" : "No texture");
+                FXint firstChoice = samples->findItem(tab == 1 ? "No pattern" : "No texture");
                 assert(firstChoice > 0 && samples->findItem(tab == 1 ? "Fabric" : "Wood") >= 0);
                 for (FXint item = 0; item < samples->getNumItems(); ++item)
                     assert((samples->getItemData(item) != NULL) == (item < firstChoice));
@@ -1829,6 +1853,140 @@ public:
         if (hadPortable) assert(setenv("SWORDFISH_PORTABLE_DATA", oldPortableValue.text(), 1) == 0);
         else assert(unsetenv("SWORDFISH_PORTABLE_DATA") == 0);
         puts("PASS: live list, sidebar, tree, tabs and toolbar images; resize, persistence and sharing");
+
+        Theme removalTheme = imageTheme;
+        removalTheme.effect = "fill=pattern colors=#122334,#778899 pattern_image=Fabric/Gingham-Check"
+                              " texture=Wood/Oak-Veneer-01 strength=100 rows=off";
+        editor.draft = editor.applied = editor.saved = removalTheme;
+        editor.selectElement("main");
+        editor.refreshProperties();
+        selectProperty("background_image");
+        editor.refreshPreview();
+        editor.show(PLACEMENT_SCREEN);
+        pump(app);
+        assert(windowShowsPixel(findClass(&editor, "ThemeMockup"), rose));
+        FXbool acceptImageRemoval = false;
+        ActionTimer removeImage([&] {
+            FXWindow* dialog = app.getModalWindow();
+            FXIconList* gallery = static_cast<FXIconList*>(findClass(dialog, "ThemeGallery"));
+            FXButton* up = findButton(dialog, "Up");
+            FXSpinner* opacity = dynamic_cast<FXSpinner*>(findClass(dialog, "FXSpinner"));
+            assert(gallery && up && opacity);
+            opacity->setValue(40);
+            opacity->getTarget()->handle(opacity, FXSEL(SEL_COMMAND, opacity->getSelector()), NULL);
+            up->getTarget()->handle(up, FXSEL(SEL_COMMAND, up->getSelector()), NULL);
+            clickItem(app, gallery, "No image");
+            assert(editor.getDraft().property("main", "background_image").empty());
+            assert(editor.getDraft().property("main", "image_mode").empty());
+            assert(editor.getDraft().property("main", "image_opacity").empty());
+            dialog->hide();
+            pump(app);
+            assert(!windowShowsPixel(findClass(&editor, "ThemeMockup"), rose));
+            assert(liveBackground() == rose);
+            dialog->show();
+            dialog->handle(dialog, FXSEL(SEL_COMMAND, acceptImageRemoval ? DialogBox::ID_ACCEPT :
+                                                                          DialogBox::ID_CANCEL), NULL);
+        });
+        app.addTimeout(&removeImage, 1, 150);
+        editor.onEditProperty(NULL, 0, NULL);
+        assert(editor.getDraft().property("main", "background_image") == imageReference);
+        acceptImageRemoval = true;
+        app.addTimeout(&removeImage, 1, 150);
+        editor.onEditProperty(NULL, 0, NULL);
+        assert(editor.getApplied().property("main", "background_image").empty());
+        editor.onUndo(NULL, 0, NULL);
+        assert(editor.getDraft().property("main", "background_image") == imageReference);
+        editor.onRedo(NULL, 0, NULL);
+        assert(editor.getDraft().property("main", "background_image").empty());
+
+        editor.selectElement("list");
+        editor.refreshProperties();
+        selectProperty("effect");
+        FXbool acceptEffectRemoval = false;
+        ActionTimer removeEffects([&] {
+            FXWindow* dialog = app.getModalWindow();
+            FXTabBook* tabs = static_cast<FXTabBook*>(findClass(dialog, "FXTabBook"));
+            assert(tabs);
+            tabs->setCurrent(1, true);
+            tabs->layout();
+            pump(app);
+            FXWindow* patternPage = tabs->childAtIndex(3);
+            FXIconList* patterns = static_cast<FXIconList*>(findClass(patternPage, "ThemeGallery"));
+            FXButton* patternUp = findButton(patternPage, "Up");
+            assert(patterns && patternUp);
+            patternUp->getTarget()->handle(patternUp, FXSEL(SEL_COMMAND, patternUp->getSelector()), NULL);
+            clickItem(app, patterns, "No pattern");
+            BackgroundEffect effect = BackgroundEffect::parse(editor.getDraft().effect);
+            assert(effect.patternImage.empty() && effect.pattern == 0 && effect.fill == "solid");
+            assert(effect.texture == "Wood/Oak-Veneer-01");
+            FXListBox* fill = findListBoxWithItem(dialog, "Gradient");
+            assert(fill);
+            fill->setCurrentItem(2);
+            fill->getTarget()->handle(fill, FXSEL(SEL_COMMAND, fill->getSelector()), NULL);
+            effect = BackgroundEffect::parse(editor.getDraft().effect);
+            assert(effect.fill == "pattern" && effect.pattern > 0);
+            assert(patterns->getItemText(patterns->getCurrentItem()) == "Horizontal stripes");
+            clickItem(app, patterns, "No pattern");
+            fill->setCurrentItem(1);
+            fill->getTarget()->handle(fill, FXSEL(SEL_COMMAND, fill->getSelector()), NULL);
+            clickItem(app, patterns, "No pattern");
+            effect = BackgroundEffect::parse(editor.getDraft().effect);
+            assert(effect.fill == "gradient" && effect.texture == "Wood/Oak-Veneer-01");
+            clickItem(app, patterns, "Horizontal stripes");
+            effect = BackgroundEffect::parse(editor.getDraft().effect);
+            assert(effect.fill == "pattern" && effect.pattern > 0);
+            patterns->setCurrentItem(patterns->findItem("No pattern"));
+            pressKey(patterns, KEY_Return);
+            assert(BackgroundEffect::parse(editor.getDraft().effect).fill == "solid");
+            clickItem(app, patterns, "Horizontal stripes");
+            tabs->setCurrent(2, true);
+            tabs->layout();
+            pump(app);
+            FXWindow* texturePage = tabs->childAtIndex(5);
+            FXIconList* textures = static_cast<FXIconList*>(findClass(texturePage, "ThemeGallery"));
+            FXButton* textureUp = findButton(texturePage, "Up");
+            assert(textures && textureUp);
+            textureUp->getTarget()->handle(textureUp, FXSEL(SEL_COMMAND, textureUp->getSelector()), NULL);
+            clickItem(app, textures, "No texture");
+            effect = BackgroundEffect::parse(editor.getDraft().effect);
+            assert(effect.texture.empty() && effect.fill == "pattern" && effect.pattern > 0);
+
+            tabs->setCurrent(1, true);
+            tabs->layout();
+            pump(app);
+            clickItem(app, patterns, "No pattern");
+            effect = BackgroundEffect::parse(editor.getDraft().effect);
+            assert(effect.patternImage.empty() && effect.pattern == 0 && effect.fill != "pattern");
+            dialog->handle(dialog, FXSEL(SEL_COMMAND, acceptEffectRemoval ? DialogBox::ID_ACCEPT :
+                                                                           DialogBox::ID_CANCEL), NULL);
+        });
+        app.addTimeout(&removeEffects, 1, 150);
+        editor.onEditProperty(NULL, 0, NULL);
+        assert(editor.getDraft().effect == removalTheme.effect);
+        acceptEffectRemoval = true;
+        app.addTimeout(&removeEffects, 1, 150);
+        editor.onEditProperty(NULL, 0, NULL);
+        BackgroundEffect removed = BackgroundEffect::parse(editor.getApplied().effect);
+        assert(removed.texture.empty() && removed.patternImage.empty() && removed.fill != "pattern");
+        Theme persistedRemoval = editor.getApplied();
+        persistedRemoval.name = "No graphics regression";
+        assert(imported.saveEditedTheme(persistedRemoval, -1));
+        PreferencesBox reloadedRemoval(&window, app.getBackColor(), app.getForeColor(), app.getBackColor(),
+                                       app.getSelbackColor(), FXRGB(255, 0, 0), app.getBaseColor());
+        FXbool foundRemoval = false;
+        for (const Theme& theme : reloadedRemoval.Themes)
+            if (theme.name == persistedRemoval.name)
+            {
+                Theme loaded;
+                assert(reloadedRemoval.resolveTheme(theme, loaded));
+                BackgroundEffect effect = BackgroundEffect::parse(loaded.effect);
+                foundRemoval = loaded.property("main", "background_image").empty() &&
+                               effect.texture.empty() && effect.patternImage.empty() && effect.fill != "pattern";
+                window.applyTheme(loaded);
+                assert(liveBackground() == FXRGB(0x12, 0x23, 0x34));
+            }
+        assert(foundRemoval);
+        puts("PASS: removing image, texture and pattern through gallery clicks");
 
         FXString savedImage = imageTheme.assetRoot + "/images/Photographs/Rose.png";
         assert(unlink(savedImage.text()) == 0);
