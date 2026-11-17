@@ -42,7 +42,12 @@ const std::vector<SystemActionIcon>& systemActionIcons(FXApp* app);
 void prefetchSystemActionIcons(FXApp* app, const std::vector<FXString>& names);
 FXString resolveSystemActionIcon(FXApp* app, const FXString& name);
 
-// Accepts theme:NAME or an image filename. SVG requires rsvg-convert.
+// Encode and resolve image paths relative to portable-data/icons/custom-actions.
+FXString portableCustomActionIconReference(const FXString& relative);
+FXString customActionIconPath(const FXString& value);
+
+// Accepts theme:NAME, an image filename, or a portable image reference.
+// SVG requires rsvg-convert.
 // Returned icons belong to the caller and fit inside side x side.
 FXIcon* loadCustomActionIcon(FXApp* app, const FXString& value, FXint side);
 

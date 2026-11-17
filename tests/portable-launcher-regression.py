@@ -63,6 +63,7 @@ class PortableLauncherTests(unittest.TestCase):
         self.check_host(result, self.expected)
         self.assertEqual(
             result["environment"]["SWORDFISH_PORTABLE_DATA"], str(self.bundle / "portable-data"))
+        self.assertTrue((self.bundle / "portable-data/icons/custom-actions").is_dir())
 
     def test_normal_launch_records_custom_host_environment(self):
         expected = dict(self.expected)
@@ -121,6 +122,7 @@ class PortableLauncherTests(unittest.TestCase):
         self.assertEqual(
             result["environment"]["SWORDFISH_PORTABLE_DATA"], str(self.root / "test.AppImage.data"))
         self.assertTrue((self.root / "test.AppImage.data/cache/pixbuf-loaders.cache").is_file())
+        self.assertTrue((self.root / "test.AppImage.data/icons/custom-actions").is_dir())
 
 
 if __name__ == "__main__":

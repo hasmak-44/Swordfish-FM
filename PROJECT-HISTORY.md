@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 16 November 2026, through background-image support
-(section 3.90).
+Last updated: 17 November 2026, through portable custom-action image icons
+(section 3.104).
 Latest release: `swordfish-0.0.3-beta2`.
 Stable fallback: `swordfish-0.0.2`.
 
@@ -40,7 +40,7 @@ Historical implementation details below do not override the current code.
    automated tests but still need the user's real-machine testing.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.70-3.90. Older beta and RC notes are
+9. For the latest state, read sections 3.70-3.104. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide is a documentation addition after the frozen RC4 application commit.
@@ -3523,6 +3523,26 @@ cleaned. Symbolic links are not followed, and cleanup is skipped with a warning
 if another theme file shares the folder. Graphics needed by the editor's undo
 history or original snapshot remain available until the editor closes.
 
+### 3.104. Portable custom-action image icons (17 November 2026)
+
+Portable custom-action definitions are stored in `config/swordfish/xferc`.
+Selected image icons are copied into `icons/custom-actions/` and stored with
+movable references; the image chooser starts there when no image is selected.
+Accessible old absolute image references are migrated on startup. Missing
+old paths are also matched to the same relative location in a copied portable
+profile, as approved by the user. Missing or ambiguous images and copy failures
+are reported without discarding the old references; failed saves remove only
+newly created copies. System icon names, external programs and absolute command
+paths still depend on the target host.
+
+The native build, model, launcher and GUI regressions passed. Xvfb smoke tests
+also launched the native application through `AppRun` in isolated test AppDirs.
+They ran an action before and after moving a profile, and recovered and ran
+actions from older moved directory and AppImage-style profiles after the old
+icon paths became unavailable. The report that action definitions themselves
+disappeared was not reproduced and still needs the user's real-machine details.
+No new portable bundle has been built for this change.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -4074,7 +4094,7 @@ Do not amend published commits/tags as an automatic workaround.
 ### Durable starting point
 
 0.0.2 remains the frozen stable fallback; 0.0.3 beta 2 is the latest published
-test release. Sections 3.70-3.89 record the current implementation state.
+test release. Sections 3.70-3.104 record the current implementation state.
 Groups 2 through 5 are committed locally; none is pushed or released. Generated
 autotools files may remain modified after local builds and must not be included
 in feature commits. Start from the current branch and worktree, not from an old

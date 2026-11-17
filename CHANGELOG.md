@@ -46,6 +46,10 @@
   texture in its own colours instead of tinting it with the theme colour.
 
 ### Changed
+- Portable custom-action image icons are copied into
+  `portable-data/icons/custom-actions/` with movable references; accessible
+  older image paths migrate on startup, including matching files in copied
+  profiles. Missing or ambiguous images are reported.
 - Pattern, texture and background-image choosers use a thumbnail grid like
   the file list: bordered tiles, category folders first, `..`/Up/Backspace
   navigation, and more columns when the editor is resized or maximized.

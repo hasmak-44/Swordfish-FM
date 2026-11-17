@@ -18,6 +18,7 @@
 #include <algorithm>
 #include "xfeutils.h"
 #include "AppLogger.h"
+#include "BackgroundEffect.h"
 #include "SystemIcons.h"
 
 extern char** environ;
@@ -729,10 +730,46 @@ FXString resolveSystemActionIcon(FXApp* app, const FXString& name)
     return it != cache.resolved.end() ? it->second : FXString::null;
 }
 
+FXString portableCustomActionIconReference(const FXString& relative)
+{
+    FXString encoded = BackgroundEffect::textureReference(relative);
+    return encoded.empty() ? FXString::null : FXString("portable-action:") + encoded;
+}
+
+FXString customActionIconPath(const FXString& value)
+{
+    const FXString prefix = "portable-action:";
+    if (value.left(prefix.length()) != prefix) { return value; }
+    const char* root = getenv("SWORDFISH_PORTABLE_DATA");
+    FXString relative;
+    if (!root || !*root ||
+        !BackgroundEffect::textureRelativePath(value.mid(prefix.length(), value.length() - prefix.length()), relative))
+        return FXString::null;
+
+    FXString path = FXPath::absolute(root);
+    struct stat info;
+    if (stat(path.text(), &info) != 0 || !S_ISDIR(info.st_mode)) { return FXString::null; }
+    for (const char* component : {"icons", "custom-actions"})
+    {
+        path += PATHSEPSTRING + FXString(component);
+        if (lstat(path.text(), &info) != 0 || !S_ISDIR(info.st_mode)) { return FXString::null; }
+    }
+    const FXint last = relative.contains('/');
+    for (FXint i = 0; i <= last; ++i)
+    {
+        path += PATHSEPSTRING + relative.section('/', i);
+        if (lstat(path.text(), &info) != 0 ||
+            (i == last ? !S_ISREG(info.st_mode) : !S_ISDIR(info.st_mode)))
+            return FXString::null;
+    }
+    return path;
+}
+
 FXIcon* loadCustomActionIcon(FXApp* app, const FXString& value, FXint side)
 {
     if (value.empty() || side < 1) { return NULL; }
-    FXString path = value.left(6) == "theme:" ? resolveSystemActionIcon(app, value.mid(6, value.length() - 6)) : value;
+    FXString path = value.left(6) == "theme:" ? resolveSystemActionIcon(app, value.mid(6, value.length() - 6)) :
+                                               customActionIconPath(value);
     if (path.empty() || !xf_existfile(path)) { return NULL; }
     FXString extension = FXPath::extension(path).lower();
     if (extension == "svg")

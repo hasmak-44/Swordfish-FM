@@ -209,11 +209,17 @@ System selections store an
 icon name and resolve it against host themes, inherited themes and hicolor;
 portable mode does not restrict this to bundled icons. Startup looks up the
 configured icon names together; the full catalog is built when the chooser
-opens. Image selections store
-an absolute filename. PNG, JPEG and XPM are supported; SVG uses the existing
-`rsvg-convert` tool and a converted-image cache. Image files have thumbnails
-and a larger selected-image preview. Moving an external image can break that
-selection; a named system icon depends on the target host's icons.
+opens. When the main editor is saved, image selections are copied to
+`portable-data/icons/custom-actions/` and stored using movable references.
+The original image is not changed, and a conflicting filename gets a new name.
+Existing image paths are copied when a portable build starts, provided the
+originals are still available. If an old image was inside a moved portable
+profile, Swordfish also checks for the same relative path in the copied
+`portable-data` folder. Missing or ambiguous matches retain the old reference
+and produce a warning so you can select the image again. PNG, JPEG and XPM are
+supported; SVG uses `rsvg-convert` and a converted-image cache. Image files
+have thumbnails and a larger selected-image preview. A named system icon
+depends on the target host's icons.
 
 The built-in **General**, **Tools** and **Panel** toolbars use their original
 commands, order and theme icon sizes. Experimental toolbar customization,
@@ -562,9 +568,17 @@ For user download and launch steps, see the main
 Writable state is kept in `portable-data` beside the AppDir:
 
 - `config`, `data`, `cache`, and `state` are the portable XDG directories.
+- `config/swordfish/xferc` is the writable settings file. It includes custom
+  action definitions (in its `CUSTOM ACTIONS` section), so custom actions are
+  stored in this file rather than in a separate folder.
 - `scripts` is the custom-script folder used by Swordfish.
 - `themes`, `icons`, and `addons` are writable locations reserved for
   portable customizations and future extensions.
+- `icons/custom-actions/` holds copied custom-action image icons. You can also
+  put images there and select them in the editor; the image chooser opens
+  there when no image is already selected.
+- `textures`, `patterns`, and `images` hold shared user graphics; custom color
+  themes and their theme-specific graphics live under `themes/colors/`.
 - `logs` contains persistent, categorized application logs:
   - `application.log` records startup and shutdown.
   - `ui.log` records layout, panel, tab, hidden-file, and thumbnail changes.
@@ -579,6 +593,11 @@ Writable state is kept in `portable-data` beside the AppDir:
 Log entries include timestamps and process IDs. They record semantic actions
 and relevant paths, not raw keystrokes or mouse movement. Coverage will expand
 as more actions are instrumented.
+
+Close Swordfish before copying the complete `portable-data` folder to another
+portable build. Action definitions and copied image icons move with it; named
+system icons, external programs and absolute paths in commands still depend on
+the target machine.
 
 The amount of logging is set in Preferences > Settings > Logging, which also
 shows the log folder. The change applies immediately:

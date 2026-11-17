@@ -15,6 +15,14 @@
 #include <stdint.h>
 #include <fxkeys.h>
 #include <algorithm>
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
+#include <fcntl.h>
+#include <limits.h>
+#include <map>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace
 {
@@ -63,6 +71,304 @@ FXIcon* loadActionIcon(FXApp* app, const FXString& path, FXint size)
     return loadCustomActionIcon(app, path, size);
 }
 
+struct CreatedActionIcon
+{
+    FXString path;
+    dev_t device;
+    ino_t inode;
+};
+
+void appendIconError(FXString& errors, const FXString& error)
+{
+    if (!errors.empty()) { errors += "\n"; }
+    errors += error;
+}
+
+void showIconMessage(FXWindow* owner, const FXString& title, const FXString& message, FXIcon* icon)
+{
+    MessageBox box(owner, title, message, icon, BOX_OK,
+                   JUSTIFY_LEFT | ICON_BEFORE_TEXT | LAYOUT_TOP | LAYOUT_LEFT | LAYOUT_FILL_X | LAYOUT_FILL_Y,
+                   0, 0, true);
+    box.execute(PLACEMENT_OWNER);
+}
+
+void showIconWarning(FXWindow* owner, const FXString& warnings)
+{
+    showIconMessage(owner, _("Custom Action Icons Not Copied"),
+        _("Some custom-action icons could not be stored in portable data. Their original references were kept. "
+          "Fix the errors or select the images again before copying the profile.\n\n") + warnings, bigwarningicon);
+}
+
+void discardActionIcons(const std::vector<CreatedActionIcon>& created, FXString& errors)
+{
+    for (const CreatedActionIcon& icon : created)
+    {
+        struct stat info;
+        if (lstat(icon.path.text(), &info) != 0)
+        {
+            if (errno == ENOENT) { continue; }
+        }
+        else if (S_ISREG(info.st_mode) && info.st_dev == icon.device && info.st_ino == icon.inode)
+        {
+            if (unlink(icon.path.text()) == 0) { continue; }
+        }
+        else
+        {
+            FXString message = _("The new icon was changed and was not removed: ") + icon.path;
+            appLog(APP_LOG_ERRORS, "custom-action-icon-cleanup", message);
+            appendIconError(errors, message);
+            continue;
+        }
+        FXString message = _("Cannot remove an incomplete icon copy: ") + icon.path + ": " + strerror(errno);
+        appLog(APP_LOG_ERRORS, "custom-action-icon-cleanup", message);
+        appendIconError(errors, message);
+    }
+}
+
+bool actionIconDirectory(const FXString& path, FXString& error)
+{
+    struct stat info;
+    if (lstat(path.text(), &info) != 0)
+    {
+        if (errno != ENOENT || (mkdir(path.text(), 0700) != 0 && errno != EEXIST) ||
+            lstat(path.text(), &info) != 0)
+        {
+            error = _("Cannot create or inspect the custom action icon folder: ") + path + ": " + strerror(errno);
+            return false;
+        }
+    }
+    if (!S_ISDIR(info.st_mode))
+    {
+        error = _("The custom action icon folder is not a directory: ") + path;
+        return false;
+    }
+    return true;
+}
+
+bool movedActionIcon(const FXString& original, const FXString& root, FXString& result, FXString& error)
+{
+    if (!FXPath::isAbsolute(original)) { return true; }
+    char resolvedRoot[PATH_MAX];
+    if (!realpath(root.text(), resolvedRoot)) { return true; }
+    FXString prefix(resolvedRoot);
+    if (prefix != PATHSEPSTRING) { prefix += PATHSEPSTRING; }
+    for (FXint start = 1; start < original.length();)
+    {
+        FXint slash = original.find('/', start);
+        if (slash < 0) { break; }
+        FXString component = original.mid(start, slash - start);
+        start = slash + 1;
+        if (component != "portable-data" && (component.length() <= 5 || component.right(5) != ".data"))
+            continue;
+        FXString candidate = root + PATHSEPSTRING + original.mid(start, original.length() - start);
+        char resolved[PATH_MAX];
+        struct stat info;
+        if (!realpath(candidate.text(), resolved) || stat(resolved, &info) != 0 || !S_ISREG(info.st_mode))
+            continue;
+        FXString path(resolved);
+        if (path.left(prefix.length()) != prefix) { continue; }
+        if (!result.empty() && result != path)
+        {
+            error = _("More than one file in portable data matches the old icon path; choose the correct image: ") +
+                    original;
+            return false;
+        }
+        result = path;
+    }
+    return true;
+}
+
+bool copyActionIcon(const FXString& value, const FXString& id, bool recoverLegacy, FXString& reference,
+                    std::vector<CreatedActionIcon>& created, FXString& error)
+{
+    if (value.empty() || value.left(6) == "theme:") { reference = value; return true; }
+    if (value.left(16) == "portable-action:")
+    {
+        if (customActionIconPath(value).empty())
+        {
+            error = _("The portable icon is missing or is not a regular file: ") + value;
+            return false;
+        }
+        reference = value;
+        return true;
+    }
+
+    FXString source = FXPath::absolute(value);
+    FXString extension = FXPath::extension(source).lower();
+    if (extension != "png" && extension != "jpg" && extension != "jpeg" &&
+        extension != "xpm" && extension != "svg")
+    {
+        error = _("Unsupported custom action icon file: ") + source;
+        return false;
+    }
+    FXString root = FXPath::absolute(getenv("SWORDFISH_PORTABLE_DATA"));
+    int input = open(source.text(), O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+    if (input < 0 && recoverLegacy && FXPath::isAbsolute(value))
+    {
+        int originalError = errno;
+        FXString recovered;
+        if (!movedActionIcon(source, root, recovered, error)) { return false; }
+        if (!recovered.empty())
+        {
+            source = recovered;
+            input = open(source.text(), O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+        }
+        else { errno = originalError; }
+    }
+    if (input < 0)
+    {
+        error = _("Cannot read the custom action icon: ") + source + ": " + strerror(errno);
+        return false;
+    }
+    struct stat sourceInfo;
+    if (fstat(input, &sourceInfo) != 0)
+    {
+        error = _("Cannot inspect the custom action icon: ") + source + ": " + strerror(errno);
+        close(input);
+        return false;
+    }
+    if (!S_ISREG(sourceInfo.st_mode))
+    {
+        error = _("The custom action icon is not a readable regular file: ") + source;
+        close(input);
+        return false;
+    }
+
+    struct stat rootInfo;
+    if (stat(root.text(), &rootInfo) != 0 || !S_ISDIR(rootInfo.st_mode))
+    {
+        error = _("The portable data folder is unavailable: ") + root;
+        close(input);
+        return false;
+    }
+    FXString icons = root + PATHSEPSTRING "icons";
+    FXString directory = icons + PATHSEPSTRING "custom-actions";
+    if (!actionIconDirectory(icons, error) || !actionIconDirectory(directory, error))
+    {
+        close(input);
+        return false;
+    }
+
+    FXString contained = directory + PATHSEPSTRING;
+    if (source.left(contained.length()) == contained)
+    {
+        FXString existing = portableCustomActionIconReference(
+            source.mid(contained.length(), source.length() - contained.length()));
+        if (!existing.empty() && customActionIconPath(existing) == source)
+        {
+            reference = existing;
+            close(input);
+            return true;
+        }
+    }
+
+    FXString filename = FXPath::name(source);
+    if (portableCustomActionIconReference(filename).empty())
+        filename = "icon-" + id + "." + extension;
+    FXString title = FXPath::title(filename), originalExtension = FXPath::extension(filename);
+    FXString destination, candidate;
+    int output = -1;
+    for (unsigned number = 0; number < 10000; ++number)
+    {
+        candidate = filename;
+        if (number)
+        {
+            candidate = title + " (" + FXStringVal(number + 1) + ")." + originalExtension;
+            if (candidate.length() > 255 || portableCustomActionIconReference(candidate).empty())
+                candidate = "icon-" + id + "-" + FXStringVal(number) + "." + extension;
+        }
+        destination = directory + PATHSEPSTRING + candidate;
+        output = open(destination.text(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
+        if (output >= 0) { break; }
+        if (errno != EEXIST)
+        {
+            error = _("Cannot create the custom action icon: ") + destination + ": " + strerror(errno);
+            close(input);
+            return false;
+        }
+    }
+    if (output < 0)
+    {
+        error = _("Cannot find an unused name for the custom action icon: ") + source;
+        close(input);
+        return false;
+    }
+    struct stat outputInfo;
+    if (fstat(output, &outputInfo) != 0)
+    {
+        int number = errno;
+        close(output);
+        close(input);
+        error = _("Cannot inspect the new custom action icon: ") + destination + ": " + strerror(number);
+        if (unlink(destination.text()) != 0)
+            appendIconError(error, _("Cannot remove the incomplete copy: ") + destination + ": " + strerror(errno));
+        return false;
+    }
+    created.push_back({destination, outputInfo.st_dev, outputInfo.st_ino});
+    int failure = 0;
+    char buffer[32768];
+    while (!failure)
+    {
+        ssize_t count = read(input, buffer, sizeof(buffer));
+        if (count < 0 && errno == EINTR) { continue; }
+        if (count < 0) { failure = errno; break; }
+        if (count == 0) { break; }
+        ssize_t offset = 0;
+        while (offset < count)
+        {
+            ssize_t written = write(output, buffer + offset, count - offset);
+            if (written < 0 && errno == EINTR) { continue; }
+            if (written <= 0) { failure = written < 0 ? errno : EIO; break; }
+            offset += written;
+        }
+    }
+    if (close(output) != 0 && !failure) { failure = errno; }
+    if (close(input) != 0 && !failure) { failure = errno; }
+    if (failure)
+    {
+        error = _("Cannot copy the custom action icon: ") + source + ": " + strerror(failure);
+        return false;
+    }
+    reference = portableCustomActionIconReference(candidate);
+    return true;
+}
+
+bool prepareActionIcons(CustomActions& actions, const CustomActions* previous,
+                        std::vector<CreatedActionIcon>& created, FXString& warnings, FXString& error)
+{
+    const char* root = getenv("SWORDFISH_PORTABLE_DATA");
+    if (!root || !*root) { return true; }
+    std::map<std::string, FXString> references;
+    for (CustomAction& action : actions.items)
+    {
+        if (action.icon.empty() || action.icon.left(6) == "theme:") { continue; }
+        std::map<std::string, FXString>::const_iterator known = references.find(action.icon.text());
+        if (known != references.end()) { action.icon = known->second; continue; }
+        FXString reference, problem;
+        size_t firstCreated = created.size();
+        const CustomAction* old = previous ? previous->find(action.id) : NULL;
+        bool recoverLegacy = !previous || (old && old->icon == action.icon);
+        if (!copyActionIcon(action.icon, action.id, recoverLegacy, reference, created, problem))
+        {
+            std::vector<CreatedActionIcon> incomplete(created.begin() + firstCreated, created.end());
+            discardActionIcons(incomplete, problem);
+            created.erase(created.begin() + firstCreated, created.end());
+            FXString detail = action.name + ": " + problem;
+            appLog(APP_LOG_ERRORS, "custom-action-icon-copy", detail);
+            if (previous && (!old || old->icon != action.icon))
+            {
+                error = detail;
+                return false;
+            }
+            appendIconError(warnings, detail);
+            continue;
+        }
+        references[action.icon.text()] = reference;
+        action.icon = reference;
+    }
+    return true;
+}
+
 class ActionImageChooser : public FileDialog
 {
     enum { PREVIEW = DialogBox::ID_LAST };
@@ -100,8 +406,16 @@ public:
         preview->setTarget(this);
         preview->setSelector(PREVIEW);
         preview->setBackColor(getApp()->reg().readColorEntry("SETTINGS", "listbackcolor", FXRGB(255, 255, 255)));
-        if (current.empty() || current.left(6) == "theme:") { setDirectory(FXSystem::getHomeDirectory()); }
-        else { setFilename(current); }
+        FXString currentPath = customActionIconPath(current);
+        if (current.empty() || current.left(6) == "theme:" || currentPath.empty())
+        {
+            const char* portable = getenv("SWORDFISH_PORTABLE_DATA");
+            FXString folder = portable && *portable ?
+                FXPath::absolute(portable) + PATHSEPSTRING "icons" PATHSEPSTRING "custom-actions" : FXString::null;
+            setDirectory(!folder.empty() && xf_isdirectory(folder) ? folder : FXSystem::getHomeDirectory());
+        }
+        else
+            setFilename(currentPath);
         getApp()->addTimeout(this, PREVIEW, 100);
     }
 
@@ -240,8 +554,12 @@ public:
         previous = new FXButton(pages, _("Previous"), NULL, this, PREVIOUS, BUTTON_NORMAL);
         next = new FXButton(pages, _("Next"), NULL, this, NEXT, BUTTON_NORMAL);
         status = new FXLabel(pages, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
-        new FXLabel(body, _("System icons are stored by name and follow the host theme.\n"
-                            "Image files keep their absolute path. SVG requires rsvg-convert."),
+        const char* portable = getenv("SWORDFISH_PORTABLE_DATA");
+        new FXLabel(body, portable && *portable ?
+                    _("System icons are stored by name and follow the host theme.\n"
+                      "Image files are copied into portable data on Save. SVG requires rsvg-convert.") :
+                    _("System icons are stored by name and follow the host theme.\n"
+                      "Image files keep their absolute path. SVG requires rsvg-convert."),
                     NULL, JUSTIFY_LEFT);
         filter();
         xf_scrollabledialog(this);
@@ -385,7 +703,7 @@ class ActionProperties : public FXDialogBox
         iconPreview->setIcon(replacement ? replacement : minirunicon);
         icon->setTipText(!icon->getText().trim().empty() && !replacement ?
             _("Icon unavailable on this host. Choose another icon or No Icon.") :
-            _("theme:NAME for an installed host icon, or an absolute image filename."));
+            _("theme:NAME for an installed host icon, or an image filename."));
         delete previewIcon; previewIcon = replacement;
     }
 public:
@@ -831,16 +1149,28 @@ public:
             FXString error;
             if (!working.validate(error))
             { MessageBox::error(this, BOX_OK, _("Invalid Custom Actions"), "%s", error.text()); return 1; }
+            CustomActions saved = working;
+            std::vector<CreatedActionIcon> created;
+            FXString warnings;
+            if (!prepareActionIcons(saved, &actions.model, created, warnings, error))
+            {
+                discardActionIcons(created, error);
+                showIconMessage(this, _("Cannot Save Custom Actions"),
+                    _("The selected icon could not be copied. Changes have not been applied.\n\n") + error, bigerroricon);
+                return 1;
+            }
             FXSettings previous(getApp()->reg());
-            working.save(getApp()->reg());
+            saved.save(getApp()->reg());
             if (!getApp()->reg().write())
             {
                 static_cast<FXSettings&>(getApp()->reg()) = previous;
-                MessageBox::error(this, BOX_OK, _("Cannot Save Custom Actions"),
-                                  _("The personal Swordfish settings could not be written. Changes have not been applied."));
+                error = _("The personal Swordfish settings could not be written. Changes have not been applied.");
+                discardActionIcons(created, error);
+                showIconMessage(this, _("Cannot Save Custom Actions"), error, bigerroricon);
                 return 1;
             }
-            actions.model = working;
+            actions.model = saved;
+            if (!warnings.empty()) { showIconWarning(this, warnings); }
             return FXDialogBox::handle(sender, FXSEL(SEL_COMMAND, ID_ACCEPT), NULL);
         }
         return FXDialogBox::handle(sender, sel, ptr);
@@ -918,7 +1248,38 @@ long CustomActionMenu::handle(FXObject* sender, FXSelector sel, void* ptr)
 
 CustomActionsUI::CustomActionsUI(XFileExplorer* window, FXDockSite* dock, FXMenuPane* tools, FXMenuBar* bar) : owner(window)
 {
-    model.load(owner->getApp()->reg(), loadError);
+    if (model.load(owner->getApp()->reg(), loadError))
+    {
+        CustomActions migrated = model;
+        std::vector<CreatedActionIcon> created;
+        FXString error;
+        if (!prepareActionIcons(migrated, NULL, created, iconWarning, error))
+        {
+            discardActionIcons(created, error);
+            appLog(APP_LOG_ERRORS, "custom-action-icon-copy", error);
+            appendIconError(iconWarning, error);
+        }
+        else if (migrated.items != model.items)
+        {
+            FXSettings previous(owner->getApp()->reg());
+            for (size_t i = 0; i < migrated.items.size(); ++i)
+            {
+                if (migrated.items[i].icon == model.items[i].icon) { continue; }
+                FXString key = FXString().format("item%u.icon", static_cast<unsigned>(i));
+                owner->getApp()->reg().writeStringEntry("CUSTOM ACTIONS", key.text(), migrated.items[i].icon.text());
+            }
+            if (owner->getApp()->reg().write())
+                model = migrated;
+            else
+            {
+                static_cast<FXSettings&>(owner->getApp()->reg()) = previous;
+                error = _("Cannot save the migrated custom action icons. The original references were kept.");
+                discardActionIcons(created, error);
+                appLog(APP_LOG_ERRORS, "custom-action-icon-save", error);
+                appendIconError(iconWarning, error);
+            }
+        }
+    }
     toolbarShown = owner->getApp()->reg().readUnsignedEntry("CUSTOM ACTIONS UI", "toolbar", 1) != 0;
     toolbar = new ThemeToolBar(dock, FRAME_NONE | LAYOUT_SIDE_TOP | LAYOUT_DOCK_NEXT | LAYOUT_FILL_X);
     toolbar->setTarget(this);
@@ -930,12 +1291,14 @@ CustomActionsUI::CustomActionsUI(XFileExplorer* window, FXDockSite* dock, FXMenu
     new FXMenuCheck(tools, _("Show Custom Toolbar"), this, ID_TOGGLE);
     rebuild();
     if (!loadError.empty()) { owner->getApp()->addChore(this, ID_LOAD_ERROR); }
+    if (!iconWarning.empty()) { owner->getApp()->addChore(this, ID_ICON_WARNING); }
 }
 
 CustomActionsUI::~CustomActionsUI()
 {
     owner->getApp()->removeChore(this, ID_LOAD_ERROR);
     owner->getApp()->removeChore(this, ID_REBUILD);
+    owner->getApp()->removeChore(this, ID_ICON_WARNING);
     delete toolbar;
     delete toolbarMenu;
     delete mainTitle;
@@ -1086,6 +1449,11 @@ long CustomActionsUI::handle(FXObject* sender, FXSelector sel, void* ptr)
         MessageBox::error(owner, BOX_OK, _("Custom Actions Not Loaded"),
             _("%s\n\nThe saved entries have been left untouched. Saving in the custom action editor replaces them."),
             loadError.text());
+        return 1;
+    }
+    if (FXSELTYPE(sel) == SEL_CHORE && FXSELID(sel) == ID_ICON_WARNING)
+    {
+        showIconWarning(owner, iconWarning);
         return 1;
     }
     if (FXSELTYPE(sel) == SEL_CHORE && FXSELID(sel) == ID_REBUILD)

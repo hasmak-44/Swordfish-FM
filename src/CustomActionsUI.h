@@ -18,12 +18,14 @@ class CustomActionsUI : public FXObject
     FXMenuPane* mainPane = NULL;
     FXMenuTitle* mainTitle = NULL;
     FXString loadError;
+    FXString iconWarning;
     bool toolbarShown = true;
     void rebuild();
     void showToolbarMenu();
 public:
     enum { ID_EDIT = 1, ID_TOGGLE, ID_LOAD_ERROR, ID_TOOLBAR_MENU, ID_REBUILD,
            ID_STYLE_BOTH, ID_STYLE_ICONS, ID_STYLE_TITLES, ID_SIZE_16, ID_SIZE_24, ID_SIZE_32,
+           ID_ICON_WARNING,
            ID_ACTION = 100 };
     CustomActions model;
     CustomActionsUI(XFileExplorer*, FXDockSite*, FXMenuPane*, FXMenuBar*);
