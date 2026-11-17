@@ -1081,6 +1081,9 @@ public:
         assert(rollbackIndex >= NUM_DEFAULT_THEMES && blockerIndex >= NUM_DEFAULT_THEMES);
         FXString heldBlocker = blockerFile + ".held";
         assert(rename(blockerFile.text(), heldBlocker.text()) == 0);
+        FXString retainedAfterFailure = FXPath::directory(savedThemeFile) + "/images/unused.png";
+        assert(xf_mkpath(FXPath::directory(retainedAfterFailure).text(), 0755) == 0);
+        solidPng(app, retainedAfterFailure, FXRGB(30, 40, 50));
         Theme attempted = saved;
         attempted.setProperty("list", "foreground", "#123456");
         Theme activeBeforeFailure = Theme::current(&app);
@@ -1095,6 +1098,7 @@ public:
         assert(rollbackPreferences.resolveTheme(rollbackPreferences.Themes[rollbackIndex], restored));
         assert(restored.encodeProperties() == saved.encodeProperties() &&
                Theme::current(&app) == activeBeforeFailure);
+        assert(xf_existfile(retainedAfterFailure));
         assert(rename(heldBlocker.text(), blockerFile.text()) == 0);
         ActionTimer renameSavedTheme([&] {
             InputDialog* dialog = dynamic_cast<InputDialog*>(app.getModalWindow());
@@ -2401,6 +2405,108 @@ public:
             }
         assert(foundRemoval);
         puts("PASS: removing image, texture and pattern through gallery clicks");
+
+        Theme cleanupTheme = imageTheme;
+        cleanupTheme.name = "Graphic cleanup regression";
+        cleanupTheme.effect = patterned.effect + " texture=" + categoryReference;
+        cleanupTheme.properties["gradient.Pattern preset"] = patterned.properties["gradient.Pattern preset"];
+        assert(imported.saveEditedTheme(cleanupTheme, -1));
+        FXString cleanupRoot = cleanupTheme.assetRoot;
+        FXint cleanupIndex = imported.themesList->getCurrentItem();
+        assert(cleanupIndex >= NUM_DEFAULT_THEMES);
+        FXString oldImage = cleanupRoot + "/images/Photographs/Rose.png";
+        FXString presetPattern = cleanupRoot + "/patterns/Geometric/Other.png";
+        FXString activePattern = cleanupRoot + "/patterns/Geometric/Checker Board.png";
+        FXString activeTexture = cleanupRoot + "/textures/Natural Stone/River 1.png";
+        assert(xf_existfile(oldImage) && xf_existfile(presetPattern) &&
+               xf_existfile(activePattern) && xf_existfile(activeTexture));
+        assert(xf_mkpath((cleanupRoot + "/images/Old category").text(), 0755) == 0);
+        solidPng(app, cleanupRoot + "/images/Old category/Unused.PNG", FXRGB(1, 2, 3));
+        assert(FXFile::copyFiles(jpegSource, cleanupRoot + "/images/Old category/Unused.jpg", false));
+        solidPng(app, cleanupRoot + "/patterns/Geometric/Unused.png", FXRGB(4, 5, 6));
+        solidPng(app, cleanupRoot + "/textures/Natural Stone/Unused.png", FXRGB(7, 8, 9));
+        FXString outsideGraphic = outsideFolder + "/keep.png";
+        solidPng(app, outsideGraphic, FXRGB(11, 12, 13));
+        assert(symlink(outsideFolder.text(), (cleanupRoot + "/images/linked").text()) == 0);
+        assert(symlink(outsideGraphic.text(), (cleanupRoot + "/images/linked.png").text()) == 0);
+        {
+            std::ofstream notes((cleanupRoot + "/images/notes.txt").text());
+            notes << "not a graphic copy";
+            assert(notes.good());
+        }
+        cleanupTheme.setProperty("main", "background_image",
+                                 BackgroundEffect::textureReference("Photographs/Batch One.png"));
+        assert(imported.saveEditedTheme(cleanupTheme, cleanupIndex));
+        assert(!xf_existfile(oldImage) && !xf_existfile(cleanupRoot + "/images/Old category/Unused.PNG"));
+        assert(!xf_existfile(cleanupRoot + "/images/Old category/Unused.jpg"));
+        assert(!xf_existfile(cleanupRoot + "/patterns/Geometric/Unused.png"));
+        assert(!xf_existfile(cleanupRoot + "/textures/Natural Stone/Unused.png"));
+        assert(xf_existfile(cleanupRoot + "/images/Photographs/Batch One.png"));
+        assert(xf_existfile(presetPattern) && xf_existfile(activePattern) && xf_existfile(activeTexture));
+        assert(xf_existfile(cleanupRoot + "/images/notes.txt") && xf_existfile(outsideGraphic));
+        assert(xf_islink(cleanupRoot + "/images/linked") && xf_islink(cleanupRoot + "/images/linked.png"));
+        assert(xf_existfile(globalImages + "/Photographs/Rose.png") &&
+               xf_existfile(imageTheme.assetRoot + "/images/Photographs/Rose.png"));
+
+        cleanupTheme.setProperty("main", "background_image", "");
+        cleanupTheme.setProperty("main", "image_mode", "");
+        cleanupTheme.setProperty("main", "image_opacity", "");
+        assert(imported.saveEditedTheme(cleanupTheme, cleanupIndex));
+        assert(!xf_existfile(cleanupRoot + "/images/Photographs/Batch One.png"));
+        assert(xf_existfile(presetPattern) && xf_existfile(activePattern) && xf_existfile(activeTexture));
+
+        FXString localOnly = cleanupRoot + "/images/Photographs/Local only.png";
+        solidPng(app, localOnly, FXRGB(41, 42, 43));
+        FXString localReference = BackgroundEffect::textureReference("Photographs/Local only.png");
+        assert(xf_mkpath((cleanupRoot + "/textures/Mixed").text(), 0755) == 0);
+        FXString localTexture = cleanupRoot + "/textures/Mixed/Tile.png";
+        FXString uppercaseTexture = cleanupRoot + "/textures/Mixed/Tile.PnG";
+        solidPng(app, localTexture, FXRGB(44, 45, 46));
+        cleanupTheme.setProperty("main", "background_image", localReference);
+        cleanupTheme.effect = "fill=solid colors=#808080 texture=Mixed/Tile strength=100";
+        assert(imported.saveEditedTheme(cleanupTheme, cleanupIndex));
+        assert(rename(localTexture.text(), uppercaseTexture.text()) == 0);
+        {
+            ThemeEditor undoEditor(&imported, &window, imported.Themes, cleanupIndex, ThemeEditor::EDIT_CURRENT);
+            assert(undoEditor.isReady() && undoEditor.replaceIndex == cleanupIndex);
+            undoEditor.create();
+            undoEditor.draft.setProperty("main", "background_image", "");
+            undoEditor.draft.effect.clear();
+            undoEditor.onApply(NULL, 0, NULL);
+            ActionTimer overwrite([&] {
+                FXWindow* dialog = app.getModalWindow();
+                FXButton* button = dialog ? findButton(dialog, "Overwrite") : NULL;
+                assert(button);
+                button->getTarget()->handle(button, FXSEL(SEL_COMMAND, button->getSelector()), NULL);
+            });
+            app.addTimeout(&overwrite, 1, 150);
+            assert(undoEditor.save(false));
+            assert(xf_existfile(localOnly) && xf_existfile(uppercaseTexture));
+            undoEditor.onUndo(NULL, 0, NULL);
+            assert(undoEditor.getDraft().property("main", "background_image") == localReference &&
+                   BackgroundImage::path(localReference, undoEditor.getDraft().assetRoot) == localOnly);
+            assert(BackgroundEffect::texturePath("Mixed/Tile", undoEditor.getDraft().assetRoot) == uppercaseTexture);
+            undoEditor.onRedo(NULL, 0, NULL);
+            assert(undoEditor.getDraft().property("main", "background_image").empty());
+        }
+        assert(!xf_existfile(localOnly) && !xf_existfile(uppercaseTexture));
+
+        cleanupTheme.setProperty("main", "background_image", "");
+        cleanupTheme.effect.clear();
+        FXString sharedFolderImage = cleanupRoot + "/images/Photographs/other-theme.png";
+        solidPng(app, sharedFolderImage, FXRGB(21, 22, 23));
+        assert(FXFile::copyFiles(cleanupRoot + "/theme.swordfish-theme",
+                                 cleanupRoot + "/other.swordfish-theme", false));
+        ActionTimer cleanupWarning([&] {
+            MessageBox* message = dynamic_cast<MessageBox*>(app.getModalWindow());
+            assert(message && message->getText().contains("Another theme file shares") &&
+                   message->getText().contains("other.swordfish-theme"));
+            message->handle(message, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_OK), NULL);
+        });
+        app.addTimeout(&cleanupWarning, 1, 150);
+        assert(imported.saveEditedTheme(cleanupTheme, cleanupIndex));
+        assert(xf_existfile(sharedFolderImage));
+        puts("PASS: saved themes remove unused graphic copies and preserve references and shared files");
 
         FXString savedImage = imageTheme.assetRoot + "/images/Photographs/Rose.png";
         assert(unlink(savedImage.text()) == 0);

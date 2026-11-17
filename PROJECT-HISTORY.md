@@ -3513,6 +3513,16 @@ different name or location without manually creating the destination first.
 Regression coverage exports categorized assets and retries an existing name
 with a new folder name.
 
+### 3.103. Removing obsolete saved-theme graphics (17 November 2026)
+
+The supplied My theme archive contained four old background images although
+its theme file referenced none. On successful Theme Editor save, unused PNG
+and JPEG copies are removed from that theme's graphics folders; referenced
+effects and presets remain. Shared libraries and original imports are not
+cleaned. Symbolic links are not followed, and cleanup is skipped with a warning
+if another theme file shares the folder. Graphics needed by the editor's undo
+history or original snapshot remain available until the editor closes.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

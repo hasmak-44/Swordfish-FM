@@ -3052,6 +3052,8 @@ ThemeEditor::~ThemeEditor()
     getApp()->removeTimeout(this, ID_READABILITY);
     delete mockup;
     mockup = NULL;
+    for (const FXString& name : savedThemesToClean)
+        preferences->cleanupSavedThemeGraphics(name);
 }
 
 FXbool ThemeEditor::start(FXint index, StartMode mode)
@@ -3544,7 +3546,12 @@ FXbool ThemeEditor::save(FXbool copy)
         }
         copy = true;
     }
-    if (!preferences->saveEditedTheme(result, copy ? -1 : replaceIndex)) return false;
+    std::vector<Theme> retained = undoStates;
+    retained.insert(retained.end(), redoStates.begin(), redoStates.end());
+    retained.push_back(original);
+    if (!preferences->saveEditedTheme(result, copy ? -1 : replaceIndex, retained)) return false;
+    if (std::find(savedThemesToClean.begin(), savedThemesToClean.end(), result.name) == savedThemesToClean.end())
+        savedThemesToClean.push_back(result.name);
     if (copy) { choices.push_back(result.libraryReference()); replaceIndex = choices.size() - 1; baseTheme->appendItem(result.name); }
     else choices[replaceIndex] = result.libraryReference();
     newTheme = false;

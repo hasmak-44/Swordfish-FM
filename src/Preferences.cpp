@@ -13,6 +13,8 @@
 #include <memory>
 #include <string>
 #include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "icons.h"
@@ -296,6 +298,165 @@ static FXbool copyThemeImages(FXApp* app, const Theme& theme, const FXString& fo
         }
     }
     return true;
+}
+
+static FXbool removeUnusedThemeGraphics(int parent, const FXString& name, const FXString& relative,
+                                       const std::set<FXString>& keep, FXbool images,
+                                       FXint depth, FXString& error)
+{
+    int fd = openat(parent, name.text(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (fd < 0)
+    {
+        if (errno == ENOENT) return true;
+        error = relative + ": " + strerror(errno);
+        return false;
+    }
+    DIR* directory = fdopendir(fd);
+    if (!directory)
+    {
+        error = relative + ": " + strerror(errno);
+        close(fd);
+        return false;
+    }
+    FXbool success = true;
+    while (true)
+    {
+        errno = 0;
+        struct dirent* entry = readdir(directory);
+        if (!entry)
+        {
+            if (errno)
+            {
+                error = relative + ": " + strerror(errno);
+                success = false;
+            }
+            break;
+        }
+        FXString child = entry->d_name;
+        if (child == "." || child == "..") continue;
+        FXString path = relative.empty() ? child : relative + "/" + child;
+        struct stat info;
+        if (fstatat(fd, child.text(), &info, AT_SYMLINK_NOFOLLOW) != 0)
+        {
+            error = path + ": " + strerror(errno);
+            success = false;
+            break;
+        }
+        if (S_ISDIR(info.st_mode))
+        {
+            if (depth >= 64)
+            {
+                error = path + ": " + _("The graphic folder nesting is too deep.");
+                success = false;
+                break;
+            }
+            if (!removeUnusedThemeGraphics(fd, child, path, keep, images, depth + 1, error))
+            {
+                success = false;
+                break;
+            }
+        }
+        else if (S_ISREG(info.st_mode))
+        {
+            FXString extension = FXPath::extension(child).lower();
+            if ((extension == "png" || (images && (extension == "jpg" || extension == "jpeg"))) &&
+                keep.find(path) == keep.end() && unlinkat(fd, child.text(), 0) != 0)
+            {
+                error = path + ": " + strerror(errno);
+                success = false;
+                break;
+            }
+        }
+    }
+    if (closedir(directory) != 0 && success)
+    {
+        error = relative + ": " + strerror(errno);
+        success = false;
+    }
+    return success;
+}
+
+static FXbool cleanThemeGraphics(const Theme& theme, const FXString& themeFile,
+                                 const std::vector<Theme>& retained, FXString& error)
+{
+    int root = open(theme.assetRoot.text(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (root < 0)
+    {
+        error = theme.assetRoot + ": " + strerror(errno);
+        return false;
+    }
+    DIR* directory = fdopendir(root);
+    if (!directory)
+    {
+        error = theme.assetRoot + ": " + strerror(errno);
+        close(root);
+        return false;
+    }
+    FXbool success = true;
+    while (true)
+    {
+        errno = 0;
+        struct dirent* entry = readdir(directory);
+        if (!entry)
+        {
+            if (errno)
+            {
+                error = theme.assetRoot + ": " + strerror(errno);
+                success = false;
+            }
+            break;
+        }
+        FXString name = entry->d_name;
+        if (name != FXPath::name(themeFile) && FXPath::extension(name).lower() == "swordfish-theme")
+        {
+            error = _("Another theme file shares this folder: ") + name;
+            success = false;
+            break;
+        }
+    }
+    const char* folders[] = {"textures", "patterns", "images"};
+    for (FXint kind = 0; success && kind < 3; ++kind)
+    {
+        std::set<FXString> names, keep;
+        if (kind == 2) themeImageNames(theme, names);
+        else themeTileNames(theme, kind == 1, names);
+        for (const Theme& previous : retained)
+        {
+            if (previous.assetRoot.empty() ||
+                FXPath::absolute(previous.assetRoot) != FXPath::absolute(theme.assetRoot)) continue;
+            if (kind == 2) themeImageNames(previous, names);
+            else themeTileNames(previous, kind == 1, names);
+        }
+        for (const FXString& name : names)
+        {
+            FXString relative;
+            if (!BackgroundEffect::textureRelativePath(name, relative))
+            {
+                error = _("Invalid graphic reference: ") + name;
+                success = false;
+                break;
+            }
+            keep.insert(FXString(folders[kind]) + "/" + relative + (kind == 2 ? "" : ".png"));
+            FXString resolved = kind == 2 ? BackgroundImage::path(name, theme.assetRoot) :
+                                kind == 1 ? BackgroundEffect::patternPath(name, theme.assetRoot) :
+                                            BackgroundEffect::texturePath(name, theme.assetRoot);
+            FXString prefix = FXPath::absolute(theme.assetRoot) + PATHSEPSTRING;
+            if (!resolved.empty())
+            {
+                resolved = FXPath::absolute(resolved);
+                if (resolved.left(prefix.length()) == prefix)
+                    keep.insert(resolved.mid(prefix.length(), resolved.length() - prefix.length()));
+            }
+        }
+        if (success)
+            success = removeUnusedThemeGraphics(root, folders[kind], folders[kind], keep, kind == 2, 0, error);
+    }
+    if (closedir(directory) != 0 && success)
+    {
+        error = theme.assetRoot + ": " + strerror(errno);
+        success = false;
+    }
+    return success;
 }
 
 static void loadCustomThemeFolders(vector_Theme& themes, std::map<FXString, FXString>& libraryFiles)
@@ -1898,7 +2059,7 @@ FXbool PreferencesBox::resolveTheme(const Theme& reference, Theme& resolved)
     return false;
 }
 
-FXbool PreferencesBox::saveEditedTheme(Theme& theme, FXint replace)
+FXbool PreferencesBox::saveEditedTheme(Theme& theme, FXint replace, const std::vector<Theme>& retained)
 {
     XFileExplorer* window = dynamic_cast<XFileExplorer*>(getOwner());
     if (!window || theme.name.empty() || theme.name.find_first_of(";\r\n") >= 0 ||
@@ -1985,7 +2146,40 @@ FXbool PreferencesBox::saveEditedTheme(Theme& theme, FXint replace)
     if (normalfont->getText() == oldnormalfont) normalfont->setText(normal);
     oldnormalfont = normal;
     appLog(APP_LOG_SETTINGS, "theme-saved", theme.name);
+    FXString cleanupError;
+    if (!cleanThemeGraphics(theme, themeLibraryFiles[theme.name], retained, cleanupError))
+    {
+        appLog(APP_LOG_ERRORS, "theme-graphics-cleanup-failed", cleanupError);
+        MessageBox::warning(this, BOX_OK, _("Save theme"),
+                            _("The theme was saved, but unused graphic copies could not all be removed: %s"),
+                            cleanupError.text());
+    }
     return true;
+}
+
+void PreferencesBox::cleanupSavedThemeGraphics(const FXString& name)
+{
+    auto tracked = themeLibraryFiles.find(name);
+    FXString error;
+    Theme theme;
+    if (tracked == themeLibraryFiles.end())
+        error = _("The theme is no longer in the library.");
+    else if (xf_islink(FXPath::directory(tracked->second)) || xf_islink(tracked->second))
+        error = _("The theme file or folder is no longer safe.");
+    else if (loadThemeFile(tracked->second, theme, error))
+    {
+        if (theme.name != name)
+            error = _("The theme file name no longer matches the library entry.");
+        else
+        {
+            theme.assetRoot = FXPath::directory(tracked->second);
+            if (cleanThemeGraphics(theme, tracked->second, std::vector<Theme>(), error)) return;
+        }
+    }
+    appLog(APP_LOG_ERRORS, "theme-graphics-cleanup-failed", name + ": " + error);
+    MessageBox::warning(this, BOX_OK, _("Save theme"),
+                        _("The theme was saved, but unused graphic copies could not all be removed: %s"),
+                        error.text());
 }
 
 

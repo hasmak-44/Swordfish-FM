@@ -89,6 +89,9 @@
   skipped.
 
 ### Fixed
+- Saving a theme removes unused PNG, JPEG, texture and pattern copies from
+  that theme's own graphic folders while preserving graphics still referenced
+  by the theme and its presets.
 - Exporting a theme now lets you name the export folder, choose its parent,
   create a new destination folder, and retry with another name or location
   when the target already exists.

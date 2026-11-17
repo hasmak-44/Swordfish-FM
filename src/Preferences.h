@@ -412,7 +412,8 @@ public:
     long onFilter(FXObject*, FXSelector, void*);
     long onCmdThemeEditor(FXObject*, FXSelector, void*);
     FXbool resolveTheme(const Theme&, Theme&);
-    FXbool saveEditedTheme(Theme&, FXint);
+    FXbool saveEditedTheme(Theme&, FXint, const std::vector<Theme>& retained = std::vector<Theme>());
+    void cleanupSavedThemeGraphics(const FXString&);
     long onCmdAccept(FXObject*, FXSelector, void*);
     long onCmdColumnPane(FXObject*, FXSelector, void*);
     long onCmdBrowse(FXObject*, FXSelector, void*);

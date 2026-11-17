@@ -82,6 +82,7 @@ private:
     vector_Theme choices;
     Theme original, applied, draft, saved;
     std::vector<Theme> undoStates, redoStates, pendingSteps;
+    std::vector<FXString> savedThemesToClean;
     FXbool ready = false;
     FXbool newTheme = false;
     FXint replaceIndex = -1;
