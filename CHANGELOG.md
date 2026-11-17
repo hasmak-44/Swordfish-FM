@@ -89,6 +89,9 @@
   skipped.
 
 ### Fixed
+- Exporting a theme now lets you name the export folder, choose its parent,
+  create a new destination folder, and retry with another name or location
+  when the target already exists.
 - Reset this element now removes its overrides and returns it to inherited
   defaults, including removing a saved background image.
 - Importing a graphic with a name already in use now shows the incoming and

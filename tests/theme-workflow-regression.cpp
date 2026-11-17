@@ -91,6 +91,54 @@ static FXButton* findButton(FXWindow* parent, const FXString& text)
     return NULL;
 }
 
+class ThemeExportResponder : public FXObject
+{
+    FXApp& app;
+    FXString parent;
+    std::vector<FXString> names;
+    FXbool rejectFirstExisting;
+    FXbool rejectedExisting = false;
+    size_t nameIndex = 0;
+public:
+    ThemeExportResponder(FXApp& application, const FXString& destination,
+                         std::vector<FXString> folderNames, FXbool rejectExisting = false) :
+        app(application), parent(destination), names(std::move(folderNames)),
+        rejectFirstExisting(rejectExisting) {}
+
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        FXWindow* modal = app.getModalWindow();
+        if (InputDialog* dialog = dynamic_cast<InputDialog*>(modal))
+        {
+            assert(dialog->getTitle() == "Export theme folder" && nameIndex < names.size());
+            dialog->setText(names[nameIndex++]);
+            dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            app.addTimeout(this, 1, 150);
+        }
+        else if (FileDialog* dialog = dynamic_cast<FileDialog*>(modal))
+        {
+            assert(dialog->getTitle() == "Choose where to export the theme folder");
+            assert(dialog->getWidth() >= 960);
+            dialog->setFilename(parent);
+            dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            if (rejectFirstExisting && !rejectedExisting) app.addTimeout(this, 1, 150);
+        }
+        else if (MessageBox* dialog = dynamic_cast<MessageBox*>(modal))
+        {
+            assert(rejectFirstExisting && !rejectedExisting &&
+                   dialog->getText().contains("folder already exists"));
+            FXButton* no = findButton(dialog, "No");
+            assert(no);
+            no->getTarget()->handle(no, FXSEL(SEL_COMMAND, no->getSelector()), NULL);
+            rejectedExisting = true;
+            app.addTimeout(this, 1, 150);
+        }
+        else
+            assert(false);
+        return 1;
+    }
+};
+
 static FXListBox* findListBoxWithItem(FXWindow* parent, const FXString& text)
 {
     FXListBox* list = dynamic_cast<FXListBox*>(parent);
@@ -1402,12 +1450,7 @@ public:
 
         FXString exportParent = data + "/exports";
         assert(xf_mkpath(exportParent.text(), 0755) == 0);
-        ActionTimer chooseExport([&] {
-            FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
-            assert(chooser && chooser->getTitle() == "Choose where to export the theme folder");
-            chooser->setFilename(exportParent);
-            chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
-        });
+        ThemeExportResponder chooseExport(app, exportParent, {"Categorized pack"});
         app.addTimeout(&chooseExport, 1, 150);
         imported.onCmdThemeExport(NULL, 0, NULL);
         FXString exported = exportParent + "/Categorized pack";
@@ -1415,6 +1458,13 @@ public:
         assert(xf_existfile(exported + "/textures/Natural Stone/River 1.png"));
         assert(BackgroundEffect::texturePath(categoryReference, exported) ==
                exported + "/textures/Natural Stone/River 1.png");
+
+        ThemeExportResponder chooseAlternateExport(app, exportParent,
+                                                    {"Categorized pack", "Categorized pack alternate"}, true);
+        app.addTimeout(&chooseAlternateExport, 1, 150);
+        imported.onCmdThemeExport(NULL, 0, NULL);
+        FXString alternateExport = exportParent + "/Categorized pack alternate";
+        assert(xf_existfile(alternateExport + "/theme.swordfish-theme"));
 
         editor.draft = editor.applied = editor.saved = categorized;
         editor.selectElement("list");
@@ -1706,12 +1756,7 @@ public:
             }
         assert(foundPattern);
 
-        ActionTimer choosePatternExport([&] {
-            FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
-            assert(chooser && chooser->getTitle() == "Choose where to export the theme folder");
-            chooser->setFilename(exportParent);
-            chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
-        });
+        ThemeExportResponder choosePatternExport(app, exportParent, {"Pattern pack"});
         app.addTimeout(&choosePatternExport, 1, 150);
         imported.onCmdThemeExport(NULL, 0, NULL);
         FXString patternExport = exportParent + "/Pattern pack";
@@ -2191,12 +2236,7 @@ public:
                               loaded.property("main", "image_mode") == "tile";
             }
         assert(foundImages);
-        ActionTimer chooseImageExport([&] {
-            FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
-            assert(chooser && chooser->getTitle() == "Choose where to export the theme folder");
-            chooser->setFilename(exportParent);
-            chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
-        });
+        ThemeExportResponder chooseImageExport(app, exportParent, {"Image pack"});
         app.addTimeout(&chooseImageExport, 1, 150);
         imported.onCmdThemeExport(NULL, 0, NULL);
         FXString imageExport = exportParent + "/Image pack";

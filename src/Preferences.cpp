@@ -2135,27 +2135,40 @@ long PreferencesBox::onCmdThemeExport(FXObject*, FXSelector, void*)
     Theme theme;
     if (!resolveTheme(Themes[index], theme)) return 1;
 
-    FileDialog savedialog(this, _("Choose where to export the theme folder"));
     FXString safe = themeFolderName(theme.name);
-    savedialog.setSelectMode(SELECT_FILE_DIRECTORY);
-    savedialog.setDirectory(FXSystem::getHomeDirectory());
-    if (!savedialog.execute())
+    FXString folder, file;
+    while (true)
     {
-        return 1;
-    }
-    FXString folder = FXPath::absolute(savedialog.getFilename()) + PATHSEPSTRING + safe;
-    FXString file = folder + PATHSEPSTRING "theme.swordfish-theme";
-    if (xf_islink(folder) || (xf_existfile(folder) && !xf_isdirectory(folder)))
-    {
-        MessageBox::error(this, BOX_OK, _("Export theme"), _("The export folder is not a regular directory: %s"),
-                          folder.text());
-        return 1;
-    }
-    if (xf_existfile(folder) &&
-        MessageBox::question(this, BOX_YES_NO, _("Export theme"),
-                             _("The folder already exists. Export into %s?"), folder.text()) != BOX_CLICKED_YES)
-    {
-        return 1;
+        InputDialog nameDialog(this, safe, _("Name for the exported theme folder:"), _("Export theme folder"),
+                               _("Folder name:"));
+        if (!nameDialog.execute(PLACEMENT_CURSOR)) return 1;
+        FXString enteredName = nameDialog.getText().trim();
+        if (enteredName.empty())
+        {
+            MessageBox::warning(this, BOX_OK, _("Export theme"), _("The export folder name cannot be empty."));
+            return 1;
+        }
+        safe = themeFolderName(enteredName);
+
+        FileDialog savedialog(this, _("Choose where to export the theme folder"));
+        savedialog.setSelectMode(SELECT_FILE_DIRECTORY);
+        savedialog.setDirectory(FXSystem::getHomeDirectory());
+        savedialog.resize(FXMAX(savedialog.getWidth(), 960), savedialog.getHeight());
+        if (!savedialog.execute()) return 1;
+
+        folder = FXPath::absolute(savedialog.getFilename()) + PATHSEPSTRING + safe;
+        file = folder + PATHSEPSTRING "theme.swordfish-theme";
+        if (xf_islink(folder) || (xf_existfile(folder) && !xf_isdirectory(folder)))
+        {
+            MessageBox::error(this, BOX_OK, _("Export theme"), _("The export folder is not a regular directory: %s"),
+                              folder.text());
+            return 1;
+        }
+        if (!xf_existfile(folder) ||
+            MessageBox::question(this, BOX_YES_NO, _("Export theme"),
+                _("The folder already exists. Export into %s? Choose No to select another name or location."),
+                folder.text()) == BOX_CLICKED_YES)
+            break;
     }
     if (xf_mkpath(folder.text(), 0755) != 0)
     {

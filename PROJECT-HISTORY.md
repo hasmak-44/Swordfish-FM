@@ -3504,6 +3504,15 @@ a saved background image and return that element to inherited defaults without
 changing other elements. The manual and theme workflow regression cover the
 behavior.
 
+### 3.102. Choosing a theme export folder (17 November 2026)
+
+Theme export now prompts for an export-folder name and parent location, widens
+the directory chooser so its controls are visible, and returns to the choices
+after an existing-folder conflict is declined. This allows exporting under a
+different name or location without manually creating the destination first.
+Regression coverage exports categorized assets and retries an existing name
+with a new folder name.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
