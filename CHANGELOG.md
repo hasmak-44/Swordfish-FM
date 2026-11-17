@@ -89,6 +89,9 @@
   skipped.
 
 ### Fixed
+- Pattern, texture and background-image galleries can now import a folder
+  recursively, preserving its subcategory structure and safely handling category
+  conflicts.
 - Pattern, texture and background-image galleries can now import multiple files
   at once, keeping their original filenames and reporting individual failures.
 - Clicking anywhere inside the No texture or No image tile now removes the

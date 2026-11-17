@@ -30,6 +30,8 @@
 #include <set>
 #include <utility>
 
+extern FXString execpath;
+
 namespace
 {
 // Gallery thumbnails show the PNG as an image viewer would: true colours, scaled to fit,
@@ -208,6 +210,161 @@ void reportBatchImportFailures(FXWindow* owner, const FXString& title, FXint imp
         FXString().format(_("Imported %d files. Some files could not be imported:\n"), imported) :
         _("No files were imported:\n");
     MessageBox::error(owner, BOX_OK, title.text(), "%s", (message + failures).text());
+}
+
+struct FolderGraphicFile
+{
+    FXString source;
+    FXString relative;
+};
+
+void collectFolderGraphicFiles(const FXString& root, const FXString& directory, const FXString& relative,
+                               FXint depth, FXbool images, std::vector<FolderGraphicFile>& files,
+                               FXString& failures)
+{
+    FXDir entries;
+    if (!entries.open(directory))
+    {
+        failures += (relative.empty() ? FXPath::name(root) : relative) + ": " +
+                    _("Cannot read folder.") + "\n";
+        return;
+    }
+    while (entries.next())
+    {
+        FXString name = entries.name();
+        if (name.empty() || name == "." || name == "..") continue;
+        FXString source = directory + PATHSEPSTRING + name;
+        FXString child = relative.empty() ? name : relative + "/" + name;
+        if (name[0] == '.')
+            failures += child + ": " + _("Hidden files and folders are not imported.") + "\n";
+        else if (xf_islink(source))
+        {
+            failures += child + ": " + _("Symbolic links are not imported.") + "\n";
+        }
+        else if (xf_isdirectory(source))
+        {
+            if (depth >= 7)
+                failures += child + ": " + _("Too many nested graphic categories.") + "\n";
+            else
+                collectFolderGraphicFiles(root, source, child, depth + 1, images, files, failures);
+        }
+        else if (!xf_isfile(source))
+        {
+            failures += child + ": " + _("Not a regular file.") + "\n";
+        }
+        else
+        {
+            FXString extension = FXPath::extension(name).lower();
+            FXbool supported = images ? extension == "png" || extension == "jpg" || extension == "jpeg" :
+                                         extension == "png";
+            if (supported)
+            {
+                FolderGraphicFile file = {source, child};
+                files.push_back(file);
+            }
+            else
+                failures += child + ": " + _("Unsupported file type.") + "\n";
+        }
+    }
+}
+
+class FolderImportConflictDialog : public DialogBox
+{
+    FXDECLARE(FolderImportConflictDialog)
+    FolderImportConflictDialog() {}
+public:
+    enum { ID_MERGE = DialogBox::ID_LAST, ID_RENAME, ID_ANOTHER };
+    FolderImportConflictDialog(FXWindow* owner, const FXString& category) :
+        DialogBox(owner, _("Folder already exists"))
+    {
+        FXString message = FXString().format(_("The category \"%s\" already exists. How should the imported folder be handled?"),
+                                             category.text());
+        new FXLabel(this, message, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+        new FXButton(buttons, _("Merge"), NULL, this, ID_MERGE,
+                     BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT | FRAME_GROOVE);
+        new FXButton(buttons, _("Rename"), NULL, this, ID_RENAME, BUTTON_NORMAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("Save under another folder"), NULL, this, ID_ANOTHER, BUTTON_NORMAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
+    }
+    long onChoice(FXObject*, FXSelector selector, void*)
+    {
+        getApp()->stopModal(this, FXSELID(selector) - ID_MERGE + 1);
+        hide();
+        return 1;
+    }
+};
+
+FXDEFMAP(FolderImportConflictDialog) FolderImportConflictDialogMap[] = {
+    FXMAPFUNCS(SEL_COMMAND, FolderImportConflictDialog::ID_MERGE,
+               FolderImportConflictDialog::ID_ANOTHER, FolderImportConflictDialog::onChoice)
+};
+FXIMPLEMENT(FolderImportConflictDialog, DialogBox, FolderImportConflictDialogMap,
+            ARRAYNUMBER(FolderImportConflictDialogMap))
+
+FXbool folderCategoryExists(const FXString& reference, FXbool pattern, FXbool image, const FXString& assetRoot)
+{
+    FXString relative;
+    if (!BackgroundEffect::textureRelativePath(reference, relative)) return false;
+    FXString directory = image ? "images" : pattern ? "patterns" : "textures";
+    FXString roots[] = {
+        assetRoot.empty() ? FXString::null : assetRoot + PATHSEPSTRING + directory,
+        FXPath::directory(execpath) + "/../share/swordfish/" + directory,
+        xf_userdatahome() + PATHSEPSTRING + directory
+    };
+    for (const FXString& root : roots)
+        if (!root.empty() && xf_isdirectory(root + PATHSEPSTRING + relative)) return true;
+    return false;
+}
+
+FXbool resolveFolderImportCategory(FXWindow* owner, const FXString& rootName, FXbool pattern, FXbool image,
+                                   const FXString& assetRoot, FXString& category)
+{
+    FXString name = rootName, parent;
+    while (true)
+    {
+        category = parent.empty() ? name : parent + "/" + name;
+        FXString reference = BackgroundEffect::textureReference(category);
+        if (reference.empty())
+        {
+            MessageBox::error(owner, BOX_OK, _("Import folder"), _("The folder name or category path is invalid."));
+            return false;
+        }
+        if (!folderCategoryExists(reference, pattern, image, assetRoot)) return true;
+
+        FolderImportConflictDialog conflict(owner, category);
+        FXuint choice = conflict.execute();
+        if (choice == 1) return true;
+        if (choice == 2)
+        {
+            InputDialog naming(owner, "", _("New root category name:"), _("Rename imported folder"));
+            naming.setText(name);
+            if (!naming.execute()) return false;
+            FXString renamed = naming.getText().trim();
+            FXString renamedPath = parent.empty() ? renamed : parent + "/" + renamed;
+            if (renamed.empty() || renamed.find_first_of("/\\") >= 0 ||
+                BackgroundEffect::textureReference(renamedPath).empty())
+            {
+                MessageBox::error(owner, BOX_OK, _("Import folder"), _("Enter a category name without a slash."));
+                continue;
+            }
+            name = renamed;
+        }
+        else if (choice == 3)
+        {
+            InputDialog destination(owner, "", _("Parent category path (use / for subcategories):"),
+                                    _("Save under another folder"));
+            if (!destination.execute()) return false;
+            parent = destination.getText().trim();
+            if (parent.empty() || BackgroundEffect::textureReference(parent + "/" + name).empty())
+            {
+                MessageBox::error(owner, BOX_OK, _("Import folder"), _("Enter a valid parent category path."));
+                parent.clear();
+            }
+        }
+        else
+            return false;
+    }
 }
 
 // Tiles match the file list's thumbnail view (IconItem::drawBigIcon with thumbnail tiles).
@@ -1420,9 +1577,11 @@ public:
         ID_COLOR_CHANGED,
         ID_TEXTURE,
         ID_ADD_PATTERN,
+        ID_IMPORT_PATTERN_FOLDER,
         ID_REFRESH_PATTERN,
         ID_PATTERN_UP,
         ID_ADD_TEXTURE,
+        ID_IMPORT_TEXTURE_FOLDER,
         ID_REFRESH,
         ID_TEXTURE_UP,
         ID_PRESET,
@@ -1518,6 +1677,7 @@ public:
                                                   this, ID_LIVE);
         FXHorizontalFrame* patternFiles = new FXHorizontalFrame(patternPage, LAYOUT_FILL_X);
         new FXButton(patternFiles, _("Add PNG..."), NULL, this, ID_ADD_PATTERN, BUTTON_NORMAL);
+        new FXButton(patternFiles, _("Add folder..."), NULL, this, ID_IMPORT_PATTERN_FOLDER, BUTTON_NORMAL);
         new FXButton(patternFiles, _("Refresh"), NULL, this, ID_REFRESH_PATTERN, BUTTON_NORMAL);
         new FXLabel(patternFiles, _("Save in category:"));
         patternTargetCategory = new FXTextField(patternFiles, 14, NULL, 0, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
@@ -1535,6 +1695,7 @@ public:
         textures = new ThemeGallery(texturePage, this, ID_TEXTURE);
         FXHorizontalFrame* textureControls = new FXHorizontalFrame(texturePage, LAYOUT_FILL_X);
         new FXButton(textureControls, _("Add PNG..."), NULL, this, ID_ADD_TEXTURE, BUTTON_NORMAL);
+        new FXButton(textureControls, _("Add folder..."), NULL, this, ID_IMPORT_TEXTURE_FOLDER, BUTTON_NORMAL);
         new FXButton(textureControls, _("Refresh"), NULL, this, ID_REFRESH, BUTTON_NORMAL);
         new FXLabel(textureControls, _("Save in category:"));
         textureTargetCategory = new FXTextField(textureControls, 14, NULL, 0, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
@@ -1766,11 +1927,83 @@ public:
     long onTileFiles(FXObject*, FXSelector selector, void*)
     {
         FXint id = FXSELID(selector);
-        FXbool pattern = id == ID_ADD_PATTERN || id == ID_REFRESH_PATTERN || id == ID_PATTERN_UP;
+        FXbool pattern = id == ID_ADD_PATTERN || id == ID_IMPORT_PATTERN_FOLDER ||
+                         id == ID_REFRESH_PATTERN || id == ID_PATTERN_UP;
         FXTextField* target = pattern ? patternTargetCategory : textureTargetCategory;
         if (id == ID_PATTERN_UP || id == ID_TEXTURE_UP)
         {
             openFolder(pattern, parentFolder(pattern ? patternFolder : textureFolder));
+            return 1;
+        }
+        if (id == ID_IMPORT_PATTERN_FOLDER || id == ID_IMPORT_TEXTURE_FOLDER)
+        {
+            FXString sourceFolder = FileDialog::getOpenDirectory(
+                this, pattern ? _("Import pattern folder") : _("Import texture folder"), FXString::null);
+            if (sourceFolder.empty()) return 1;
+            if (xf_islink(sourceFolder))
+            {
+                MessageBox::error(this, BOX_OK, pattern ? _("Pattern") : _("Texture"),
+                                  _("Symbolic-link folders are not imported."));
+                return 1;
+            }
+            FXString destinationCategory;
+            if (!resolveFolderImportCategory(this, FXPath::name(sourceFolder), pattern, false,
+                                             editor->getDraft().assetRoot, destinationCategory)) return 1;
+            std::vector<FolderGraphicFile> files;
+            FXString failures;
+            collectFolderGraphicFiles(sourceFolder, sourceFolder, "", 0, false, files, failures);
+            std::sort(files.begin(), files.end(), [](const FolderGraphicFile& a, const FolderGraphicFile& b)
+            {
+                return a.relative < b.relative;
+            });
+            if (files.empty() && failures.empty()) failures = _("The folder contains no supported PNG files.");
+            FXString activeReference;
+            FXint importedCount = 0;
+            for (const FolderGraphicFile& file : files)
+            {
+                FXString subcategory = FXPath::directory(file.relative);
+                FXString name = FXPath::title(FXPath::name(file.relative));
+                FXString category = destinationCategory;
+                if (!subcategory.empty() && subcategory != ".") category += "/" + subcategory;
+                FXString reference = BackgroundEffect::textureReference(category + "/" + name);
+                FXString error;
+                FXString local = pattern ? BackgroundEffect::patternPath(reference, editor->getDraft().assetRoot) :
+                                           BackgroundEffect::texturePath(reference, editor->getDraft().assetRoot);
+                FXString shared = pattern ? BackgroundEffect::patternPath(reference) :
+                                            BackgroundEffect::texturePath(reference);
+                FXbool imported = !reference.empty();
+                if (!imported)
+                    error = pattern ? _("Invalid pattern name or category.") : _("Invalid texture name or category.");
+                else if (!editor->getDraft().assetRoot.empty() && !local.empty() && local != shared)
+                    error = _("This name is already used by the current theme. Please use another name.");
+                else
+                    imported = pattern ? BackgroundEffect::importPattern(getApp(), file.source, reference, false, error) :
+                                         BackgroundEffect::importTexture(getApp(), file.source, reference, false, error);
+                if (imported)
+                {
+                    if (activeReference.empty()) activeReference = reference;
+                    ++importedCount;
+                }
+                else
+                    failures += file.relative + ": " +
+                                (error.empty() ? _("Invalid graphic name or category.") : error) + "\n";
+            }
+            if (!activeReference.empty())
+            {
+                if (pattern)
+                {
+                    effect.pattern = 0;
+                    effect.patternImage = activeReference;
+                    effect.fill = "pattern";
+                    fill->setCurrentItem(2);
+                }
+                else effect.texture = activeReference;
+                changed();
+                (pattern ? patternFolder : textureFolder) = referenceFolder(activeReference);
+            }
+            if (pattern) loadPatterns();
+            else loadTextures();
+            reportBatchImportFailures(this, pattern ? _("Pattern") : _("Texture"), importedCount, failures);
             return 1;
         }
         if (id == ID_ADD_PATTERN || id == ID_ADD_TEXTURE)
@@ -1903,9 +2136,11 @@ FXDEFMAP(BackgroundEditor) BackgroundEditorMap[] = {
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_GRADIENT, BackgroundEditor::onGradient),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_TEXTURE, BackgroundEditor::onTexture),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_ADD_PATTERN, BackgroundEditor::onTileFiles),
+    FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_IMPORT_PATTERN_FOLDER, BackgroundEditor::onTileFiles),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_REFRESH_PATTERN, BackgroundEditor::onTileFiles),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_PATTERN_UP, BackgroundEditor::onTileFiles),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_ADD_TEXTURE, BackgroundEditor::onTileFiles),
+    FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_IMPORT_TEXTURE_FOLDER, BackgroundEditor::onTileFiles),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_REFRESH, BackgroundEditor::onTileFiles),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_TEXTURE_UP, BackgroundEditor::onTileFiles),
     FXMAPFUNC(SEL_COMMAND, BackgroundEditor::ID_PRESET, BackgroundEditor::onPreset),
@@ -2045,7 +2280,7 @@ class BackgroundImageEditor : public DialogBox
     }
 
 public:
-    enum { ID_SELECT = DialogBox::ID_LAST, ID_PLACEMENT, ID_UP, ID_IMPORT, ID_REFRESH };
+    enum { ID_SELECT = DialogBox::ID_LAST, ID_PLACEMENT, ID_UP, ID_IMPORT, ID_IMPORT_FOLDER, ID_REFRESH };
     BackgroundImageEditor(ThemeEditor* owner, const FXString& selectedArea) :
         DialogBox(owner, _("Background image"), DECOR_ALL, 0, 0, 720, 600),
         editor(owner), area(selectedArea), reference(owner->getDraft().property(selectedArea, "background_image"))
@@ -2080,6 +2315,7 @@ public:
         // Bottom rows are packed before the gallery, which takes the remaining space.
         FXHorizontalFrame* files = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
         new FXButton(files, _("Add image..."), NULL, this, ID_IMPORT, BUTTON_NORMAL);
+        new FXButton(files, _("Add folder..."), NULL, this, ID_IMPORT_FOLDER, BUTTON_NORMAL);
         new FXButton(files, _("Refresh"), NULL, this, ID_REFRESH, BUTTON_NORMAL);
         new FXLabel(files, _("Save in category:"));
         targetCategory = new FXTextField(files, 16, NULL, 0, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
@@ -2125,6 +2361,62 @@ public:
         if (id == ID_UP)
         {
             openFolder(parentFolder(folder));
+            return 1;
+        }
+        else if (id == ID_IMPORT_FOLDER)
+        {
+            FXString sourceFolder = FileDialog::getOpenDirectory(
+                this, _("Import background-image folder"), FXString::null);
+            if (sourceFolder.empty()) return 1;
+            if (xf_islink(sourceFolder))
+            {
+                MessageBox::error(this, BOX_OK, _("Background image"), _("Symbolic-link folders are not imported."));
+                return 1;
+            }
+            FXString destinationCategory;
+            if (!resolveFolderImportCategory(this, FXPath::name(sourceFolder), false, true,
+                                             editor->getDraft().assetRoot, destinationCategory)) return 1;
+            std::vector<FolderGraphicFile> files;
+            FXString failures;
+            collectFolderGraphicFiles(sourceFolder, sourceFolder, "", 0, true, files, failures);
+            std::sort(files.begin(), files.end(), [](const FolderGraphicFile& a, const FolderGraphicFile& b)
+            {
+                return a.relative < b.relative;
+            });
+            if (files.empty() && failures.empty())
+                failures = _("The folder contains no supported PNG or JPEG files.");
+            FXString firstReference;
+            FXint importedCount = 0;
+            for (const FolderGraphicFile& file : files)
+            {
+                FXString candidate = BackgroundEffect::textureReference(destinationCategory + "/" + file.relative);
+                FXString error;
+                FXString local = BackgroundImage::path(candidate, editor->getDraft().assetRoot);
+                FXString shared = BackgroundImage::path(candidate);
+                FXbool imported = !candidate.empty();
+                if (!imported)
+                    error = _("Invalid image name or category.");
+                else if (!editor->getDraft().assetRoot.empty() && !local.empty() && local != shared)
+                    error = _("This name is already used by the current theme. Please use another name.");
+                else
+                    imported = BackgroundImage::importImage(getApp(), file.source, candidate, error);
+                if (imported)
+                {
+                    if (firstReference.empty()) firstReference = candidate;
+                    ++importedCount;
+                }
+                else
+                    failures += file.relative + ": " +
+                                (error.empty() ? _("Invalid image name or category.") : error) + "\n";
+            }
+            if (!firstReference.empty())
+            {
+                reference = firstReference;
+                changed();
+                folder = referenceFolder(reference);
+            }
+            refresh();
+            reportBatchImportFailures(this, _("Background image"), importedCount, failures);
             return 1;
         }
         else if (id == ID_IMPORT)

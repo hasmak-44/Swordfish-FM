@@ -129,6 +129,14 @@ static void selectChooserFile(FileDialog* chooser, const FXString& path)
     assert(selected && selected[0] == FXPath::absolute(path) && selected[1].empty());
 }
 
+static void chooseFolderInDialog(FileDialog* chooser, const FXString& path)
+{
+    assert(chooser->getSelectMode() == SELECT_FILE_DIRECTORY);
+    chooser->setFilename(path);
+    assert(chooser->getFilename() == FXPath::absolute(path));
+    chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+}
+
 static FXLabel* findLabel(FXWindow* parent, const FXString& text)
 {
     FXLabel* label = dynamic_cast<FXLabel*>(parent);
@@ -1401,6 +1409,80 @@ public:
             assert(xf_existfile(globalTextures + "/Natural Stone/Batch Three.png") &&
                    BackgroundEffect::parse(editor.getDraft().effect).texture ==
                        BackgroundEffect::textureReference("Natural Stone/Batch Three"));
+            FXString textureFolderImport = data + "/Batch Texture Pack";
+            assert(xf_mkpath((textureFolderImport + "/Oak").text(), 0755) == 0);
+            assert(xf_mkpath((textureFolderImport + "/Pine").text(), 0755) == 0);
+            solidPng(app, textureFolderImport + "/Oak/Leaves.png", FXRGB(30, 70, 110));
+            solidPng(app, textureFolderImport + "/Pine/Needles.png", FXRGB(110, 70, 30));
+            solidPng(app, textureFolderImport + "/Root.png", FXRGB(70, 30, 110));
+            {
+                std::ofstream unsupported((textureFolderImport + "/readme.txt").text());
+                unsupported << "not a texture";
+                assert(unsupported.good());
+            }
+            FXButton* addFolder = findButton(page, "Add folder...");
+            assert(addFolder);
+            ActionTimer confirmFolderReport([&] {
+                MessageBox* message = dynamic_cast<MessageBox*>(app.getModalWindow());
+                assert(message && message->getTitle() == "Texture");
+                message->handle(message, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_OK), NULL);
+            });
+            ActionTimer chooseFolder([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser && chooser->getTitle() == "Import texture folder");
+                app.addTimeout(&confirmFolderReport, 1, 150);
+                chooseFolderInDialog(chooser, textureFolderImport);
+            });
+            app.addTimeout(&chooseFolder, 1, 150);
+            addFolder->getTarget()->handle(addFolder, FXSEL(SEL_COMMAND, addFolder->getSelector()), NULL);
+            assert(xf_existfile(globalTextures + "/Batch Texture Pack/Oak/Leaves.png") &&
+                   xf_existfile(globalTextures + "/Batch Texture Pack/Pine/Needles.png") &&
+                   xf_existfile(globalTextures + "/Batch Texture Pack/Root.png") &&
+                   BackgroundEffect::parse(editor.getDraft().effect).texture ==
+                       BackgroundEffect::textureReference("Batch Texture Pack/Oak/Leaves"));
+
+            FXint conflictAction = 0;
+            ActionTimer renameImportedFolder([&] {
+                InputDialog* naming = dynamic_cast<InputDialog*>(app.getModalWindow());
+                assert(naming && naming->getTitle() == "Rename imported folder");
+                naming->setText("Renamed Texture Pack");
+                app.addTimeout(&confirmFolderReport, 1, 150);
+                naming->handle(naming, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            });
+            ActionTimer chooseAlternateParent([&] {
+                InputDialog* destination = dynamic_cast<InputDialog*>(app.getModalWindow());
+                assert(destination && destination->getTitle() == "Save under another folder");
+                destination->setText("Alternate Parent");
+                app.addTimeout(&confirmFolderReport, 1, 150);
+                destination->handle(destination, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            });
+            ActionTimer resolveFolderConflict([&] {
+                DialogBox* conflict = dynamic_cast<DialogBox*>(app.getModalWindow());
+                assert(conflict && conflict->getTitle() == "Folder already exists");
+                FXButton* choice = findButton(conflict, conflictAction == 1 ? "Merge" :
+                                                       conflictAction == 2 ? "Rename" :
+                                                                           "Save under another folder");
+                assert(choice);
+                if (conflictAction == 1) app.addTimeout(&confirmFolderReport, 1, 150);
+                else if (conflictAction == 2) app.addTimeout(&renameImportedFolder, 1, 150);
+                else app.addTimeout(&chooseAlternateParent, 1, 150);
+                choice->getTarget()->handle(choice, FXSEL(SEL_COMMAND, choice->getSelector()), NULL);
+            });
+            ActionTimer chooseConflictingFolder([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser && chooser->getTitle() == "Import texture folder");
+                app.addTimeout(&resolveFolderConflict, 1, 150);
+                chooseFolderInDialog(chooser, textureFolderImport);
+            });
+            for (conflictAction = 1; conflictAction <= 3; ++conflictAction)
+            {
+                app.addTimeout(&chooseConflictingFolder, 1, 150);
+                addFolder->getTarget()->handle(addFolder, FXSEL(SEL_COMMAND, addFolder->getSelector()), NULL);
+                if (conflictAction == 2)
+                    assert(xf_existfile(globalTextures + "/Renamed Texture Pack/Oak/Leaves.png"));
+                if (conflictAction == 3)
+                    assert(xf_existfile(globalTextures + "/Alternate Parent/Batch Texture Pack/Oak/Leaves.png"));
+            }
             dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
         });
         app.addTimeout(&categoryDialog, 1, 150);
@@ -1584,6 +1666,21 @@ public:
             assert(xf_existfile(globalPatterns + "/Geometric/Batch One.png") &&
                    xf_existfile(globalPatterns + "/Geometric/Batch Two.png") &&
                    BackgroundEffect::parse(editor.getDraft().effect).patternImage == batchPatternReference);
+            FXString patternFolderImport = data + "/Batch Pattern Pack";
+            assert(xf_mkpath((patternFolderImport + "/Lines").text(), 0755) == 0);
+            solidPng(app, patternFolderImport + "/Lines/Needle.png", FXRGB(30, 90, 150));
+            FXButton* addFolder = findButton(page, "Add folder...");
+            assert(addFolder);
+            ActionTimer choosePatternFolder([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser && chooser->getTitle() == "Import pattern folder");
+                chooseFolderInDialog(chooser, patternFolderImport);
+            });
+            app.addTimeout(&choosePatternFolder, 1, 150);
+            addFolder->getTarget()->handle(addFolder, FXSEL(SEL_COMMAND, addFolder->getSelector()), NULL);
+            FXString patternFolderReference = BackgroundEffect::textureReference("Batch Pattern Pack/Lines/Needle");
+            assert(xf_existfile(globalPatterns + "/Batch Pattern Pack/Lines/Needle.png") &&
+                   BackgroundEffect::parse(editor.getDraft().effect).patternImage == patternFolderReference);
             dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
         });
         app.addTimeout(&patternDialog, 1, 150);
@@ -1760,6 +1857,24 @@ public:
                    xf_existfile(globalImages + "/Photographs/Batch Two.jpg") &&
                    editor.getDraft().property("main", "background_image") ==
                        BackgroundEffect::textureReference("Photographs/Batch One.png"));
+            FXString imageFolderImport = data + "/Batch Background Pack";
+            assert(xf_mkpath((imageFolderImport + "/Oak").text(), 0755) == 0);
+            assert(xf_mkpath((imageFolderImport + "/Pine").text(), 0755) == 0);
+            assert(FXFile::copyFiles(imageSource, imageFolderImport + "/Oak/Scene.png", false));
+            assert(FXFile::copyFiles(jpegSource, imageFolderImport + "/Pine/View.jpg", false));
+            FXButton* addFolder = findButton(dialog, "Add folder...");
+            assert(addFolder);
+            ActionTimer chooseImageFolder([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser && chooser->getTitle() == "Import background-image folder");
+                chooseFolderInDialog(chooser, imageFolderImport);
+            });
+            app.addTimeout(&chooseImageFolder, 1, 150);
+            addFolder->getTarget()->handle(addFolder, FXSEL(SEL_COMMAND, addFolder->getSelector()), NULL);
+            assert(xf_existfile(globalImages + "/Batch Background Pack/Oak/Scene.png") &&
+                   xf_existfile(globalImages + "/Batch Background Pack/Pine/View.jpg") &&
+                   editor.getDraft().property("main", "background_image") ==
+                       BackgroundEffect::textureReference("Batch Background Pack/Oak/Scene.png"));
             dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
         });
         app.addTimeout(&cancelImage, 1, 150);

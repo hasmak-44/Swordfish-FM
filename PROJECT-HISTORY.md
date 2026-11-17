@@ -3458,6 +3458,20 @@ the imported names and active selection. It also checks that the original
 single-file naming and cancellation flows still work. The native build and
 theme workflow regression passed.
 
+### 3.98. Importing graphic folders (17 November 2026)
+
+The user requested folder import for patterns, textures and background images.
+The selected folder becomes a category at the gallery root; nested folders
+become subcategories, and supported images are imported recursively. Unsupported
+files and individual import failures are reported without stopping other files.
+
+If the destination category already exists, the user can merge non-conflicting
+files, rename the imported category, or enter a parent category under which to
+save it. Existing files are not overwritten. Regression coverage imports nested
+PNG/JPEG structures in all three galleries and exercises each category-conflict
+choice, including unsupported files.
+The native build and theme workflow regression passed.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
