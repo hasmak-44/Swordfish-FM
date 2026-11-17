@@ -2012,6 +2012,7 @@ public:
             const char* filters[] = {pattern ? _("PNG patterns") : _("PNG textures"), "*.png", NULL};
             file.setPatternList(filters);
             file.setSelectMode(SELECT_FILE_MULTIPLE);
+            file.showThumbnails(true, true);
             if (!file.execute()) return 1;
             std::unique_ptr<FXString[]> selected(file.getFilenames());
             if (!selected) return 1;
@@ -2425,6 +2426,7 @@ public:
             const char* filters[] = {_("PNG and JPEG images"), "*.png,*.jpg,*.jpeg", _("All files"), "*", NULL};
             file.setPatternList(filters);
             file.setSelectMode(SELECT_FILE_MULTIPLE);
+            file.showThumbnails(true, true);
             if (!file.execute()) return 1;
             std::unique_ptr<FXString[]> selected(file.getFilenames());
             if (!selected) return 1;

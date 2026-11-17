@@ -89,6 +89,8 @@
   skipped.
 
 ### Fixed
+- Pattern, texture and background-image file choosers now show image thumbnails
+  for preview before import.
 - Pattern, texture and background-image galleries can now import a folder
   recursively, preserving its subcategory structure and safely handling category
   conflicts.

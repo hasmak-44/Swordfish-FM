@@ -246,7 +246,7 @@ public:
     void showHiddenFiles(FXbool shown);
 
     // Change show thumbnails files mode
-    void showThumbnails(FXbool shown);
+    void showThumbnails(FXbool shown, FXbool keepFilesWithoutPreview = false);
 
     // Destructor
     virtual ~FileSelector();
@@ -361,7 +361,7 @@ public:
     void showHiddenFiles(FXbool shown);
 
     // Change show thumbnails files mode
-    void showThumbnails(FXbool shown);
+    void showThumbnails(FXbool shown, FXbool keepFilesWithoutPreview = false);
 
     // Set initial state of readonly button
     void setReadOnly(FXbool state);

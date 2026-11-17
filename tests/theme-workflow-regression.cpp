@@ -100,14 +100,18 @@ static FXListBox* findListBoxWithItem(FXWindow* parent, const FXString& text)
     return NULL;
 }
 
+static FXint findChooserItem(FileList*, const FXString&);
+
 static void selectChooserFiles(FileDialog* chooser, const FXString& first, const FXString& second)
 {
     assert(chooser->getSelectMode() == SELECT_FILE_MULTIPLE);
+    assert(chooser->shownThumbnails());
     chooser->setFilename(first);
     FileList* list = dynamic_cast<FileList*>(findClass(chooser, "FileList"));
     assert(list);
-    FXint firstIndex = list->findItem(FXPath::name(first));
-    FXint secondIndex = list->findItem(FXPath::name(second));
+    assert(list->loadsPreviews());
+    FXint firstIndex = findChooserItem(list, FXPath::name(first));
+    FXint secondIndex = findChooserItem(list, FXPath::name(second));
     assert(firstIndex >= 0 && secondIndex >= 0 && firstIndex != secondIndex);
     list->selectItem(firstIndex);
     list->selectItem(secondIndex);
@@ -119,10 +123,12 @@ static void selectChooserFiles(FileDialog* chooser, const FXString& first, const
 static void selectChooserFile(FileDialog* chooser, const FXString& path)
 {
     assert(chooser->getSelectMode() == SELECT_FILE_MULTIPLE);
+    assert(chooser->shownThumbnails());
     chooser->setFilename(path);
     FileList* list = dynamic_cast<FileList*>(findClass(chooser, "FileList"));
     assert(list);
-    FXint index = list->findItem(FXPath::name(path));
+    assert(list->loadsPreviews());
+    FXint index = findChooserItem(list, FXPath::name(path));
     assert(index >= 0);
     list->selectItem(index);
     std::unique_ptr<FXString[]> selected(chooser->getFilenames());
@@ -135,6 +141,13 @@ static void chooseFolderInDialog(FileDialog* chooser, const FXString& path)
     chooser->setFilename(path);
     assert(chooser->getFilename() == FXPath::absolute(path));
     chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+}
+
+static FXint findChooserItem(FileList* list, const FXString& name)
+{
+    for (FXint i = 0; i < list->getNumItems(); ++i)
+        if (list->getItemFilename(i) == name) return i;
+    return -1;
 }
 
 static FXLabel* findLabel(FXWindow* parent, const FXString& text)

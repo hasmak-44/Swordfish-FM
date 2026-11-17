@@ -164,6 +164,7 @@ protected:
     FXString boostdir;                                  // Directory watched for new items
     FXbool allowrefresh = false;                        // Allow or disallow periodic refresh
     FXbool displaythumbnails = false;                   // Display thumbnails
+    FXbool keepFilesWithoutThumbnails = false;
     int thumbnailHidden = 0;                            // Files not shown by the Thumbnails view
     FXulong previewRevision = 0;
     FXbool remoteBusy = false;
@@ -664,7 +665,7 @@ public:
     }
 
     // Display or not thumbnails
-    void showThumbnails(FXbool display);
+    void showThumbnails(FXbool display, FXbool keepFilesWithoutPreview = false);
 
     // Return true if showing directories only
     FXbool showOnlyDirectories() const;

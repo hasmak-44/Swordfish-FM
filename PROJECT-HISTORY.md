@@ -3472,6 +3472,15 @@ PNG/JPEG structures in all three galleries and exercises each category-conflict
 choice, including unsupported files.
 The native build and theme workflow regression passed.
 
+### 3.99. Previewing files before theme import (17 November 2026)
+
+The user clarified that Add files should show previews in the chooser, without
+a separate review dialog, for patterns, textures and background images. Those
+choosers now open in thumbnail mode, which loads image previews in the file
+list. Regression checks verify that thumbnail display and preview loading are
+enabled in each Add flow, and that files remain selectable when a thumbnail
+cannot be generated.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

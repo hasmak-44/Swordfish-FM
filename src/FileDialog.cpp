@@ -1816,9 +1816,9 @@ void FileSelector::showHiddenFiles(FXbool shown)
 
 
 // Change show thumbnails files mode
-void FileSelector::showThumbnails(FXbool shown)
+void FileSelector::showThumbnails(FXbool shown, FXbool keepFilesWithoutPreview)
 {
-    list->showThumbnails(shown);
+    list->showThumbnails(shown, keepFilesWithoutPreview);
 }
 
 
@@ -2666,9 +2666,9 @@ void FileDialog::showHiddenFiles(FXbool shown)
 
 
 // Change show thumbnails files mode
-void FileDialog::showThumbnails(FXbool shown)
+void FileDialog::showThumbnails(FXbool shown, FXbool keepFilesWithoutPreview)
 {
-    list->showThumbnails(shown);
+    list->showThumbnails(shown, keepFilesWithoutPreview);
 }
 
 

@@ -5962,8 +5962,9 @@ void FileList::refreshPreviews()
 
 
 // Change show thumbnails mode
-void FileList::showThumbnails(FXbool display)
+void FileList::showThumbnails(FXbool display, FXbool keepFilesWithoutPreview)
 {
+    keepFilesWithoutThumbnails = display && keepFilesWithoutPreview;
     setViewMode(display ? VIEW_THUMBNAILS : VIEW_ICONS);
 }
 
@@ -8211,7 +8212,8 @@ fnd:
         for (int i = items.no() - 1; i >= 0; --i)
         {
             FileItem* visible = (FileItem*)items[i];
-            if (!visible->isDirectory() && !visible->previewable && !visible->previewPending)
+            if (!keepFilesWithoutThumbnails && !visible->isDirectory() &&
+                !visible->previewable && !visible->previewPending)
             {
                 items.erase(i);
                 thumbnailHidden++;
