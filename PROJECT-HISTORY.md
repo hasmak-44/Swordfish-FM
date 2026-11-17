@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 17 November 2026, through portable profile copy protection
-(section 3.105).
+Last updated: 17 November 2026, through the current development handoff
+(section 3.106).
 Latest release: `swordfish-0.0.3-beta2`.
 Stable fallback: `swordfish-0.0.2`.
 
@@ -40,7 +40,7 @@ Historical implementation details below do not override the current code.
    automated tests but still need the user's real-machine testing.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.70-3.105. Older beta and RC notes are
+9. For the latest state, read sections 3.70-3.106. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide is a documentation addition after the frozen RC4 application commit.
@@ -3572,6 +3572,42 @@ runtime. This is local automated validation, not a new
 portable bundle or user confirmation. Closing all source and destination
 windows remains the reliable way to copy the entire profile; this guard covers
 the main settings file, not a whole-profile snapshot, and older builds lack it.
+
+### 3.106. Current handoff and pending reports (17 November 2026)
+
+The user wants a copied `portable-data` folder to reproduce the original
+portable profile and wants users to be able to add content by dropping it into
+the appropriate folders. Portable built-ins belong to the bundle's own
+`usr/share/swordfish/`, not the host's `/usr/share/swordfish/`; writable user
+content belongs under `portable-data/`. Exact shared-asset name collisions
+currently prefer bundled items, as the user chose; theme-local graphics retain
+their own precedence. Do not treat this goal as fully verified: external
+programs, saved paths, named host icons, desktop integration and host Trash can
+depend on the machine. Discuss any requested change to those behaviors first.
+
+Custom-action icon relocation (`974bc12`) and running-profile copy protection
+(`b60ad0b`) are committed locally. Their automated checks passed, but no new
+portable bundle has been built and the reported scenario has not been confirmed
+on the user's machine.
+
+The user's `build/Test and fix.txt` is ignored by Git. Reports not yet
+addressed from that list are recorded here so they are not lost:
+
+- A connected Android phone may disappear from Devices when clicked to mount
+  or after unmounting, while Caja can still mount it. The user wants it to
+  remain muted and remountable, and asked whether safe removal is possible.
+  Diagnose and confirm this with a physical device; earlier mocked MTP work is
+  in section 3.77.
+- The list asks to remove Wi-Fi Android phone discovery. This needs discussion:
+  the earlier network-discovery direction differed, and existing discovery must
+  not be changed on an assumption.
+- Fixed-colour dialogs and child windows reportedly leave old tabs highlighted
+  after another tab is selected. This still needs investigation and desktop
+  confirmation.
+
+Continue one item at a time: clarify anything unclear, fix and test it, then
+commit locally. Do not assume which report the user wants next, build a new
+portable bundle, or push without asking.
 
 ## 4. The archive-command / false idle-timeout bug
 

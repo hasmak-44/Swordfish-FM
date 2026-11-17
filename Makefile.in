@@ -91,17 +91,18 @@ build_triplet = @build@
 host_triplet = @host@
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/gettext.m4 \
-	$(top_srcdir)/m4/host-cpu-c-abi.m4 $(top_srcdir)/m4/iconv.m4 \
-	$(top_srcdir)/m4/intlmacosx.m4 $(top_srcdir)/m4/lib-ld.m4 \
-	$(top_srcdir)/m4/lib-link.m4 $(top_srcdir)/m4/lib-prefix.m4 \
-	$(top_srcdir)/m4/nls.m4 $(top_srcdir)/m4/po.m4 \
-	$(top_srcdir)/m4/progtest.m4 $(top_srcdir)/configure.ac
+am__aclocal_m4_deps = $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(top_srcdir)/configure \
 	$(am__configure_deps) $(dist_appicon_DATA) $(dist_manual_DATA) \
-	$(dist_manualimages_DATA) $(am__DIST_COMMON)
+	$(dist_manualimages_DATA) $(dist_patternfabric_DATA) \
+	$(dist_patternmasonry_DATA) $(dist_patternparquet_DATA) \
+	$(dist_preferencesicon_DATA) $(dist_texture_DATA) \
+	$(dist_texturefabric_DATA) $(dist_texturemetal_DATA) \
+	$(dist_texturenature_DATA) $(dist_texturewood_DATA) \
+	$(dist_theme_DATA) $(dist_themeassetlicenses_DATA) \
+	$(am__DIST_COMMON)
 am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
  configure.lineno config.status.lineno
 mkinstalldirs = $(install_sh) -d
@@ -139,6 +140,13 @@ am__uninstall_files_from_dir = { \
 am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" \
 	"$(DESTDIR)$(desktopdir)" "$(DESTDIR)$(appicondir)" \
 	"$(DESTDIR)$(manualdir)" "$(DESTDIR)$(manualimagesdir)" \
+	"$(DESTDIR)$(patternfabricdir)" \
+	"$(DESTDIR)$(patternmasonrydir)" \
+	"$(DESTDIR)$(patternparquetdir)" \
+	"$(DESTDIR)$(preferencesicondir)" "$(DESTDIR)$(texturedir)" \
+	"$(DESTDIR)$(texturefabricdir)" "$(DESTDIR)$(texturemetaldir)" \
+	"$(DESTDIR)$(texturenaturedir)" "$(DESTDIR)$(texturewooddir)" \
+	"$(DESTDIR)$(themedir)" "$(DESTDIR)$(themeassetlicensesdir)" \
 	"$(DESTDIR)$(polkit_actiondir)" "$(DESTDIR)$(rcdir)"
 SCRIPTS = $(bin_SCRIPTS)
 AM_V_P = $(am__v_P_@AM_V@)
@@ -172,7 +180,13 @@ man1dir = $(mandir)/man1
 NROFF = nroff
 MANS = $(man_MANS)
 DATA = $(desktop_DATA) $(dist_appicon_DATA) $(dist_manual_DATA) \
-	$(dist_manualimages_DATA) $(polkit_action_DATA) $(rc_DATA)
+	$(dist_manualimages_DATA) $(dist_patternfabric_DATA) \
+	$(dist_patternmasonry_DATA) $(dist_patternparquet_DATA) \
+	$(dist_preferencesicon_DATA) $(dist_texture_DATA) \
+	$(dist_texturefabric_DATA) $(dist_texturemetal_DATA) \
+	$(dist_texturenature_DATA) $(dist_texturewood_DATA) \
+	$(dist_theme_DATA) $(dist_themeassetlicenses_DATA) \
+	$(polkit_action_DATA) $(rc_DATA)
 RECURSIVE_CLEAN_TARGETS = mostlyclean-recursive clean-recursive	\
   distclean-recursive maintainer-clean-recursive
 am__recursive_targets = \
@@ -423,6 +437,76 @@ dist_appicon_DATA = app-icon/swordfish-folder-256.png app-icon/swordfish-folder-
                     app-icon/swordfish-circle-256.png app-icon/swordfish-circle-512.png app-icon/swordfish-circle-512.jpg \
                     app-icon/swordfish-shield-256.jpg app-icon/swordfish-shield-512.jpg
 
+texturedir = $(rcdir)/textures
+dist_texture_DATA = textures/brick.png textures/brushed-metal.png textures/canvas.png textures/concrete.png \
+                    textures/cork.png textures/linen.png textures/paper.png textures/pebbles.png \
+                    textures/planks.png textures/slate.png textures/autumn-leaves.png textures/canyon-strata.png \
+                    textures/carbon-fiber.png textures/marble.png
+
+texturefabricdir = $(texturedir)/Fabric
+dist_texturefabric_DATA = textures/Fabric/Brown-Leather.png textures/Fabric/Denim-Fabric-03.png \
+                          textures/Fabric/Hessian-230.png textures/Fabric/Hessian-380.png \
+                          textures/Fabric/Knitted-Fleece.png textures/Fabric/Ribbed-Corduroy.png
+
+texturewooddir = $(texturedir)/Wood
+dist_texturewood_DATA = textures/Wood/American-Walnut-Veneer.png textures/Wood/Bamboo-Veneer.png \
+                        textures/Wood/Cherry-Veneer.png textures/Wood/Fine-Grained-Wood.png \
+                        textures/Wood/Hinoki-Planks.png textures/Wood/Oak-Veneer-01.png \
+                        textures/Wood/Olive-Veneer.png
+
+texturenaturedir = $(texturedir)/Nature
+dist_texturenature_DATA = textures/Nature/Clean-Pebbles.png textures/Nature/Coast-Sand-02.png \
+                          textures/Nature/Dark-Rock.png textures/Nature/Dry-River-Pebbles.png \
+                          textures/Nature/Granite-Tile-03.png textures/Nature/Pine-Bark.png
+
+texturemetaldir = $(texturedir)/Metal
+dist_texturemetal_DATA = textures/Metal/Corrugated-Iron-02.png textures/Metal/Rust-Coarse-01.png
+patternfabricdir = $(rcdir)/patterns/Fabric
+dist_patternfabric_DATA = patterns/Fabric/Curly-Teddy-Checkered.png patterns/Fabric/Fabric-Pattern-05.png \
+                          patterns/Fabric/Fabric-Pattern-07.png patterns/Fabric/Faux-Fur-Geometric.png \
+                          patterns/Fabric/Floral-Jacquard.png patterns/Fabric/Gingham-Check.png \
+                          patterns/Fabric/Poly-Wool-Herringbone.png patterns/Fabric/Quatrefoil-Jacquard-Fabric.png \
+                          patterns/Fabric/Waffle-Pique-Cotton.png
+
+patternmasonrydir = $(rcdir)/patterns/Masonry
+dist_patternmasonry_DATA = patterns/Masonry/Blue-Floor-Tiles-01.png patterns/Masonry/Brick-Crosswalk.png \
+                           patterns/Masonry/Brick-Floor.png patterns/Masonry/Brown-Floor-Tiles.png \
+                           patterns/Masonry/Checkered-Pavement-Tiles.png patterns/Masonry/Interior-Tiles.png \
+                           patterns/Masonry/Patterned-Terracotta-Tiling.png patterns/Masonry/Rectangular-Facade-Tiles.png \
+                           patterns/Masonry/Terracotta-Floor-Tiles.png patterns/Masonry/Terrazzo-Tiles.png
+
+patternparquetdir = $(rcdir)/patterns/Parquet
+dist_patternparquet_DATA = patterns/Parquet/Diagonal-Parquet.png patterns/Parquet/Herringbone-Parquet.png
+themeassetlicensesdir = $(rcdir)
+dist_themeassetlicenses_DATA = docs/cc0-theme-assets.md
+themedir = $(rcdir)/themes
+dist_theme_DATA = themes/arctic-aurora.swordfish-theme themes/autumn-leaves.swordfish-theme \
+                  themes/carbon-fiber.swordfish-theme themes/desert-canyon.swordfish-theme \
+                  themes/desert-dusk.swordfish-theme themes/forest-mist.swordfish-theme \
+                  themes/graphite-copper.swordfish-theme themes/indigo-weave.swordfish-theme \
+                  themes/linen-sage.swordfish-theme themes/midnight-tide.swordfish-theme \
+                  themes/ocean-depth.swordfish-theme themes/porcelain-blue.swordfish-theme \
+                  themes/red-green-accessible-dark.swordfish-theme \
+                  themes/red-green-accessible-light.swordfish-theme themes/rose-quartz.swordfish-theme \
+                  themes/warm-parchment.swordfish-theme
+
+preferencesicondir = $(rcdir)/icons/preferences
+dist_preferencesicon_DATA = icons/preferences/pref-general.svg icons/preferences/pref-panels.svg \
+    icons/preferences/pref-filelist.svg icons/preferences/pref-fileops.svg \
+    icons/preferences/pref-appearance.svg icons/preferences/pref-language.svg \
+    icons/preferences/pref-programs.svg icons/preferences/pref-keybindings.svg \
+    icons/preferences/pref-customactions.svg icons/preferences/pref-system.svg \
+    icons/preferences/pref-general.png icons/preferences/pref-general-selected.png \
+    icons/preferences/pref-panels.png icons/preferences/pref-panels-selected.png \
+    icons/preferences/pref-filelist.png icons/preferences/pref-filelist-selected.png \
+    icons/preferences/pref-fileops.png icons/preferences/pref-fileops-selected.png \
+    icons/preferences/pref-appearance.png icons/preferences/pref-appearance-selected.png \
+    icons/preferences/pref-language.png icons/preferences/pref-language-selected.png \
+    icons/preferences/pref-programs.png icons/preferences/pref-programs-selected.png \
+    icons/preferences/pref-keybindings.png icons/preferences/pref-keybindings-selected.png \
+    icons/preferences/pref-customactions.png icons/preferences/pref-customactions-selected.png \
+    icons/preferences/pref-system.png icons/preferences/pref-system-selected.png
+
 pkdir = $(prefix)/share/polkit-1/actions
 EXTRA_DIST = autogen.sh install-swordfish-system.sh iconlinks.sh config.h i18n.h org.swordfish.root.policy.in.in swordfish.1 swordfish-archive.1 swordfish-image.1 swordfish-package.1 swordfish-write.1 \
              portable/AppRun portable/Dockerfile portable/build-portable-in-container portable/build-portable.sh portable/README.md \
@@ -430,12 +514,15 @@ EXTRA_DIST = autogen.sh install-swordfish-system.sh iconlinks.sh config.h i18n.h
              tests/network-discovery-regression.cpp tests/run-network-discovery-regression.sh \
              tests/folder-expansion-regression.cpp tests/run-folder-expansion-regression.sh \
              tests/search-window-regression.cpp tests/run-search-window-regression.sh \
+             tests/theme-workflow-regression.cpp tests/run-theme-workflow-regression.sh \
              tests/system-integration-regression.cpp tests/run-system-integration-regression.sh \
              tests/custom-actions-regression.cpp tests/run-custom-actions-regression.sh \
              tests/custom-actions-ui-regression.cpp tests/run-custom-actions-ui-regression.sh \
+             tests/portable-profile-guard-regression.cpp tests/portable-profile-ui-regression.py \
+             tests/run-portable-profile-regression.sh \
              tests/run-command-link-regression.sh \
              tests/fake-remote-directory.py tests/native-directory-helper-regression.py \
-             tests/portable-launcher-regression.py \
+             tests/portable-launcher-regression.py textures/generate-textures.py icons/preferences/render-icons.py \
              ABOUT-NLS TODO BUGS swordfishrc.in *.desktop.in.in \
                  $(top_srcdir)/icons/*
 
@@ -676,6 +763,237 @@ uninstall-dist_manualimagesDATA:
 	@list='$(dist_manualimages_DATA)'; test -n "$(manualimagesdir)" || list=; \
 	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
 	dir='$(DESTDIR)$(manualimagesdir)'; $(am__uninstall_files_from_dir)
+install-dist_patternfabricDATA: $(dist_patternfabric_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_patternfabric_DATA)'; test -n "$(patternfabricdir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(patternfabricdir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(patternfabricdir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(patternfabricdir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(patternfabricdir)" || exit $$?; \
+	done
+
+uninstall-dist_patternfabricDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_patternfabric_DATA)'; test -n "$(patternfabricdir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(patternfabricdir)'; $(am__uninstall_files_from_dir)
+install-dist_patternmasonryDATA: $(dist_patternmasonry_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_patternmasonry_DATA)'; test -n "$(patternmasonrydir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(patternmasonrydir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(patternmasonrydir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(patternmasonrydir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(patternmasonrydir)" || exit $$?; \
+	done
+
+uninstall-dist_patternmasonryDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_patternmasonry_DATA)'; test -n "$(patternmasonrydir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(patternmasonrydir)'; $(am__uninstall_files_from_dir)
+install-dist_patternparquetDATA: $(dist_patternparquet_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_patternparquet_DATA)'; test -n "$(patternparquetdir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(patternparquetdir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(patternparquetdir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(patternparquetdir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(patternparquetdir)" || exit $$?; \
+	done
+
+uninstall-dist_patternparquetDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_patternparquet_DATA)'; test -n "$(patternparquetdir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(patternparquetdir)'; $(am__uninstall_files_from_dir)
+install-dist_preferencesiconDATA: $(dist_preferencesicon_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_preferencesicon_DATA)'; test -n "$(preferencesicondir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(preferencesicondir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(preferencesicondir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(preferencesicondir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(preferencesicondir)" || exit $$?; \
+	done
+
+uninstall-dist_preferencesiconDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_preferencesicon_DATA)'; test -n "$(preferencesicondir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(preferencesicondir)'; $(am__uninstall_files_from_dir)
+install-dist_textureDATA: $(dist_texture_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_texture_DATA)'; test -n "$(texturedir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(texturedir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(texturedir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(texturedir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(texturedir)" || exit $$?; \
+	done
+
+uninstall-dist_textureDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_texture_DATA)'; test -n "$(texturedir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(texturedir)'; $(am__uninstall_files_from_dir)
+install-dist_texturefabricDATA: $(dist_texturefabric_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_texturefabric_DATA)'; test -n "$(texturefabricdir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(texturefabricdir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(texturefabricdir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(texturefabricdir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(texturefabricdir)" || exit $$?; \
+	done
+
+uninstall-dist_texturefabricDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_texturefabric_DATA)'; test -n "$(texturefabricdir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(texturefabricdir)'; $(am__uninstall_files_from_dir)
+install-dist_texturemetalDATA: $(dist_texturemetal_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_texturemetal_DATA)'; test -n "$(texturemetaldir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(texturemetaldir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(texturemetaldir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(texturemetaldir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(texturemetaldir)" || exit $$?; \
+	done
+
+uninstall-dist_texturemetalDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_texturemetal_DATA)'; test -n "$(texturemetaldir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(texturemetaldir)'; $(am__uninstall_files_from_dir)
+install-dist_texturenatureDATA: $(dist_texturenature_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_texturenature_DATA)'; test -n "$(texturenaturedir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(texturenaturedir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(texturenaturedir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(texturenaturedir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(texturenaturedir)" || exit $$?; \
+	done
+
+uninstall-dist_texturenatureDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_texturenature_DATA)'; test -n "$(texturenaturedir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(texturenaturedir)'; $(am__uninstall_files_from_dir)
+install-dist_texturewoodDATA: $(dist_texturewood_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_texturewood_DATA)'; test -n "$(texturewooddir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(texturewooddir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(texturewooddir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(texturewooddir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(texturewooddir)" || exit $$?; \
+	done
+
+uninstall-dist_texturewoodDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_texturewood_DATA)'; test -n "$(texturewooddir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(texturewooddir)'; $(am__uninstall_files_from_dir)
+install-dist_themeDATA: $(dist_theme_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_theme_DATA)'; test -n "$(themedir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(themedir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(themedir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(themedir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(themedir)" || exit $$?; \
+	done
+
+uninstall-dist_themeDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_theme_DATA)'; test -n "$(themedir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(themedir)'; $(am__uninstall_files_from_dir)
+install-dist_themeassetlicensesDATA: $(dist_themeassetlicenses_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_themeassetlicenses_DATA)'; test -n "$(themeassetlicensesdir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(themeassetlicensesdir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(themeassetlicensesdir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(themeassetlicensesdir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(themeassetlicensesdir)" || exit $$?; \
+	done
+
+uninstall-dist_themeassetlicensesDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_themeassetlicenses_DATA)'; test -n "$(themeassetlicensesdir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(themeassetlicensesdir)'; $(am__uninstall_files_from_dir)
 install-polkit_actionDATA: $(polkit_action_DATA)
 	@$(NORMAL_INSTALL)
 	@list='$(polkit_action_DATA)'; test -n "$(polkit_actiondir)" || list=; \
@@ -1029,7 +1347,7 @@ check: check-recursive
 all-am: Makefile $(SCRIPTS) $(MANS) $(DATA) config.h
 installdirs: installdirs-recursive
 installdirs-am:
-	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(desktopdir)" "$(DESTDIR)$(appicondir)" "$(DESTDIR)$(manualdir)" "$(DESTDIR)$(manualimagesdir)" "$(DESTDIR)$(polkit_actiondir)" "$(DESTDIR)$(rcdir)"; do \
+	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(desktopdir)" "$(DESTDIR)$(appicondir)" "$(DESTDIR)$(manualdir)" "$(DESTDIR)$(manualimagesdir)" "$(DESTDIR)$(patternfabricdir)" "$(DESTDIR)$(patternmasonrydir)" "$(DESTDIR)$(patternparquetdir)" "$(DESTDIR)$(preferencesicondir)" "$(DESTDIR)$(texturedir)" "$(DESTDIR)$(texturefabricdir)" "$(DESTDIR)$(texturemetaldir)" "$(DESTDIR)$(texturenaturedir)" "$(DESTDIR)$(texturewooddir)" "$(DESTDIR)$(themedir)" "$(DESTDIR)$(themeassetlicensesdir)" "$(DESTDIR)$(polkit_actiondir)" "$(DESTDIR)$(rcdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-recursive
@@ -1085,6 +1403,12 @@ info-am:
 
 install-data-am: install-desktopDATA install-dist_appiconDATA \
 	install-dist_manualDATA install-dist_manualimagesDATA \
+	install-dist_patternfabricDATA install-dist_patternmasonryDATA \
+	install-dist_patternparquetDATA \
+	install-dist_preferencesiconDATA install-dist_textureDATA \
+	install-dist_texturefabricDATA install-dist_texturemetalDATA \
+	install-dist_texturenatureDATA install-dist_texturewoodDATA \
+	install-dist_themeDATA install-dist_themeassetlicensesDATA \
 	install-man install-polkit_actionDATA install-rcDATA
 	@$(NORMAL_INSTALL)
 	$(MAKE) $(AM_MAKEFLAGS) install-data-hook
@@ -1134,7 +1458,16 @@ ps-am:
 
 uninstall-am: uninstall-binSCRIPTS uninstall-desktopDATA \
 	uninstall-dist_appiconDATA uninstall-dist_manualDATA \
-	uninstall-dist_manualimagesDATA uninstall-man \
+	uninstall-dist_manualimagesDATA \
+	uninstall-dist_patternfabricDATA \
+	uninstall-dist_patternmasonryDATA \
+	uninstall-dist_patternparquetDATA \
+	uninstall-dist_preferencesiconDATA uninstall-dist_textureDATA \
+	uninstall-dist_texturefabricDATA \
+	uninstall-dist_texturemetalDATA \
+	uninstall-dist_texturenatureDATA \
+	uninstall-dist_texturewoodDATA uninstall-dist_themeDATA \
+	uninstall-dist_themeassetlicensesDATA uninstall-man \
 	uninstall-polkit_actionDATA uninstall-rcDATA
 	@$(NORMAL_INSTALL)
 	$(MAKE) $(AM_MAKEFLAGS) uninstall-hook
@@ -1153,18 +1486,35 @@ uninstall-man: uninstall-man1
 	install install-am install-binSCRIPTS install-data \
 	install-data-am install-data-hook install-desktopDATA \
 	install-dist_appiconDATA install-dist_manualDATA \
-	install-dist_manualimagesDATA install-dvi install-dvi-am \
-	install-exec install-exec-am install-html install-html-am \
-	install-info install-info-am install-man install-man1 \
-	install-pdf install-pdf-am install-polkit_actionDATA \
-	install-ps install-ps-am install-rcDATA install-strip \
-	installcheck installcheck-am installdirs installdirs-am \
-	maintainer-clean maintainer-clean-generic mostlyclean \
-	mostlyclean-generic pdf pdf-am ps ps-am tags tags-am uninstall \
-	uninstall-am uninstall-binSCRIPTS uninstall-desktopDATA \
+	install-dist_manualimagesDATA install-dist_patternfabricDATA \
+	install-dist_patternmasonryDATA \
+	install-dist_patternparquetDATA \
+	install-dist_preferencesiconDATA install-dist_textureDATA \
+	install-dist_texturefabricDATA install-dist_texturemetalDATA \
+	install-dist_texturenatureDATA install-dist_texturewoodDATA \
+	install-dist_themeDATA install-dist_themeassetlicensesDATA \
+	install-dvi install-dvi-am install-exec install-exec-am \
+	install-html install-html-am install-info install-info-am \
+	install-man install-man1 install-pdf install-pdf-am \
+	install-polkit_actionDATA install-ps install-ps-am \
+	install-rcDATA install-strip installcheck installcheck-am \
+	installdirs installdirs-am maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-generic pdf \
+	pdf-am ps ps-am tags tags-am uninstall uninstall-am \
+	uninstall-binSCRIPTS uninstall-desktopDATA \
 	uninstall-dist_appiconDATA uninstall-dist_manualDATA \
-	uninstall-dist_manualimagesDATA uninstall-hook uninstall-man \
-	uninstall-man1 uninstall-polkit_actionDATA uninstall-rcDATA
+	uninstall-dist_manualimagesDATA \
+	uninstall-dist_patternfabricDATA \
+	uninstall-dist_patternmasonryDATA \
+	uninstall-dist_patternparquetDATA \
+	uninstall-dist_preferencesiconDATA uninstall-dist_textureDATA \
+	uninstall-dist_texturefabricDATA \
+	uninstall-dist_texturemetalDATA \
+	uninstall-dist_texturenatureDATA \
+	uninstall-dist_texturewoodDATA uninstall-dist_themeDATA \
+	uninstall-dist_themeassetlicensesDATA uninstall-hook \
+	uninstall-man uninstall-man1 uninstall-polkit_actionDATA \
+	uninstall-rcDATA
 
 .PRECIOUS: Makefile
 
