@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 17 November 2026, through portable custom-action image icons
-(section 3.104).
+Last updated: 17 November 2026, through portable profile copy protection
+(section 3.105).
 Latest release: `swordfish-0.0.3-beta2`.
 Stable fallback: `swordfish-0.0.2`.
 
@@ -40,7 +40,7 @@ Historical implementation details below do not override the current code.
    automated tests but still need the user's real-machine testing.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.70-3.104. Older beta and RC notes are
+9. For the latest state, read sections 3.70-3.105. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide is a documentation addition after the frozen RC4 application commit.
@@ -3539,9 +3539,39 @@ The native build, model, launcher and GUI regressions passed. Xvfb smoke tests
 also launched the native application through `AppRun` in isolated test AppDirs.
 They ran an action before and after moving a profile, and recovered and ran
 actions from older moved directory and AppImage-style profiles after the old
-icon paths became unavailable. The report that action definitions themselves
-disappeared was not reproduced and still needs the user's real-machine details.
-No new portable bundle has been built for this change.
+icon paths became unavailable. The subsequent running-destination reproduction
+is documented in section 3.105. No new portable bundle has been built for this
+change.
+
+### 3.105. Portable settings changed while a window is open (17 November 2026)
+
+The user reported copied Custom Actions disappearing and later clarified that
+at least one portable copy was open during copying; whether the destination
+was open was uncertain. A local reproduction showed that an open destination
+could keep its old settings in memory and overwrite the copied `xferc` on exit.
+This is a demonstrated failure mode, not confirmation of the user's exact
+sequence.
+
+The user approved detecting external settings changes, blocking stale reads and
+writes, and offering restart, quit without saving, or continued use without
+saving. Another window saving the same profile counts as an external change.
+Portable settings saves use an atomic replacement or a no-replace fallback
+that preserves competing versions; unsupported primitives and I/O failures
+are reported instead of silently overwriting. Restart waits for the replacement
+window to be created and reports failures without closing the old window.
+Startup reports leftover settings versions after an interrupted save and no
+longer rewrites already-migrated bookmarks unnecessarily.
+
+Native model and Xvfb GUI regressions cover external edits, saves from another
+window, replacement races, fallback filesystem operations, modal editors,
+quit and restart. A disposable FAT filesystem also passed a real self-save
+and external-copy check. The existing Custom Actions GUI suite passed in
+isolation after one concurrent run failed an image-chooser assertion.
+AppImage-style launch behavior was simulated, not tested with a real AppImage
+runtime. This is local automated validation, not a new
+portable bundle or user confirmation. Closing all source and destination
+windows remains the reliable way to copy the entire profile; this guard covers
+the main settings file, not a whole-profile snapshot, and older builds lack it.
 
 ## 4. The archive-command / false idle-timeout bug
 

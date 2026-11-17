@@ -3,8 +3,27 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
+#include <glib.h>
+#include <array>
+#include <cerrno>
+#include <dirent.h>
+#include <fcntl.h>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <vector>
+
+#if defined(linux)
+#include <linux/fs.h>
+#include <sys/syscall.h>
+#endif
+
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE (1 << 0)
+#endif
+#ifndef RENAME_EXCHANGE
+#define RENAME_EXCHANGE (1 << 1)
+#endif
 
 #ifdef HAVE_XFT_H
 #include <X11/Xft/Xft.h>
@@ -29,9 +48,513 @@ extern FXString xdgconfighome;
 #define DESKTOP         "xferc"
 #define REGISTRYPATH    "/etc:/usr/share:/usr/local/share"
 
+namespace
+{
+struct PortableSettingsSnapshot
+{
+    bool exists = false;
+    struct stat info = {};
+    std::array<guchar, 32> digest = {};
+};
+
+FXRegistry* portableSettingsRegistry = NULL;
+FXString portableSettingsPath;
+FXString portableSettingsProblem;
+PortableSettingsSnapshot portableSettingsBaseline;
+
+bool sameSettingsStat(const struct stat& a, const struct stat& b, bool renamed = false)
+{
+    return a.st_dev == b.st_dev && a.st_ino == b.st_ino && a.st_mode == b.st_mode && a.st_uid == b.st_uid &&
+           a.st_gid == b.st_gid && a.st_size == b.st_size &&
+           a.st_mtim.tv_sec == b.st_mtim.tv_sec && a.st_mtim.tv_nsec == b.st_mtim.tv_nsec &&
+           (renamed || (a.st_ctim.tv_sec == b.st_ctim.tv_sec && a.st_ctim.tv_nsec == b.st_ctim.tv_nsec));
+}
+
+bool sameSettingsSnapshot(const PortableSettingsSnapshot& a, const PortableSettingsSnapshot& b, bool renamed = false)
+{
+    return a.exists == b.exists &&
+           (!a.exists || (sameSettingsStat(a.info, b.info, renamed) && a.digest == b.digest));
+}
+
+bool readSettingsSnapshot(const FXString& path, PortableSettingsSnapshot& snapshot, FXString& error)
+{
+    int input = open(path.text(), O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+    if (input < 0)
+    {
+        if (errno == ENOENT) { snapshot = PortableSettingsSnapshot(); return true; }
+        error = _("Cannot inspect the portable settings file: ") + path + ": " + strerror(errno);
+        return false;
+    }
+    struct stat before, after, current;
+    if (fstat(input, &before) != 0)
+    {
+        int failure = errno;
+        close(input);
+        error = _("Cannot inspect the portable settings file: ") + path + ": " + strerror(failure);
+        return false;
+    }
+    if (!S_ISREG(before.st_mode))
+    {
+        close(input);
+        error = _("The portable settings file is not a readable regular file: ") + path;
+        return false;
+    }
+    GChecksum* checksum = g_checksum_new(G_CHECKSUM_SHA256);
+    char buffer[32768];
+    int failure = 0;
+    while (true)
+    {
+        ssize_t count = read(input, buffer, sizeof(buffer));
+        if (count < 0 && errno == EINTR) { continue; }
+        if (count < 0) { failure = errno; break; }
+        if (!count) { break; }
+        g_checksum_update(checksum, reinterpret_cast<const guchar*>(buffer), count);
+    }
+    if (!failure && (fstat(input, &after) != 0 || stat(path.text(), &current) != 0)) { failure = errno; }
+    if (close(input) != 0 && !failure) { failure = errno; }
+    if (failure)
+    {
+        g_checksum_free(checksum);
+        error = _("Cannot read the portable settings file: ") + path + ": " + strerror(failure);
+        return false;
+    }
+    if (!sameSettingsStat(before, after) || !sameSettingsStat(after, current))
+    {
+        g_checksum_free(checksum);
+        error = _("The portable settings file changed while it was being read: ") + path;
+        return false;
+    }
+    snapshot.exists = true;
+    snapshot.info = after;
+    gsize length = snapshot.digest.size();
+    g_checksum_get_digest(checksum, snapshot.digest.data(), &length);
+    g_checksum_free(checksum);
+    return true;
+}
+
+bool findInterruptedSettingsSave(const FXString& path, FXString& error)
+{
+    FXString parent = FXPath::directory(path);
+    DIR* directory = opendir(parent.text());
+    if (!directory)
+    {
+        if (errno == ENOENT) { return false; }
+        error = _("Cannot check for interrupted portable settings saves: ") + parent + ": " + strerror(errno);
+        return true;
+    }
+
+    FXString saved;
+    int failure = 0;
+    while (true)
+    {
+        errno = 0;
+        struct dirent* entry = readdir(directory);
+        if (!entry)
+        {
+            failure = errno;
+            break;
+        }
+        const char* name = entry->d_name;
+        if (strncmp(name, "xferc_", 6) == 0 && name[6] &&
+            strspn(name + 6, "0123456789") == strlen(name + 6))
+        {
+            saved = parent + PATHSEPSTRING + name;
+            break;
+        }
+        if (strncmp(name, "xferc.guard-", 12) != 0) { continue; }
+        FXString candidate = parent + PATHSEPSTRING + name;
+        struct stat info;
+        if (lstat(candidate.text(), &info) != 0)
+        {
+            if (errno != ENOENT) { failure = errno; break; }
+            continue;
+        }
+        if (!S_ISDIR(info.st_mode)) { continue; }
+        candidate += "/previous";
+        if (lstat(candidate.text(), &info) == 0)
+        {
+            saved = candidate;
+            break;
+        }
+        if (errno != ENOENT) { failure = errno; break; }
+    }
+    if (closedir(directory) != 0 && !failure) { failure = errno; }
+    if (failure)
+    {
+        error = _("Cannot check for interrupted portable settings saves: ") + parent + ": " + strerror(failure);
+        return true;
+    }
+    if (saved.empty()) { return false; }
+    error = _("A portable settings save may have been interrupted. Check the settings version at: ") + saved +
+            _("\nMove it out of the settings folder after deciding which version to keep, then restart Swordfish.");
+    return true;
+}
+
+void portableSettingsConflict(const FXString& problem)
+{
+    if (portableSettingsProblem.empty()) { portableSettingsProblem = problem; }
+}
+
+void discardSettingsTemp(const FXString& path)
+{
+    if (unlink(path.text()) != 0 && errno != ENOENT)
+    {
+        if (!portableSettingsProblem.empty()) { portableSettingsProblem += "\n"; }
+        portableSettingsProblem += _("Cannot remove the temporary settings file: ") + path + ": " + strerror(errno);
+    }
+}
+
+int renameSettings(const FXString& from, const FXString& to, unsigned flags)
+{
+#if defined(linux) && defined(SYS_renameat2)
+    return syscall(SYS_renameat2, AT_FDCWD, from.text(), AT_FDCWD, to.text(), flags);
+#else
+    errno = ENOTSUP;
+    return -1;
+#endif
+}
+
+bool unsupportedSettingsRename(int error)
+{
+    return error == ENOSYS || error == EINVAL || error == EOPNOTSUPP || error == EPERM;
+}
+
+bool readMovedSettingsSnapshot(const FXString& moved, const FXString& original,
+                               PortableSettingsSnapshot& snapshot, FXString& error)
+{
+    struct stat before, after;
+    if (lstat(moved.text(), &before) != 0)
+    {
+        error = _("Cannot inspect the moved settings file: ") + moved + ": " + strerror(errno);
+        return false;
+    }
+    if (!S_ISLNK(before.st_mode)) { return readSettingsSnapshot(moved, snapshot, error); }
+    char link[MAXPATHLEN];
+    ssize_t length = readlink(moved.text(), link, sizeof(link));
+    if (length < 0)
+    {
+        error = _("Cannot inspect the moved settings link: ") + moved + ": " + strerror(errno);
+        return false;
+    }
+    if (!length || length == static_cast<ssize_t>(sizeof(link)))
+    {
+        error = _("The moved settings link is empty or too long: ") + moved;
+        return false;
+    }
+    FXString destination(link, length);
+    if (!ISPATHSEP(destination[0])) { destination = FXPath::directory(original) + PATHSEPSTRING + destination; }
+    if (!readSettingsSnapshot(destination, snapshot, error)) { return false; }
+    if (lstat(moved.text(), &after) != 0 || !sameSettingsStat(before, after))
+    {
+        error = _("The moved settings link changed while it was being read: ") + moved;
+        return false;
+    }
+    return true;
+}
+
+bool installSettingsWithoutReplacing(const FXString& source, const FXString& target, bool renameSupported)
+{
+    if (renameSupported) { return renameSettings(source, target, RENAME_NOREPLACE) == 0; }
+    return link(source.text(), target.text()) == 0;
+}
+
+void discardSettingsDirectory(const FXString& directory)
+{
+    if (rmdir(directory.text()) != 0 && errno != ENOENT)
+    {
+        if (!portableSettingsProblem.empty()) { portableSettingsProblem += "\n"; }
+        portableSettingsProblem += _("Cannot remove the temporary settings directory: ") + directory + ": " +
+                                   strerror(errno);
+    }
+}
+
+// Older filesystems can still save safely if they support no-replace rename or hard links.
+bool replacePortableSettingsWithoutExchange(const FXString& temporary, const FXString& target,
+                                            const PortableSettingsSnapshot& written)
+{
+    FXString pattern = target + ".guard-XXXXXX";
+    std::vector<char> directoryName(pattern.text(), pattern.text() + pattern.length() + 1);
+    char* created = mkdtemp(directoryName.data());
+    if (!created)
+    {
+        portableSettingsConflict(_("Cannot create a safe settings backup: ") + target + ": " + strerror(errno));
+        discardSettingsTemp(temporary);
+        return false;
+    }
+    FXString directory(created);
+    FXString candidate = directory + "/new";
+    FXString previous = directory + "/previous";
+    bool renameSupported = renameSettings(temporary, candidate, RENAME_NOREPLACE) == 0;
+    if (!renameSupported)
+    {
+        int failure = errno;
+        if (!unsupportedSettingsRename(failure) || link(temporary.text(), candidate.text()) != 0)
+        {
+            if (unsupportedSettingsRename(failure)) { failure = errno; }
+            portableSettingsConflict(_("This filesystem cannot safely save portable settings: ") + target + ": " +
+                                     strerror(failure));
+            discardSettingsTemp(temporary);
+            discardSettingsDirectory(directory);
+            return false;
+        }
+    }
+
+    FXString problem;
+    if (xf_portablesettingschanged(problem) || rename(target.text(), previous.text()) != 0)
+    {
+        if (portableSettingsProblem.empty())
+            portableSettingsConflict(_("Cannot preserve the previous portable settings: ") + target + ": " +
+                                     strerror(errno));
+        discardSettingsTemp(candidate);
+        discardSettingsTemp(temporary);
+        discardSettingsDirectory(directory);
+        return false;
+    }
+
+    PortableSettingsSnapshot old;
+    FXString oldError;
+    bool oldRead = readMovedSettingsSnapshot(previous, target, old, oldError);
+    bool oldMatches = oldRead && sameSettingsSnapshot(portableSettingsBaseline, old, true);
+    if (!oldMatches)
+    {
+        portableSettingsConflict(oldError.empty() ? _("The portable settings changed outside this window: ") + target :
+                                                   oldError);
+        bool restored = installSettingsWithoutReplacing(previous, target, renameSupported);
+        if (restored) { discardSettingsTemp(previous); }
+        else
+        {
+            portableSettingsProblem += _("\nCannot restore the replaced settings: ") + FXString(strerror(errno));
+            portableSettingsProblem += _("\nAnother settings version was preserved at: ") + previous;
+        }
+        discardSettingsTemp(candidate);
+        discardSettingsTemp(temporary);
+        if (restored) { discardSettingsDirectory(directory); }
+        return false;
+    }
+
+    if (!installSettingsWithoutReplacing(candidate, target, renameSupported))
+    {
+        int failure = errno;
+        portableSettingsConflict(failure == EEXIST ?
+                                 _("The portable settings changed outside this window: ") + target :
+                                 _("Cannot safely save the portable settings file: ") + target + ": " +
+                                 strerror(failure));
+        PortableSettingsSnapshot saved;
+        FXString savedError;
+        bool unchanged = readMovedSettingsSnapshot(previous, target, saved, savedError) &&
+                         sameSettingsSnapshot(old, saved, true);
+        bool restored = failure == EEXIST && unchanged;
+        int restoreError = 0;
+        if (!restored)
+        {
+            restored = installSettingsWithoutReplacing(previous, target, renameSupported);
+            if (!restored) { restoreError = errno; }
+        }
+        if (restored) { discardSettingsTemp(previous); }
+        else
+        {
+            if (!savedError.empty()) { portableSettingsProblem += "\n" + savedError; }
+            if (restoreError)
+                portableSettingsProblem += _("\nCannot restore the replaced settings: ") + FXString(strerror(restoreError));
+            portableSettingsProblem += _("\nAnother settings version was preserved at: ") + previous;
+        }
+        discardSettingsTemp(candidate);
+        discardSettingsTemp(temporary);
+        if (restored) { discardSettingsDirectory(directory); }
+        return false;
+    }
+
+    PortableSettingsSnapshot current, saved;
+    FXString currentError, savedError;
+    bool currentRead = readSettingsSnapshot(target, current, currentError);
+    bool previousRead = readMovedSettingsSnapshot(previous, target, saved, savedError);
+    bool currentMatches = currentRead && sameSettingsSnapshot(written, current, true);
+    bool previousMatches = previousRead && sameSettingsSnapshot(old, saved, true);
+    if (!currentMatches || !previousMatches)
+    {
+        portableSettingsConflict(currentError.empty() ?
+                                 _("The portable settings changed outside this window: ") + target : currentError);
+        if (!previousMatches)
+        {
+            if (!savedError.empty()) { portableSettingsProblem += "\n" + savedError; }
+            portableSettingsProblem += _("\nAnother settings version was preserved at: ") + previous;
+        }
+    }
+    if (previousMatches) { discardSettingsTemp(previous); }
+    discardSettingsTemp(candidate);
+    discardSettingsTemp(temporary);
+    if (previousMatches) { discardSettingsDirectory(directory); }
+    if (!portableSettingsProblem.empty()) { return false; }
+    PortableSettingsSnapshot final;
+    FXString finalError;
+    if (!readSettingsSnapshot(target, final, finalError) || !sameSettingsSnapshot(written, final, true))
+    {
+        portableSettingsConflict(finalError.empty() ? _("The portable settings changed outside this window: ") + target :
+                                                      finalError);
+        return false;
+    }
+    portableSettingsBaseline = final;
+    return true;
+}
+
+bool replacePortableSettings(const FXString& temporary, const FXString& target)
+{
+    FXString problem;
+    PortableSettingsSnapshot written;
+    if (target != portableSettingsPath ||
+        !readSettingsSnapshot(temporary, written, problem) || !written.exists)
+    {
+        portableSettingsConflict(problem.empty() ? _("Cannot verify the temporary portable settings file: ") + temporary :
+                                                  problem);
+        discardSettingsTemp(temporary);
+        return false;
+    }
+    if (xf_portablesettingschanged(problem))
+    {
+        discardSettingsTemp(temporary);
+        return false;
+    }
+
+    if (!portableSettingsBaseline.exists)
+    {
+        if (renameSettings(temporary, target, RENAME_NOREPLACE) != 0)
+        {
+            int failure = errno;
+            if (unsupportedSettingsRename(failure) &&
+                link(temporary.text(), target.text()) == 0)
+            {
+                discardSettingsTemp(temporary);
+            }
+            else
+            {
+                if (errno == EEXIST || failure == EEXIST)
+                    portableSettingsConflict(_("The portable settings file was created outside this window: ") + target);
+                else
+                    portableSettingsConflict(_("Cannot safely save the portable settings file: ") + target + ": " +
+                                             strerror(errno));
+                discardSettingsTemp(temporary);
+                return false;
+            }
+        }
+    }
+    else
+    {
+        // Inspect the file actually replaced, so a copy racing the save can be restored.
+        if (renameSettings(temporary, target, RENAME_EXCHANGE) != 0)
+        {
+            int failure = errno;
+            if (unsupportedSettingsRename(failure))
+                return replacePortableSettingsWithoutExchange(temporary, target, written);
+            portableSettingsConflict(_("Cannot safely replace the portable settings file: ") + target + ": " +
+                                     strerror(failure));
+            discardSettingsTemp(temporary);
+            return false;
+        }
+        PortableSettingsSnapshot previous, current;
+        FXString previousError, currentError;
+        bool previousRead = readSettingsSnapshot(temporary, previous, previousError);
+        bool currentRead = readSettingsSnapshot(target, current, currentError);
+        bool previousMatches = previousRead && sameSettingsSnapshot(portableSettingsBaseline, previous, true);
+        bool currentMatches = currentRead && sameSettingsSnapshot(written, current, true);
+        if (!previousMatches)
+        {
+            int restoreError = 0;
+            bool restored = false;
+            if (currentMatches)
+            {
+                restored = renameSettings(temporary, target, RENAME_EXCHANGE) == 0;
+                if (!restored) { restoreError = errno; }
+            }
+            if (restored)
+            {
+                PortableSettingsSnapshot discarded;
+                FXString discardError;
+                if (readSettingsSnapshot(temporary, discarded, discardError) &&
+                    sameSettingsSnapshot(written, discarded, true))
+                    discardSettingsTemp(temporary);
+                else
+                    portableSettingsConflict(_("Another settings version was preserved at: ") + temporary);
+                portableSettingsConflict(_("The portable settings changed outside this window: ") + target);
+            }
+            else
+            {
+                portableSettingsConflict((previousRead && previous.exists ?
+                                          _("Copied settings were preserved at: ") :
+                                          _("The replaced settings could not be verified at: ")) + temporary +
+                                         _("\nThe settings file changed during saving: ") + target);
+            }
+            if (restoreError)
+                portableSettingsProblem += _("\nCannot restore the replaced settings: ") + FXString(strerror(restoreError));
+            if (!previousError.empty()) { portableSettingsProblem += "\n" + previousError; }
+            if (!currentError.empty()) { portableSettingsProblem += "\n" + currentError; }
+            return false;
+        }
+        if (!currentMatches)
+        {
+            portableSettingsConflict(currentRead ? _("The portable settings changed outside this window: ") + target :
+                                                   currentError);
+            discardSettingsTemp(temporary);
+            return false;
+        }
+        discardSettingsTemp(temporary);
+        if (!portableSettingsProblem.empty()) { return false; }
+        portableSettingsBaseline = current;
+        return true;
+    }
+
+    PortableSettingsSnapshot current;
+    if (!readSettingsSnapshot(target, current, problem) || !sameSettingsSnapshot(written, current, true))
+    {
+        portableSettingsConflict(problem.empty() ? _("The portable settings changed outside this window: ") + target :
+                                                  problem);
+        return false;
+    }
+    if (!portableSettingsProblem.empty()) { return false; }
+    portableSettingsBaseline = current;
+    return true;
+}
+}
+
+void xf_watchportablesettings(FXRegistry* registry)
+{
+    const char* data = getenv("SWORDFISH_PORTABLE_DATA");
+    if (!registry || !getenv("SWORDFISH_PORTABLE") || !data || !*data) { return; }
+    portableSettingsRegistry = registry;
+    portableSettingsPath = xdgconfighome + PATHSEPSTRING XFECONFIGPATH PATHSEPSTRING DESKTOP;
+    portableSettingsProblem.clear();
+    FXString error;
+    if (!readSettingsSnapshot(portableSettingsPath, portableSettingsBaseline, error))
+        portableSettingsConflict(error);
+    else if (findInterruptedSettingsSave(portableSettingsPath, error))
+        portableSettingsConflict(error);
+}
+
+FXbool xf_portablesettingswatching()
+{
+    return portableSettingsRegistry != NULL;
+}
+
+FXbool xf_portablesettingschanged(FXString& problem)
+{
+    if (!portableSettingsRegistry) { return false; }
+    if (portableSettingsProblem.empty())
+    {
+        PortableSettingsSnapshot current;
+        FXString error;
+        if (!readSettingsSnapshot(portableSettingsPath, current, error))
+            portableSettingsConflict(error);
+        else if (!sameSettingsSnapshot(portableSettingsBaseline, current))
+            portableSettingsConflict(_("The portable settings changed outside this window: ") + portableSettingsPath);
+    }
+    problem = portableSettingsProblem;
+    return !problem.empty();
+}
+
 // Read registry
 bool FXRegistry::read()
 {
+    FXString conflict;
+    if (this == portableSettingsRegistry && xf_portablesettingschanged(conflict)) { return false; }
     FXString dirname;
     bool ok = false;
 
@@ -80,6 +603,7 @@ bool FXRegistry::read()
         ok = true;
     }
 
+    if (this == portableSettingsRegistry && xf_portablesettingschanged(conflict)) { return false; }
     return ok;
 }
 
@@ -114,6 +638,8 @@ bool FXRegistry::readFromDir(const FXString& dirname, bool mark)
 // Write registry
 bool FXRegistry::write()
 {
+    FXString conflict;
+    if (this == portableSettingsRegistry && xf_portablesettingschanged(conflict)) { return false; }
     FXString pathname, tempname;
 
     // Settings have not changed
@@ -133,6 +659,8 @@ bool FXRegistry::write()
         {
             if (!FXDir::create(pathname))
             {
+                if (this == portableSettingsRegistry)
+                    portableSettingsConflict(_("Cannot create the portable settings directory: ") + pathname);
                 return false;
             }
         }
@@ -140,6 +668,8 @@ bool FXRegistry::write()
         {
             if (!xf_isdirectory(pathname))
             {
+                if (this == portableSettingsRegistry)
+                    portableSettingsConflict(_("The portable settings directory is not a directory: ") + pathname);
                 return false;
             }
         }
@@ -154,7 +684,8 @@ bool FXRegistry::write()
         if (unparseFile(tempname))
         {
             // Rename ATOMICALLY to proper name
-            if (!FXFile::rename(tempname, pathname))
+            if (this == portableSettingsRegistry ? !replacePortableSettings(tempname, pathname) :
+                                                   !FXFile::rename(tempname, pathname))
             {
                 return false;
             }
@@ -162,7 +693,11 @@ bool FXRegistry::write()
             setModified(false);
             return true;
         }
+        if (this == portableSettingsRegistry)
+            portableSettingsConflict(_("Cannot write the temporary portable settings file: ") + tempname);
     }
+    else if (this == portableSettingsRegistry)
+        portableSettingsConflict(_("Cannot save portable settings without an application name."));
     return false;
 }
 
@@ -194,10 +729,13 @@ bool FXSettings::unparseFile(const FXString& filename)
     // Distinguish between xfe and other applications
     FXbool xfe = (filename.contains(DESKTOP) ? true : false);
 
-    FXFile file(filename, FXIO::Writing);
+    bool guarded = this == portableSettingsRegistry;
+    errno = 0;
+    FXFile file(filename, FXIO::Writing | (guarded ? FXIO::Exclusive : 0));
+    bool created = file.isOpen();
     FXchar line[MAXVALUE];
 
-    if (file.isOpen())
+    if (created)
     {
         // Loop over all sections
         for (FXint s = first(); s < size(); s = next(s))
@@ -261,9 +799,23 @@ bool FXSettings::unparseFile(const FXString& filename)
                 }
             }
         }
-        return true;
+        if (!guarded || file.close()) { return true; }
     }
 x:
+    if (guarded)
+    {
+        int failure = errno;
+        FXString problem = _("Cannot write the temporary portable settings file: ") + filename;
+        if (failure) { problem += ": " + FXString(strerror(failure)); }
+        portableSettingsConflict(problem);
+        if (created)
+        {
+            if (file.isOpen() && !file.close())
+                portableSettingsProblem += _("\nCannot close the temporary settings file: ") + filename + ": " +
+                                           strerror(errno);
+            discardSettingsTemp(filename);
+        }
+    }
     return false;
 }
 

@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <poll.h>
+#include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -93,6 +95,7 @@ extern FXString homedir;
 extern FXString xdgdatahome;
 extern FXString xdgconfighome;
 extern FXString execpath;
+extern char** environ;
 
 // Main window
 extern FXMainWindow* mainWindow;
@@ -110,6 +113,174 @@ static void toolbarSeparator(FXToolBar* tb)
     new FXFrame(tb, LAYOUT_CENTER_Y | LAYOUT_LEFT | LAYOUT_FIX_WIDTH | LAYOUT_FIX_HEIGHT, 0, 0, SEP_SPACE);
     new FXVerticalSeparator(tb, LAYOUT_SIDE_TOP | LAYOUT_CENTER_Y | SEPARATOR_GROOVE | LAYOUT_FILL_Y);
     new FXFrame(tb, LAYOUT_CENTER_Y | LAYOUT_LEFT | LAYOUT_FIX_WIDTH | LAYOUT_FIX_HEIGHT, 0, 0, SEP_SPACE);
+}
+
+class PortableSettingsConflictDialog : public DialogBox
+{
+    FXDECLARE(PortableSettingsConflictDialog)
+protected:
+    PortableSettingsConflictDialog() {}
+public:
+    enum { ID_QUIT_WITHOUT_SAVING = DialogBox::ID_LAST };
+
+    PortableSettingsConflictDialog(FXWindow* owner, const FXString& problem) :
+        DialogBox(owner, _("Portable settings changed"), DECOR_TITLE | DECOR_BORDER | DECOR_CLOSE)
+    {
+        FXVerticalFrame* content = new FXVerticalFrame(this, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        new FXLabel(content,
+                    _("The portable settings changed outside this window or could not be checked.\n"
+                      "Changes made in this window will not be saved, to protect the settings on disk.\n"
+                      "Finish copying before restarting. Unsaved changes in this window will be lost.\n\n") + problem,
+                    NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        FXHorizontalFrame* buttons = new FXHorizontalFrame(content, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+        new FXButton(buttons, _("&Restart Now"), NULL, this, ID_ACCEPT, BUTTON_NORMAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("&Quit Without Saving"), NULL, this, ID_QUIT_WITHOUT_SAVING,
+                     BUTTON_NORMAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("&Keep Running"), NULL, this, ID_CANCEL,
+                     BUTTON_NORMAL | BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT);
+    }
+
+    long onQuitWithoutSaving(FXObject*, FXSelector, void*)
+    {
+        getApp()->stopModal(this, 2);
+        hide();
+        return 1;
+    }
+};
+
+FXDEFMAP(PortableSettingsConflictDialog) PortableSettingsConflictDialogMap[] =
+{
+    FXMAPFUNC(SEL_COMMAND, PortableSettingsConflictDialog::ID_QUIT_WITHOUT_SAVING,
+              PortableSettingsConflictDialog::onQuitWithoutSaving)
+};
+FXIMPLEMENT(PortableSettingsConflictDialog, DialogBox, PortableSettingsConflictDialogMap,
+            ARRAYNUMBER(PortableSettingsConflictDialogMap))
+
+static bool restartWithPortableSettings(FXString& problem)
+{
+    if (execpath.empty() || !args || !args[0])
+    {
+        problem = _("The application launch command is unavailable.");
+        return false;
+    }
+    const char* appimage = getenv("APPIMAGE");
+    FXString executable = appimage && *appimage ? FXString(appimage) : execpath;
+    std::vector<char> executableArgument(executable.text(), executable.text() + executable.length() + 1);
+    std::vector<char*> arguments;
+    arguments.push_back(executableArgument.data());
+    for (char** item = args + 1; *item; ++item) { arguments.push_back(*item); }
+    arguments.push_back(NULL);
+
+    // Keep this window open until the replacement confirms it created its window.
+    int channel[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, channel) != 0)
+    {
+        problem = strerror(errno);
+        return false;
+    }
+    for (int i = 0; i < 2; ++i)
+    {
+        if (channel[i] > STDERR_FILENO) { continue; }
+        int descriptor = fcntl(channel[i], F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+        if (descriptor < 0)
+        {
+            int failure = errno;
+            close(channel[0]);
+            close(channel[1]);
+            problem = strerror(failure);
+            return false;
+        }
+        close(channel[i]);
+        channel[i] = descriptor;
+    }
+    FXString readyVariable = "SWORDFISH_PORTABLE_RESTART_FD=" + FXStringVal(channel[1]);
+    std::vector<char> readyEnvironment(readyVariable.text(), readyVariable.text() + readyVariable.length() + 1);
+    std::vector<char*> environment;
+    const char resumePrefix[] = "SWORDFISH_RESUME_SESSION=";
+    const char readyPrefix[] = "SWORDFISH_PORTABLE_RESTART_FD=";
+    for (char** item = environ; *item; ++item)
+    {
+        if (strncmp(*item, resumePrefix, sizeof(resumePrefix) - 1) != 0 &&
+            strncmp(*item, readyPrefix, sizeof(readyPrefix) - 1) != 0)
+            environment.push_back(*item);
+    }
+    environment.push_back(readyEnvironment.data());
+    environment.push_back(NULL);
+    pid_t child = fork();
+    if (child == 0)
+    {
+        close(channel[0]);
+        if (fcntl(channel[1], F_SETFD, 0) == 0)
+            execve(executable.text(), arguments.data(), environment.data());
+        int failure = errno;
+        size_t sent = 0;
+        while (sent < sizeof(failure))
+        {
+            ssize_t count = send(channel[1], reinterpret_cast<const char*>(&failure) + sent,
+                                 sizeof(failure) - sent, MSG_NOSIGNAL);
+            if (count < 0 && errno == EINTR) { continue; }
+            if (count <= 0) { break; }
+            sent += count;
+        }
+        _exit(EXIT_FAILURE);
+    }
+    if (child < 0)
+    {
+        int failure = errno;
+        close(channel[0]);
+        close(channel[1]);
+        problem = strerror(failure);
+        return false;
+    }
+    close(channel[1]);
+
+    int status = 0;
+    size_t received = 0;
+    FXTime deadline = FXThread::time() + 30000000000LL;
+    while (received < sizeof(status))
+    {
+        FXTime remaining = deadline - FXThread::time();
+        if (remaining <= 0)
+        {
+            problem = _("The replacement did not open a window in time. It may still be starting.");
+            close(channel[0]);
+            return false;
+        }
+        struct pollfd descriptor = {channel[0], POLLIN, 0};
+        int ready = poll(&descriptor, 1, static_cast<int>((remaining + 999999) / 1000000));
+        if (ready < 0 && errno == EINTR) { continue; }
+        if (ready == 0) { continue; }
+        if (ready < 0)
+        {
+            problem = strerror(errno);
+            close(channel[0]);
+            return false;
+        }
+        ssize_t count = read(channel[0], reinterpret_cast<char*>(&status) + received, sizeof(status) - received);
+        if (count < 0 && errno == EINTR) { continue; }
+        if (count < 0)
+        {
+            problem = strerror(errno);
+            close(channel[0]);
+            return false;
+        }
+        if (!count)
+        {
+            problem = _("The replacement did not open a window.");
+            close(channel[0]);
+            waitpid(child, NULL, WNOHANG);
+            return false;
+        }
+        received += count;
+    }
+    close(channel[0]);
+    if (status)
+    {
+        waitpid(child, NULL, WNOHANG);
+        problem = strerror(status);
+        return false;
+    }
+    return true;
 }
 
 
@@ -190,6 +361,7 @@ FXDEFMAP(XFileExplorer) XFileExplorerMap[] =
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_FILE_ASSOC, XFileExplorer::onCmdFileAssoc),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_REFRESH, XFileExplorer::onCmdRefresh),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_THEME_REQUEST, XFileExplorer::onThemeRequest),
+    FXMAPFUNC(SEL_TIMEOUT, XFileExplorer::ID_PORTABLE_SETTINGS_CHECK, XFileExplorer::onPortableSettingsCheck),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_EMPTY_TRASH, XFileExplorer::onCmdEmptyTrash),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_TRASH_SIZE, XFileExplorer::onCmdTrashSize),
     FXMAPFUNC(SEL_COMMAND, XFileExplorer::ID_XTERM, XFileExplorer::onCmdXTerm),
@@ -3741,6 +3913,8 @@ void XFileExplorer::create()
 
 #endif
     applyTheme(Theme::current(getApp()));
+    if (xf_portablesettingswatching())
+        getApp()->addTimeout(this, ID_PORTABLE_SETTINGS_CHECK, 1000);
 }
 
 void XFileExplorer::applyTheme(const Theme& theme, FXWindow* subtree)
@@ -4079,10 +4253,57 @@ long XFileExplorer::onSigHarvest(FXObject*, FXSelector, void*)
 // Handle quitting
 long XFileExplorer::onQuit(FXObject*, FXSelector, void*)
 {
-    Preview::shutdown();
+    if (!xf_portablesettingswatching())
+    {
+        Preview::shutdown();
+        saveConfig();
+        getApp()->exit(EXIT_SUCCESS);
+        return 1;
+    }
+    FXString problem;
+    if (xf_portablesettingschanged(problem)) { return handlePortableSettingsConflict(problem); }
     saveConfig();
+    if (xf_portablesettingschanged(problem)) { return handlePortableSettingsConflict(problem); }
 
+    Preview::shutdown();
     getApp()->exit(EXIT_SUCCESS);
+    return 1;
+}
+
+long XFileExplorer::onPortableSettingsCheck(FXObject*, FXSelector, void*)
+{
+    FXString problem;
+    if (xf_portablesettingschanged(problem)) { return handlePortableSettingsConflict(problem); }
+    getApp()->addTimeout(this, ID_PORTABLE_SETTINGS_CHECK, 1000);
+    return 1;
+}
+
+long XFileExplorer::handlePortableSettingsConflict(const FXString& problem)
+{
+    getApp()->removeTimeout(this, ID_PORTABLE_SETTINGS_CHECK);
+    appLog(APP_LOG_ERRORS, "portable-settings-conflict", problem);
+    FXWindow* owner = getApp()->getActiveWindow();
+    PortableSettingsConflictDialog dialog(owner ? owner : this, problem);
+    FXuint choice = dialog.execute(PLACEMENT_OWNER);
+    if (choice == 1)
+    {
+        FXString error;
+        if (!restartWithPortableSettings(error))
+        {
+            appLog(APP_LOG_ERRORS, "portable-settings-restart-failed", error);
+            MessageBox::error(owner ? owner : this, BOX_OK, _("Restart failed"),
+                              _("Unable to restart Swordfish. The current window remains open and settings "
+                                "will not be saved.\n\n%s"), error.text());
+            return 1;
+        }
+        Preview::shutdown();
+        getApp()->exit(EXIT_SUCCESS);
+    }
+    else if (choice == 2)
+    {
+        Preview::shutdown();
+        getApp()->exit(EXIT_SUCCESS);
+    }
     return 1;
 }
 
@@ -4595,7 +4816,10 @@ long XFileExplorer::onCmdGotoBookmark(FXObject* sender, FXSelector, void*)
 // Restart the application when required
 long XFileExplorer::onCmdRestart(FXObject*, FXSelector, void*)
 {
+    FXString problem;
+    if (xf_portablesettingschanged(problem)) { return handlePortableSettingsConflict(problem); }
     saveConfig(true);
+    if (xf_portablesettingschanged(problem)) { return handlePortableSettingsConflict(problem); }
 
     pid_t child = fork();
     if (child == 0)

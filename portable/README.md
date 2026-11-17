@@ -594,10 +594,31 @@ Log entries include timestamps and process IDs. They record semantic actions
 and relevant paths, not raw keystrokes or mouse movement. Coverage will expand
 as more actions are instrumented.
 
-Close Swordfish before copying the complete `portable-data` folder to another
-portable build. Action definitions and copied image icons move with it; named
-system icons, external programs and absolute paths in commands still depend on
-the target machine.
+To copy a profile, close every Swordfish window using both the source and the
+destination. Back up the destination, then replace its complete `portable-data`
+folder with a copy of the source folder rather than merging them. This is the
+reliable way to copy a consistent set of settings and other files. Action
+definitions and copied image icons move with it; saved file paths, named system
+icons and external programs still depend on the target machine.
+
+If a running portable window detects that its `xferc` settings file was changed
+externally, including by another Swordfish window, it stops reading and saving
+that window's stale settings and offers **Restart Now**, **Quit Without Saving**
+or **Keep Running**. Restart opens a fresh window with the changed settings;
+if it cannot start, the current window stays open and reports the error. Keeping
+the window open does not re-enable settings saves. Any unsaved settings in that
+window are lost when it closes. If a warning names a preserved settings file,
+keep it until you have checked which version you need. If the filesystem lacks
+the operations needed for a safe settings save, an error is shown instead of
+overwriting the file; move the profile to a filesystem that supports them.
+An interrupted save can also leave a temporary or backup settings version and
+trigger a warning on the next launch. Close all windows, compare the named file
+with `xferc`, keep or restore the desired version, and move the leftover file
+out of the settings folder before starting again.
+
+This protection covers the main settings file, not an atomic snapshot of all
+profile folders. Older versions do not have it. Close both copies before
+copying even when this protection is available.
 
 The amount of logging is set in Preferences > Settings > Logging, which also
 shows the log folder. The change applies immediately:

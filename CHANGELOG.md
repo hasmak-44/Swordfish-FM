@@ -93,6 +93,10 @@
   skipped.
 
 ### Fixed
+- Portable windows now detect outside changes to their settings, including
+  saves by another window, and block stale writes instead of overwriting copied
+  settings. A warning offers restart, quit without saving, or continued use
+  without settings saves. Interrupted save backups are reported on startup.
 - Saving a theme removes unused PNG, JPEG, texture and pattern copies from
   that theme's own graphic folders while preserving graphics still referenced
   by the theme and its presets.

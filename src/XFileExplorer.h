@@ -241,6 +241,7 @@ public:
         ID_MENU_CLOSE,
         ID_THEME_REQUEST,
         ID_THEME_MANUAL,
+        ID_PORTABLE_SETTINGS_CHECK,
         ID_LAST
     };
 
@@ -264,6 +265,8 @@ public:
     long onNetworkUnmounted(FXObject*, FXSelector, void*);
     long onPrepareUnmount(FXObject*, FXSelector, void*);
     long onQuit(FXObject*, FXSelector, void*);
+    long onPortableSettingsCheck(FXObject*, FXSelector, void*);
+    long handlePortableSettingsConflict(const FXString&);
     long onKeyPress(FXObject*, FXSelector, void*);
     long onKeyRelease(FXObject*, FXSelector, void*);
     long onCmdHelp(FXObject*, FXSelector, void*);

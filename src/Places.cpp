@@ -1329,11 +1329,11 @@ BookmarksList::BookmarksList(FXWindow* owner, FXComposite* p, FXObject* tgt, FXS
         getApp()->reg().deleteSection("bookmarks");
     }
 
-    // Write legacy bookmarks flag
-    getApp()->reg().writeUnsignedEntry("OPTIONS", "legacy_bookmarks", false);
-
-    // Update registry
-    getApp()->reg().write();
+    if (legacy_bookmarks)
+    {
+        getApp()->reg().writeUnsignedEntry("OPTIONS", "legacy_bookmarks", false);
+        getApp()->reg().write();
+    }
 }
 
 

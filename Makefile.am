@@ -95,6 +95,8 @@ EXTRA_DIST = autogen.sh install-swordfish-system.sh iconlinks.sh config.h i18n.h
              tests/system-integration-regression.cpp tests/run-system-integration-regression.sh \
              tests/custom-actions-regression.cpp tests/run-custom-actions-regression.sh \
              tests/custom-actions-ui-regression.cpp tests/run-custom-actions-ui-regression.sh \
+             tests/portable-profile-guard-regression.cpp tests/portable-profile-ui-regression.py \
+             tests/run-portable-profile-regression.sh \
              tests/run-command-link-regression.sh \
              tests/fake-remote-directory.py tests/native-directory-helper-regression.py \
              tests/portable-launcher-regression.py textures/generate-textures.py icons/preferences/render-icons.py \

@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
+#include <limits.h>
+#include <sys/socket.h>
 #include <sys/types.h>
 #include <string.h>
 #include <time.h>
@@ -343,8 +345,41 @@ static const FXuchar hand3_mask_bits[] =
 
 
 
+static int portableRestartChannel()
+{
+    const char* value = getenv("SWORDFISH_PORTABLE_RESTART_FD");
+    if (!value) { return -1; }
+    char* end = NULL;
+    errno = 0;
+    long parsed = strtol(value, &end, 10);
+    bool valid = !errno && end != value && !*end && parsed > 2 && parsed <= INT_MAX;
+    unsetenv("SWORDFISH_PORTABLE_RESTART_FD");
+    if (!valid)
+    {
+        fprintf(stderr, "Invalid portable restart notification descriptor\n");
+        return -1;
+    }
+    int descriptor = static_cast<int>(parsed);
+    int flags = fcntl(descriptor, F_GETFD);
+    int type = 0;
+    socklen_t length = sizeof(type);
+    if (flags < 0 || getsockopt(descriptor, SOL_SOCKET, SO_TYPE, &type, &length) != 0 ||
+        fcntl(descriptor, F_SETFD, flags | FD_CLOEXEC) != 0)
+    {
+        fprintf(stderr, "Cannot use portable restart notification descriptor: %s\n", strerror(errno));
+        return -1;
+    }
+    if (type != SOCK_STREAM)
+    {
+        fprintf(stderr, "Portable restart notification descriptor is not a stream socket\n");
+        return -1;
+    }
+    return descriptor;
+}
+
 int main(int argc, char* argv[])
 {
+    int restartChannel = portableRestartChannel();
     const char* title = "SwordFish";
     const char* appname = "xfe";
     const char* vdrname = "SwordFish";
@@ -487,6 +522,8 @@ int main(int argc, char* argv[])
 
     // Application creation
     FXApp* application = new XFApp(appname, vdrname);
+    // FXApp::init() may read the registry, so establish the snapshot first.
+    xf_watchportablesettings(&application->reg());
     application->init(argc, argv);
 
     FXbool firstRun = true;
@@ -585,6 +622,26 @@ int main(int argc, char* argv[])
 
     application->create();
     setNetWmIcon(mainWindow, xfedockicon);
+    if (restartChannel >= 0)
+    {
+        application->flush(true);
+        if (mainWindow->shown())
+        {
+            int status = 0;
+            size_t sent = 0;
+            while (sent < sizeof(status))
+            {
+                ssize_t count = send(restartChannel, reinterpret_cast<const char*>(&status) + sent,
+                                     sizeof(status) - sent, MSG_NOSIGNAL);
+                if (count < 0 && errno == EINTR) { continue; }
+                if (count <= 0) { break; }
+                sent += count;
+            }
+            if (sent != sizeof(status))
+                fprintf(stderr, "Cannot notify the previous Swordfish window that restart succeeded\n");
+        }
+        close(restartChannel);
+    }
 
     // Tooltips setup time and duration
     application->setTooltipPause(TOOLTIP_PAUSE);
