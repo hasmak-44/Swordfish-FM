@@ -3496,6 +3496,14 @@ is the writable user asset, leaving built-in and theme-owned graphics
 protected. Regression coverage exercises replacement, renaming, skipping all
 remaining conflicts and folder merges.
 
+### 3.101. Resetting an element to inherited defaults (17 November 2026)
+
+Reset this element now removes all overrides for the selected element instead
+of restoring overrides present when the editor opened. This lets users remove
+a saved background image and return that element to inherited defaults without
+changing other elements. The manual and theme workflow regression cover the
+behavior.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

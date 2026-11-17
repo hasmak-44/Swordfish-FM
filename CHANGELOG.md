@@ -89,6 +89,8 @@
   skipped.
 
 ### Fixed
+- Reset this element now removes its overrides and returns it to inherited
+  defaults, including removing a saved background image.
 - Importing a graphic with a name already in use now shows the incoming and
   existing images side by side, with Replace, Replace all, Skip, Skip all,
   Rename and Cancel choices.

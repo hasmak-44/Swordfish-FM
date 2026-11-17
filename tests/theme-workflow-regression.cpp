@@ -508,6 +508,50 @@ public:
         editor.zoom->setCurrentItem(0);
         editor.onPreview(NULL, 0, NULL);
         pump(app);
+        {
+            Theme savedOriginal = editor.original;
+            Theme savedApplied = editor.applied;
+            Theme savedDraft = editor.draft;
+            Theme savedTheme = editor.saved;
+            std::vector<Theme> savedUndo = editor.undoStates;
+            std::vector<Theme> savedRedo = editor.redoStates;
+            std::vector<Theme> savedPending = editor.pendingSteps;
+            FXString savedArea = editor.area;
+            editor.selectElement("main");
+            editor.original.setProperty("main", "background_image", "images/Regression.png");
+            editor.original.setProperty("main", "image_mode", "fill");
+            editor.original.setProperty("main", "image_opacity", "55");
+            editor.original.setProperty("list", "foreground", "#123456");
+            editor.applied = editor.draft = editor.saved = editor.original;
+            editor.refreshProperties();
+            FXButton* resetElement = findButton(&editor, "Reset this element");
+            assert(resetElement);
+            ActionTimer confirmReset([&]()
+            {
+                MessageBox* confirmation = dynamic_cast<MessageBox*>(app.getModalWindow());
+                assert(confirmation);
+                FXButton* yes = findButton(confirmation, "Yes");
+                assert(yes);
+                yes->getTarget()->handle(yes, FXSEL(SEL_COMMAND, yes->getSelector()), NULL);
+            });
+            app.addTimeout(&confirmReset, 1, 150);
+            resetElement->getTarget()->handle(resetElement,
+                FXSEL(SEL_COMMAND, resetElement->getSelector()), NULL);
+            assert(!editor.getDraft().overrides("main", "background_image"));
+            assert(!editor.getDraft().overrides("main", "image_mode"));
+            assert(!editor.getDraft().overrides("main", "image_opacity"));
+            assert(editor.getDraft().property("list", "foreground") == "#123456");
+            editor.original = savedOriginal;
+            editor.applied = savedApplied;
+            editor.draft = savedDraft;
+            editor.saved = savedTheme;
+            editor.undoStates = savedUndo;
+            editor.redoStates = savedRedo;
+            editor.pendingSteps = savedPending;
+            editor.area = savedArea;
+            editor.refreshProperties();
+            editor.refreshPreview();
+        }
         FXButton* editorManual = findButton(&editor, "User Manual");
         assert(editorManual);
         checkManual(app, editorManual->getTarget(), editorManual->getSelector(), editorManual, true);

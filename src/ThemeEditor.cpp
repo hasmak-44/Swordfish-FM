@@ -3449,7 +3449,7 @@ long ThemeEditor::onReset(FXObject*, FXSelector selector, void*)
 {
     FXint scope = FXSELID(selector);
     FXString message = scope == ID_RESET_PROPERTY ? _("Reset only the selected property to its original value?") :
-                       scope == ID_RESET_ELEMENT ? _("Reset only this element to its original values?") :
+                       scope == ID_RESET_ELEMENT ? _("Reset only this element to inherited defaults?") :
                        scope == ID_RESET_THEME ? _("Reset every element to inherited colours and remove all effects and overrides?") :
                        scope == ID_ORIGINAL ? _("Discard all edits and restore this theme's original appearance?") :
                                               _("Reset the whole theme to the built-in Ocean Depth defaults?");
@@ -3471,9 +3471,6 @@ long ThemeEditor::onReset(FXObject*, FXSelector selector, void*)
     else if (scope == ID_RESET_ELEMENT)
     {
         draft.resetElement(area);
-        for (const auto& entry : original.properties)
-            if (entry.first.left(area.length() + 1) == area + ".") draft.properties.insert(entry);
-        if (area == "list") draft.effect = original.effect;
     }
     else if (scope == ID_ORIGINAL) draft = original;
     else if (scope == ID_RESET_THEME)
