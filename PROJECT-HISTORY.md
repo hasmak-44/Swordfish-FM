@@ -3481,6 +3481,21 @@ list. Regression checks verify that thumbnail display and preview loading are
 enabled in each Add flow, and that files remain selectable when a thumbnail
 cannot be generated.
 
+### 3.100. Resolving graphic import name conflicts (17 November 2026)
+
+The user requested side-by-side comparison for name conflicts while importing
+pattern, texture and background graphics. The new dialog previews both files
+and provides Replace, Replace all, Skip, Skip all, Rename (keeping the file
+extension) and Cancel. It is used by single-file, multi-file and folder imports;
+category-folder conflicts retain their existing Merge, Rename, Save under
+another folder and Cancel choices. Delete actions were omitted at the user's
+request.
+
+The import APIs now allow explicit replacement only when the conflicting file
+is the writable user asset, leaving built-in and theme-owned graphics
+protected. Regression coverage exercises replacement, renaming, skipping all
+remaining conflicts and folder merges.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

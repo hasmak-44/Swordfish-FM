@@ -89,6 +89,9 @@
   skipped.
 
 ### Fixed
+- Importing a graphic with a name already in use now shows the incoming and
+  existing images side by side, with Replace, Replace all, Skip, Skip all,
+  Rename and Cancel choices.
 - Pattern, texture and background-image file choosers now show image thumbnails
   for preview before import.
 - Pattern, texture and background-image galleries can now import a folder

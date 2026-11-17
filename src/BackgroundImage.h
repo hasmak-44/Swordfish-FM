@@ -11,7 +11,7 @@ public:
     static FXbool validReference(const FXString&);
     static FXString path(const FXString&, const FXString& = FXString::null);
     static std::unique_ptr<FXImage> load(FXApp*, const FXString&, FXString&);
-    static FXbool importImage(FXApp*, const FXString&, const FXString&, FXString&);
+    static FXbool importImage(FXApp*, const FXString&, const FXString&, FXString&, FXbool = false);
     static void composite(FXColor*, FXint, FXint, const FXImage&, const FXString&);
     static FXIcon* preview(FXApp*, const FXString&, FXColor, FXint, FXString&);
 };

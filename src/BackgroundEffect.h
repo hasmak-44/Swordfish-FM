@@ -34,8 +34,8 @@ struct BackgroundEffect
     static FXString patternPath(const FXString&, const FXString& = FXString::null);
     static FXbool validateTexture(FXApp*, const FXString&, FXString&);
     static FXbool validatePattern(FXApp*, const FXString&, FXString&);
-    static FXbool importTexture(FXApp*, const FXString&, const FXString&, FXbool, FXString&);
-    static FXbool importPattern(FXApp*, const FXString&, const FXString&, FXbool, FXString&);
+    static FXbool importTexture(FXApp*, const FXString&, const FXString&, FXbool, FXString&, FXbool = false);
+    static FXbool importPattern(FXApp*, const FXString&, const FXString&, FXbool, FXString&, FXbool = false);
     static FXIcon* preview(FXComposite*, const FXString&, FXColor, FXint = 48,
                            const FXString& = FXString::null);
 };

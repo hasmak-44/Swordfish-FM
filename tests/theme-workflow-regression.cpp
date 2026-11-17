@@ -100,6 +100,15 @@ static FXListBox* findListBoxWithItem(FXWindow* parent, const FXString& text)
     return NULL;
 }
 
+static FXTextField* findTextFieldStartingWith(FXWindow* parent, const FXString& prefix)
+{
+    FXTextField* field = dynamic_cast<FXTextField*>(parent);
+    if (field && field->getText().left(prefix.length()) == prefix) return field;
+    for (FXWindow* child = parent->getFirst(); child; child = child->getNext())
+        if (FXTextField* result = findTextFieldStartingWith(child, prefix)) return result;
+    return NULL;
+}
+
 static FXint findChooserItem(FileList*, const FXString&);
 
 static void selectChooserFiles(FileDialog* chooser, const FXString& first, const FXString& second)
@@ -340,6 +349,14 @@ static void solidPng(FXApp& app, const FXString& path, FXColor color)
     FXFileStream output;
     assert(output.open(path, FXStreamSave));
     assert(image.savePixels(output));
+}
+
+static FXColor pngPixel(FXApp& app, const FXString& path)
+{
+    FXPNGImage image(&app, NULL, IMAGE_KEEP);
+    FXFileStream input;
+    assert(input.open(path, FXStreamLoad) && image.loadPixels(input) && image.getData());
+    return image.getPixel(0, 0);
 }
 
 static void solidJpeg(FXApp& app, const FXString& path, FXColor color)
@@ -1300,6 +1317,12 @@ public:
         FXString secondReference = BackgroundEffect::textureReference("Paint/River 1");
         assert(BackgroundEffect::importTexture(&app, blueSource + "/textures/shared.png",
                                                 secondReference, false, textureError));
+        FXString replacementTexture = redSource + "/textures/replacement.png";
+        FXColor replacementColor = FXRGB(30, 190, 90);
+        solidPng(app, replacementTexture, replacementColor);
+        assert(!BackgroundEffect::importTexture(&app, replacementTexture, secondReference, false, textureError));
+        assert(BackgroundEffect::importTexture(&app, replacementTexture, secondReference, false, textureError, true));
+        assert(pngPixel(app, globalTextures + "/Paint/River 1.png") == replacementColor);
         assert(BackgroundEffect::texturePath(categoryReference) == globalTextures + "/Natural Stone/River 1.png");
         assert(BackgroundEffect::texturePath(secondReference) == globalTextures + "/Paint/River 1.png");
         assert(xf_mkpath((globalTextures + "/Uppercase").text(), 0755) == 0);
@@ -1405,23 +1428,60 @@ public:
                    BackgroundEffect::parse(editor.getDraft().effect).texture == batchTextureReference);
             FXString batchTextureThree = redSource + "/textures/Batch Three.png";
             solidPng(app, batchTextureThree, FXRGB(30, 130, 80));
-            ActionTimer confirmPartialTextureImport([&] {
-                MessageBox* message = dynamic_cast<MessageBox*>(app.getModalWindow());
-                assert(message && message->getTitle() == "Texture");
-                message->handle(message, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_OK), NULL);
+            FXColor replacementBatchColor = FXRGB(175, 35, 95);
+            solidPng(app, batchTextureOne, replacementBatchColor);
+            ActionTimer replaceTextureConflict([&] {
+                DialogBox* conflict = dynamic_cast<DialogBox*>(app.getModalWindow());
+                assert(conflict && conflict->getTitle() == "Graphic name already exists");
+                assert(findLabel(conflict, "Incoming") && findLabel(conflict, "Existing"));
+                assert(findButton(conflict, "Replace") && findButton(conflict, "Replace all") &&
+                       findButton(conflict, "Skip") && findButton(conflict, "Skip all") &&
+                       findButton(conflict, "Rename") && findButton(conflict, "Cancel"));
+                screenshot(conflict, "graphic-import-conflict");
+                FXButton* replace = findButton(conflict, "Replace");
+                replace->getTarget()->handle(replace, FXSEL(SEL_COMMAND, replace->getSelector()), NULL);
             });
             ActionTimer choosePartialTextureBatch([&] {
                 FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
                 assert(chooser && chooser->getTitle() == "Add PNG texture");
                 selectChooserFiles(chooser, batchTextureOne, batchTextureThree);
-                app.addTimeout(&confirmPartialTextureImport, 1, 150);
+                app.addTimeout(&replaceTextureConflict, 1, 150);
                 chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
             });
             app.addTimeout(&choosePartialTextureBatch, 1, 150);
             addTexture->getTarget()->handle(addTexture, FXSEL(SEL_COMMAND, addTexture->getSelector()), NULL);
             assert(xf_existfile(globalTextures + "/Natural Stone/Batch Three.png") &&
+                   pngPixel(app, globalTextures + "/Natural Stone/Batch One.png") == replacementBatchColor &&
                    BackgroundEffect::parse(editor.getDraft().effect).texture ==
-                       BackgroundEffect::textureReference("Natural Stone/Batch Three"));
+                       BackgroundEffect::textureReference("Natural Stone/Batch One"));
+
+            ActionTimer skipRemainingTextureConflicts([&] {
+                DialogBox* conflict = dynamic_cast<DialogBox*>(app.getModalWindow());
+                assert(conflict && conflict->getTitle() == "Graphic name already exists");
+                FXButton* skipAll = findButton(conflict, "Skip all");
+                assert(skipAll);
+                skipAll->getTarget()->handle(skipAll, FXSEL(SEL_COMMAND, skipAll->getSelector()), NULL);
+            });
+            ActionTimer renameTextureConflict([&] {
+                DialogBox* conflict = dynamic_cast<DialogBox*>(app.getModalWindow());
+                assert(conflict && conflict->getTitle() == "Graphic name already exists");
+                FXTextField* name = findTextFieldStartingWith(conflict, "Copy of ");
+                FXButton* rename = findButton(conflict, "Rename");
+                assert(name && rename);
+                name->setText("Batch One Copy");
+                app.addTimeout(&skipRemainingTextureConflicts, 1, 150);
+                rename->getTarget()->handle(rename, FXSEL(SEL_COMMAND, rename->getSelector()), NULL);
+            });
+            ActionTimer chooseRenamedTextureBatch([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser && chooser->getTitle() == "Add PNG texture");
+                selectChooserFiles(chooser, batchTextureOne, batchTextureThree);
+                app.addTimeout(&renameTextureConflict, 1, 150);
+                chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            });
+            app.addTimeout(&chooseRenamedTextureBatch, 1, 150);
+            addTexture->getTarget()->handle(addTexture, FXSEL(SEL_COMMAND, addTexture->getSelector()), NULL);
+            assert(xf_existfile(globalTextures + "/Natural Stone/Batch One Copy.png"));
             FXString textureFolderImport = data + "/Batch Texture Pack";
             assert(xf_mkpath((textureFolderImport + "/Oak").text(), 0755) == 0);
             assert(xf_mkpath((textureFolderImport + "/Pine").text(), 0755) == 0);
@@ -1469,6 +1529,14 @@ public:
                 app.addTimeout(&confirmFolderReport, 1, 150);
                 destination->handle(destination, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
             });
+            ActionTimer skipFolderFileConflicts([&] {
+                DialogBox* conflict = dynamic_cast<DialogBox*>(app.getModalWindow());
+                assert(conflict && conflict->getTitle() == "Graphic name already exists");
+                FXButton* skipAll = findButton(conflict, "Skip all");
+                assert(skipAll);
+                app.addTimeout(&confirmFolderReport, 1, 150);
+                skipAll->getTarget()->handle(skipAll, FXSEL(SEL_COMMAND, skipAll->getSelector()), NULL);
+            });
             ActionTimer resolveFolderConflict([&] {
                 DialogBox* conflict = dynamic_cast<DialogBox*>(app.getModalWindow());
                 assert(conflict && conflict->getTitle() == "Folder already exists");
@@ -1476,7 +1544,7 @@ public:
                                                        conflictAction == 2 ? "Rename" :
                                                                            "Save under another folder");
                 assert(choice);
-                if (conflictAction == 1) app.addTimeout(&confirmFolderReport, 1, 150);
+                if (conflictAction == 1) app.addTimeout(&skipFolderFileConflicts, 1, 150);
                 else if (conflictAction == 2) app.addTimeout(&renameImportedFolder, 1, 150);
                 else app.addTimeout(&chooseAlternateParent, 1, 150);
                 choice->getTarget()->handle(choice, FXSEL(SEL_COMMAND, choice->getSelector()), NULL);
@@ -1518,6 +1586,12 @@ public:
                                                 differentCategory, false, patternError));
         assert(BackgroundEffect::patternPath(patternReference) == globalPatterns + "/Geometric/Checker Board.png");
         assert(BackgroundEffect::patternPath(differentCategory) == globalPatterns + "/Organic/Checker Board.png");
+        FXString patternReplacement = redSource + "/textures/pattern-replacement.png";
+        FXColor replacementPatternColor = FXRGB(210, 80, 35);
+        solidPng(app, patternReplacement, replacementPatternColor);
+        assert(!BackgroundEffect::importPattern(&app, patternReplacement, differentCategory, false, patternError));
+        assert(BackgroundEffect::importPattern(&app, patternReplacement, differentCategory, false, patternError, true));
+        assert(pngPixel(app, globalPatterns + "/Organic/Checker Board.png") == replacementPatternColor);
         patternError.clear();
         assert(!BackgroundEffect::importPattern(&app, redSource + "/textures/checker.png",
                                                  patternReference, false, patternError));
@@ -1738,6 +1812,14 @@ public:
         assert(BackgroundImage::importImage(&app, jpegSource, jpegReference, imageError));
         assert(BackgroundImage::load(&app, BackgroundImage::path(jpegReference), imageError));
         assert(BackgroundImage::path(imageReference) == globalImages + "/Photographs/Rose.png");
+        FXString replacementImage = data + "/replacement-image.png";
+        FXColor replacementImageColor = FXRGB(45, 170, 210);
+        solidPng(app, replacementImage, replacementImageColor);
+        FXString replaceReference = BackgroundEffect::textureReference("Photographs/Replace Me.png");
+        assert(BackgroundImage::importImage(&app, imageSource, replaceReference, imageError));
+        assert(!BackgroundImage::importImage(&app, replacementImage, replaceReference, imageError));
+        assert(BackgroundImage::importImage(&app, replacementImage, replaceReference, imageError, true));
+        assert(pngPixel(app, globalImages + "/Photographs/Replace Me.png") == replacementImageColor);
         imageError.clear();
         assert(!BackgroundImage::importImage(&app, imageSource, imageReference, imageError) && !imageError.empty());
         assert(!BackgroundImage::validReference("../escape.png") &&
@@ -1870,6 +1952,28 @@ public:
                    xf_existfile(globalImages + "/Photographs/Batch Two.jpg") &&
                    editor.getDraft().property("main", "background_image") ==
                        BackgroundEffect::textureReference("Photographs/Batch One.png"));
+            FXString batchImageThree = data + "/Batch Three.png";
+            FXColor replacementImageBatchColor = FXRGB(175, 45, 115);
+            solidPng(app, batchImageOne, replacementImageBatchColor);
+            solidPng(app, batchImageThree, FXRGB(40, 145, 95));
+            ActionTimer replaceImageConflict([&] {
+                DialogBox* conflict = dynamic_cast<DialogBox*>(app.getModalWindow());
+                assert(conflict && conflict->getTitle() == "Graphic name already exists");
+                FXButton* replace = findButton(conflict, "Replace");
+                assert(replace);
+                replace->getTarget()->handle(replace, FXSEL(SEL_COMMAND, replace->getSelector()), NULL);
+            });
+            ActionTimer chooseConflictingImages([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser && chooser->getTitle() == "Add background image");
+                selectChooserFiles(chooser, batchImageOne, batchImageThree);
+                app.addTimeout(&replaceImageConflict, 1, 150);
+                chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            });
+            app.addTimeout(&chooseConflictingImages, 1, 150);
+            add->getTarget()->handle(add, FXSEL(SEL_COMMAND, add->getSelector()), NULL);
+            assert(xf_existfile(globalImages + "/Photographs/Batch Three.png") &&
+                   pngPixel(app, globalImages + "/Photographs/Batch One.png") == replacementImageBatchColor);
             FXString imageFolderImport = data + "/Batch Background Pack";
             assert(xf_mkpath((imageFolderImport + "/Oak").text(), 0755) == 0);
             assert(xf_mkpath((imageFolderImport + "/Pine").text(), 0755) == 0);

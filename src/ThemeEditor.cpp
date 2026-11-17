@@ -28,6 +28,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <sys/stat.h>
 #include <utility>
 
 extern FXString execpath;
@@ -364,6 +365,389 @@ FXbool resolveFolderImportCategory(FXWindow* owner, const FXString& rootName, FX
         }
         else
             return false;
+    }
+}
+
+enum GraphicImportKind { GRAPHIC_PATTERN, GRAPHIC_TEXTURE, GRAPHIC_IMAGE };
+enum GraphicImportResult { GRAPHIC_IMPORTED, GRAPHIC_SKIPPED, GRAPHIC_CANCELLED, GRAPHIC_FAILED };
+
+class GraphicImportConflictDialog : public DialogBox
+{
+    FXDECLARE(GraphicImportConflictDialog)
+    GraphicImportConflictDialog() {}
+    FXLabel* incomingPreview = NULL;
+    FXLabel* existingPreview = NULL;
+    FXTextField* renameName = NULL;
+    FXString incomingPath, existingPath, extension;
+    FXIcon* incomingIcon = NULL;
+    FXIcon* existingIcon = NULL;
+    FXint previewSize = 160;
+    FXint incomingWidth = 0, incomingHeight = 0;
+    FXint existingWidth = 0, existingHeight = 0;
+
+    void updatePreviews()
+    {
+        FXString error;
+        FXIcon* icon = graphicPreview(getApp(), incomingPath, previewSize, incomingWidth, incomingHeight, error);
+        incomingPreview->setIcon(icon);
+        incomingPreview->setText(icon ? FXString::null : _("Preview unavailable"));
+        delete incomingIcon;
+        incomingIcon = icon;
+
+        error.clear();
+        icon = graphicPreview(getApp(), existingPath, previewSize, existingWidth, existingHeight, error);
+        existingPreview->setIcon(icon);
+        existingPreview->setText(icon ? FXString::null : _("Preview unavailable"));
+        delete existingIcon;
+        existingIcon = icon;
+        recalc();
+    }
+
+    static FXIcon* graphicPreview(FXApp* app, const FXString& path, FXint size,
+                                  FXint& width, FXint& height, FXString& error)
+    {
+        std::unique_ptr<FXImage> image = BackgroundImage::load(app, path, error);
+        if (!image) return NULL;
+        width = image->getWidth();
+        height = image->getHeight();
+        FXint canvasWidth = size * 2;
+        FXint canvasHeight = size;
+        FXColor* pixels = NULL;
+        if (!FXMALLOC(&pixels, FXColor, canvasWidth * canvasHeight))
+            throw FXMemoryException(_("Unable to create graphic preview"));
+        for (FXint y = 0; y < canvasHeight; ++y)
+            for (FXint x = 0; x < canvasWidth; ++x)
+                pixels[y * canvasWidth + x] = ((x / 10 + y / 10) & 1) ?
+                    FXRGB(0xC8, 0xC8, 0xC8) : FXRGB(0xF4, 0xF4, 0xF4);
+        BackgroundImage::composite(pixels, canvasWidth, canvasHeight, *image, "fit");
+        FXIcon* icon = new FXIcon(app, pixels, 0, IMAGE_KEEP | IMAGE_OWNED, canvasWidth, canvasHeight);
+        icon->create();
+        return icon;
+    }
+
+    void addFileDetails(FXComposite* parent, const FXString& path, FXint width, FXint height)
+    {
+        struct stat info;
+        if (stat(path.text(), &info) == 0)
+        {
+            FXString size = xf_humansize(FXStringVal(static_cast<FXulong>(info.st_size)).text());
+            FXString timeformat = getApp()->reg().readStringEntry("SETTINGS", "time_format", DEFAULT_TIME_FORMAT);
+            new FXLabel(parent, size + " - " + FXSystem::time(timeformat.text(), info.st_mtime),
+                        NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        }
+        if (width > 0 && height > 0)
+        {
+            new FXLabel(parent, FXString().format("%d x %d", width, height), NULL,
+                        JUSTIFY_LEFT | LAYOUT_FILL_X);
+        }
+    }
+
+public:
+    enum
+    {
+        ID_REPLACE = DialogBox::ID_LAST,
+        ID_REPLACE_ALL,
+        ID_SKIP,
+        ID_SKIP_ALL,
+        ID_RENAME,
+        ID_ZOOM_OUT,
+        ID_ZOOM_IN,
+        ID_ZOOM_ONE,
+        ID_ZOOM_FIT
+    };
+
+    GraphicImportConflictDialog(FXWindow* owner, const FXString& incoming, const FXString& existing,
+                                const FXString& proposedName, const FXString& fileExtension) :
+        DialogBox(owner, _("Graphic name already exists"),
+                  DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE | DECOR_CLOSE, 0, 0, 1000, 500),
+        incomingPath(incoming), existingPath(existing), extension(fileExtension)
+    {
+        FXHorizontalFrame* comparison = new FXHorizontalFrame(this, LAYOUT_FILL_X);
+        FXVerticalFrame* incomingColumn = new FXVerticalFrame(comparison, LAYOUT_FILL_X);
+        FXVerticalFrame* zoomColumn = new FXVerticalFrame(comparison, LAYOUT_CENTER_Y);
+        FXVerticalFrame* existingColumn = new FXVerticalFrame(comparison, LAYOUT_FILL_X);
+
+        new FXLabel(incomingColumn, _("Incoming"), NULL, JUSTIFY_CENTER_X | LAYOUT_FILL_X);
+        new FXLabel(incomingColumn, FXPath::name(incomingPath), NULL, JUSTIFY_CENTER_X | LAYOUT_FILL_X);
+        FXTextField* incomingLocation = new FXTextField(incomingColumn, 48, NULL, 0,
+                                                        TEXTFIELD_READONLY | FRAME_SUNKEN | LAYOUT_FILL_X);
+        incomingLocation->setText(FXPath::directory(incomingPath));
+        incomingLocation->setTipText(incomingPath);
+        incomingPreview = new FXLabel(incomingColumn, FXString::null, NULL,
+                                      FRAME_SUNKEN | JUSTIFY_CENTER_X | JUSTIFY_CENTER_Y | LAYOUT_FILL_X);
+
+        new FXButton(zoomColumn, "-", NULL, this, ID_ZOOM_OUT, BUTTON_NORMAL | LAYOUT_FILL_X);
+        new FXButton(zoomColumn, "+", NULL, this, ID_ZOOM_IN, BUTTON_NORMAL | LAYOUT_FILL_X);
+        new FXButton(zoomColumn, "100%", NULL, this, ID_ZOOM_ONE, BUTTON_NORMAL | LAYOUT_FILL_X);
+        new FXButton(zoomColumn, _("Fit"), NULL, this, ID_ZOOM_FIT, BUTTON_NORMAL | LAYOUT_FILL_X);
+
+        new FXLabel(existingColumn, _("Existing"), NULL, JUSTIFY_CENTER_X | LAYOUT_FILL_X);
+        new FXLabel(existingColumn, FXPath::name(existingPath), NULL, JUSTIFY_CENTER_X | LAYOUT_FILL_X);
+        FXTextField* existingLocation = new FXTextField(existingColumn, 48, NULL, 0,
+                                                        TEXTFIELD_READONLY | FRAME_SUNKEN | LAYOUT_FILL_X);
+        existingLocation->setText(FXPath::directory(existingPath));
+        existingLocation->setTipText(existingPath);
+        existingPreview = new FXLabel(existingColumn, FXString::null, NULL,
+                                      FRAME_SUNKEN | JUSTIFY_CENTER_X | JUSTIFY_CENTER_Y | LAYOUT_FILL_X);
+        updatePreviews();
+        addFileDetails(incomingColumn, incomingPath, incomingWidth, incomingHeight);
+        addFileDetails(existingColumn, existingPath, existingWidth, existingHeight);
+
+        FXHorizontalFrame* renameRow = new FXHorizontalFrame(this, LAYOUT_FILL_X);
+        new FXLabel(renameRow, _("New name:"), NULL, JUSTIFY_LEFT);
+        renameName = new FXTextField(renameRow, 32, NULL, 0, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
+        renameName->setText(proposedName);
+        if (!extension.empty()) new FXLabel(renameRow, "." + extension, NULL, JUSTIFY_LEFT);
+        new FXButton(renameRow, _("Rename"), NULL, this, ID_RENAME, BUTTON_NORMAL);
+
+        FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+        new FXButton(buttons, _("Replace"), NULL, this, ID_REPLACE, BUTTON_DEFAULT | FRAME_GROOVE);
+        new FXButton(buttons, _("Replace all"), NULL, this, ID_REPLACE_ALL, BUTTON_NORMAL);
+        new FXButton(buttons, _("Skip"), NULL, this, ID_SKIP, BUTTON_NORMAL);
+        new FXButton(buttons, _("Skip all"), NULL, this, ID_SKIP_ALL, BUTTON_NORMAL);
+        new FXButton(buttons, _("Cancel"), NULL, this, DialogBox::ID_CANCEL, BUTTON_NORMAL);
+    }
+
+    ~GraphicImportConflictDialog()
+    {
+        delete incomingIcon;
+        delete existingIcon;
+    }
+
+    FXString getRenameName() const { return renameName->getText().trim(); }
+
+    long onCommand(FXObject*, FXSelector selector, void*)
+    {
+        FXint id = FXSELID(selector);
+        if (id >= ID_REPLACE && id <= ID_RENAME)
+        {
+            getApp()->stopModal(this, id - ID_REPLACE + 1);
+            hide();
+        }
+        else if (id == DialogBox::ID_CANCEL)
+        {
+            getApp()->stopModal(this, 0);
+            hide();
+        }
+        else if (id == ID_ZOOM_OUT)
+            previewSize = FXMAX(96, previewSize - 32);
+        else if (id == ID_ZOOM_IN)
+            previewSize = FXMIN(320, previewSize + 32);
+        else if (id == ID_ZOOM_ONE)
+            previewSize = 240;
+        else if (id == ID_ZOOM_FIT)
+            previewSize = 160;
+        else
+            return 0;
+        if (id >= ID_ZOOM_OUT && id <= ID_ZOOM_FIT) updatePreviews();
+        return 1;
+    }
+};
+
+FXDEFMAP(GraphicImportConflictDialog) GraphicImportConflictDialogMap[] = {
+    FXMAPFUNCS(SEL_COMMAND, GraphicImportConflictDialog::ID_REPLACE,
+               GraphicImportConflictDialog::ID_ZOOM_FIT, GraphicImportConflictDialog::onCommand),
+    FXMAPFUNC(SEL_COMMAND, DialogBox::ID_CANCEL, GraphicImportConflictDialog::onCommand)
+};
+FXIMPLEMENT(GraphicImportConflictDialog, DialogBox, GraphicImportConflictDialogMap,
+            ARRAYNUMBER(GraphicImportConflictDialogMap))
+
+FXString graphicKindDirectory(GraphicImportKind kind)
+{
+    return kind == GRAPHIC_PATTERN ? "patterns" : kind == GRAPHIC_TEXTURE ? "textures" : "images";
+}
+
+FXString graphicNameAlreadyExists(GraphicImportKind kind)
+{
+    return kind == GRAPHIC_PATTERN ? _("Pattern name already exists. Please use another name.") :
+           kind == GRAPHIC_TEXTURE ? _("Texture name already exists. Please use another name.") :
+                                     _("Image name already exists. Please use another name.");
+}
+
+FXString graphicThemeNameExists()
+{
+    return _("This name is already used by the current theme. Please use another name.");
+}
+
+FXString graphicPath(GraphicImportKind kind, const FXString& reference, const FXString& assetRoot = FXString::null)
+{
+    if (kind == GRAPHIC_PATTERN) return BackgroundEffect::patternPath(reference, assetRoot);
+    if (kind == GRAPHIC_TEXTURE) return BackgroundEffect::texturePath(reference, assetRoot);
+    return BackgroundImage::path(reference, assetRoot);
+}
+
+FXbool graphicDestination(GraphicImportKind kind, const FXString& reference,
+                          FXString& destination, FXString& error)
+{
+    FXString relative;
+    if (!BackgroundEffect::textureRelativePath(reference, relative))
+    {
+        error = _("Invalid graphic name or category.");
+        return false;
+    }
+    FXString directory = FXPath::absolute(xf_userdatahome() + PATHSEPSTRING + graphicKindDirectory(kind));
+    struct stat rootInfo;
+    if (lstat(directory.text(), &rootInfo) == 0)
+    {
+        if (!S_ISDIR(rootInfo.st_mode) || S_ISLNK(rootInfo.st_mode))
+        {
+            error = _("The graphic destination is not a safe folder: ") + directory;
+            return false;
+        }
+    }
+    else if (errno != ENOENT)
+    {
+        error = _("Cannot inspect graphic destination: ") + directory + ": " + strerror(errno);
+        return false;
+    }
+    FXint separator = relative.rfind('/');
+    FXString parents = separator < 0 ? FXString::null : relative.left(separator);
+    FXString component;
+    for (FXint i = 0; i <= parents.length(); ++i)
+    {
+        if (i == parents.length() || parents[i] == '/')
+        {
+            if (!component.empty())
+            {
+                directory += PATHSEPSTRING + component;
+                struct stat info;
+                if (lstat(directory.text(), &info) == 0)
+                {
+                    if (!S_ISDIR(info.st_mode) || S_ISLNK(info.st_mode))
+                    {
+                        error = _("The graphic destination is not a safe folder: ") + directory;
+                        return false;
+                    }
+                }
+                else if (errno != ENOENT)
+                {
+                    error = _("Cannot inspect graphic destination: ") + directory + ": " + strerror(errno);
+                    return false;
+                }
+            }
+            component.clear();
+        }
+        else component += parents[i];
+    }
+    FXString filename = separator < 0 ? relative : relative.rafter('/');
+    if (kind != GRAPHIC_IMAGE) filename += ".png";
+    destination = FXPath::absolute(directory + PATHSEPSTRING + filename);
+    struct stat info;
+    if (lstat(destination.text(), &info) == 0 && S_ISLNK(info.st_mode))
+    {
+        error = _("The graphic destination is a symbolic link: ") + destination;
+        return false;
+    }
+    return true;
+}
+
+FXString renamedGraphicReference(const FXString& reference, const FXString& name, GraphicImportKind kind)
+{
+    FXString relative;
+    if (!BackgroundEffect::textureRelativePath(reference, relative)) return FXString::null;
+    FXString parent = FXPath::directory(relative);
+    if (parent == ".") parent.clear();
+    FXString extension = kind == GRAPHIC_IMAGE ? "." + FXPath::extension(relative) : FXString::null;
+    if (name.empty() || name.find_first_of("/\\") >= 0) return FXString::null;
+    FXString renamed = parent.empty() ? name + extension : parent + "/" + name + extension;
+    return BackgroundEffect::textureReference(renamed);
+}
+
+FXString uniqueGraphicName(const FXString& reference, GraphicImportKind kind)
+{
+    FXString relative;
+    if (!BackgroundEffect::textureRelativePath(reference, relative)) return "Copy";
+    FXString filename = FXPath::name(relative);
+    FXString base = kind == GRAPHIC_IMAGE ? FXPath::title(filename) : filename;
+    FXString candidate = "Copy of " + base;
+    for (FXint suffix = 0; suffix < 1000; ++suffix)
+    {
+        FXString name = suffix == 0 ? candidate : candidate + FXString().format(" (%d)", suffix);
+        FXString renamed = renamedGraphicReference(reference, name, kind), destination, error;
+        if (!renamed.empty() && graphicDestination(kind, renamed, destination, error) &&
+            access(destination.text(), F_OK) != 0 && errno == ENOENT)
+            return name;
+    }
+    return candidate;
+}
+
+GraphicImportResult importGraphicWithConflict(FXWindow* owner, FXApp* app, const FXString& source,
+                                              FXString& reference, GraphicImportKind kind,
+                                              const FXString& assetRoot, FXbool& replaceAll,
+                                              FXbool& skipAll, FXString& error)
+{
+    while (true)
+    {
+        FXString destination;
+        if (!graphicDestination(kind, reference, destination, error)) return GRAPHIC_FAILED;
+        FXString theme = graphicPath(kind, reference, assetRoot);
+        FXString existing = graphicPath(kind, reference);
+        if (!assetRoot.empty() && !theme.empty() && theme != existing)
+        {
+            error = graphicThemeNameExists();
+            return GRAPHIC_FAILED;
+        }
+        if (!existing.empty() && FXPath::absolute(existing) != destination)
+        {
+            error = graphicNameAlreadyExists(kind);
+            return GRAPHIC_FAILED;
+        }
+        struct stat info;
+        FXbool collision = lstat(destination.text(), &info) == 0;
+        if (!collision && errno != ENOENT)
+        {
+            error = _("Cannot inspect graphic destination: ") + destination + ": " + strerror(errno);
+            return GRAPHIC_FAILED;
+        }
+        if (collision && !S_ISREG(info.st_mode))
+        {
+            error = _("The graphic destination is not a regular file: ") + destination;
+            return GRAPHIC_FAILED;
+        }
+
+        FXbool replace = false;
+        if (collision)
+        {
+            struct stat sourceInfo;
+            if (FXPath::absolute(source) == destination ||
+                (stat(source.text(), &sourceInfo) == 0 && sourceInfo.st_dev == info.st_dev &&
+                 sourceInfo.st_ino == info.st_ino))
+                return GRAPHIC_SKIPPED;
+            if (skipAll) return GRAPHIC_SKIPPED;
+            if (replaceAll) replace = true;
+            else
+            {
+                FXString relative;
+                BackgroundEffect::textureRelativePath(reference, relative);
+                FXString extension = kind == GRAPHIC_IMAGE ? FXPath::extension(relative) : "png";
+                GraphicImportConflictDialog conflict(owner, source, destination,
+                                                     uniqueGraphicName(reference, kind), extension);
+                FXuint choice = conflict.execute();
+                if (choice == 0) return GRAPHIC_CANCELLED;
+                if (choice == 2) { replaceAll = true; replace = true; }
+                else if (choice == 3) return GRAPHIC_SKIPPED;
+                else if (choice == 4) { skipAll = true; return GRAPHIC_SKIPPED; }
+                else if (choice == 5)
+                {
+                    FXString renamed = renamedGraphicReference(reference, conflict.getRenameName(), kind);
+                    if (renamed.empty())
+                    {
+                        MessageBox::error(owner, BOX_OK, _("Import graphic"),
+                                          _("Enter a valid name without a slash."));
+                        continue;
+                    }
+                    reference = renamed;
+                    continue;
+                }
+                else replace = true;
+            }
+        }
+        FXbool imported = kind == GRAPHIC_PATTERN ?
+            BackgroundEffect::importPattern(app, source, reference, false, error, replace) :
+            kind == GRAPHIC_TEXTURE ?
+            BackgroundEffect::importTexture(app, source, reference, false, error, replace) :
+            BackgroundImage::importImage(app, source, reference, error, replace);
+        return imported ? GRAPHIC_IMPORTED : GRAPHIC_FAILED;
     }
 }
 
@@ -1959,6 +2343,7 @@ public:
             if (files.empty() && failures.empty()) failures = _("The folder contains no supported PNG files.");
             FXString activeReference;
             FXint importedCount = 0;
+            FXbool replaceAll = false, skipAll = false;
             for (const FolderGraphicFile& file : files)
             {
                 FXString subcategory = FXPath::directory(file.relative);
@@ -1967,24 +2352,16 @@ public:
                 if (!subcategory.empty() && subcategory != ".") category += "/" + subcategory;
                 FXString reference = BackgroundEffect::textureReference(category + "/" + name);
                 FXString error;
-                FXString local = pattern ? BackgroundEffect::patternPath(reference, editor->getDraft().assetRoot) :
-                                           BackgroundEffect::texturePath(reference, editor->getDraft().assetRoot);
-                FXString shared = pattern ? BackgroundEffect::patternPath(reference) :
-                                            BackgroundEffect::texturePath(reference);
-                FXbool imported = !reference.empty();
-                if (!imported)
-                    error = pattern ? _("Invalid pattern name or category.") : _("Invalid texture name or category.");
-                else if (!editor->getDraft().assetRoot.empty() && !local.empty() && local != shared)
-                    error = _("This name is already used by the current theme. Please use another name.");
-                else
-                    imported = pattern ? BackgroundEffect::importPattern(getApp(), file.source, reference, false, error) :
-                                         BackgroundEffect::importTexture(getApp(), file.source, reference, false, error);
-                if (imported)
+                GraphicImportResult result = importGraphicWithConflict(
+                    this, getApp(), file.source, reference, pattern ? GRAPHIC_PATTERN : GRAPHIC_TEXTURE,
+                    editor->getDraft().assetRoot, replaceAll, skipAll, error);
+                if (result == GRAPHIC_CANCELLED) break;
+                if (result == GRAPHIC_IMPORTED)
                 {
                     if (activeReference.empty()) activeReference = reference;
                     ++importedCount;
                 }
-                else
+                else if (result == GRAPHIC_FAILED)
                     failures += file.relative + ": " +
                                 (error.empty() ? _("Invalid graphic name or category.") : error) + "\n";
             }
@@ -2033,30 +2410,23 @@ public:
             FXString category = target->getText().trim();
             FXString activeReference, failures;
             FXint importedCount = 0;
+            FXbool replaceAll = false, skipAll = false;
             for (FXint i = 0; i < count; ++i)
             {
                 FXString name = count == 1 ? singleName : FXPath::title(selected[i]);
                 FXString reference = name.find_first_of("/\\") >= 0 ? FXString::null :
                     BackgroundEffect::textureReference(category.empty() ? name : category + "/" + name);
                 FXString error;
-                FXString local = pattern ? BackgroundEffect::patternPath(reference, editor->getDraft().assetRoot) :
-                                           BackgroundEffect::texturePath(reference, editor->getDraft().assetRoot);
-                FXString shared = pattern ? BackgroundEffect::patternPath(reference) :
-                                            BackgroundEffect::texturePath(reference);
-                FXbool imported = !reference.empty();
-                if (!imported)
-                    error = pattern ? _("Invalid pattern name or category.") : _("Invalid texture name or category.");
-                else if (!editor->getDraft().assetRoot.empty() && !local.empty() && local != shared)
-                    error = _("This name is already used by the current theme. Please use another name.");
-                else
-                    imported = pattern ? BackgroundEffect::importPattern(getApp(), selected[i], reference, false, error) :
-                                         BackgroundEffect::importTexture(getApp(), selected[i], reference, false, error);
-                if (imported)
+                GraphicImportResult result = importGraphicWithConflict(
+                    this, getApp(), selected[i], reference, pattern ? GRAPHIC_PATTERN : GRAPHIC_TEXTURE,
+                    editor->getDraft().assetRoot, replaceAll, skipAll, error);
+                if (result == GRAPHIC_CANCELLED) break;
+                if (result == GRAPHIC_IMPORTED)
                 {
                     if (activeReference.empty()) activeReference = reference;
                     ++importedCount;
                 }
-                else
+                else if (result == GRAPHIC_FAILED)
                     failures += FXPath::name(selected[i]) + ": " +
                                 (error.empty() ? _("Invalid graphic name or category.") : error) + "\n";
             }
@@ -2388,25 +2758,21 @@ public:
                 failures = _("The folder contains no supported PNG or JPEG files.");
             FXString firstReference;
             FXint importedCount = 0;
+            FXbool replaceAll = false, skipAll = false;
             for (const FolderGraphicFile& file : files)
             {
                 FXString candidate = BackgroundEffect::textureReference(destinationCategory + "/" + file.relative);
                 FXString error;
-                FXString local = BackgroundImage::path(candidate, editor->getDraft().assetRoot);
-                FXString shared = BackgroundImage::path(candidate);
-                FXbool imported = !candidate.empty();
-                if (!imported)
-                    error = _("Invalid image name or category.");
-                else if (!editor->getDraft().assetRoot.empty() && !local.empty() && local != shared)
-                    error = _("This name is already used by the current theme. Please use another name.");
-                else
-                    imported = BackgroundImage::importImage(getApp(), file.source, candidate, error);
-                if (imported)
+                GraphicImportResult result = importGraphicWithConflict(
+                    this, getApp(), file.source, candidate, GRAPHIC_IMAGE, editor->getDraft().assetRoot,
+                    replaceAll, skipAll, error);
+                if (result == GRAPHIC_CANCELLED) break;
+                if (result == GRAPHIC_IMPORTED)
                 {
                     if (firstReference.empty()) firstReference = candidate;
                     ++importedCount;
                 }
-                else
+                else if (result == GRAPHIC_FAILED)
                     failures += file.relative + ": " +
                                 (error.empty() ? _("Invalid image name or category.") : error) + "\n";
             }
@@ -2444,6 +2810,7 @@ public:
             }
             FXString group = targetCategory->getText().trim(), firstReference, failures;
             FXint importedCount = 0;
+            FXbool replaceAll = false, skipAll = false;
             for (FXint i = 0; i < count; ++i)
             {
                 FXString sourceName = FXPath::name(selected[i]);
@@ -2453,21 +2820,16 @@ public:
                 FXString candidate = name.empty() || name.find_first_of("/\\") >= 0 ?
                                      FXString::null : BackgroundEffect::textureReference(relative);
                 FXString error;
-                FXString local = BackgroundImage::path(candidate, editor->getDraft().assetRoot);
-                FXString shared = BackgroundImage::path(candidate);
-                FXbool imported = !candidate.empty();
-                if (!imported)
-                    error = _("Invalid image name or category.");
-                else if (!editor->getDraft().assetRoot.empty() && !local.empty() && local != shared)
-                    error = _("This name is already used by the current theme. Please use another name.");
-                else
-                    imported = BackgroundImage::importImage(getApp(), selected[i], candidate, error);
-                if (imported)
+                GraphicImportResult result = importGraphicWithConflict(
+                    this, getApp(), selected[i], candidate, GRAPHIC_IMAGE, editor->getDraft().assetRoot,
+                    replaceAll, skipAll, error);
+                if (result == GRAPHIC_CANCELLED) break;
+                if (result == GRAPHIC_IMPORTED)
                 {
                     if (firstReference.empty()) firstReference = candidate;
                     ++importedCount;
                 }
-                else
+                else if (result == GRAPHIC_FAILED)
                     failures += sourceName + ": " +
                                 (error.empty() ? _("Invalid image name or category.") : error) + "\n";
             }

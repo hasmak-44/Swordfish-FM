@@ -2024,7 +2024,7 @@ FXbool BackgroundEffect::validatePattern(FXApp* app, const FXString& path, FXStr
 }
 
 static FXbool importTile(FXApp* app, const FXString& source, const FXString& name,
-                         FXbool allowIdentical, FXString& error, FXbool pattern)
+                         FXbool allowIdentical, FXString& error, FXbool pattern, FXbool replaceExisting)
 {
     if (!BackgroundEffect::validTextureName(name))
     {
@@ -2053,6 +2053,30 @@ static FXbool importTile(FXApp* app, const FXString& source, const FXString& nam
             }
         }
         if (same) return true;
+        if (replaceExisting)
+        {
+            FXString directory = xf_userdatahome() + PATHSEPSTRING + (pattern ? "patterns" : "textures");
+            FXString destination;
+            FXbool prepared = pattern ?
+                prepareTileDestination(directory, name, destination, error, PATTERN_GRAPHIC) :
+                prepareTileDestination(directory, name, destination, error, TEXTURE_GRAPHIC);
+            if (!prepared) return false;
+            if (FXPath::absolute(existing) != FXPath::absolute(destination))
+            {
+                error = pattern ? _("Built-in or theme patterns cannot be replaced here. Please use another name.") :
+                                  _("Built-in or theme textures cannot be replaced here. Please use another name.");
+                return false;
+            }
+            if (!FXFile::copyFiles(source, destination, true))
+            {
+                error = (pattern ? _("Cannot replace pattern: ") : _("Cannot replace texture: ")) +
+                        destination + ": " + strerror(errno);
+                return false;
+            }
+            appLog(APP_LOG_SETTINGS, pattern ? "theme-pattern-imported" : "theme-texture-imported",
+                   name + " from \"" + source + "\"");
+            return true;
+        }
         error = pattern ? _("Pattern name already exists. Please use another name.") :
                           _("Texture name already exists. Please use another name.");
         return false;
@@ -2071,15 +2095,15 @@ static FXbool importTile(FXApp* app, const FXString& source, const FXString& nam
 }
 
 FXbool BackgroundEffect::importTexture(FXApp* app, const FXString& source, const FXString& name,
-                                       FXbool allowIdentical, FXString& error)
+                                       FXbool allowIdentical, FXString& error, FXbool replaceExisting)
 {
-    return importTile(app, source, name, allowIdentical, error, false);
+    return importTile(app, source, name, allowIdentical, error, false, replaceExisting);
 }
 
 FXbool BackgroundEffect::importPattern(FXApp* app, const FXString& source, const FXString& name,
-                                      FXbool allowIdentical, FXString& error)
+                                      FXbool allowIdentical, FXString& error, FXbool replaceExisting)
 {
-    return importTile(app, source, name, allowIdentical, error, true);
+    return importTile(app, source, name, allowIdentical, error, true, replaceExisting);
 }
 
 

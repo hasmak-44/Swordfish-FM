@@ -207,7 +207,8 @@ std::unique_ptr<FXImage> BackgroundImage::load(FXApp* app, const FXString& file,
     return image;
 }
 
-FXbool BackgroundImage::importImage(FXApp* app, const FXString& source, const FXString& reference, FXString& error)
+FXbool BackgroundImage::importImage(FXApp* app, const FXString& source, const FXString& reference,
+                                   FXString& error, FXbool replaceExisting)
 {
     if (!validReference(reference))
     {
@@ -216,16 +217,23 @@ FXbool BackgroundImage::importImage(FXApp* app, const FXString& source, const FX
     }
     std::unique_ptr<FXImage> image = load(app, source, error);
     if (!image) return false;
-    if (!path(reference).empty())
+    FXString existing = path(reference);
+    if (!existing.empty() && !replaceExisting)
     {
         error = _("Image name already exists. Please use another name.");
         return false;
     }
     FXString folder = xf_userdatahome() + PATHSEPSTRING "images", destination;
     if (!BackgroundEffect::prepareImageDestination(folder, reference, destination, error)) return false;
-    if (!FXFile::copyFiles(source, destination, false))
+    if (!existing.empty() && FXPath::absolute(existing) != FXPath::absolute(destination))
     {
-        error = _("Cannot copy image into ") + folder + ": " + strerror(errno);
+        error = _("Built-in or theme images cannot be replaced here. Please use another name.");
+        return false;
+    }
+    if (!FXFile::copyFiles(source, destination, replaceExisting))
+    {
+        error = (replaceExisting ? _("Cannot replace image in ") : _("Cannot copy image into ")) +
+                folder + ": " + strerror(errno);
         return false;
     }
     appLog(APP_LOG_SETTINGS, "theme-image-imported", reference + " from \"" + source + "\"");
