@@ -3444,6 +3444,20 @@ keyboard selection, pattern/texture independence, cancellation, undo/redo,
 preview isolation and saving, reloading and applying a theme with all three
 graphics removed. Desktop confirmation is pending.
 
+### 3.97. Importing multiple theme graphics (17 November 2026)
+
+The user requested selecting multiple files when adding patterns, textures and
+background images, preserving each source filename. All three Add flows now
+accept multiple selections and keep each selected file's name. They continue
+after an individual failure and report which files could not be imported; the
+first successful import becomes the active graphic. Selecting one file retains
+the existing name prompt.
+
+The theme workflow regression selects two files in each chooser and verifies
+the imported names and active selection. It also checks that the original
+single-file naming and cancellation flows still work. The native build and
+theme workflow regression passed.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

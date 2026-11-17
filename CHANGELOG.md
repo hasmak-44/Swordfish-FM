@@ -89,6 +89,8 @@
   skipped.
 
 ### Fixed
+- Pattern, texture and background-image galleries can now import multiple files
+  at once, keeping their original filenames and reporting individual failures.
 - Clicking anywhere inside the No texture or No image tile now removes the
   graphic; the pattern gallery also has a No pattern choice.
 - A first run no longer shows black text on black: the default colours in

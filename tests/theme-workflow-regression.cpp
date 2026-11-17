@@ -100,6 +100,35 @@ static FXListBox* findListBoxWithItem(FXWindow* parent, const FXString& text)
     return NULL;
 }
 
+static void selectChooserFiles(FileDialog* chooser, const FXString& first, const FXString& second)
+{
+    assert(chooser->getSelectMode() == SELECT_FILE_MULTIPLE);
+    chooser->setFilename(first);
+    FileList* list = dynamic_cast<FileList*>(findClass(chooser, "FileList"));
+    assert(list);
+    FXint firstIndex = list->findItem(FXPath::name(first));
+    FXint secondIndex = list->findItem(FXPath::name(second));
+    assert(firstIndex >= 0 && secondIndex >= 0 && firstIndex != secondIndex);
+    list->selectItem(firstIndex);
+    list->selectItem(secondIndex);
+    assert(list->isItemSelected(firstIndex) && list->isItemSelected(secondIndex));
+    std::unique_ptr<FXString[]> selected(chooser->getFilenames());
+    assert(selected && selected[0] == first && selected[1] == second && selected[2].empty());
+}
+
+static void selectChooserFile(FileDialog* chooser, const FXString& path)
+{
+    assert(chooser->getSelectMode() == SELECT_FILE_MULTIPLE);
+    chooser->setFilename(path);
+    FileList* list = dynamic_cast<FileList*>(findClass(chooser, "FileList"));
+    assert(list);
+    FXint index = list->findItem(FXPath::name(path));
+    assert(index >= 0);
+    list->selectItem(index);
+    std::unique_ptr<FXString[]> selected(chooser->getFilenames());
+    assert(selected && selected[0] == FXPath::absolute(path) && selected[1].empty());
+}
+
 static FXLabel* findLabel(FXWindow* parent, const FXString& text)
 {
     FXLabel* label = dynamic_cast<FXLabel*>(parent);
@@ -721,7 +750,7 @@ public:
             {
                 FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
                 assert(chooser && chooser->getTitle() == "Add PNG texture");
-                chooser->setFilename(FXPath::directory(execpath) + "/../share/swordfish/textures/brick.png");
+                selectChooserFile(chooser, FXPath::directory(execpath) + "/../share/swordfish/textures/brick.png");
                 app.addTimeout(&textureNamingHelp, 1, 150);
                 chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
             });
@@ -1335,6 +1364,43 @@ public:
             gallery->setCurrentItem(1);
             gallery->getTarget()->handle(gallery, FXSEL(SEL_COMMAND, gallery->getSelector()), NULL);
             assert(BackgroundEffect::parse(editor.getDraft().effect).texture == categoryReference);
+            FXString batchTextureOne = redSource + "/textures/Batch One.png";
+            FXString batchTextureTwo = redSource + "/textures/Batch Two.png";
+            solidPng(app, batchTextureOne, FXRGB(30, 80, 130));
+            solidPng(app, batchTextureTwo, FXRGB(130, 80, 30));
+            ActionTimer chooseBatchTexture([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser && chooser->getTitle() == "Add PNG texture");
+                selectChooserFiles(chooser, batchTextureOne, batchTextureTwo);
+                chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            });
+            FXButton* addTexture = findButton(page, "Add PNG...");
+            assert(addTexture);
+            app.addTimeout(&chooseBatchTexture, 1, 150);
+            addTexture->getTarget()->handle(addTexture, FXSEL(SEL_COMMAND, addTexture->getSelector()), NULL);
+            FXString batchTextureReference = BackgroundEffect::textureReference("Natural Stone/Batch One");
+            assert(xf_existfile(globalTextures + "/Natural Stone/Batch One.png") &&
+                   xf_existfile(globalTextures + "/Natural Stone/Batch Two.png") &&
+                   BackgroundEffect::parse(editor.getDraft().effect).texture == batchTextureReference);
+            FXString batchTextureThree = redSource + "/textures/Batch Three.png";
+            solidPng(app, batchTextureThree, FXRGB(30, 130, 80));
+            ActionTimer confirmPartialTextureImport([&] {
+                MessageBox* message = dynamic_cast<MessageBox*>(app.getModalWindow());
+                assert(message && message->getTitle() == "Texture");
+                message->handle(message, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_OK), NULL);
+            });
+            ActionTimer choosePartialTextureBatch([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser && chooser->getTitle() == "Add PNG texture");
+                selectChooserFiles(chooser, batchTextureOne, batchTextureThree);
+                app.addTimeout(&confirmPartialTextureImport, 1, 150);
+                chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            });
+            app.addTimeout(&choosePartialTextureBatch, 1, 150);
+            addTexture->getTarget()->handle(addTexture, FXSEL(SEL_COMMAND, addTexture->getSelector()), NULL);
+            assert(xf_existfile(globalTextures + "/Natural Stone/Batch Three.png") &&
+                   BackgroundEffect::parse(editor.getDraft().effect).texture ==
+                       BackgroundEffect::textureReference("Natural Stone/Batch Three"));
             dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
         });
         app.addTimeout(&categoryDialog, 1, 150);
@@ -1489,7 +1555,7 @@ public:
             ActionTimer choosePattern([&] {
                 FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
                 assert(chooser && chooser->getTitle() == "Add PNG pattern");
-                chooser->setFilename(redSource + "/textures/checker.png");
+                selectChooserFile(chooser, redSource + "/textures/checker.png");
                 app.addTimeout(&namePattern, 1, 150);
                 chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
             });
@@ -1502,6 +1568,22 @@ public:
                    BackgroundEffect::textureReference("Geometric/UI Added"));
             assert(gallery->getItemText(0) == ".." && gallery->findItem("UI Added") > 0 &&
                    gallery->getCurrentItem() == gallery->findItem("UI Added"));
+            FXString batchPatternOne = redSource + "/textures/Batch One.png";
+            FXString batchPatternTwo = redSource + "/textures/Batch Two.png";
+            solidPng(app, batchPatternOne, FXRGB(40, 90, 140));
+            solidPng(app, batchPatternTwo, FXRGB(140, 90, 40));
+            ActionTimer chooseBatchPattern([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser && chooser->getTitle() == "Add PNG pattern");
+                selectChooserFiles(chooser, batchPatternOne, batchPatternTwo);
+                chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            });
+            app.addTimeout(&chooseBatchPattern, 1, 150);
+            addPattern->getTarget()->handle(addPattern, FXSEL(SEL_COMMAND, addPattern->getSelector()), NULL);
+            FXString batchPatternReference = BackgroundEffect::textureReference("Geometric/Batch One");
+            assert(xf_existfile(globalPatterns + "/Geometric/Batch One.png") &&
+                   xf_existfile(globalPatterns + "/Geometric/Batch Two.png") &&
+                   BackgroundEffect::parse(editor.getDraft().effect).patternImage == batchPatternReference);
             dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
         });
         app.addTimeout(&patternDialog, 1, 150);
@@ -1653,7 +1735,7 @@ public:
             ActionTimer chooseImage([&] {
                 FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
                 assert(chooser && chooser->getTitle() == "Add background image");
-                chooser->setFilename(jpegSource);
+                selectChooserFile(chooser, jpegSource);
                 app.addTimeout(&nameImage, 1, 150);
                 chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
             });
@@ -1662,6 +1744,22 @@ public:
             app.addTimeout(&chooseImage, 1, 150);
             add->getTarget()->handle(add, FXSEL(SEL_COMMAND, add->getSelector()), NULL);
             assert(xf_existfile(globalImages + "/Photographs/UI Added.jpg"));
+            FXString batchImageOne = data + "/Batch One.png";
+            FXString batchImageTwo = data + "/Batch Two.jpg";
+            assert(FXFile::copyFiles(imageSource, batchImageOne, false));
+            assert(FXFile::copyFiles(jpegSource, batchImageTwo, false));
+            ActionTimer chooseBatchImages([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser && chooser->getTitle() == "Add background image");
+                selectChooserFiles(chooser, batchImageOne, batchImageTwo);
+                chooser->handle(chooser, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);
+            });
+            app.addTimeout(&chooseBatchImages, 1, 150);
+            add->getTarget()->handle(add, FXSEL(SEL_COMMAND, add->getSelector()), NULL);
+            assert(xf_existfile(globalImages + "/Photographs/Batch One.png") &&
+                   xf_existfile(globalImages + "/Photographs/Batch Two.jpg") &&
+                   editor.getDraft().property("main", "background_image") ==
+                       BackgroundEffect::textureReference("Photographs/Batch One.png"));
             dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
         });
         app.addTimeout(&cancelImage, 1, 150);

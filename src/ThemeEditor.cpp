@@ -201,6 +201,15 @@ void showLocation(FXButton* up, FXLabel* location, const FXString& top, const FX
     else up->enable();
 }
 
+void reportBatchImportFailures(FXWindow* owner, const FXString& title, FXint imported, const FXString& failures)
+{
+    if (failures.empty()) return;
+    FXString message = imported ?
+        FXString().format(_("Imported %d files. Some files could not be imported:\n"), imported) :
+        _("No files were imported:\n");
+    MessageBox::error(owner, BOX_OK, title.text(), "%s", (message + failures).text());
+}
+
 // Tiles match the file list's thumbnail view (IconItem::drawBigIcon with thumbnail tiles).
 class ThemeGalleryItem : public FXIconItem
 {
@@ -1769,49 +1778,71 @@ public:
             FileDialog file(this, pattern ? _("Add PNG pattern") : _("Add PNG texture"));
             const char* filters[] = {pattern ? _("PNG patterns") : _("PNG textures"), "*.png", NULL};
             file.setPatternList(filters);
-            file.setSelectMode(SELECT_FILE_EXISTING);
+            file.setSelectMode(SELECT_FILE_MULTIPLE);
             if (!file.execute()) return 1;
-            FXString name = FXPath::title(file.getFilename());
-            InputDialog naming(this, "", pattern ? _("Pattern name (without a slash):") :
-                                                   _("Texture name (without a slash):"),
-                               pattern ? _("Pattern name") : _("Texture name"));
-            naming.addHelpButton(editor, ThemeEditor::ID_MANUAL);
-            naming.setText(name);
-            if (!naming.execute()) return 1;
-            name = naming.getText().trim();
+            std::unique_ptr<FXString[]> selected(file.getFilenames());
+            if (!selected) return 1;
+            FXint count = 0;
+            while (!selected[count].empty()) ++count;
+            if (!count) return 1;
+            FXString singleName;
+            if (count == 1)
+            {
+                InputDialog naming(this, "", pattern ? _("Pattern name (without a slash):") :
+                                                       _("Texture name (without a slash):"),
+                                   pattern ? _("Pattern name") : _("Texture name"));
+                naming.addHelpButton(editor, ThemeEditor::ID_MANUAL);
+                naming.setText(FXPath::title(selected[0]));
+                if (!naming.execute()) return 1;
+                singleName = naming.getText().trim();
+            }
             FXString category = target->getText().trim();
-            FXString reference = name.find_first_of("/\\") >= 0 ? FXString::null :
-                BackgroundEffect::textureReference(category.empty() ? name : category + "/" + name);
-            FXString error;
-            FXString local = pattern ? BackgroundEffect::patternPath(reference, editor->getDraft().assetRoot) :
-                                       BackgroundEffect::texturePath(reference, editor->getDraft().assetRoot);
-            FXString shared = pattern ? BackgroundEffect::patternPath(reference) : BackgroundEffect::texturePath(reference);
-            if (!editor->getDraft().assetRoot.empty() && !local.empty() &&
-                local != shared)
+            FXString activeReference, failures;
+            FXint importedCount = 0;
+            for (FXint i = 0; i < count; ++i)
             {
-                MessageBox::error(this, BOX_OK, pattern ? _("Pattern") : _("Texture"),
-                                  _("This name is already used by the current theme. Please use another name."));
-                return 1;
+                FXString name = count == 1 ? singleName : FXPath::title(selected[i]);
+                FXString reference = name.find_first_of("/\\") >= 0 ? FXString::null :
+                    BackgroundEffect::textureReference(category.empty() ? name : category + "/" + name);
+                FXString error;
+                FXString local = pattern ? BackgroundEffect::patternPath(reference, editor->getDraft().assetRoot) :
+                                           BackgroundEffect::texturePath(reference, editor->getDraft().assetRoot);
+                FXString shared = pattern ? BackgroundEffect::patternPath(reference) :
+                                            BackgroundEffect::texturePath(reference);
+                FXbool imported = !reference.empty();
+                if (!imported)
+                    error = pattern ? _("Invalid pattern name or category.") : _("Invalid texture name or category.");
+                else if (!editor->getDraft().assetRoot.empty() && !local.empty() && local != shared)
+                    error = _("This name is already used by the current theme. Please use another name.");
+                else
+                    imported = pattern ? BackgroundEffect::importPattern(getApp(), selected[i], reference, false, error) :
+                                         BackgroundEffect::importTexture(getApp(), selected[i], reference, false, error);
+                if (imported)
+                {
+                    if (activeReference.empty()) activeReference = reference;
+                    ++importedCount;
+                }
+                else
+                    failures += FXPath::name(selected[i]) + ": " +
+                                (error.empty() ? _("Invalid graphic name or category.") : error) + "\n";
             }
-            FXbool imported = !reference.empty() &&
-                (pattern ? BackgroundEffect::importPattern(getApp(), file.getFilename(), reference, false, error) :
-                           BackgroundEffect::importTexture(getApp(), file.getFilename(), reference, false, error));
-            if (!imported)
+            if (!activeReference.empty())
             {
-                MessageBox::error(this, BOX_OK, pattern ? _("Pattern") : _("Texture"), "%s",
-                                  error.empty() ? _("Invalid graphic name or category.") : error.text());
-                return 1;
+                if (pattern)
+                {
+                    effect.pattern = 0;
+                    effect.patternImage = activeReference;
+                    effect.fill = "pattern";
+                    fill->setCurrentItem(2);
+                }
+                else effect.texture = activeReference;
+                changed();
+                (pattern ? patternFolder : textureFolder) = referenceFolder(activeReference);
             }
-            if (pattern)
-            {
-                effect.pattern = 0;
-                effect.patternImage = reference;
-                effect.fill = "pattern";
-                fill->setCurrentItem(2);
-            }
-            else effect.texture = reference;
-            changed();
-            (pattern ? patternFolder : textureFolder) = referenceFolder(reference);
+            if (pattern) loadPatterns();
+            else loadTextures();
+            reportBatchImportFailures(this, pattern ? _("Pattern") : _("Texture"), importedCount, failures);
+            return 1;
         }
         if (pattern) loadPatterns();
         else loadTextures();
@@ -2101,32 +2132,60 @@ public:
             FileDialog file(this, _("Add background image"));
             const char* filters[] = {_("PNG and JPEG images"), "*.png,*.jpg,*.jpeg", _("All files"), "*", NULL};
             file.setPatternList(filters);
-            file.setSelectMode(SELECT_FILE_EXISTING);
+            file.setSelectMode(SELECT_FILE_MULTIPLE);
             if (!file.execute()) return 1;
-            InputDialog naming(this, "", _("Image name (without extension or a slash):"), _("Image name"));
-            naming.addHelpButton(editor, ThemeEditor::ID_MANUAL);
-            naming.setText(FXPath::title(file.getFilename()));
-            if (!naming.execute()) return 1;
-            FXString name = naming.getText().trim(), group = targetCategory->getText().trim();
-            FXString extension = FXPath::extension(file.getFilename()).lower();
-            FXString relative = group.empty() ? name + "." + extension : group + "/" + name + "." + extension;
-            FXString candidate = name.empty() || name.find_first_of("/\\") >= 0 ?
-                                 FXString::null : BackgroundEffect::textureReference(relative);
-            FXString error;
-            FXString local = BackgroundImage::path(candidate, editor->getDraft().assetRoot);
-            FXString shared = BackgroundImage::path(candidate);
-            if (!editor->getDraft().assetRoot.empty() && !local.empty() && local != shared)
-                error = _("This name is already used by the current theme. Please use another name.");
-            else if (!BackgroundImage::importImage(getApp(), file.getFilename(), candidate, error) && error.empty())
-                error = _("Invalid image name or category.");
-            if (!error.empty())
+            std::unique_ptr<FXString[]> selected(file.getFilenames());
+            if (!selected) return 1;
+            FXint count = 0;
+            while (!selected[count].empty()) ++count;
+            if (!count) return 1;
+            FXString singleName;
+            if (count == 1)
             {
-                MessageBox::error(this, BOX_OK, _("Background image"), "%s", error.text());
-                return 1;
+                InputDialog naming(this, "", _("Image name (without extension or a slash):"), _("Image name"));
+                naming.addHelpButton(editor, ThemeEditor::ID_MANUAL);
+                naming.setText(FXPath::title(selected[0]));
+                if (!naming.execute()) return 1;
+                singleName = naming.getText().trim();
             }
-            reference = candidate;
-            changed();
-            folder = referenceFolder(reference);
+            FXString group = targetCategory->getText().trim(), firstReference, failures;
+            FXint importedCount = 0;
+            for (FXint i = 0; i < count; ++i)
+            {
+                FXString sourceName = FXPath::name(selected[i]);
+                FXString extension = FXPath::extension(selected[i]);
+                FXString name = count == 1 ? singleName : FXPath::title(sourceName);
+                FXString relative = group.empty() ? name + "." + extension : group + "/" + name + "." + extension;
+                FXString candidate = name.empty() || name.find_first_of("/\\") >= 0 ?
+                                     FXString::null : BackgroundEffect::textureReference(relative);
+                FXString error;
+                FXString local = BackgroundImage::path(candidate, editor->getDraft().assetRoot);
+                FXString shared = BackgroundImage::path(candidate);
+                FXbool imported = !candidate.empty();
+                if (!imported)
+                    error = _("Invalid image name or category.");
+                else if (!editor->getDraft().assetRoot.empty() && !local.empty() && local != shared)
+                    error = _("This name is already used by the current theme. Please use another name.");
+                else
+                    imported = BackgroundImage::importImage(getApp(), selected[i], candidate, error);
+                if (imported)
+                {
+                    if (firstReference.empty()) firstReference = candidate;
+                    ++importedCount;
+                }
+                else
+                    failures += sourceName + ": " +
+                                (error.empty() ? _("Invalid image name or category.") : error) + "\n";
+            }
+            if (!firstReference.empty())
+            {
+                reference = firstReference;
+                changed();
+                folder = referenceFolder(reference);
+            }
+            refresh();
+            reportBatchImportFailures(this, _("Background image"), importedCount, failures);
+            return 1;
         }
         refresh();
         return 1;
