@@ -382,20 +382,23 @@ class GraphicImportConflictDialog : public DialogBox
     FXIcon* incomingIcon = NULL;
     FXIcon* existingIcon = NULL;
     FXint previewSize = 160;
+    FXbool oneToOnePreview = false;
     FXint incomingWidth = 0, incomingHeight = 0;
     FXint existingWidth = 0, existingHeight = 0;
 
     void updatePreviews()
     {
         FXString error;
-        FXIcon* icon = graphicPreview(getApp(), incomingPath, previewSize, incomingWidth, incomingHeight, error);
+        FXIcon* icon = graphicPreview(getApp(), incomingPath, previewSize, oneToOnePreview,
+                                      incomingWidth, incomingHeight, error);
         incomingPreview->setIcon(icon);
         incomingPreview->setText(icon ? FXString::null : _("Preview unavailable"));
         delete incomingIcon;
         incomingIcon = icon;
 
         error.clear();
-        icon = graphicPreview(getApp(), existingPath, previewSize, existingWidth, existingHeight, error);
+        icon = graphicPreview(getApp(), existingPath, previewSize, oneToOnePreview,
+                              existingWidth, existingHeight, error);
         existingPreview->setIcon(icon);
         existingPreview->setText(icon ? FXString::null : _("Preview unavailable"));
         delete existingIcon;
@@ -403,7 +406,7 @@ class GraphicImportConflictDialog : public DialogBox
         recalc();
     }
 
-    static FXIcon* graphicPreview(FXApp* app, const FXString& path, FXint size,
+    static FXIcon* graphicPreview(FXApp* app, const FXString& path, FXint size, FXbool oneToOne,
                                   FXint& width, FXint& height, FXString& error)
     {
         std::unique_ptr<FXImage> image = BackgroundImage::load(app, path, error);
@@ -419,7 +422,27 @@ class GraphicImportConflictDialog : public DialogBox
             for (FXint x = 0; x < canvasWidth; ++x)
                 pixels[y * canvasWidth + x] = ((x / 10 + y / 10) & 1) ?
                     FXRGB(0xC8, 0xC8, 0xC8) : FXRGB(0xF4, 0xF4, 0xF4);
-        BackgroundImage::composite(pixels, canvasWidth, canvasHeight, *image, "fit");
+        if (oneToOne)
+        {
+            FXint left = (canvasWidth - image->getWidth()) / 2;
+            FXint top = (canvasHeight - image->getHeight()) / 2;
+            for (FXint y = 0; y < canvasHeight; ++y)
+                for (FXint x = 0; x < canvasWidth; ++x)
+                {
+                    FXint imageX = x - left, imageY = y - top;
+                    if (imageX < 0 || imageX >= image->getWidth() ||
+                        imageY < 0 || imageY >= image->getHeight()) continue;
+                    FXColor color = image->getPixel(imageX, imageY);
+                    FXColor background = pixels[y * canvasWidth + x];
+                    FXint alpha = FXALPHAVAL(color);
+                    pixels[y * canvasWidth + x] = FXRGB(
+                        (FXREDVAL(color) * alpha + FXREDVAL(background) * (255 - alpha) + 127) / 255,
+                        (FXGREENVAL(color) * alpha + FXGREENVAL(background) * (255 - alpha) + 127) / 255,
+                        (FXBLUEVAL(color) * alpha + FXBLUEVAL(background) * (255 - alpha) + 127) / 255);
+                }
+        }
+        else
+            BackgroundImage::composite(pixels, canvasWidth, canvasHeight, *image, "fit");
         FXIcon* icon = new FXIcon(app, pixels, 0, IMAGE_KEEP | IMAGE_OWNED, canvasWidth, canvasHeight);
         icon->create();
         return icon;
@@ -530,13 +553,25 @@ public:
             hide();
         }
         else if (id == ID_ZOOM_OUT)
+        {
             previewSize = FXMAX(96, previewSize - 32);
+            oneToOnePreview = false;
+        }
         else if (id == ID_ZOOM_IN)
+        {
             previewSize = FXMIN(320, previewSize + 32);
+            oneToOnePreview = false;
+        }
         else if (id == ID_ZOOM_ONE)
+        {
             previewSize = 240;
+            oneToOnePreview = true;
+        }
         else if (id == ID_ZOOM_FIT)
+        {
             previewSize = 160;
+            oneToOnePreview = false;
+        }
         else
             return 0;
         if (id >= ID_ZOOM_OUT && id <= ID_ZOOM_FIT) updatePreviews();
