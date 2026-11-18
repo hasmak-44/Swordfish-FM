@@ -381,9 +381,20 @@ FXIMPLEMENT(DialogTabItem, FXTabItem, DialogTabItemMap, ARRAYNUMBER(DialogTabIte
 
 long DialogTabItem::onPaint(FXObject* sender, FXSelector selector, void* pointer)
 {
-    FXTabItem::onPaint(sender, selector, pointer);
     FXTabBook* book = dynamic_cast<FXTabBook*>(getParent());
-    if (book && book->indexOfChild(this) / 2 == book->getCurrent() && !xf_fixedpalette(this))
+    FXTabBar* bar = dynamic_cast<FXTabBar*>(getParent());
+    FXbool active = book ? book->indexOfChild(this) / 2 == book->getCurrent() :
+                    bar ? bar->indexOfChild(this) == bar->getCurrent() : false;
+    if (activeKnown && active != lastActive && bar)
+    {
+        for (FXWindow* child = bar->getFirst(); child; child = child->getNext())
+            if (DialogTabItem* sibling = dynamic_cast<DialogTabItem*>(child))
+                if (sibling != this) sibling->update();
+    }
+    lastActive = active;
+    activeKnown = true;
+    FXTabItem::onPaint(sender, selector, pointer);
+    if (book && active && !xf_fixedpalette(this))
     {
         FXDCWindow dc(this, static_cast<FXEvent*>(pointer));
         dc.setForeground(highlight);

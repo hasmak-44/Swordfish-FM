@@ -1528,8 +1528,7 @@ int main(int argc, char** argv)
                     return static_cast<SidebarItem*>(item);
             return NULL;
         };
-        assert(findDeviceNotice() &&
-               findDeviceNotice()->getText() == "Phone not listed? Check USB setup.");
+        assert(!findDeviceNotice());
         usbSnapshot("STATUS\tHost GVFS AFC backend is unavailable; install the desktop GVFS AFC support and libimobiledevice.\n");
         for (int i = 0; i < 50 && mounts->getUsbStatus().empty(); ++i) pump(app, 100);
         assert(mounts->getUsbStatus().contains("AFC backend is unavailable"));

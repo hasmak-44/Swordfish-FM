@@ -523,6 +523,34 @@ public:
         }
         puts("PASS: fixed Preferences palette, category icons and setting-label filtering");
 
+        DialogBox tabPalette(&window, "Fixed-palette tab repaint");
+        FXTabBook* tabBook = new FXTabBook(&tabPalette, NULL, 0,
+                                           TABBOOK_NORMAL | LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        DialogTabItem* firstTab = new DialogTabItem(tabBook, "First");
+        new FXVerticalFrame(tabBook, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        DialogTabItem* secondTab = new DialogTabItem(tabBook, "Second");
+        new FXVerticalFrame(tabBook, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        tabPalette.create();
+        tabPalette.show(PLACEMENT_SCREEN);
+        pump(app);
+        assert(xf_fixedpalette(firstTab) && xf_fixedpalette(secondTab));
+        auto tabPixel = [](DialogTabItem* tab)
+        {
+            FXDCWindow dc(tab);
+            return dc.readPixel(4, 4);
+        };
+        assert(tabPixel(firstTab) == DialogColors::accent);
+        tabBook->setCurrent(1);
+        pump(app);
+        assert(tabPixel(firstTab) == DialogColors::field);
+        assert(tabPixel(secondTab) == DialogColors::accent);
+        tabBook->setCurrent(0);
+        pump(app);
+        assert(tabPixel(firstTab) == DialogColors::accent);
+        assert(tabPixel(secondTab) == DialogColors::field);
+        tabPalette.hide();
+        puts("PASS: fixed-palette tabs repaint both old and newly selected tabs");
+
         assert((preferences.getDecorations() & (DECOR_RESIZE | DECOR_MAXIMIZE)) == (DECOR_RESIZE | DECOR_MAXIMIZE));
         assert(dynamic_cast<FXScrollWindow*>(preferences.getFirst()) && !preferences.getFirst()->getNext());
         FXCheckButton* toggle = NULL;
@@ -573,6 +601,31 @@ public:
             editor.original.setProperty("list", "foreground", "#123456");
             editor.applied = editor.draft = editor.saved = editor.original;
             editor.refreshProperties();
+            editor.draft.setProperty("main", "background_image", "images/Other.png");
+            editor.draft.setProperty("main", "image_mode", "tile");
+            editor.draft.setProperty("main", "image_opacity", "20");
+            auto imageProperty = std::find(editor.propertyKeys.begin(), editor.propertyKeys.end(), "background_image");
+            assert(imageProperty != editor.propertyKeys.end());
+            FXint imagePropertyIndex = std::distance(editor.propertyKeys.begin(), imageProperty);
+            editor.properties->setCurrentItem(imagePropertyIndex);
+            editor.properties->selectItem(imagePropertyIndex);
+            FXButton* resetProperty = findButton(&editor, "Reset selected property");
+            assert(resetProperty);
+            ActionTimer confirmPropertyReset([&]()
+            {
+                MessageBox* confirmation = dynamic_cast<MessageBox*>(app.getModalWindow());
+                assert(confirmation);
+                FXButton* yes = findButton(confirmation, "Yes");
+                assert(yes);
+                yes->getTarget()->handle(yes, FXSEL(SEL_COMMAND, yes->getSelector()), NULL);
+            });
+            app.addTimeout(&confirmPropertyReset, 1, 150);
+            resetProperty->getTarget()->handle(resetProperty,
+                FXSEL(SEL_COMMAND, resetProperty->getSelector()), NULL);
+            assert(editor.getDraft().property("main", "background_image") == "images/Regression.png");
+            assert(editor.getDraft().property("main", "image_mode") == "fill");
+            assert(editor.getDraft().property("main", "image_opacity") == "55");
+            assert(editor.getDraft().property("list", "foreground") == "#123456");
             FXButton* resetElement = findButton(&editor, "Reset this element");
             assert(resetElement);
             ActionTimer confirmReset([&]()

@@ -5,6 +5,8 @@ class DialogTabItem : public FXTabItem
 {
     FXDECLARE(DialogTabItem)
     FXColor highlight = FXRGB(15, 86, 217);
+    FXbool lastActive = false;
+    FXbool activeKnown = false;
     DialogTabItem() {}
 public:
     DialogTabItem(FXTabBar* parent, const FXString& text, FXIcon* icon = NULL,

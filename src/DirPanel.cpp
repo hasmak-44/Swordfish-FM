@@ -896,13 +896,6 @@ void DirPanel::syncSidebar()
                                          SidebarItem::NOTICE);
                 notice->tip = mountslist->getUsbStatus();
             }
-            else if (!mountslist->hasPortableDevices())
-            {
-                notice = new SidebarItem(_("Phone not listed? Check USB setup."), NULL, SidebarItem::NOTICE);
-                notice->tip = _("Android: unlock the phone and select file transfer. "
-                                "iPhone/iPad: unlock it and approve Trust This Computer. "
-                                "The host needs GVFS MTP/AFC support.");
-            }
             if (notice) sidebar->appendItem(root, notice);
         }
         if (group == 1)
