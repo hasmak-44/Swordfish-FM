@@ -115,6 +115,65 @@ int main(int argc, char** argv)
     assert(!disk.existingEntry("CUSTOM ACTIONS", "item4.id"));
     assert(loaded.load(disk, error) && loaded.items.size() == 2);
     puts("PASS: file-backed settings round trip, all fields/stable IDs/order, unrelated settings, stale entries removed");
+
+    {
+        FXString root = FXString(argv[1]) + ".folders";
+        assert(mkdir(root.text(), 0700) == 0);
+        FXString groupPath = root + "/Images", zedPath = groupPath + "/Zed", alphaPath = groupPath + "/Alpha";
+        assert(mkdir(groupPath.text(), 0700) == 0 && mkdir(zedPath.text(), 0700) == 0 &&
+               mkdir(alphaPath.text(), 0700) == 0);
+        FXSettings ordered;
+        ordered.writeIntEntry("Action", "Order", 0);
+        ordered.writeStringEntry("Action", "Description", "first");
+        ordered.writeStringEntry("Action", "Command", "printf %F");
+        ordered.writeStringEntry("Action", "Patterns", "*.png");
+        assert(ordered.unparseFile((zedPath + "/action.ini").text()));
+        FXSettings unpositioned;
+        unpositioned.writeStringEntry("Action", "Command", "printf %F");
+        assert(unpositioned.unparseFile((alphaPath + "/action.ini").text()));
+        std::ofstream extra((zedPath + "/readme.txt").text());
+        extra << "user content"; extra.close();
+
+        CustomActions tree;
+        FXString warnings;
+        assert(tree.loadDirectory(root, error, warnings) && error.empty());
+        assert(tree.items.size() == 3 && tree.items[0].name == "Images" &&
+               tree.items[1].name == "Zed" && tree.items[2].name == "Alpha");
+        FXString alphaId = tree.items[2].id;
+        tree.items[1].name = "Renamed";
+        tree.reorder(alphaId, -1);
+        assert(tree.saveDirectory(root, error, warnings) && error.empty());
+        assert(FXStat::exists(root + "/Images/Renamed/readme.txt"));
+        assert(!FXStat::exists(zedPath));
+        CustomActions rereadTree;
+        assert(rereadTree.loadDirectory(root, error, warnings) && rereadTree.items.size() == 3);
+        assert(rereadTree.items[1].name == "Alpha" && rereadTree.items[2].name == "Renamed");
+        puts("PASS: folder storage loads manual groups, orders positioned entries first, saves editor order, and preserves action-owned files on rename");
+
+        FXString collisionRoot = root + "-collision";
+        assert(mkdir(collisionRoot.text(), 0700) == 0);
+        CustomActions collisions;
+        CustomAction duplicateOne = action("one"); duplicateOne.name = "Same";
+        CustomAction duplicateTwo = action("two"); duplicateTwo.name = "Same";
+        collisions.items.push_back(duplicateOne);
+        collisions.items.push_back(duplicateTwo);
+        assert(collisions.saveDirectory(collisionRoot, error, warnings));
+        assert(collisions.items[0].name == "Same" && collisions.items[1].name == "Same (2)");
+        assert(warnings.contains("renamed"));
+        CustomActions collisionReload;
+        assert(collisionReload.loadDirectory(collisionRoot, error, warnings) && collisionReload.items.size() == 2);
+        assert(collisionReload.items[1].name == "Same (2)");
+        puts("PASS: duplicate imported names are safely renamed, reported and round-trip as folder labels");
+
+        FXString malformed = root + "/Broken";
+        assert(mkdir(malformed.text(), 0700) == 0);
+        std::ofstream broken((malformed + "/action.ini").text());
+        broken << "[Action\n"; broken.close();
+        CustomActions withBroken;
+        assert(withBroken.loadDirectory(root, error, warnings));
+        assert(withBroken.items.size() == 3 && warnings.contains("Broken/action.ini"));
+        assert(remove((malformed + "/action.ini").text()) == 0 && rmdir(malformed.text()) == 0);
+    }
     FXSettings legacy;
     model.save(legacy);
     legacy.deleteEntry("CUSTOM ACTIONS", "item2.showOutput");

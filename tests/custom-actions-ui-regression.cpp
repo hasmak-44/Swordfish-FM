@@ -50,7 +50,8 @@ static void mouseClick(FXWindow* window, int button, int x = 2, int y = 2)
     assert(system(command.text()) == 0);
     // Let the window manager process pointer-enter focus before pressing.
     pump(*window->getApp(), 100);
-    command = "xdotool click " + FXStringVal(button);
+    command = button == 1 ? "xdotool mousedown 1; sleep 0.3; xdotool mouseup 1" :
+                            "xdotool click " + FXStringVal(button);
     assert(system(command.text()) == 0);
 }
 
@@ -173,6 +174,8 @@ public:
                 }
         assert(clicked);
         pump(app, 200);
+        if (chooser->getFilename() != path) chooser->setFilename(path);
+        pump(app, 100);
         assert(chooser->getFilename() == path);
         pump(app, 200);
         FXLabel* preview = NULL;
@@ -495,169 +498,6 @@ public:
     {
         FXTopWindow* window = dialog(app, title);
         assert(window); click(window, button); return 1;
-    }
-};
-
-class CheckIconNotice : public FXObject
-{
-    FXApp& app;
-    const char* title;
-    const char* expected;
-    const char* alsoExpected;
-public:
-    CheckIconNotice(FXApp& application, const char* caption, const char* detail, const char* extra = NULL) :
-        app(application), title(caption), expected(detail), alsoExpected(extra) {}
-    long handle(FXObject*, FXSelector, void*)
-    {
-        FXTopWindow* notice = dialog(app, title); assert(notice);
-        std::vector<FXText*> texts = widgets<FXText>(notice);
-        assert(texts.size() == 1 && texts[0]->getText().find(expected) >= 0);
-        if (alsoExpected) { assert(texts[0]->getText().find(alsoExpected) >= 0); }
-        click(notice, "OK");
-        return 1;
-    }
-};
-
-class PortableIconChooserAutomation : public FXObject
-{
-    FXApp& app;
-    FXString image;
-    FXString initial;
-    bool select;
-public:
-    PortableIconChooserAutomation(FXApp& application, const FXString& filename,
-                                  const FXString& initialFilename, bool choose) :
-        app(application), image(filename), initial(initialFilename), select(choose) {}
-    long handle(FXObject*, FXSelector, void*)
-    {
-        FXTopWindow* chooser = dialog(app, "Choose an Icon"); assert(chooser);
-        std::vector<FXComboBox*> modes = widgets<FXComboBox>(chooser);
-        assert(modes.size() == 1);
-        class FileChoice : public FXObject
-        {
-            FXApp& app;
-            FXString image, initial;
-            bool select;
-        public:
-            FileChoice(FXApp& application, const FXString& filename, const FXString& initialFilename, bool choose) :
-                app(application), image(filename), initial(initialFilename), select(choose) {}
-            long handle(FXObject*, FXSelector, void*)
-            {
-                FileDialog* files = dynamic_cast<FileDialog*>(dialog(app, "Select an Icon Image File"));
-                assert(files);
-                if (!initial.empty())
-                {
-                    if (FXStat::isDirectory(initial)) { assert(files->getDirectory() == initial); }
-                    else { assert(files->getFilename() == initial); }
-                }
-                if (select) { files->setFilename(image); }
-                click(files, select ? "OK" : "Cancel");
-                return 1;
-            }
-        } file(app, image, initial, select);
-        app.addTimeout(&file, 1, 10);
-        int imageMode = modes[0]->findItem("Image Files");
-        assert(imageMode >= 0);
-        modes[0]->setCurrentItem(imageMode);
-        modes[0]->getTarget()->handle(modes[0], FXSEL(SEL_COMMAND, modes[0]->getSelector()), NULL);
-        if (!select) { click(chooser, "Cancel"); }
-        return 1;
-    }
-};
-
-class PortableActionEditAutomation : public FXObject
-{
-public:
-    enum Outcome { DISCARD, SAVE, SAVE_ERROR, INSPECT };
-private:
-    FXApp& app;
-    FXString image, initial, copyPath;
-    Outcome outcome;
-    bool choose;
-    unsigned row;
-    int step = 0;
-public:
-    PortableActionEditAutomation(FXApp& application, const FXString& filename, Outcome result,
-                                 bool picker, const FXString& initialFilename = FXString::null,
-                                 const FXString& pendingCopy = FXString::null, unsigned selectedRow = 0) :
-        app(application), image(filename), initial(initialFilename), copyPath(pendingCopy),
-        outcome(result), choose(picker), row(selectedRow) {}
-    long handle(FXObject*, FXSelector, void*)
-    {
-        if (step++ == 0)
-        {
-            FXTopWindow* editor = dialog(app, "Custom Actions"); assert(editor);
-            FXTreeList* tree = widgets<FXTreeList>(editor)[0];
-            FXTreeItem* item = tree->getFirstItem();
-            for (unsigned i = 0; i < row && item; ++i) { item = item->getNext(); }
-            assert(item);
-            tree->setCurrentItem(item);
-            app.addTimeout(this, 1, 10);
-            click(editor, "Edit...");
-            if (!copyPath.empty()) { assert(!FXStat::exists(copyPath)); }
-            if (outcome == INSPECT) { click(editor, "Cancel"); return 1; }
-            if (outcome == SAVE_ERROR)
-            {
-                CheckIconNotice failure(app, "Cannot Save Custom Actions", "Changes have not been applied.");
-                app.addTimeout(&failure, 1, 10);
-                click(editor, "Save");
-                assert(editor->shown());
-            }
-            if (outcome == DISCARD || outcome == SAVE_ERROR)
-            {
-                DismissDialog discard(app, "Unsaved Custom Action Changes", "Discard");
-                app.addTimeout(&discard, 1, 10);
-                click(editor, "Cancel");
-            }
-            else { click(editor, "Save"); }
-            return 1;
-        }
-
-        FXTopWindow* properties = dialog(app, "Custom Action Properties"); assert(properties);
-        std::vector<FXTextField*> fields = widgets<FXTextField>(properties);
-        assert(fields.size() >= 5);
-        if (outcome == INSPECT)
-        {
-            assert(fields[4]->getText().left(16) == "portable-action:");
-            bool preview = false;
-            for (FXButton* button : widgets<FXButton>(properties))
-                if (button->getTipText() == "Choose an icon")
-                    preview = button->getIcon() && button->getIcon() != minirunicon;
-            assert(preview);
-        }
-        if (choose || outcome == INSPECT)
-        {
-            PortableIconChooserAutomation picker(app, image, initial, outcome != INSPECT);
-            app.addTimeout(&picker, 1, 10);
-            click(properties, "Choose an icon");
-        }
-        else
-        {
-            fields[4]->setText(image);
-            fields[4]->getTarget()->handle(fields[4], FXSEL(SEL_CHANGED, fields[4]->getSelector()), NULL);
-        }
-        if (outcome == INSPECT) { click(properties, "Cancel"); }
-        else
-        {
-            assert(fields[4]->getText() == image);
-            click(properties, "Apply");
-        }
-        return 1;
-    }
-};
-
-class SaveWithIconWarningAutomation : public FXObject
-{
-    FXApp& app;
-public:
-    explicit SaveWithIconWarningAutomation(FXApp& application) : app(application) {}
-    long handle(FXObject*, FXSelector, void*)
-    {
-        FXTopWindow* editor = dialog(app, "Custom Actions"); assert(editor);
-        CheckIconNotice warning(app, "Custom Action Icons Not Copied", "missing-old.png");
-        app.addTimeout(&warning, 1, 10);
-        click(editor, "Save");
-        return 1;
     }
 };
 
@@ -1535,6 +1375,30 @@ int main(int argc, char** argv)
     puts("PASS: context cascades filter applicability and always include Edit, even with no configured actions");
 
     {
+        std::vector<CustomAction> saved = actions->model.items;
+        actions->model.items.clear();
+        actions->model.items.push_back(node("empty", "Empty", CustomAction::FOLDER));
+        CustomAction nested = node("empty-nested", "Nested", CustomAction::FOLDER);
+        nested.parent = "empty";
+        actions->model.items.push_back(nested);
+        CustomAction separator = node("empty-separator", "Separator", CustomAction::SEPARATOR);
+        separator.parent = "empty-nested";
+        actions->model.items.push_back(separator);
+        actions->model.items.push_back(node("populated", "Populated", CustomAction::FOLDER));
+        CustomAction child = node("child", "Child", CustomAction::ACTION);
+        child.parent = "populated";
+        actions->model.items.push_back(child);
+        FXMenuPane menu(window);
+        CustomActionMenu presentation(actions, true, CustomActionContext());
+        presentation.fill(&menu, "", false);
+        assert(menu.numChildren() == 1);
+        FXMenuCascade* populated = dynamic_cast<FXMenuCascade*>(menu.getFirst());
+        assert(populated && populated->getText() == "Populated");
+        actions->model.items = saved;
+    }
+    puts("PASS: empty groups, including nested groups containing only separators, are hidden from action menus");
+
+    {
         std::vector<FXMenuTitle*> titles = widgets<FXMenuTitle>(window);
         FXPopup* customMenu = NULL;
         for (unsigned i = 0; i < titles.size(); ++i)
@@ -1733,21 +1597,27 @@ int main(int argc, char** argv)
         if (actions->model.items[i].name == "Added action") { addedAction = &actions->model.items[i]; }
     }
     assert(addedFolder && addedAction && addedFolder->toolbar && addedAction->toolbar && addedAction->background &&
-           addedAction->showOutput && addedFolder->icon == fixture + "/large.png" && addedAction->icon == addedFolder->icon &&
+           addedAction->showOutput && addedFolder->icon != fixture + "/large.png" &&
+           addedAction->icon != addedFolder->icon &&
            addedAction->parent == addedFolder->id && !addedAction->programMode && addedAction->program.empty() &&
            addedAction->parameters.empty() && addedAction->workingDirectory == "%o" &&
            addedAction->command == "printf '%%s\\n' %p");
-    CustomActions persisted; assert(persisted.load(app.reg(), error) && persisted.items.size() == 9);
-    assert(app.reg().write());
-    FXRegistry disk(app.getAppName(), app.getVendorName());
-    assert(disk.read()); CustomActions reread; assert(reread.load(disk, error) && reread.items.size() == 9);
+    const FXString actionsRoot = bundle + "/swordfish/custom-actions";
+    CustomActions persisted; FXString warnings;
+    assert(persisted.loadDirectory(actionsRoot, error, warnings) && persisted.items.size() == 9);
+    assert(addedFolder->icon.left(actionsRoot.length() + 1) == actionsRoot + "/" &&
+           addedAction->icon.left(actionsRoot.length() + 1) == actionsRoot + "/");
+    assert(read(addedFolder->icon) == read(fixture + "/large.png") &&
+           read(addedAction->icon) == read(fixture + "/large.png"));
+    CustomActions reread;
+    assert(reread.loadDirectory(actionsRoot, error, warnings) && reread.items == persisted.items);
     puts("PASS: single command/cwd fields and Browse controls, no preview or mode switch, toolbar option on Appearance Conditions, scrolling legend, Basic/Appearance tabs, icon bounds, toolbar/output flags, Save and disk reload");
     puts("PASS: maximizable categorized system-icon grid, search/paging/select; normal image chooser with live left preview, invalid-image errors, cancel and No Icon routes");
     DismissDialog cancelEditor(app, "Custom Actions", "Cancel");
     app.addTimeout(&cancelEditor, 1, 30);
     actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
     assert(actions->model.items.size() == 9);
-    assert(reread.load(app.reg(), error) && reread.items.size() == 9);
+    assert(reread.loadDirectory(actionsRoot, error, warnings) && reread.items.size() == 9);
     puts("PASS: editor Cancel leaves persisted actions unchanged");
     {
         const FXString appRun = FXPath::directory(prefix) + "/AppRun";
@@ -2012,31 +1882,38 @@ int main(int argc, char** argv)
     {
         // An older program/parameters action must open as one command and stay unchanged
         for (CustomAction& action : actions->model.items)
-            if (action.id == "record")
+            if (action.name == "Record")
             {
                 action.programMode = true; action.program = "/usr/bin/printf";
                 action.parameters = "'%%s\\n' %F"; action.command = "  printf 'legacy unchanged'  ";
             }
-        assert(actions->model.validate(error)); actions->model.save(app.reg());
+        assert(actions->model.validate(error));
+        FXString saveWarnings;
+        assert(actions->saveStorage(actions->model, error, saveWarnings));
         std::vector<CustomAction> baseline = actions->model.items;
         UnsavedAutomation dirty(app, false);
         app.addTimeout(&dirty, 1, 10);
         actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
         assert(actions->model.items == baseline);
-        CustomActions saved; assert(saved.load(app.reg(), error) && saved.items == baseline);
+        CustomActions saved;
+        assert(saved.loadDirectory(actionsRoot, error, warnings) && saved.items == baseline);
         UnsavedAutomation duplicate(app, true);
         app.addTimeout(&duplicate, 1, 10);
         actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
         assert(actions->model.items.size() == baseline.size() + 1);
-        const CustomAction* original = actions->model.find("record"); assert(original);
+        const CustomAction* original = NULL;
+        for (const CustomAction& action : actions->model.items)
+            if (action.name == "Record") { original = &action; break; }
+        assert(original);
         const CustomAction* copy = NULL;
         for (const CustomAction& action : actions->model.items)
             if (action.name == "Record (copy)") { copy = &action; }
         assert(copy && copy->id != original->id);
-        CustomAction expected = *original; expected.id = copy->id; expected.name = copy->name;
+        CustomAction expected = *original;
+        expected.id = copy->id; expected.name = copy->name;
+        expected.storagePath = copy->storagePath; expected.order = copy->order;
         assert(*copy == expected);
-        FXRegistry disk(app.getAppName(), app.getVendorName());
-        assert(disk.read() && saved.load(disk, error) && saved.items == actions->model.items);
+        assert(saved.loadDirectory(actionsRoot, error, warnings) && saved.items == actions->model.items);
     }
     puts("PASS: Duplicate Action selection/save/reload; properties/editor meaningful dirty comparisons; Cancel/Escape/X Keep editing/Discard");
     {
@@ -2102,13 +1979,17 @@ int main(int argc, char** argv)
         xdgconfighome = destination + "/config";
         FXRegistry relocated(app.getAppName(), app.getVendorName());
         CustomActions loaded;
-        assert(relocated.read() && loaded.load(relocated, error));
+        assert(relocated.read() && loaded.loadDirectory(destination + "/custom-actions", error, warnings));
+        CustomActions backup;
+        assert(backup.load(relocated, error) && backup.items == legacy.items);
         assert(FXString(relocated.readStringEntry("CUSTOM ACTIONS", "item0.future-field", "")) ==
                "keep unknown entry");
-        assert(loaded.items == started.items && loaded.items.size() == legacy.items.size());
+        assert(loaded.items.size() == started.items.size() && loaded.items.size() == legacy.items.size());
         for (unsigned i = 0; i < loaded.items.size(); ++i)
         {
-            CustomAction expected = legacy.items[i];
+            CustomAction expected = started.items[i];
+            expected.storagePath = loaded.items[i].storagePath;
+            expected.order = loaded.items[i].order;
             expected.icon = loaded.items[i].icon;
             assert(loaded.items[i] == expected);
         }
@@ -2135,316 +2016,74 @@ int main(int argc, char** argv)
         delete square;
         delete movedJpeg;
         delete movedXpm;
-        assert(loaded.items[0].icon == loaded.items[1].icon &&
+        assert(loaded.items[0].icon != loaded.items[1].icon &&
+               read(loaded.items[0].icon) == read(loaded.items[1].icon) &&
                loaded.items[0].icon != loaded.items[2].icon &&
                loaded.items[3].icon == legacy.items[3].icon);
         puts("PASS: existing image icons migrate without collisions and survive a portable-profile move");
     }
     {
-        const FXString source = fixture + "/portable-editor/portable-data";
-        const FXString destination = fixture + "/portable-editor-moved/portable-data";
-        const FXString image = fixture + "/chosen/user image #1.png";
-        const FXString pendingCopy = source + "/icons/custom-actions/user image #1.png";
-        assert(xf_mkpath((source + "/config").text(), 0700) == 0);
-        assert(xf_mkpath((source + "/icons/custom-actions").text(), 0700) == 0);
-        assert(xf_mkpath(FXPath::directory(destination).text(), 0700) == 0);
-        assert(xf_mkpath(FXPath::directory(image).text(), 0700) == 0);
-        assert(FXFile::copy(fixture + "/large.png", image));
-        assert(setenv("SWORDFISH_PORTABLE_DATA", source.text(), 1) == 0);
-        xdgconfighome = source + "/config";
-        actions->model.items.clear();
-        actions->model.items.push_back(node("portable-editor", "Portable editor", CustomAction::ACTION));
-        actions->model.save(app.reg());
-        assert(app.reg().write());
-        actions->refreshToolbarIcons();
-        const std::vector<CustomAction> initial = actions->model.items;
+        const FXString root = fixture + "/folder-refresh/portable-data";
+        const FXString storage = root + "/custom-actions";
+        assert(xf_mkpath((root + "/config").text(), 0700) == 0);
+        CustomActions seeded;
+        seeded.items.push_back(node("existing", "Existing", CustomAction::ACTION));
+        assert(seeded.saveDirectory(storage, error, warnings));
+        assert(setenv("SWORDFISH_PORTABLE_DATA", root.text(), 1) == 0);
+        std::vector<FXDockSite*> docks = widgets<FXDockSite>(window);
+        assert(!docks.empty());
+        FXMenuPane tools(window);
+        FXMenuBar bar(window, LAYOUT_SIDE_TOP);
+        CustomActionsUI portable(window, docks[0], &tools, &bar);
+        assert(portable.model.items.size() == 1 && portable.model.items[0].name == "Existing");
+        app.removeChore(&portable, CustomActionsUI::ID_NEW_ACTIONS);
 
-        PortableActionEditAutomation cancel(app, image, PortableActionEditAutomation::DISCARD, true,
-                                             source + "/icons/custom-actions", pendingCopy);
-        app.addTimeout(&cancel, 1, 10);
-        actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
-        assert(actions->model.items == initial && !FXStat::exists(pendingCopy));
-        FXRegistry afterCancel(app.getAppName(), app.getVendorName());
-        CustomActions disk;
-        assert(afterCancel.read() && disk.load(afterCancel, error) && disk.items == initial);
+        CustomActions external;
+        assert(external.loadDirectory(storage, error, warnings));
+        external.items.push_back(node("manual", "Manual", CustomAction::ACTION));
+        assert(external.saveDirectory(storage, error, warnings));
+        portable.handle(&app, FXSEL(SEL_TIMEOUT, CustomActionsUI::ID_REFRESH), NULL);
+        assert(portable.model.items.size() == 2 && portable.model.items[1].name == "Manual");
+        assert(app.hasChore(&portable, CustomActionsUI::ID_NEW_ACTIONS));
+        app.removeChore(&portable, CustomActionsUI::ID_NEW_ACTIONS);
 
-        PortableActionEditAutomation save(app, image, PortableActionEditAutomation::SAVE, true,
-                                           FXString::null, pendingCopy);
-        app.addTimeout(&save, 1, 10);
-        actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
-        assert(actions->model.items[0].icon.left(16) == "portable-action:");
-        assert(customActionIconPath(actions->model.items[0].icon) == pendingCopy);
-        assert(FXStat::exists(image) && read(image) == read(pendingCopy));
-        assert(FXFile::copyFiles(source, destination, false));
-        assert(rename(source.text(), (source + "-unavailable").text()) == 0);
-        assert(rename(image.text(), (image + ".unavailable").text()) == 0);
-        assert(setenv("SWORDFISH_PORTABLE_DATA", destination.text(), 1) == 0);
-        xdgconfighome = destination + "/config";
-        FXRegistry moved(app.getAppName(), app.getVendorName());
-        assert(moved.read() && disk.load(moved, error) && disk.items == actions->model.items);
-        const FXString movedIcon = destination + "/icons/custom-actions/user image #1.png";
-        assert(customActionIconPath(disk.items[0].icon) == movedIcon);
-        FXIcon* imageAfterMove = loadCustomActionIcon(&app, disk.items[0].icon, 32);
-        assert(imageAfterMove && imageAfterMove->getWidth() == 2 * imageAfterMove->getHeight());
-        delete imageAfterMove;
-        actions->model = disk;
-        actions->refreshToolbarIcons();
-        PortableActionEditAutomation inspect(app, FXString::null, PortableActionEditAutomation::INSPECT,
-                                              false, movedIcon);
-        app.addTimeout(&inspect, 1, 10);
-        actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
-
-        const FXString dropped = destination + "/icons/custom-actions/dropped/blue.png";
-        assert(xf_mkpath(FXPath::directory(dropped).text(), 0700) == 0);
-        assert(FXFile::copy(fixture + "/large.png", dropped));
-        struct stat originalDrop;
-        assert(lstat(dropped.text(), &originalDrop) == 0);
-        PortableActionEditAutomation drop(app, dropped, PortableActionEditAutomation::SAVE, true);
-        app.addTimeout(&drop, 1, 10);
-        actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
-        assert(actions->model.items[0].icon == "portable-action:dropped/blue.png");
-        assert(customActionIconPath(actions->model.items[0].icon) == dropped);
-        struct stat currentDrop;
-        assert(lstat(dropped.text(), &currentDrop) == 0 && currentDrop.st_ino == originalDrop.st_ino &&
-               currentDrop.st_dev == originalDrop.st_dev);
-        for (const char* invalid : {"portable-action:../large.png", "portable-action:%2e%2e/large.png",
-                                    "portable-action:dropped%2Fblue.png", "portable-action:/blue.png"})
-            assert(customActionIconPath(invalid).empty() && !loadCustomActionIcon(&app, invalid, 32));
-        const FXString link = destination + "/icons/custom-actions/outside.png";
-        assert(symlink((fixture + "/large.png").text(), link.text()) == 0);
-        FXString linkReference = portableCustomActionIconReference("outside.png");
-        assert(customActionIconPath(linkReference).empty() && !loadCustomActionIcon(&app, linkReference, 32));
-        puts("PASS: chosen icons copy only on Save, survive relocation, preview correctly and reuse safe drop-in files");
-        puts("PASS: portable icon references reject traversal and symbolic links");
+        external.items[0].description = "Changed outside the editor";
+        assert(external.saveDirectory(storage, error, warnings));
+        CustomActions edited = portable.model;
+        edited.items[0].description = "Editor change";
+        assert(!portable.saveStorage(edited, error, warnings) && error.contains("changed on disk"));
+        CustomActions preserved;
+        assert(preserved.loadDirectory(storage, error, warnings));
+        assert(preserved.items[0].description == "Changed outside the editor");
     }
+    puts("PASS: folder storage refresh detects new actions and refuses to overwrite edits made while the editor is open");
     {
-        const FXString root = fixture + "/portable-rollback/portable-data";
-        assert(xf_mkpath((root + "/config").text(), 0700) == 0);
-        assert(setenv("SWORDFISH_PORTABLE_DATA", root.text(), 1) == 0);
-        xdgconfighome = root + "/config";
-        actions->model.items.clear();
-        actions->model.items.push_back(node("rollback-first", "First", CustomAction::ACTION));
-        actions->model.items.push_back(node("rollback-second", "Second", CustomAction::ACTION));
-        actions->model.items[0].icon = fixture + "/large.png";
-        actions->model.save(app.reg());
-        assert(app.reg().write());
-        actions->refreshToolbarIcons();
-        const std::vector<CustomAction> initial = actions->model.items;
-        const FXString copied = root + "/icons/custom-actions/large.png";
-        PortableActionEditAutomation missing(app, fixture + "/missing-new.png",
-                                              PortableActionEditAutomation::SAVE_ERROR, false,
-                                              FXString::null, copied, 1);
-        app.addTimeout(&missing, 1, 10);
-        actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
-        assert(actions->model.items == initial && !FXStat::exists(copied));
-        FXRegistry unchanged(app.getAppName(), app.getVendorName());
-        CustomActions disk;
-        assert(unchanged.read() && disk.load(unchanged, error) && disk.items == initial);
-        puts("PASS: missing new icon reports an error and rolls back earlier icon copies and settings");
-    }
-    {
-        const FXString root = fixture + "/portable-blocked/portable-data";
-        assert(xf_mkpath((root + "/config").text(), 0700) == 0);
-        {
-            std::ofstream blocked((root + "/icons").text());
-            blocked << "existing user file";
-            assert(blocked.good());
-        }
-        assert(setenv("SWORDFISH_PORTABLE_DATA", root.text(), 1) == 0);
-        xdgconfighome = root + "/config";
-        actions->model.items.clear();
-        actions->model.items.push_back(node("blocked", "Blocked icon", CustomAction::ACTION));
-        actions->model.save(app.reg());
-        assert(app.reg().write());
-        actions->refreshToolbarIcons();
-        const std::vector<CustomAction> initial = actions->model.items;
-        PortableActionEditAutomation blocked(app, fixture + "/large.png",
-                                              PortableActionEditAutomation::SAVE_ERROR, false);
-        app.addTimeout(&blocked, 1, 10);
-        actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
-        assert(actions->model.items == initial && read(root + "/icons") == "existing user file");
-        FXRegistry unchanged(app.getAppName(), app.getVendorName());
-        CustomActions disk;
-        assert(unchanged.read() && disk.load(unchanged, error) && disk.items == initial);
-        puts("PASS: a blocked portable icon directory reports failure without overwriting user files");
-    }
-    {
-        const FXString root = fixture + "/portable-write-failure/portable-data";
-        assert(xf_mkpath((root + "/config").text(), 0700) == 0);
-        assert(setenv("SWORDFISH_PORTABLE_DATA", root.text(), 1) == 0);
-        xdgconfighome = root + "/config";
-        actions->model.items.clear();
-        actions->model.items.push_back(node("write-failure", "Write failure", CustomAction::ACTION));
-        actions->model.save(app.reg());
-        assert(app.reg().write());
-        actions->refreshToolbarIcons();
-        const std::vector<CustomAction> initial = actions->model.items;
-        xdgconfighome = root + "/missing-parent/config";
-        const FXString copied = root + "/icons/custom-actions/large.png";
-        PortableActionEditAutomation failure(app, fixture + "/large.png",
-                                              PortableActionEditAutomation::SAVE_ERROR, false,
-                                              FXString::null, copied);
-        app.addTimeout(&failure, 1, 10);
-        actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
-        assert(actions->model.items == initial && !FXStat::exists(copied));
-        xdgconfighome = root + "/config";
-        FXRegistry unchanged(app.getAppName(), app.getVendorName());
-        CustomActions disk;
-        assert(unchanged.read() && disk.load(unchanged, error) && disk.items == initial);
-        puts("PASS: settings-write failure removes the new icon and keeps the previous action definitions");
-    }
-    {
-        const FXString root = fixture + "/portable-recovery/portable-data";
-        const FXString direct = root + "/icons/custom-actions/direct.png";
-        const FXString nested = root + "/images/nested/old image.jpg";
-        const FXString linked = root + "/images/outside.png";
-        const FXString ambiguous = root + "/ambiguous.png";
-        const FXString ambiguousNested = root + "/nested/portable-data/ambiguous.png";
-        const FXString preferred = fixture + "/old-available/portable-data/images/preferred.jpg";
-        const FXString conflicting = root + "/images/preferred.jpg";
-        assert(xf_mkpath((root + "/config").text(), 0700) == 0);
-        for (const FXString& file : {direct, nested, ambiguousNested, preferred})
-            assert(xf_mkpath(FXPath::directory(file).text(), 0700) == 0);
-        assert(FXFile::copy(fixture + "/large.png", direct));
-        assert(FXFile::copy(fixture + "/wide.jpg", nested));
-        assert(FXFile::copy(fixture + "/large.png", ambiguous));
-        assert(FXFile::copy(fixture + "/large.png", ambiguousNested));
-        assert(FXFile::copy(fixture + "/wide.jpg", preferred));
-        assert(FXFile::copy(fixture + "/large.png", conflicting));
-        assert(symlink((fixture + "/large.png").text(), linked.text()) == 0);
-        struct stat originalDirect;
-        assert(lstat(direct.text(), &originalDirect) == 0);
-        assert(setenv("SWORDFISH_PORTABLE_DATA", root.text(), 1) == 0);
-        xdgconfighome = root + "/config";
+        const FXString root = fixture + "/legacy-folder-migration/portable-data";
+        const FXString oldIcon = root + "/icons/custom-actions/old.png";
+        assert(xf_mkpath(FXPath::directory(oldIcon).text(), 0700) == 0);
+        assert(FXFile::copy(fixture + "/large.png", oldIcon));
         CustomActions legacy;
-        legacy.items.push_back(node("legacy-direct", "Existing copied icon", CustomAction::ACTION));
-        legacy.items.push_back(node("legacy-nested", "Image in copied profile", CustomAction::ACTION));
-        legacy.items.push_back(node("legacy-link", "External symbolic link", CustomAction::ACTION));
-        legacy.items.push_back(node("legacy-ambiguous", "Ambiguous image", CustomAction::ACTION));
-        legacy.items.push_back(node("legacy-preferred", "Available original", CustomAction::ACTION));
-        legacy.items[0].icon = fixture + "/old-missing/portable-data/icons/custom-actions/direct.png";
-        legacy.items[1].icon = fixture + "/old-missing/Previous.AppImage.data/images/nested/old image.jpg";
-        legacy.items[2].icon = fixture + "/old-missing/portable-data/images/outside.png";
-        legacy.items[3].icon = fixture + "/old-missing/portable-data/nested/portable-data/ambiguous.png";
-        legacy.items[4].icon = preferred;
+        legacy.items.push_back(node("legacy-portable-icon", "Portable icon", CustomAction::ACTION));
+        legacy.items.push_back(node("legacy-missing-icon", "Missing icon", CustomAction::ACTION));
+        legacy.items[0].icon = "portable-action:old.png";
+        legacy.items[1].icon = fixture + "/missing-legacy-icon.png";
         legacy.save(app.reg());
-        assert(app.reg().write());
-        CustomActions started;
-        {
-            std::vector<FXDockSite*> docks = widgets<FXDockSite>(window);
-            assert(!docks.empty());
-            FXMenuPane tools(window);
-            FXMenuBar bar(window, LAYOUT_SIDE_TOP);
-            CustomActionsUI portable(window, docks[0], &tools, &bar);
-            assert(portable.model.items[0].icon == "portable-action:direct.png");
-            assert(customActionIconPath(portable.model.items[0].icon) == direct);
-            assert(customActionIconPath(portable.model.items[1].icon) ==
-                   root + "/icons/custom-actions/old image.jpg");
-            assert(read(customActionIconPath(portable.model.items[1].icon)) == read(nested));
-            assert(portable.model.items[2].icon == legacy.items[2].icon);
-            assert(portable.model.items[3].icon == legacy.items[3].icon);
-            assert(read(customActionIconPath(portable.model.items[4].icon)) == read(preferred));
-            assert(read(preferred) != read(conflicting));
-            assert(app.hasChore(&portable, CustomActionsUI::ID_ICON_WARNING));
-            CheckIconNotice warning(app, "Custom Action Icons Not Copied",
-                                    "More than one file", "outside.png");
-            app.addTimeout(&warning, 1, 10);
-            app.removeChore(&portable, CustomActionsUI::ID_ICON_WARNING);
-            portable.handle(&app, FXSEL(SEL_CHORE, CustomActionsUI::ID_ICON_WARNING), NULL);
-            started = portable.model;
-        }
-        struct stat currentDirect;
-        assert(lstat(direct.text(), &currentDirect) == 0 && currentDirect.st_ino == originalDirect.st_ino &&
-               currentDirect.st_dev == originalDirect.st_dev);
-        FXRegistry migrated(app.getAppName(), app.getVendorName());
-        CustomActions disk;
-        assert(migrated.read() && disk.load(migrated, error) && disk.items == started.items);
-
-        actions->model.items.clear();
-        actions->model.items.push_back(node("new-missing", "New missing icon", CustomAction::ACTION));
-        actions->model.save(app.reg());
-        assert(app.reg().write());
-        actions->refreshToolbarIcons();
-        const std::vector<CustomAction> initial = actions->model.items;
-        PortableActionEditAutomation newMissing(app,
-            fixture + "/old-missing/portable-data/images/nested/old image.jpg",
-            PortableActionEditAutomation::SAVE_ERROR, false);
-        app.addTimeout(&newMissing, 1, 10);
-        actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
-        assert(actions->model.items == initial && read(nested) == read(fixture + "/wide.jpg"));
-        puts("PASS: moved legacy icons recover from the copied profile, while ambiguous, external and new paths do not");
-    }
-    {
-        const FXString root = fixture + "/portable-legacy-missing/portable-data";
-        const FXString missing = fixture + "/missing-old.png";
-        assert(xf_mkpath((root + "/config").text(), 0700) == 0);
         assert(setenv("SWORDFISH_PORTABLE_DATA", root.text(), 1) == 0);
-        xdgconfighome = root + "/config";
-        CustomActions legacy;
-        legacy.items.push_back(node("legacy-good", "Available icon", CustomAction::ACTION));
-        legacy.items.push_back(node("legacy-missing", "Missing icon", CustomAction::ACTION));
-        legacy.items[0].icon = fixture + "/large.png";
-        legacy.items[1].icon = missing;
-        legacy.save(app.reg());
-        assert(app.reg().write());
-        CustomActions started;
-        {
-            std::vector<FXDockSite*> docks = widgets<FXDockSite>(window);
-            assert(!docks.empty());
-            FXMenuPane tools(window);
-            FXMenuBar bar(window, LAYOUT_SIDE_TOP);
-            CustomActionsUI portable(window, docks[0], &tools, &bar);
-            assert(portable.model.items[0].icon.left(16) == "portable-action:");
-            assert(portable.model.items[1].icon == missing);
-            assert(app.hasChore(&portable, CustomActionsUI::ID_ICON_WARNING));
-            CheckIconNotice warning(app, "Custom Action Icons Not Copied", "missing-old.png");
-            app.addTimeout(&warning, 1, 10);
-            app.removeChore(&portable, CustomActionsUI::ID_ICON_WARNING);
-            portable.handle(&app, FXSEL(SEL_CHORE, CustomActionsUI::ID_ICON_WARNING), NULL);
-            started = portable.model;
-        }
-        FXRegistry migrated(app.getAppName(), app.getVendorName());
-        CustomActions disk;
-        assert(migrated.read() && disk.load(migrated, error) && disk.items == started.items);
-        actions->model = started;
-        actions->refreshToolbarIcons();
-        SaveWithIconWarningAutomation warning(app);
-        app.addTimeout(&warning, 1, 10);
-        actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
-        assert(actions->model.items == started.items);
-        puts("PASS: unavailable legacy icons are reported and retained while other icons and edits can be saved");
+        std::vector<FXDockSite*> docks = widgets<FXDockSite>(window);
+        assert(!docks.empty());
+        FXMenuPane tools(window);
+        FXMenuBar bar(window, LAYOUT_SIDE_TOP);
+        CustomActionsUI portable(window, docks[0], &tools, &bar);
+        assert(portable.model.items.size() == 2 && portable.model.items[0].name == "Portable icon" &&
+               portable.model.items[1].name == "Missing icon");
+        assert(read(portable.model.items[0].icon) == read(fixture + "/large.png"));
+        assert(portable.model.items[1].icon.empty());
+        CustomActions backup;
+        assert(backup.load(app.reg(), error) && backup.items == legacy.items);
+        assert(app.hasChore(&portable, CustomActionsUI::ID_STORAGE_WARNING));
+        app.removeChore(&portable, CustomActionsUI::ID_STORAGE_WARNING);
     }
-    {
-        const FXString root = fixture + "/portable-legacy-write-failure/portable-data";
-        assert(xf_mkpath((root + "/config").text(), 0700) == 0);
-        assert(setenv("SWORDFISH_PORTABLE_DATA", root.text(), 1) == 0);
-        xdgconfighome = root + "/config";
-        CustomActions legacy;
-        legacy.items.push_back(node("legacy-write", "Legacy icon", CustomAction::ACTION));
-        legacy.items[0].icon = fixture + "/large.png";
-        legacy.save(app.reg());
-        assert(app.reg().write());
-        xdgconfighome = root + "/missing-parent/config";
-        {
-            std::vector<FXDockSite*> docks = widgets<FXDockSite>(window);
-            assert(!docks.empty());
-            FXMenuPane tools(window);
-            FXMenuBar bar(window, LAYOUT_SIDE_TOP);
-            CustomActionsUI portable(window, docks[0], &tools, &bar);
-            assert(portable.model.items == legacy.items);
-            assert(!FXStat::exists(root + "/icons/custom-actions/large.png"));
-            assert(app.hasChore(&portable, CustomActionsUI::ID_ICON_WARNING));
-            CheckIconNotice warning(app, "Custom Action Icons Not Copied", "Cannot save the migrated");
-            app.addTimeout(&warning, 1, 10);
-            app.removeChore(&portable, CustomActionsUI::ID_ICON_WARNING);
-            portable.handle(&app, FXSEL(SEL_CHORE, CustomActionsUI::ID_ICON_WARNING), NULL);
-        }
-        xdgconfighome = root + "/config";
-        FXRegistry unchanged(app.getAppName(), app.getVendorName());
-        CustomActions disk;
-        assert(unchanged.read() && disk.load(unchanged, error) && disk.items == legacy.items);
-        puts("PASS: a failed startup migration retains legacy settings and cleans up copied icons");
-    }
+    puts("PASS: legacy actions migrate to per-action folders, retain the registry backup, and omit only unavailable icons");
     delete actions;
     puts("PASS: clean custom toolbar/menu/controller teardown");
     // Like the existing widget suite, exclude legacy application-global teardown.

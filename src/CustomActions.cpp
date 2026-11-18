@@ -1,10 +1,28 @@
 #include "CustomActions.h"
 
+#include <dirent.h>
+#include <fcntl.h>
+#include <stdint.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <cerrno>
+#include <cstring>
+#include <map>
+#include <set>
+#include <algorithm>
+#include <functional>
+
+#if defined(linux)
+#include <linux/fs.h>
+#endif
+
 bool CustomAction::operator==(const CustomAction& b) const
 {
     return id == b.id && parent == b.parent && name == b.name && description == b.description &&
-        icon == b.icon && command == b.command && program == b.program && parameters == b.parameters &&
-        workingDirectory == b.workingDirectory && patterns == b.patterns && kind == b.kind &&
+        icon == b.icon && command == b.command && storagePath == b.storagePath && order == b.order &&
+        program == b.program && parameters == b.parameters && workingDirectory == b.workingDirectory &&
+        patterns == b.patterns && kind == b.kind &&
         toolbar == b.toolbar && files == b.files && folders == b.folders && single == b.single &&
         multiple == b.multiple && background == b.background && terminal == b.terminal &&
         confirm == b.confirm && showOutput == b.showOutput && programMode == b.programMode;
@@ -24,16 +42,10 @@ FXString CustomActions::duplicate(const FXString& id, const FXString& suffix, FX
     return copy.id;
 }
 #include <fnmatch.h>
-#include <set>
 #include <string>
-#include <algorithm>
 #include <ctime>
-#include <unistd.h>
-#include <sys/stat.h>
 #include <cstdlib>
 #include <sys/wait.h>
-#include <cerrno>
-#include <cstring>
 
 namespace
 {
@@ -116,6 +128,947 @@ FXString uri(const FXString& text)
     }
     return result;
 }
+
+void appendMessage(FXString& list, const FXString& text)
+{
+    if (!list.empty()) list += "\n";
+    list += text;
+}
+
+bool readIniBoolean(FXSettings& settings, const char* group, const char* name, bool fallback, bool& value)
+{
+    if (!settings.existingEntry(group, name)) { value = fallback; return true; }
+    FXString text = settings.readStringEntry(group, name, "");
+    text.trim();
+    if (text != "0" && text != "1") return false;
+    value = text == "1";
+    return true;
+}
+
+bool readIniOrder(FXSettings& settings, const char* group, int& order)
+{
+    if (!settings.existingEntry(group, "Order")) { order = -1; return true; }
+    FXString text = settings.readStringEntry(group, "Order", "");
+    text.trim();
+    if (text.empty()) return false;
+    order = 0;
+    for (FXint i = 0; i < text.length(); ++i)
+    {
+        if (text[i] < '0' || text[i] > '9' || order > 100000000) return false;
+        order = order * 10 + text[i] - '0';
+    }
+    return true;
+}
+
+bool readString(FXSettings& settings, const char* group, const char* name, FXString& value)
+{
+    value = settings.readStringEntry(group, name, "");
+    return true;
+}
+
+FXString pathId(const FXString& path)
+{
+    uint64_t hash = 1469598103934665603ULL;
+    for (FXint i = 0; i < path.length(); ++i)
+        hash = (hash ^ static_cast<unsigned char>(path[i])) * 1099511628211ULL;
+    FXString id;
+    id.format("a-%016llx", static_cast<unsigned long long>(hash));
+    return id;
+}
+
+bool readSettingsFile(const FXString& path, FXSettings& settings, FXString& error)
+{
+    struct stat info;
+    if (lstat(path.text(), &info) != 0 || !S_ISREG(info.st_mode))
+    {
+        error = "not a regular file";
+        return false;
+    }
+    if (!settings.parseFile(path.text(), true))
+    {
+        error = "cannot parse settings file";
+        return false;
+    }
+    return true;
+}
+
+bool directoryNames(const FXString& path, std::vector<FXString>& names, FXString& error)
+{
+    DIR* directory = opendir(path.text());
+    if (!directory)
+    {
+        error = strerror(errno);
+        return false;
+    }
+    int failure = 0;
+    while (true)
+    {
+        errno = 0;
+        struct dirent* entry = readdir(directory);
+        if (!entry)
+        {
+            failure = errno;
+            break;
+        }
+        if (entry->d_name[0] == '.' && (!entry->d_name[1] ||
+            (entry->d_name[1] == '.' && !entry->d_name[2]))) continue;
+        FXString child = path + PATHSEPSTRING + entry->d_name;
+        struct stat info;
+        if (lstat(child.text(), &info) != 0)
+        {
+            if (errno != ENOENT) failure = errno;
+            if (failure) break;
+            continue;
+        }
+        names.push_back(entry->d_name);
+    }
+    if (closedir(directory) != 0 && !failure) failure = errno;
+    if (failure)
+    {
+        error = strerror(failure);
+        return false;
+    }
+    std::sort(names.begin(), names.end());
+    return true;
+}
+
+bool loadActionTree(CustomActions& result, const FXString& root, const FXString& relative,
+                    const FXString& parent, unsigned depth, FXString& warnings, FXString& error)
+{
+    if (depth > 16)
+    {
+        appendMessage(warnings, relative + ": nesting exceeds 16 folders");
+        return true;
+    }
+    FXString directory = relative.empty() ? root : root + PATHSEPSTRING + relative;
+    std::vector<FXString> names;
+    if (!directoryNames(directory, names, error))
+    {
+        error = directory + ": " + error;
+        return false;
+    }
+    struct LoadedEntry
+    {
+        CustomAction action;
+        FXint order;
+    };
+    std::vector<LoadedEntry> entries;
+    for (const FXString& name : names)
+    {
+        if (result.items.size() + entries.size() >= CustomActions::MAX_ITEMS)
+        {
+            appendMessage(warnings, "Only the first 256 custom-action entries are loaded.");
+            break;
+        }
+        FXString itemPath = relative.empty() ? name : relative + PATHSEPSTRING + name;
+        FXString folder = root + PATHSEPSTRING + itemPath;
+        struct stat info;
+        if (lstat(folder.text(), &info) != 0)
+        {
+            appendMessage(warnings, itemPath + ": no longer a directory");
+            continue;
+        }
+        if (!S_ISDIR(info.st_mode)) continue;
+        CustomAction action;
+        action.id = pathId(itemPath);
+        while (result.find(action.id) ||
+               std::find_if(entries.begin(), entries.end(), [&action](const LoadedEntry& entry)
+               { return entry.action.id == action.id; }) != entries.end())
+            action.id += "-1";
+        action.parent = parent;
+        action.name = name;
+        action.storagePath = itemPath;
+        FXString actionFile = folder + PATHSEPSTRING "action.ini";
+        FXString separatorFile = folder + PATHSEPSTRING "separator.ini";
+        FXString groupFile = folder + PATHSEPSTRING "group.ini";
+        struct stat metadata;
+        bool actionFileExists = lstat(actionFile.text(), &metadata) == 0;
+        bool separatorFileExists = lstat(separatorFile.text(), &metadata) == 0;
+        bool groupFileExists = lstat(groupFile.text(), &metadata) == 0;
+        FXSettings settings;
+        FXString parseError;
+        if (actionFileExists)
+        {
+            action.kind = CustomAction::ACTION;
+            if (!readSettingsFile(actionFile, settings, parseError))
+            {
+                appendMessage(warnings, itemPath + "/action.ini: " + parseError);
+                continue;
+            }
+            readString(settings, "Action", "Description", action.description);
+            readString(settings, "Action", "Icon", action.icon);
+            readString(settings, "Action", "Command", action.command);
+            readString(settings, "Action", "Program", action.program);
+            readString(settings, "Action", "Parameters", action.parameters);
+            readString(settings, "Action", "WorkingDirectory", action.workingDirectory);
+            readString(settings, "Action", "Patterns", action.patterns);
+            if (action.patterns.empty()) action.patterns = "*";
+            if (!readIniOrder(settings, "Action", action.order) ||
+                !readIniBoolean(settings, "Action", "Toolbar", false, action.toolbar) ||
+                !readIniBoolean(settings, "Action", "Files", true, action.files) ||
+                !readIniBoolean(settings, "Action", "Folders", true, action.folders) ||
+                !readIniBoolean(settings, "Action", "Single", true, action.single) ||
+                !readIniBoolean(settings, "Action", "Multiple", true, action.multiple) ||
+                !readIniBoolean(settings, "Action", "Background", false, action.background) ||
+                !readIniBoolean(settings, "Action", "Terminal", false, action.terminal) ||
+                !readIniBoolean(settings, "Action", "Confirm", false, action.confirm) ||
+                !readIniBoolean(settings, "Action", "ShowOutput", false, action.showOutput) ||
+                !readIniBoolean(settings, "Action", "ProgramMode", false, action.programMode))
+            {
+                appendMessage(warnings, itemPath + "/action.ini: invalid boolean or order value");
+                continue;
+            }
+            if (!action.icon.empty() && action.icon.left(6) != "theme:" && !FXPath::isAbsolute(action.icon))
+            {
+                if (action.icon.contains('/') || action.icon == "." || action.icon == "..")
+                {
+                    appendMessage(warnings, itemPath + "/action.ini: invalid icon filename");
+                    continue;
+                }
+                FXString iconPath = folder + PATHSEPSTRING + action.icon;
+                if (lstat(iconPath.text(), &metadata) != 0 || !S_ISREG(metadata.st_mode))
+                {
+                    appendMessage(warnings, itemPath + "/action.ini: referenced icon is missing");
+                    continue;
+                }
+                action.icon = iconPath;
+            }
+        }
+        else if (separatorFileExists)
+        {
+            action.kind = CustomAction::SEPARATOR;
+            if (!readSettingsFile(separatorFile, settings, parseError) ||
+                !readIniOrder(settings, "Separator", action.order))
+            {
+                appendMessage(warnings, itemPath + "/separator.ini: " +
+                              (parseError.empty() ? FXString("invalid order value") : parseError));
+                continue;
+            }
+        }
+        else
+        {
+            action.kind = CustomAction::FOLDER;
+            if (groupFileExists)
+            {
+                if (!readSettingsFile(groupFile, settings, parseError))
+                    appendMessage(warnings, itemPath + "/group.ini: " + parseError);
+                else
+                {
+                    readString(settings, "Group", "Description", action.description);
+                    readString(settings, "Group", "Icon", action.icon);
+                    if (!readIniOrder(settings, "Group", action.order) ||
+                        !readIniBoolean(settings, "Group", "Toolbar", false, action.toolbar))
+                    {
+                        appendMessage(warnings, itemPath + "/group.ini: invalid boolean or order value");
+                        action.order = -1;
+                        action.description.clear();
+                        action.icon.clear();
+                        action.toolbar = false;
+                    }
+                    else if (!action.icon.empty() && action.icon.left(6) != "theme:" &&
+                             !FXPath::isAbsolute(action.icon))
+                    {
+                        if (!action.icon.contains('/') && action.icon != "." && action.icon != ".." &&
+                            lstat((folder + PATHSEPSTRING + action.icon).text(), &metadata) == 0 &&
+                            S_ISREG(metadata.st_mode))
+                            action.icon = folder + PATHSEPSTRING + action.icon;
+                        else
+                        {
+                            appendMessage(warnings, itemPath + "/group.ini: referenced icon is missing");
+                            action.icon.clear();
+                        }
+                    }
+                }
+            }
+        }
+
+        CustomActions candidate = result;
+        candidate.items.push_back(action);
+        FXString validation;
+        if (!candidate.validate(validation))
+        {
+            appendMessage(warnings, (action.kind == CustomAction::ACTION ? itemPath + "/action.ini" : itemPath) +
+                          ": " + validation);
+            continue;
+        }
+        entries.push_back({action, action.order});
+    }
+    std::stable_sort(entries.begin(), entries.end(), [](const LoadedEntry& a, const LoadedEntry& b)
+    {
+        if (a.order >= 0 && b.order >= 0 && a.order != b.order) return a.order < b.order;
+        if ((a.order >= 0) != (b.order >= 0)) return a.order >= 0;
+        return a.action.name < b.action.name;
+    });
+    for (const LoadedEntry& entry : entries)
+    {
+        result.items.push_back(entry.action);
+        if (entry.action.kind == CustomAction::FOLDER &&
+            !loadActionTree(result, root, entry.action.storagePath, entry.action.id, depth + 1, warnings, error))
+            return false;
+    }
+    return true;
+}
+
+struct TreeDigest
+{
+    uint64_t first = 1469598103934665603ULL;
+    uint64_t second = 1099511628211ULL;
+    void update(const void* data, size_t size)
+    {
+        const unsigned char* bytes = static_cast<const unsigned char*>(data);
+        for (size_t i = 0; i < size; ++i)
+        {
+            first = (first ^ bytes[i]) * 1099511628211ULL;
+            second = (second ^ bytes[i]) * 14029467366897019727ULL;
+        }
+    }
+    void update(const FXString& text) { update(text.text(), text.length()); }
+    FXString value() const
+    {
+        FXString result;
+        result.format("%016llx%016llx", static_cast<unsigned long long>(first),
+                      static_cast<unsigned long long>(second));
+        return result;
+    }
+};
+
+bool digestNode(TreeDigest& digest, const FXString& path, const FXString& relative, FXString& error)
+{
+    struct stat info;
+    if (lstat(path.text(), &info) != 0)
+    {
+        error = path + ": " + strerror(errno);
+        return false;
+    }
+    digest.update(relative);
+    digest.update(&info.st_mode, sizeof(info.st_mode));
+    digest.update(&info.st_size, sizeof(info.st_size));
+    digest.update(&info.st_mtim, sizeof(info.st_mtim));
+    if (S_ISDIR(info.st_mode))
+    {
+        std::vector<FXString> names;
+        if (!directoryNames(path, names, error)) return false;
+        for (const FXString& name : names)
+        {
+            FXString child = relative.empty() ? name : relative + PATHSEPSTRING + name;
+            if (!digestNode(digest, path + PATHSEPSTRING + name, child, error)) return false;
+        }
+        return true;
+    }
+    if (S_ISREG(info.st_mode))
+    {
+        int fd = open(path.text(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+        if (fd < 0)
+        {
+            error = path + ": " + strerror(errno);
+            return false;
+        }
+        char buffer[32768];
+        bool success = true;
+        while (true)
+        {
+            ssize_t count = read(fd, buffer, sizeof(buffer));
+            if (count < 0 && errno == EINTR) continue;
+            if (count < 0)
+            {
+                error = path + ": " + strerror(errno);
+                success = false;
+                break;
+            }
+            if (!count) break;
+            digest.update(buffer, static_cast<size_t>(count));
+        }
+        if (close(fd) != 0 && success)
+        {
+            error = path + ": " + strerror(errno);
+            success = false;
+        }
+        return success;
+    }
+    if (S_ISLNK(info.st_mode))
+    {
+        char target[PATH_MAX + 1];
+        ssize_t length = readlink(path.text(), target, PATH_MAX);
+        if (length < 0)
+        {
+            error = path + ": " + strerror(errno);
+            return false;
+        }
+        digest.update(target, static_cast<size_t>(length));
+        return true;
+    }
+    error = path + ": unsupported special file";
+    return false;
+}
+
+bool copyFile(const FXString& source, const FXString& destination, mode_t mode, FXString& error)
+{
+    int input = open(source.text(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (input < 0)
+    {
+        error = source + ": " + strerror(errno);
+        return false;
+    }
+    struct stat sourceInfo;
+    if (fstat(input, &sourceInfo) != 0 || !S_ISREG(sourceInfo.st_mode))
+    {
+        int failure = errno ? errno : EINVAL;
+        close(input);
+        error = source + ": " + strerror(failure);
+        return false;
+    }
+    int output = open(destination.text(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, mode & 0777);
+    if (output < 0)
+    {
+        int failure = errno;
+        close(input);
+        error = destination + ": " + strerror(failure);
+        return false;
+    }
+    char buffer[32768];
+    int failure = 0;
+    while (!failure)
+    {
+        ssize_t count = read(input, buffer, sizeof(buffer));
+        if (count < 0 && errno == EINTR) continue;
+        if (count < 0) { failure = errno; break; }
+        if (!count) break;
+        ssize_t offset = 0;
+        while (offset < count)
+        {
+            ssize_t written = write(output, buffer + offset, count - offset);
+            if (written < 0 && errno == EINTR) continue;
+            if (written <= 0) { failure = written < 0 ? errno : EIO; break; }
+            offset += written;
+        }
+    }
+    if (fchmod(output, mode & 0777) != 0 && !failure) failure = errno;
+    if (close(input) != 0 && !failure) failure = errno;
+    if (close(output) != 0 && !failure) failure = errno;
+    if (!failure) return true;
+    unlink(destination.text());
+    error = source + ": " + strerror(failure);
+    return false;
+}
+
+bool copyContents(const FXString& source, const FXString& destination,
+                  const std::set<std::string>& excluded, FXString& error)
+{
+    std::vector<FXString> names;
+    if (!directoryNames(source, names, error)) return false;
+    for (const FXString& name : names)
+    {
+        if (excluded.count(name.text())) continue;
+        FXString from = source + PATHSEPSTRING + name;
+        FXString to = destination + PATHSEPSTRING + name;
+        struct stat info;
+        if (lstat(from.text(), &info) != 0)
+        {
+            error = from + ": " + strerror(errno);
+            return false;
+        }
+        if (S_ISDIR(info.st_mode))
+        {
+            if (mkdir(to.text(), info.st_mode & 0777) != 0 ||
+                !copyContents(from, to, std::set<std::string>(), error))
+            {
+                if (error.empty()) error = to + ": " + strerror(errno);
+                return false;
+            }
+        }
+        else if (S_ISREG(info.st_mode))
+        {
+            if (!copyFile(from, to, info.st_mode, error)) return false;
+        }
+        else if (S_ISLNK(info.st_mode))
+        {
+            char target[PATH_MAX + 1];
+            ssize_t length = readlink(from.text(), target, PATH_MAX);
+            if (length < 0)
+            {
+                error = from + ": " + strerror(errno);
+                return false;
+            }
+            target[length] = '\0';
+            if (symlink(target, to.text()) != 0)
+            {
+                error = to + ": " + strerror(errno);
+                return false;
+            }
+        }
+        else
+        {
+            error = from + ": unsupported special file";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool makeDirectories(const FXString& path, mode_t mode, FXString& error)
+{
+    struct stat info;
+    if (lstat(path.text(), &info) == 0)
+    {
+        if (S_ISDIR(info.st_mode)) return true;
+        error = path + ": not a directory";
+        return false;
+    }
+    if (errno != ENOENT)
+    {
+        error = path + ": " + strerror(errno);
+        return false;
+    }
+    FXString parent = FXPath::directory(path);
+    if (parent == path || parent.empty() || !makeDirectories(parent, mode, error)) return false;
+    if (mkdir(path.text(), mode) == 0 || errno == EEXIST)
+    {
+        if (lstat(path.text(), &info) == 0 && S_ISDIR(info.st_mode)) return true;
+    }
+    error = path + ": " + strerror(errno);
+    return false;
+}
+
+bool safeComponent(const FXString& name)
+{
+    if (name.empty() || name == "." || name == ".." || name.length() > 200 ||
+        name.contains('/') || name.contains('\t') || name.contains('\n') || name.contains('\r'))
+        return false;
+    return true;
+}
+
+FXString targetPath(const CustomAction& action, const std::map<std::string, FXString>& paths)
+{
+    if (action.kind == CustomAction::SEPARATOR)
+        return "separator-" + action.id;
+    FXString parent;
+    if (!action.parent.empty())
+    {
+        std::map<std::string, FXString>::const_iterator found = paths.find(action.parent.text());
+        if (found == paths.end()) return FXString::null;
+        parent = found->second + PATHSEPSTRING;
+    }
+    return parent + action.name;
+}
+
+bool writeItemFile(const FXString& path, const CustomAction& action, int order,
+                   const FXString& iconName, FXString& error)
+{
+    FXSettings settings;
+    const char* group = action.kind == CustomAction::ACTION ? "Action" :
+                        action.kind == CustomAction::FOLDER ? "Group" : "Separator";
+    settings.writeIntEntry(group, "Order", order);
+    if (action.kind == CustomAction::ACTION)
+    {
+        settings.writeStringEntry(group, "Description", action.description.text());
+        settings.writeStringEntry(group, "Icon", iconName.text());
+        settings.writeStringEntry(group, "Command", action.command.text());
+        settings.writeStringEntry(group, "Program", action.program.text());
+        settings.writeStringEntry(group, "Parameters", action.parameters.text());
+        settings.writeStringEntry(group, "WorkingDirectory", action.workingDirectory.text());
+        settings.writeStringEntry(group, "Patterns", action.patterns.text());
+#define WRITE_ACTION_BOOL(keyName, field) settings.writeIntEntry(group, keyName, action.field ? 1 : 0)
+        WRITE_ACTION_BOOL("Toolbar", toolbar);
+        WRITE_ACTION_BOOL("Files", files);
+        WRITE_ACTION_BOOL("Folders", folders);
+        WRITE_ACTION_BOOL("Single", single);
+        WRITE_ACTION_BOOL("Multiple", multiple);
+        WRITE_ACTION_BOOL("Background", background);
+        WRITE_ACTION_BOOL("Terminal", terminal);
+        WRITE_ACTION_BOOL("Confirm", confirm);
+        WRITE_ACTION_BOOL("ShowOutput", showOutput);
+        WRITE_ACTION_BOOL("ProgramMode", programMode);
+#undef WRITE_ACTION_BOOL
+    }
+    else if (action.kind == CustomAction::FOLDER)
+    {
+        settings.writeStringEntry(group, "Description", action.description.text());
+        settings.writeStringEntry(group, "Icon", iconName.text());
+        settings.writeIntEntry(group, "Toolbar", action.toolbar ? 1 : 0);
+    }
+    if (settings.unparseFile(path.text())) return true;
+    error = path + ": cannot write action settings";
+    return false;
+}
+
+bool removeTree(const FXString& path, FXString& error)
+{
+    struct stat info;
+    if (lstat(path.text(), &info) != 0)
+    {
+        if (errno == ENOENT) return true;
+        error = path + ": " + strerror(errno);
+        return false;
+    }
+    if (S_ISDIR(info.st_mode))
+    {
+        std::vector<FXString> names;
+        if (!directoryNames(path, names, error)) return false;
+        for (const FXString& name : names)
+            if (!removeTree(path + PATHSEPSTRING + name, error)) return false;
+        if (rmdir(path.text()) != 0)
+        {
+            error = path + ": " + strerror(errno);
+            return false;
+        }
+        return true;
+    }
+    if (unlink(path.text()) == 0) return true;
+    error = path + ": " + strerror(errno);
+    return false;
+}
+
+bool writeMarker(const FXString& path, const char* text, FXString& error)
+{
+    int fd = open(path.text(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
+    if (fd < 0)
+    {
+        error = path + ": " + strerror(errno);
+        return false;
+    }
+    size_t length = strlen(text);
+    size_t offset = 0;
+    while (offset < length)
+    {
+        ssize_t count = write(fd, text + offset, length - offset);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0)
+        {
+            int failure = count < 0 ? errno : EIO;
+            close(fd);
+            error = path + ": " + strerror(failure);
+            return false;
+        }
+        offset += static_cast<size_t>(count);
+    }
+    int failure = fsync(fd) == 0 ? 0 : errno;
+    if (close(fd) != 0 && !failure) failure = errno;
+    if (failure)
+    {
+        error = path + ": " + strerror(failure);
+        return false;
+    }
+    return true;
+}
+
+bool relativePathSafe(const FXString& path)
+{
+    if (path.empty() || FXPath::isAbsolute(path)) return false;
+    for (FXint i = 0; i <= path.contains('/'); ++i)
+        if (!safeComponent(path.section('/', i))) return false;
+    return true;
+}
+
+FXString iconFileName(const FXString& source, const FXString& destination, FXString& error)
+{
+    FXString name = FXPath::name(source);
+    if (!safeComponent(name)) name = "icon." + FXPath::extension(source);
+    FXString title = FXPath::title(name), extension = FXPath::extension(name);
+    FXString candidate = name;
+    for (unsigned suffix = 1; suffix < 10000; ++suffix)
+    {
+        FXString target = destination + PATHSEPSTRING + candidate;
+        struct stat info;
+        if (lstat(target.text(), &info) != 0)
+        {
+            if (errno == ENOENT) return candidate;
+            error = target + ": " + strerror(errno);
+            return FXString::null;
+        }
+        candidate = title + " (" + FXStringVal(suffix + 1) + ")." + extension;
+    }
+    error = "No unused filename is available for the action icon: " + source;
+    return FXString::null;
+}
+
+bool renameDirectoryExchange(const FXString& path, const FXString& stage, FXString& error)
+{
+#if defined(linux) && defined(SYS_renameat2) && defined(RENAME_EXCHANGE)
+    if (syscall(SYS_renameat2, AT_FDCWD, path.text(), AT_FDCWD, stage.text(), RENAME_EXCHANGE) == 0)
+        return true;
+    int exchangeError = errno;
+    if (exchangeError != ENOSYS && exchangeError != EINVAL && exchangeError != EOPNOTSUPP &&
+        exchangeError != EXDEV)
+    {
+        error = path + ": " + strerror(exchangeError);
+        return false;
+    }
+#endif
+    FXString pattern = path + ".previous-XXXXXX";
+    std::vector<char> buffer(pattern.text(), pattern.text() + pattern.length() + 1);
+    char* backupName = mkdtemp(buffer.data());
+    if (!backupName)
+    {
+        error = path + ": cannot create a recovery folder: " + strerror(errno);
+        return false;
+    }
+    FXString backup = backupName;
+    if (rmdir(backup.text()) != 0 || rename(path.text(), backup.text()) != 0)
+    {
+        int failure = errno;
+        rmdir(backup.text());
+        error = path + ": cannot preserve the previous actions: " + strerror(failure);
+        return false;
+    }
+    if (rename(stage.text(), path.text()) != 0)
+    {
+        int failure = errno;
+        if (rename(backup.text(), path.text()) != 0)
+        {
+            error = "Action replacement failed and the previous folder could not be restored: " + backup;
+            return false;
+        }
+        error = path + ": cannot install new actions: " + strerror(failure);
+        return false;
+    }
+    return removeTree(backup, error);
+}
+}
+
+FXString CustomActions::directoryFingerprint(const FXString& root, FXString& error)
+{
+    error.clear();
+    struct stat info;
+    if (lstat(root.text(), &info) != 0)
+    {
+        if (errno == ENOENT) return FXString::null;
+        error = root + ": " + strerror(errno);
+        return FXString::null;
+    }
+    if (!S_ISDIR(info.st_mode))
+    {
+        error = root + ": not a directory";
+        return FXString::null;
+    }
+    TreeDigest digest;
+    if (!digestNode(digest, root, "", error)) return FXString::null;
+    return digest.value();
+}
+
+bool CustomActions::loadDirectory(const FXString& root, FXString& error, FXString& warnings)
+{
+    error.clear();
+    warnings.clear();
+    struct stat info;
+    if (lstat(root.text(), &info) != 0)
+    {
+        if (errno == ENOENT) { items.clear(); return true; }
+        error = root + ": " + strerror(errno);
+        return false;
+    }
+    if (!S_ISDIR(info.st_mode))
+    {
+        error = root + ": not a directory";
+        return false;
+    }
+    CustomActions loaded;
+    if (!loadActionTree(loaded, root, "", "", 0, warnings, error)) return false;
+    items.swap(loaded.items);
+    return true;
+}
+
+bool CustomActions::saveDirectory(const FXString& root, FXString& error, FXString& warnings,
+                                 const FXString& expectedFingerprint)
+{
+    error.clear();
+    warnings.clear();
+    std::map<std::string, std::set<std::string>> usedNames;
+    for (CustomAction& action : items)
+    {
+        if (action.kind == CustomAction::SEPARATOR) continue;
+        FXString original = action.name;
+        for (FXint i = 0; i < action.name.length(); ++i)
+        {
+            unsigned char character = action.name[i];
+            if (character == '/' || character < 32 || character == 127) action.name[i] = '-';
+        }
+        action.name = action.name.trim();
+        if (action.name.empty() || action.name == "." || action.name == "..") action.name = "Action";
+        if (action.name.length() > 200) action.name = action.name.left(200);
+        std::set<std::string>& siblings = usedNames[action.parent.text()];
+        FXString base = action.name;
+        for (unsigned suffix = 2; siblings.count(action.name.text()); ++suffix)
+        {
+            action.name = base + " (" + FXStringVal(suffix) + ")";
+            if (action.name.length() > 200)
+                action.name = base.left(200 - FXStringVal(suffix).length() - 3) + " (" + FXStringVal(suffix) + ")";
+        }
+        siblings.insert(action.name.text());
+        if (action.name != original)
+            appendMessage(warnings, "Custom action folder renamed to avoid an invalid or duplicate name: " +
+                          original + " -> " + action.name);
+    }
+    if (!validate(error)) return false;
+    for (const CustomAction& action : items)
+    {
+        if (action.kind != CustomAction::SEPARATOR && !safeComponent(action.name))
+        {
+            error = "Action and group names must be valid folder names without slashes or control characters.";
+            return false;
+        }
+    }
+    FXString parent = FXPath::directory(root);
+    if (parent.empty()) parent = ".";
+    if (!makeDirectories(parent, 0700, error) || !makeDirectories(root, 0700, error)) return false;
+    FXString original = directoryFingerprint(root, error);
+    if (!error.empty()) return false;
+    if (!expectedFingerprint.empty() && original != expectedFingerprint)
+    {
+        error = "Custom actions changed on disk while they were being edited.";
+        return false;
+    }
+
+    std::map<std::string, FXString> destinations;
+    std::set<std::string> resolving;
+    std::function<bool(const CustomAction&)> resolveDestination = [&](const CustomAction& action)
+    {
+        if (destinations.find(action.id.text()) != destinations.end()) return true;
+        if (!resolving.insert(action.id.text()).second) return false;
+        if (!action.parent.empty())
+        {
+            const CustomAction* parentAction = find(action.parent);
+            if (!parentAction || !resolveDestination(*parentAction))
+            {
+                resolving.erase(action.id.text());
+                return false;
+            }
+        }
+        FXString target = targetPath(action, destinations);
+        if (target.empty() || !relativePathSafe(target)) return false;
+        destinations[action.id.text()] = target;
+        resolving.erase(action.id.text());
+        return true;
+    };
+    for (const CustomAction& action : items)
+    {
+        if (!resolveDestination(action))
+        {
+            error = "The custom-action folders cannot be written in this order.";
+            return false;
+        }
+    }
+
+    FXString pattern = root + ".stage-XXXXXX";
+    std::vector<char> templateName(pattern.text(), pattern.text() + pattern.length() + 1);
+    char* made = mkdtemp(templateName.data());
+    if (!made)
+    {
+        error = root + ": cannot create a temporary action folder: " + strerror(errno);
+        return false;
+    }
+    FXString stage = made;
+    bool success = true;
+    std::set<std::string> topLevelItems;
+    for (const CustomAction& action : items)
+        if (action.parent.empty() && !action.storagePath.empty())
+            topLevelItems.insert(action.storagePath.section('/', 0).text());
+    success = copyContents(root, stage, topLevelItems, error);
+
+    for (const CustomAction& action : items)
+    {
+        if (!success) break;
+        FXString destination = stage + PATHSEPSTRING + destinations[action.id.text()];
+        if (!makeDirectories(destination, 0700, error)) { success = false; break; }
+
+        if (!action.storagePath.empty())
+        {
+            if (!relativePathSafe(action.storagePath))
+            {
+                error = "An action folder has an invalid stored path.";
+                success = false;
+                break;
+            }
+            FXString source = root + PATHSEPSTRING + action.storagePath;
+            struct stat sourceInfo;
+            if (lstat(source.text(), &sourceInfo) != 0 || !S_ISDIR(sourceInfo.st_mode))
+            {
+                error = source + ": the action folder changed outside the editor";
+                success = false;
+                break;
+            }
+            std::set<std::string> childFolders;
+            for (const CustomAction& child : items)
+            {
+                if (child.parent != action.id || child.storagePath.empty()) continue;
+                if (child.storagePath.left(action.storagePath.length() + 1) != action.storagePath + PATHSEPSTRING)
+                    continue;
+                FXString remainder = child.storagePath.mid(action.storagePath.length() + 1,
+                                                             child.storagePath.length());
+                if (remainder.find('/') < 0) childFolders.insert(remainder.text());
+            }
+            if (!copyContents(source, destination, childFolders, error)) { success = false; break; }
+        }
+
+        FXString iconName = action.icon.left(6) == "theme:" ? action.icon : FXString::null;
+        if (!action.icon.empty() && action.icon.left(6) != "theme:")
+        {
+            if (!FXPath::isAbsolute(action.icon))
+            {
+                error = action.name + ": the icon path is not a readable image file";
+                success = false;
+                break;
+            }
+            struct stat iconInfo;
+            if (lstat(action.icon.text(), &iconInfo) != 0 || !S_ISREG(iconInfo.st_mode))
+            {
+                error = action.name + ": the referenced icon is missing or is not a regular file";
+                success = false;
+                break;
+            }
+            iconName = FXPath::name(action.icon);
+            FXString existing = destination + PATHSEPSTRING + iconName;
+            struct stat existingInfo;
+            bool alreadyCopied = action.storagePath.length() &&
+                action.icon.left((root + PATHSEPSTRING + action.storagePath + PATHSEPSTRING).length()) ==
+                    root + PATHSEPSTRING + action.storagePath + PATHSEPSTRING;
+            if (!alreadyCopied || lstat(existing.text(), &existingInfo) != 0)
+            {
+                iconName = iconFileName(action.icon, destination, error);
+                if (iconName.empty()) { success = false; break; }
+                if (!copyFile(action.icon, destination + PATHSEPSTRING + iconName, iconInfo.st_mode, error))
+                { success = false; break; }
+            }
+        }
+        int order = 0;
+        for (const CustomAction& sibling : items)
+        {
+            if (sibling.parent == action.parent)
+            {
+                if (sibling.id == action.id) break;
+                ++order;
+            }
+        }
+        FXString file = destination + PATHSEPSTRING +
+            (action.kind == CustomAction::ACTION ? "action.ini" :
+             action.kind == CustomAction::FOLDER ? "group.ini" : "separator.ini");
+        if (!writeItemFile(file, action, order, iconName, error)) { success = false; break; }
+    }
+
+    if (success)
+        success = writeMarker(stage + PATHSEPSTRING ".swordfish-storage", "1\n", error);
+    if (success)
+    {
+        FXString current = directoryFingerprint(root, error);
+        if (!error.empty() || current != original)
+        {
+            if (error.empty()) error = "Custom actions changed on disk while they were being saved.";
+            success = false;
+        }
+    }
+    if (success) success = renameDirectoryExchange(root, stage, error);
+    if (!success)
+    {
+        FXString cleanup;
+        if (!removeTree(stage, cleanup))
+        {
+            appendMessage(warnings, "The incomplete action snapshot could not be removed: " + cleanup);
+        }
+        return false;
+    }
+    FXString cleanup;
+    if (!removeTree(stage, cleanup))
+        appendMessage(warnings, "Actions were saved, but the previous snapshot could not be removed: " + cleanup);
+    return true;
 }
 
 const CustomAction* CustomActions::find(const FXString& id) const

@@ -7,9 +7,10 @@
 struct CustomAction
 {
     enum Kind { ACTION, FOLDER, SEPARATOR };
-    FXString id, parent, name, description, icon, command;
+    FXString id, parent, name, description, icon, command, storagePath;
     FXString program, parameters, workingDirectory;
     FXString patterns = "*";
+    int order = -1;
     int kind = ACTION;
     bool toolbar = false, files = true, folders = true;
     bool single = true, multiple = true, background = false;
@@ -37,6 +38,9 @@ public:
     bool validate(FXString&) const;
     bool load(FXSettings&, FXString&);
     void save(FXSettings&) const;
+    bool loadDirectory(const FXString&, FXString&, FXString&);
+    bool saveDirectory(const FXString&, FXString&, FXString&, const FXString& expectedFingerprint = FXString::null);
+    static FXString directoryFingerprint(const FXString&, FXString&);
     bool move(const FXString& id, const FXString& parent, FXString& error);
     void remove(const FXString&);
     void reorder(const FXString&, int direction);

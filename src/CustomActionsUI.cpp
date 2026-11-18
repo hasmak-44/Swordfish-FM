@@ -19,8 +19,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
-#include <limits.h>
+#include <fstream>
 #include <map>
+#include <set>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -71,13 +72,6 @@ FXIcon* loadActionIcon(FXApp* app, const FXString& path, FXint size)
     return loadCustomActionIcon(app, path, size);
 }
 
-struct CreatedActionIcon
-{
-    FXString path;
-    dev_t device;
-    ino_t inode;
-};
-
 void appendIconError(FXString& errors, const FXString& error)
 {
     if (!errors.empty()) { errors += "\n"; }
@@ -97,276 +91,6 @@ void showIconWarning(FXWindow* owner, const FXString& warnings)
     showIconMessage(owner, _("Custom Action Icons Not Copied"),
         _("Some custom-action icons could not be stored in portable data. Their original references were kept. "
           "Fix the errors or select the images again before copying the profile.\n\n") + warnings, bigwarningicon);
-}
-
-void discardActionIcons(const std::vector<CreatedActionIcon>& created, FXString& errors)
-{
-    for (const CreatedActionIcon& icon : created)
-    {
-        struct stat info;
-        if (lstat(icon.path.text(), &info) != 0)
-        {
-            if (errno == ENOENT) { continue; }
-        }
-        else if (S_ISREG(info.st_mode) && info.st_dev == icon.device && info.st_ino == icon.inode)
-        {
-            if (unlink(icon.path.text()) == 0) { continue; }
-        }
-        else
-        {
-            FXString message = _("The new icon was changed and was not removed: ") + icon.path;
-            appLog(APP_LOG_ERRORS, "custom-action-icon-cleanup", message);
-            appendIconError(errors, message);
-            continue;
-        }
-        FXString message = _("Cannot remove an incomplete icon copy: ") + icon.path + ": " + strerror(errno);
-        appLog(APP_LOG_ERRORS, "custom-action-icon-cleanup", message);
-        appendIconError(errors, message);
-    }
-}
-
-bool actionIconDirectory(const FXString& path, FXString& error)
-{
-    struct stat info;
-    if (lstat(path.text(), &info) != 0)
-    {
-        if (errno != ENOENT || (mkdir(path.text(), 0700) != 0 && errno != EEXIST) ||
-            lstat(path.text(), &info) != 0)
-        {
-            error = _("Cannot create or inspect the custom action icon folder: ") + path + ": " + strerror(errno);
-            return false;
-        }
-    }
-    if (!S_ISDIR(info.st_mode))
-    {
-        error = _("The custom action icon folder is not a directory: ") + path;
-        return false;
-    }
-    return true;
-}
-
-bool movedActionIcon(const FXString& original, const FXString& root, FXString& result, FXString& error)
-{
-    if (!FXPath::isAbsolute(original)) { return true; }
-    char resolvedRoot[PATH_MAX];
-    if (!realpath(root.text(), resolvedRoot)) { return true; }
-    FXString prefix(resolvedRoot);
-    if (prefix != PATHSEPSTRING) { prefix += PATHSEPSTRING; }
-    for (FXint start = 1; start < original.length();)
-    {
-        FXint slash = original.find('/', start);
-        if (slash < 0) { break; }
-        FXString component = original.mid(start, slash - start);
-        start = slash + 1;
-        if (component != "portable-data" && (component.length() <= 5 || component.right(5) != ".data"))
-            continue;
-        FXString candidate = root + PATHSEPSTRING + original.mid(start, original.length() - start);
-        char resolved[PATH_MAX];
-        struct stat info;
-        if (!realpath(candidate.text(), resolved) || stat(resolved, &info) != 0 || !S_ISREG(info.st_mode))
-            continue;
-        FXString path(resolved);
-        if (path.left(prefix.length()) != prefix) { continue; }
-        if (!result.empty() && result != path)
-        {
-            error = _("More than one file in portable data matches the old icon path; choose the correct image: ") +
-                    original;
-            return false;
-        }
-        result = path;
-    }
-    return true;
-}
-
-bool copyActionIcon(const FXString& value, const FXString& id, bool recoverLegacy, FXString& reference,
-                    std::vector<CreatedActionIcon>& created, FXString& error)
-{
-    if (value.empty() || value.left(6) == "theme:") { reference = value; return true; }
-    if (value.left(16) == "portable-action:")
-    {
-        if (customActionIconPath(value).empty())
-        {
-            error = _("The portable icon is missing or is not a regular file: ") + value;
-            return false;
-        }
-        reference = value;
-        return true;
-    }
-
-    FXString source = FXPath::absolute(value);
-    FXString extension = FXPath::extension(source).lower();
-    if (extension != "png" && extension != "jpg" && extension != "jpeg" &&
-        extension != "xpm" && extension != "svg")
-    {
-        error = _("Unsupported custom action icon file: ") + source;
-        return false;
-    }
-    FXString root = FXPath::absolute(getenv("SWORDFISH_PORTABLE_DATA"));
-    int input = open(source.text(), O_RDONLY | O_CLOEXEC | O_NONBLOCK);
-    if (input < 0 && recoverLegacy && FXPath::isAbsolute(value))
-    {
-        int originalError = errno;
-        FXString recovered;
-        if (!movedActionIcon(source, root, recovered, error)) { return false; }
-        if (!recovered.empty())
-        {
-            source = recovered;
-            input = open(source.text(), O_RDONLY | O_CLOEXEC | O_NONBLOCK);
-        }
-        else { errno = originalError; }
-    }
-    if (input < 0)
-    {
-        error = _("Cannot read the custom action icon: ") + source + ": " + strerror(errno);
-        return false;
-    }
-    struct stat sourceInfo;
-    if (fstat(input, &sourceInfo) != 0)
-    {
-        error = _("Cannot inspect the custom action icon: ") + source + ": " + strerror(errno);
-        close(input);
-        return false;
-    }
-    if (!S_ISREG(sourceInfo.st_mode))
-    {
-        error = _("The custom action icon is not a readable regular file: ") + source;
-        close(input);
-        return false;
-    }
-
-    struct stat rootInfo;
-    if (stat(root.text(), &rootInfo) != 0 || !S_ISDIR(rootInfo.st_mode))
-    {
-        error = _("The portable data folder is unavailable: ") + root;
-        close(input);
-        return false;
-    }
-    FXString icons = root + PATHSEPSTRING "icons";
-    FXString directory = icons + PATHSEPSTRING "custom-actions";
-    if (!actionIconDirectory(icons, error) || !actionIconDirectory(directory, error))
-    {
-        close(input);
-        return false;
-    }
-
-    FXString contained = directory + PATHSEPSTRING;
-    if (source.left(contained.length()) == contained)
-    {
-        FXString existing = portableCustomActionIconReference(
-            source.mid(contained.length(), source.length() - contained.length()));
-        if (!existing.empty() && customActionIconPath(existing) == source)
-        {
-            reference = existing;
-            close(input);
-            return true;
-        }
-    }
-
-    FXString filename = FXPath::name(source);
-    if (portableCustomActionIconReference(filename).empty())
-        filename = "icon-" + id + "." + extension;
-    FXString title = FXPath::title(filename), originalExtension = FXPath::extension(filename);
-    FXString destination, candidate;
-    int output = -1;
-    for (unsigned number = 0; number < 10000; ++number)
-    {
-        candidate = filename;
-        if (number)
-        {
-            candidate = title + " (" + FXStringVal(number + 1) + ")." + originalExtension;
-            if (candidate.length() > 255 || portableCustomActionIconReference(candidate).empty())
-                candidate = "icon-" + id + "-" + FXStringVal(number) + "." + extension;
-        }
-        destination = directory + PATHSEPSTRING + candidate;
-        output = open(destination.text(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
-        if (output >= 0) { break; }
-        if (errno != EEXIST)
-        {
-            error = _("Cannot create the custom action icon: ") + destination + ": " + strerror(errno);
-            close(input);
-            return false;
-        }
-    }
-    if (output < 0)
-    {
-        error = _("Cannot find an unused name for the custom action icon: ") + source;
-        close(input);
-        return false;
-    }
-    struct stat outputInfo;
-    if (fstat(output, &outputInfo) != 0)
-    {
-        int number = errno;
-        close(output);
-        close(input);
-        error = _("Cannot inspect the new custom action icon: ") + destination + ": " + strerror(number);
-        if (unlink(destination.text()) != 0)
-            appendIconError(error, _("Cannot remove the incomplete copy: ") + destination + ": " + strerror(errno));
-        return false;
-    }
-    created.push_back({destination, outputInfo.st_dev, outputInfo.st_ino});
-    int failure = 0;
-    char buffer[32768];
-    while (!failure)
-    {
-        ssize_t count = read(input, buffer, sizeof(buffer));
-        if (count < 0 && errno == EINTR) { continue; }
-        if (count < 0) { failure = errno; break; }
-        if (count == 0) { break; }
-        ssize_t offset = 0;
-        while (offset < count)
-        {
-            ssize_t written = write(output, buffer + offset, count - offset);
-            if (written < 0 && errno == EINTR) { continue; }
-            if (written <= 0) { failure = written < 0 ? errno : EIO; break; }
-            offset += written;
-        }
-    }
-    if (close(output) != 0 && !failure) { failure = errno; }
-    if (close(input) != 0 && !failure) { failure = errno; }
-    if (failure)
-    {
-        error = _("Cannot copy the custom action icon: ") + source + ": " + strerror(failure);
-        return false;
-    }
-    reference = portableCustomActionIconReference(candidate);
-    return true;
-}
-
-bool prepareActionIcons(CustomActions& actions, const CustomActions* previous,
-                        std::vector<CreatedActionIcon>& created, FXString& warnings, FXString& error)
-{
-    const char* root = getenv("SWORDFISH_PORTABLE_DATA");
-    if (!root || !*root) { return true; }
-    std::map<std::string, FXString> references;
-    for (CustomAction& action : actions.items)
-    {
-        if (action.icon.empty() || action.icon.left(6) == "theme:") { continue; }
-        std::map<std::string, FXString>::const_iterator known = references.find(action.icon.text());
-        if (known != references.end()) { action.icon = known->second; continue; }
-        FXString reference, problem;
-        size_t firstCreated = created.size();
-        const CustomAction* old = previous ? previous->find(action.id) : NULL;
-        bool recoverLegacy = !previous || (old && old->icon == action.icon);
-        if (!copyActionIcon(action.icon, action.id, recoverLegacy, reference, created, problem))
-        {
-            std::vector<CreatedActionIcon> incomplete(created.begin() + firstCreated, created.end());
-            discardActionIcons(incomplete, problem);
-            created.erase(created.begin() + firstCreated, created.end());
-            FXString detail = action.name + ": " + problem;
-            appLog(APP_LOG_ERRORS, "custom-action-icon-copy", detail);
-            if (previous && (!old || old->icon != action.icon))
-            {
-                error = detail;
-                return false;
-            }
-            appendIconError(warnings, detail);
-            continue;
-        }
-        references[action.icon.text()] = reference;
-        action.icon = reference;
-    }
-    return true;
 }
 
 class ActionImageChooser : public FileDialog
@@ -1150,27 +874,15 @@ public:
             if (!working.validate(error))
             { MessageBox::error(this, BOX_OK, _("Invalid Custom Actions"), "%s", error.text()); return 1; }
             CustomActions saved = working;
-            std::vector<CreatedActionIcon> created;
             FXString warnings;
-            if (!prepareActionIcons(saved, &actions.model, created, warnings, error))
+            if (!actions.saveStorage(saved, error, warnings))
             {
-                discardActionIcons(created, error);
-                showIconMessage(this, _("Cannot Save Custom Actions"),
-                    _("The selected icon could not be copied. Changes have not been applied.\n\n") + error, bigerroricon);
+                MessageBox::error(this, BOX_OK, _("Cannot Save Custom Actions"),
+                    _("Changes have not been applied.\n\n%s"), error.text());
                 return 1;
             }
-            FXSettings previous(getApp()->reg());
-            saved.save(getApp()->reg());
-            if (!getApp()->reg().write())
-            {
-                static_cast<FXSettings&>(getApp()->reg()) = previous;
-                error = _("The personal Swordfish settings could not be written. Changes have not been applied.");
-                discardActionIcons(created, error);
-                showIconMessage(this, _("Cannot Save Custom Actions"), error, bigerroricon);
-                return 1;
-            }
-            actions.model = saved;
-            if (!warnings.empty()) { showIconWarning(this, warnings); }
+            if (!warnings.empty())
+                showIconMessage(this, _("Custom Actions Saved with Warnings"), warnings, bigwarningicon);
             return FXDialogBox::handle(sender, FXSEL(SEL_COMMAND, ID_ACCEPT), NULL);
         }
         return FXDialogBox::handle(sender, sel, ptr);
@@ -1184,14 +896,79 @@ FXString label(const FXString& value)
     text.substitute("\t", " "); text.substitute("\n", " "); text.substitute("\r", " ");
     return text;
 }
+
+bool hasAction(const CustomActions& model, const FXString& parent)
+{
+    for (unsigned n : model.children(parent))
+    {
+        const CustomAction& child = model.items[n];
+        if (child.kind == CustomAction::ACTION ||
+            (child.kind == CustomAction::FOLDER && hasAction(model, child.id)))
+            return true;
+    }
+    return false;
+}
+
+FXString customActionsDirectory()
+{
+    const char* portable = getenv("SWORDFISH_PORTABLE_DATA");
+    if (portable && *portable) return FXString(portable) + "/custom-actions";
+    const char* data = getenv("XDG_DATA_HOME");
+    if (data && *data) return FXString(data) + "/swordfish/custom-actions";
+    const char* home = getenv("HOME");
+    return FXString(home && *home ? home : ".") + "/.local/share/swordfish/custom-actions";
+}
+
+bool readKnownActions(const FXString& root, std::set<std::string>& known, FXString& error)
+{
+    FXString path = root + "/.swordfish-known-actions";
+    struct stat info;
+    if (lstat(path.text(), &info) != 0)
+    {
+        if (errno == ENOENT) return true;
+        error = path + ": " + strerror(errno);
+        return false;
+    }
+    if (!S_ISREG(info.st_mode))
+    {
+        error = path + ": not a regular file";
+        return false;
+    }
+    std::ifstream input(path.text());
+    if (!input)
+    {
+        error = path + ": cannot read";
+        return false;
+    }
+    std::string id;
+    while (std::getline(input, id))
+        if (!id.empty()) known.insert(id);
+    if (input.bad())
+    {
+        error = path + ": read failed";
+        return false;
+    }
+    return true;
+}
 }
 
 CustomActionMenu::CustomActionMenu(CustomActionsUI* ui, bool dynamic, const CustomActionContext& ctx) :
-    actions(ui), live(dynamic), snapshot(ctx) {}
+    actions(ui), live(dynamic), snapshot(ctx)
+{
+    if (!live) ++actions->transientMenus;
+}
 
 CustomActionMenu::~CustomActionMenu()
 {
     for (unsigned i = 0; i < panes.size(); ++i) { delete panes[i]; }
+    if (!live) --actions->transientMenus;
+}
+
+bool CustomActionMenu::isShowing() const
+{
+    for (FXMenuPane* menu : panes)
+        if (menu->shown()) return true;
+    return false;
 }
 
 FXMenuPane* CustomActionMenu::pane(FXWindow* owner)
@@ -1209,6 +986,7 @@ void CustomActionMenu::fill(FXMenuPane* menu, const FXString& parent, bool filte
         unsigned n = children[c];
         const CustomAction& a = actions->model.items[n];
         if (a.kind == CustomAction::SEPARATOR) { if (haveEntry) { separator = true; } continue; }
+        if (a.kind == CustomAction::FOLDER && !hasAction(actions->model, a.id)) { continue; }
         if (filter && !actions->model.visible(n, snapshot)) { continue; }
         if (separator) { new FXMenuSeparator(menu); separator = false; }
         haveEntry = true;
@@ -1246,37 +1024,287 @@ long CustomActionMenu::handle(FXObject* sender, FXSelector sel, void* ptr)
     return 0;
 }
 
+bool CustomActionsUI::writeKnownActions(const CustomActions& actions, FXString& error)
+{
+    FXString path = storageRoot + "/.swordfish-known-actions";
+    struct stat existing;
+    int result = lstat(path.text(), &existing);
+    if (result == 0 && !S_ISREG(existing.st_mode))
+    {
+        error = path + ": not a regular file";
+        return false;
+    }
+    if (result != 0 && errno != ENOENT)
+    {
+        error = path + ": " + strerror(errno);
+        return false;
+    }
+    FXString temporary = path + "." + FXStringVal((FXint)getpid()) + ".tmp";
+    int fd = open(temporary.text(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
+    if (fd < 0)
+    {
+        error = temporary + ": " + strerror(errno);
+        return false;
+    }
+    int failure = 0;
+    for (const CustomAction& action : actions.items)
+    {
+        if (action.kind != CustomAction::ACTION) continue;
+        FXString line = action.id + "\n";
+        size_t offset = 0;
+        while (offset < static_cast<size_t>(line.length()))
+        {
+            ssize_t count = write(fd, line.text() + offset, line.length() - offset);
+            if (count < 0 && errno == EINTR) continue;
+            if (count <= 0) { failure = count < 0 ? errno : EIO; break; }
+            offset += static_cast<size_t>(count);
+        }
+        if (failure) break;
+    }
+    if (!failure && fsync(fd) != 0) failure = errno;
+    if (close(fd) != 0 && !failure) failure = errno;
+    if (failure)
+    {
+        unlink(temporary.text());
+        error = temporary + ": " + strerror(failure);
+        return false;
+    }
+    if (rename(temporary.text(), path.text()) != 0)
+    {
+        failure = errno;
+        unlink(temporary.text());
+        error = path + ": " + strerror(failure);
+        return false;
+    }
+    return true;
+}
+
+bool CustomActionsUI::refreshStorage(bool notify)
+{
+    FXString fingerprintError, fingerprint =
+        CustomActions::directoryFingerprint(storageRoot, fingerprintError);
+    if (!fingerprintError.empty())
+    {
+        if (lastStorageError != fingerprintError)
+        {
+            storageWarning = fingerprintError;
+            lastStorageError = fingerprintError;
+            owner->getApp()->addChore(this, ID_STORAGE_WARNING);
+            appLog(APP_LOG_ERRORS, "custom-actions-fingerprint", fingerprintError);
+        }
+        return false;
+    }
+    if (!storageFingerprint.empty() && fingerprint == storageFingerprint) return true;
+
+    CustomActions loaded;
+    FXString error, warnings;
+    if (!loaded.loadDirectory(storageRoot, error, warnings))
+    {
+        if (lastStorageError != error)
+        {
+            storageWarning = error;
+            lastStorageError = error;
+            owner->getApp()->addChore(this, ID_STORAGE_WARNING);
+            appLog(APP_LOG_ERRORS, "custom-actions-load", error);
+        }
+        return false;
+    }
+    lastStorageError.clear();
+    std::set<std::string> known;
+    if (!readKnownActions(storageRoot, known, error))
+    {
+        appendIconError(warnings, error);
+        appLog(APP_LOG_ERRORS, "custom-actions-known-list", error);
+    }
+    FXString added;
+    if (notify)
+    {
+        for (const CustomAction& action : loaded.items)
+        {
+            if (action.kind != CustomAction::ACTION || known.count(action.id.text())) continue;
+            if (!added.empty()) added += "\n";
+            added += "- " + action.name;
+        }
+    }
+    storageWarning = warnings;
+    if (!added.empty())
+    {
+        newActionsWarning = added;
+        FXString saveError;
+        if (!writeKnownActions(loaded, saveError))
+        {
+            appendIconError(storageWarning, saveError);
+            appLog(APP_LOG_ERRORS, "custom-actions-known-list", saveError);
+        }
+    }
+    else if (!error.empty())
+    {
+        FXString saveError;
+        if (!writeKnownActions(loaded, saveError))
+            appendIconError(storageWarning, saveError);
+    }
+    bool changed = loaded.items != model.items;
+    model = loaded;
+    fingerprintError.clear();
+    storageFingerprint = CustomActions::directoryFingerprint(storageRoot, fingerprintError);
+    if (!fingerprintError.empty())
+    {
+        if (lastStorageError != fingerprintError)
+        {
+            storageWarning = fingerprintError;
+            lastStorageError = fingerprintError;
+            owner->getApp()->addChore(this, ID_STORAGE_WARNING);
+            appLog(APP_LOG_ERRORS, "custom-actions-fingerprint", fingerprintError);
+        }
+    }
+    if (changed) rebuild();
+    if (!storageWarning.empty()) owner->getApp()->addChore(this, ID_STORAGE_WARNING);
+    if (!newActionsWarning.empty()) owner->getApp()->addChore(this, ID_NEW_ACTIONS);
+    return true;
+}
+
+bool CustomActionsUI::saveStorage(CustomActions& saved, FXString& error, FXString& warnings)
+{
+    FXString currentFingerprint = CustomActions::directoryFingerprint(storageRoot, error);
+    if (!error.empty()) return false;
+    if (currentFingerprint != storageFingerprint)
+    {
+        error = _("Custom actions changed on disk while the editor was open. Your edits were not saved; close and reopen the editor to load the latest version.");
+        return false;
+    }
+    if (!saved.saveDirectory(storageRoot, error, warnings, storageFingerprint)) return false;
+    CustomActions reloaded;
+    FXString loadWarnings;
+    if (!reloaded.loadDirectory(storageRoot, error, loadWarnings))
+    {
+        error = _("Actions were written, but could not be reloaded: ") + error;
+        return false;
+    }
+    FXString knownError;
+    if (!writeKnownActions(reloaded, knownError))
+    {
+        appendIconError(warnings, knownError);
+        appLog(APP_LOG_ERRORS, "custom-actions-known-list", knownError);
+    }
+    saved = reloaded;
+    model = reloaded;
+    FXString fingerprintError;
+    storageFingerprint = CustomActions::directoryFingerprint(storageRoot, fingerprintError);
+    if (!fingerprintError.empty())
+    {
+        error = fingerprintError;
+        return false;
+    }
+    appendIconError(warnings, loadWarnings);
+    rebuild();
+    return true;
+}
+
 CustomActionsUI::CustomActionsUI(XFileExplorer* window, FXDockSite* dock, FXMenuPane* tools, FXMenuBar* bar) : owner(window)
 {
-    if (model.load(owner->getApp()->reg(), loadError))
+    storageRoot = customActionsDirectory();
+    if (xf_mkpath(storageRoot.text(), 0700) != 0)
     {
-        CustomActions migrated = model;
-        std::vector<CreatedActionIcon> created;
+        storageWarning = _("Cannot create custom actions folder: ") + storageRoot + ": " + strerror(errno);
+    }
+    else
+    {
         FXString error;
-        if (!prepareActionIcons(migrated, NULL, created, iconWarning, error))
+        struct stat marker;
+        int markerStatus = lstat((storageRoot + "/.swordfish-storage").text(), &marker);
+        bool markerAbsent = markerStatus != 0 && errno == ENOENT;
+        bool initialized = markerStatus == 0 && S_ISREG(marker.st_mode);
+        if (markerStatus == 0 && !initialized)
+            appendIconError(storageWarning, storageRoot + "/.swordfish-storage: not a regular file");
+        else if (markerStatus != 0 && !markerAbsent)
+            appendIconError(storageWarning, storageRoot + "/.swordfish-storage: " + strerror(errno));
+        if (!model.loadDirectory(storageRoot, error, storageWarning))
         {
-            discardActionIcons(created, error);
-            appLog(APP_LOG_ERRORS, "custom-action-icon-copy", error);
-            appendIconError(iconWarning, error);
+            storageWarning = error;
+            appLog(APP_LOG_ERRORS, "custom-actions-load", error);
         }
-        else if (migrated.items != model.items)
+        else if (!initialized && markerAbsent)
         {
-            FXSettings previous(owner->getApp()->reg());
-            for (size_t i = 0; i < migrated.items.size(); ++i)
+            CustomActions legacy;
+            FXString legacyError;
+            if (!legacy.load(owner->getApp()->reg(), legacyError))
             {
-                if (migrated.items[i].icon == model.items[i].icon) { continue; }
-                FXString key = FXString().format("item%u.icon", static_cast<unsigned>(i));
-                owner->getApp()->reg().writeStringEntry("CUSTOM ACTIONS", key.text(), migrated.items[i].icon.text());
+                appendIconError(storageWarning,
+                    _("Legacy custom actions were left untouched because they could not be loaded: ") + legacyError);
             }
-            if (owner->getApp()->reg().write())
-                model = migrated;
             else
             {
-                static_cast<FXSettings&>(owner->getApp()->reg()) = previous;
-                error = _("Cannot save the migrated custom action icons. The original references were kept.");
-                discardActionIcons(created, error);
-                appLog(APP_LOG_ERRORS, "custom-action-icon-save", error);
-                appendIconError(iconWarning, error);
+                std::map<std::string, FXString> ids;
+                for (CustomAction& action : legacy.items)
+                {
+                    FXString oldId = action.id;
+                    ids[oldId.text()] = model.newId();
+                }
+                for (CustomAction& action : legacy.items)
+                {
+                    FXString oldId = action.id;
+                    action.id = ids[oldId.text()];
+                    if (!action.parent.empty()) action.parent = ids[action.parent.text()];
+                    action.storagePath.clear();
+                    if (action.icon.left(16) == "portable-action:")
+                    {
+                        FXString path = customActionIconPath(action.icon);
+                        if (!path.empty()) action.icon = path;
+                        else
+                        {
+                            appendIconError(storageWarning,
+                                action.name + _(": its old portable icon could not be found and was omitted."));
+                            action.icon.clear();
+                        }
+                    }
+                    else if (!action.icon.empty() && action.icon.left(6) != "theme:" &&
+                             !FXPath::isAbsolute(action.icon))
+                        action.icon = FXString::null;
+                    if (!action.icon.empty() && action.icon.left(6) != "theme:")
+                    {
+                        struct stat iconInfo;
+                        if (lstat(action.icon.text(), &iconInfo) != 0 || !S_ISREG(iconInfo.st_mode))
+                        {
+                            appendIconError(storageWarning,
+                                action.name + _(": its legacy icon is unavailable and was omitted."));
+                            action.icon.clear();
+                        }
+                    }
+                    model.items.push_back(action);
+                }
+                FXString saveError, saveWarnings;
+                if (!model.saveDirectory(storageRoot, saveError, saveWarnings))
+                {
+                    FXString reloadError, reloadWarnings;
+                    if (!model.loadDirectory(storageRoot, reloadError, reloadWarnings))
+                        appLog(APP_LOG_ERRORS, "custom-actions-reload", reloadError);
+                    appendIconError(storageWarning,
+                        _("Legacy custom actions were not migrated; the original settings remain intact: ") +
+                        saveError);
+                    appLog(APP_LOG_ERRORS, "custom-actions-migration", saveError);
+                }
+                else
+                {
+                    CustomActions migrated;
+                    FXString reloadError, reloadWarnings;
+                    if (!migrated.loadDirectory(storageRoot, reloadError, reloadWarnings))
+                    {
+                        appendIconError(storageWarning, reloadError);
+                        appLog(APP_LOG_ERRORS, "custom-actions-migration", reloadError);
+                    }
+                    else
+                    {
+                        model = migrated;
+                        FXString knownError;
+                        if (!writeKnownActions(model, knownError))
+                        {
+                            appendIconError(storageWarning, knownError);
+                            appLog(APP_LOG_ERRORS, "custom-actions-known-list", knownError);
+                        }
+                    }
+                    appendIconError(storageWarning, saveWarnings);
+                    appendIconError(storageWarning, reloadWarnings);
+                }
             }
         }
     }
@@ -1290,6 +1318,14 @@ CustomActionsUI::CustomActionsUI(XFileExplorer* window, FXDockSite* dock, FXMenu
     new FXMenuCommand(tools, _("Custom Actions..."), minirunicon, this, ID_EDIT);
     new FXMenuCheck(tools, _("Show Custom Toolbar"), this, ID_TOGGLE);
     rebuild();
+    if (!storageRoot.empty())
+    {
+        FXString startupWarning = storageWarning;
+        refreshStorage(true);
+        appendIconError(storageWarning, startupWarning);
+        if (!storageWarning.empty()) owner->getApp()->addChore(this, ID_STORAGE_WARNING);
+    }
+    owner->getApp()->addTimeout(this, ID_REFRESH, 1500);
     if (!loadError.empty()) { owner->getApp()->addChore(this, ID_LOAD_ERROR); }
     if (!iconWarning.empty()) { owner->getApp()->addChore(this, ID_ICON_WARNING); }
 }
@@ -1299,6 +1335,9 @@ CustomActionsUI::~CustomActionsUI()
     owner->getApp()->removeChore(this, ID_LOAD_ERROR);
     owner->getApp()->removeChore(this, ID_REBUILD);
     owner->getApp()->removeChore(this, ID_ICON_WARNING);
+    owner->getApp()->removeChore(this, ID_STORAGE_WARNING);
+    owner->getApp()->removeChore(this, ID_NEW_ACTIONS);
+    owner->getApp()->removeTimeout(this, ID_REFRESH);
     delete toolbar;
     delete toolbarMenu;
     delete mainTitle;
@@ -1365,6 +1404,7 @@ void CustomActionsUI::rebuild()
         unsigned n = nodes[i];
         const CustomAction& a = model.items[n];
         if (a.kind == CustomAction::SEPARATOR) { if (haveEntry) { separator = true; } continue; }
+        if (a.kind == CustomAction::FOLDER && !hasAction(model, a.id)) { continue; }
         if (separator)
         {
             new FXFrame(toolbar, FRAME_SUNKEN | LAYOUT_CENTER_Y |
@@ -1439,6 +1479,15 @@ CustomActionMenu* CustomActionsUI::appendContextMenu(FXMenuPane* menu, FilePanel
 
 long CustomActionsUI::handle(FXObject* sender, FXSelector sel, void* ptr)
 {
+    if (FXSELTYPE(sel) == SEL_TIMEOUT && FXSELID(sel) == ID_REFRESH)
+    {
+        bool menuOpen = (mainPane && mainPane->shown()) || transientMenus ||
+                        (mainMenu && mainMenu->isShowing()) ||
+                        (toolbarMenu && toolbarMenu->isShowing());
+        if (!editorOpen && !menuOpen) refreshStorage(true);
+        owner->getApp()->addTimeout(this, ID_REFRESH, 1500);
+        return 1;
+    }
     if (FXSELTYPE(sel) == SEL_UPDATE && FXSELID(sel) == ID_TOGGLE)
     {
         sender->handle(this, FXSEL(SEL_COMMAND, toolbarShown ? FXWindow::ID_CHECK : FXWindow::ID_UNCHECK), NULL);
@@ -1454,6 +1503,22 @@ long CustomActionsUI::handle(FXObject* sender, FXSelector sel, void* ptr)
     if (FXSELTYPE(sel) == SEL_CHORE && FXSELID(sel) == ID_ICON_WARNING)
     {
         showIconWarning(owner, iconWarning);
+        return 1;
+    }
+    if (FXSELTYPE(sel) == SEL_CHORE && FXSELID(sel) == ID_STORAGE_WARNING)
+    {
+        if (!storageWarning.empty())
+            MessageBox::warning(owner, BOX_OK, _("Custom Actions Need Attention"), "%s", storageWarning.text());
+        storageWarning.clear();
+        return 1;
+    }
+    if (FXSELTYPE(sel) == SEL_CHORE && FXSELID(sel) == ID_NEW_ACTIONS)
+    {
+        if (!newActionsWarning.empty())
+            MessageBox::information(owner, BOX_OK, _("New Custom Actions"),
+                _("These action folders were found and are now available:\n\n%s"),
+                newActionsWarning.text());
+        newActionsWarning.clear();
         return 1;
     }
     if (FXSELTYPE(sel) == SEL_CHORE && FXSELID(sel) == ID_REBUILD)
@@ -1498,11 +1563,17 @@ long CustomActionsUI::handle(FXObject* sender, FXSelector sel, void* ptr)
     }
     if (FXSELID(sel) == ID_EDIT)
     {
+        refreshStorage(true);
+        editorOpen = true;
         if (!loadError.empty() && MessageBox::question(owner, BOX_OK_CANCEL, _("Invalid Saved Custom Actions"),
             _("The saved custom actions are invalid and were not loaded.\nSaving this editor will replace them. Continue?")) != BOX_CLICKED_OK)
-        { return 1; }
+        {
+            editorOpen = false;
+            return 1;
+        }
         ActionEditor editor(owner, *this);
         if (editor.execute(PLACEMENT_OWNER)) { loadError.clear(); rebuild(); }
+        editorOpen = false;
         return 1;
     }
     if (FXSELID(sel) == ID_TOGGLE)

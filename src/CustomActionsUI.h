@@ -9,6 +9,7 @@ class CustomActionMenu;
 
 class CustomActionsUI : public FXObject
 {
+    friend class CustomActionMenu;
     XFileExplorer* owner;
     FXToolBar* toolbar;
     std::vector<FXIcon*> icons;
@@ -19,13 +20,22 @@ class CustomActionsUI : public FXObject
     FXMenuTitle* mainTitle = NULL;
     FXString loadError;
     FXString iconWarning;
+    FXString storageRoot;
+    FXString storageFingerprint;
+    FXString storageWarning;
+    FXString lastStorageError;
+    FXString newActionsWarning;
     bool toolbarShown = true;
+    bool editorOpen = false;
+    unsigned transientMenus = 0;
     void rebuild();
     void showToolbarMenu();
+    bool refreshStorage(bool notify);
+    bool writeKnownActions(const CustomActions&, FXString&);
 public:
     enum { ID_EDIT = 1, ID_TOGGLE, ID_LOAD_ERROR, ID_TOOLBAR_MENU, ID_REBUILD,
            ID_STYLE_BOTH, ID_STYLE_ICONS, ID_STYLE_TITLES, ID_SIZE_16, ID_SIZE_24, ID_SIZE_32,
-           ID_ICON_WARNING,
+           ID_ICON_WARNING, ID_STORAGE_WARNING, ID_NEW_ACTIONS, ID_REFRESH,
            ID_ACTION = 100 };
     CustomActions model;
     CustomActionsUI(XFileExplorer*, FXDockSite*, FXMenuPane*, FXMenuBar*);
@@ -33,6 +43,7 @@ public:
     long handle(FXObject*, FXSelector, void*);
     CustomActionContext context(FilePanel* = NULL) const;
     CustomActionMenu* appendContextMenu(FXMenuPane*, FilePanel*);
+    bool saveStorage(CustomActions&, FXString&, FXString&);
     void run(unsigned, const CustomActionContext&);
     FXIcon* icon(unsigned) const;
     // Rebuild after the custom toolbar icon size preference changes
@@ -54,6 +65,7 @@ public:
     FXMenuPane* pane(FXWindow*);
     void fill(FXMenuPane*, const FXString&, bool filter);
     void appendEditor(FXMenuPane*);
+    bool isShowing() const;
     long handle(FXObject*, FXSelector, void*);
 };
 

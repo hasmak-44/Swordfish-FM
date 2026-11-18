@@ -129,7 +129,8 @@ actions and groups; unavailable entries are disabled. The editor
 offers **Add Action…**, **Add Folder…**, **Add Separator**, **Edit…**, **Remove**,
 **Move Up**, **Move Down**, and **Move to Folder…**. Folders can contain folders
 and actions, producing cascading **Custom Actions** context menus. Removing a
-folder also removes its children after confirmation.
+folder also removes its children after confirmation. Empty groups remain
+visible in the editor but are hidden from menus and the custom toolbar.
 
 The editor uses an icon/name/description tree with compact side controls.
 Action properties have **Basic** and **Appearance Conditions** tabs, command
@@ -210,16 +211,30 @@ icon name and resolve it against host themes, inherited themes and hicolor;
 portable mode does not restrict this to bundled icons. Startup looks up the
 configured icon names together; the full catalog is built when the chooser
 opens. When the main editor is saved, image selections are copied to
-`portable-data/icons/custom-actions/` and stored using movable references.
-The original image is not changed, and a conflicting filename gets a new name.
-Existing image paths are copied when a portable build starts, provided the
-originals are still available. If an old image was inside a moved portable
-profile, Swordfish also checks for the same relative path in the copied
-`portable-data` folder. Missing or ambiguous matches retain the old reference
-and produce a warning so you can select the image again. PNG, JPEG and XPM are
-supported; SVG uses `rsvg-convert` and a converted-image cache. Image files
-have thumbnails and a larger selected-image preview. A named system icon
-depends on the target host's icons.
+the action's own folder under `portable-data/custom-actions/`; a group icon is
+stored in the group's folder. The original image is not changed, and filename
+collisions are resolved inside the action folder. The folder tree and its
+`action.ini`/`group.ini` settings move together with the portable profile.
+PNG, JPEG and XPM are supported; SVG uses `rsvg-convert` and a converted-image
+cache. Image files have thumbnails and a larger selected-image preview. A named
+system icon depends on the target host's icons.
+
+Custom actions are stored as folders in `portable-data/custom-actions/`.
+Each action folder contains `action.ini`; directories without an action file
+are groups and can contain nested groups and actions. Folder names are their
+menu labels. An optional `group.ini` stores group presentation and ordering.
+The editor records ordering; unpositioned manually added entries appear after
+ordered entries, alphabetically. Swordfish checks this tree while running and
+notifies you when it finds new actions. You can add or remove action folders
+directly; changes are loaded automatically. The hidden
+`.swordfish-storage` and `.swordfish-known-actions` files are managed by
+Swordfish and should not be edited.
+
+On first startup after upgrading, legacy definitions in `config/swordfish/xferc`
+are copied into this folder tree. The original `CUSTOM ACTIONS` registry data
+is retained as a backup and is not updated by later editor saves. Available
+legacy image icons are copied into their action folders. Missing or unsafe
+legacy icon paths are omitted with a warning; the action definitions remain.
 
 The built-in **General**, **Tools** and **Panel** toolbars use their original
 commands, order and theme icon sizes. Experimental toolbar customization,
@@ -568,15 +583,16 @@ For user download and launch steps, see the main
 Writable state is kept in `portable-data` beside the AppDir:
 
 - `config`, `data`, `cache`, and `state` are the portable XDG directories.
-- `config/swordfish/xferc` is the writable settings file. It includes custom
-  action definitions (in its `CUSTOM ACTIONS` section), so custom actions are
-  stored in this file rather than in a separate folder.
+- `config/swordfish/xferc` is the writable settings file. Existing custom
+  action definitions in its `CUSTOM ACTIONS` section are retained as a
+  migration backup.
+- `custom-actions/` contains the live custom action and group folder tree.
 - `scripts` is the custom-script folder used by Swordfish.
 - `themes`, `icons`, and `addons` are writable locations reserved for
   portable customizations and future extensions.
-- `icons/custom-actions/` holds copied custom-action image icons. You can also
-  put images there and select them in the editor; the image chooser opens
-  there when no image is already selected.
+- `icons/custom-actions/` remains available for existing portable icon
+  references; new custom-action images are stored beside their action in
+  `custom-actions/`.
 - `textures`, `patterns`, and `images` hold shared user graphics; custom color
   themes and their theme-specific graphics live under `themes/colors/`.
 - `logs` contains persistent, categorized application logs:
