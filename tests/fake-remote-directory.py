@@ -11,16 +11,19 @@ if sys.argv[1:] == ["--usb-monitor"]:
     assert not os.environ.get("GIO_MODULE_DIR")
     state = os.environ.get("SWORDFISH_TEST_USB_STATE")
     previous = None
+    reported = 0.0
     while True:
         try:
             with open(state, encoding="utf-8") as source:
                 data = source.read()
         except (FileNotFoundError, TypeError):
             data = ""
-        if data != previous:
+        # Like the real helper, report periodically even without changes (watchdog heartbeat)
+        if data != previous or time.monotonic() - reported > 5:
             print(data, end="")
             print("DONE", flush=True)
             previous = data
+            reported = time.monotonic()
         time.sleep(0.1)
 
 if os.path.basename(sys.argv[0]) == "udisksctl":

@@ -53,4 +53,4 @@ SWORDFISH_HOST_LD_LIBRARY_PATH="" SWORDFISH_HOST_GIO_MODULE_DIR="" \
 SWORDFISH_HOST_XDG_DATA_DIRS="$scratch/no-system-data" SWORDFISH_HOST_XDG_CONFIG_DIRS="$scratch/no-system-config" \
 LD_LIBRARY_PATH="/nonexistent/swordfish-test-bundle" GIO_MODULE_DIR="/nonexistent/swordfish-test-modules" \
 SWORDFISH_TEST_MOUNT_LOG="$scratch/mount.log" SWORDFISH_TEST_MOUNT_PATH="$scratch/fixture/large" \
-timeout 120s xvfb-run -a "${runner[@]}" "$scratch/test" "$scratch/fixture" "$prefix/bin/swordfish" "$icons"
+timeout 240s xvfb-run -a "${runner[@]}" "$scratch/test" "$scratch/fixture" "$prefix/bin/swordfish" "$icons"

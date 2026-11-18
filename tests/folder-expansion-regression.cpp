@@ -840,9 +840,11 @@ int main(int argc, char** argv)
     waitForUsb("mtp://first/", false);
     waitForUsb("mtp://second/", true);
     assert(deviceModel->disconnected("afc://first:3/"));
-    usbSnapshot("DEVICE\tRG9jdW1lbnRzIG9uIGlQaG9uZQ==\tYWZjOi8vZmlyc3Q6My8=\tmounted\n");
-    waitForUsb("afc://first:3/", false);
-    assert(!deviceModel->disconnected("afc://first:3/"));
+    usbSnapshot("DEVICE\tRG9jdW1lbnRzIG9uIGlQaG9uZQ==\tYWZjOi8vZmlyc3Q6My8=\tmounted\tL3RtcC9ub3QtZ3Zmcw==\n");
+    waitForUsb("mtp://second/", false);
+    // Mounted without a browsable GVFS folder: the phone stays listed, dimmed and mountable
+    waitForUsb("afc://first:3/", true);
+    assert(deviceModel->disconnected("afc://first:3/"));
     usbSnapshot("");
     waitForUsb("afc://first:3/", false);
     usbSnapshot("DEVICE\tUGhvbmU=\tbXRwOi8vc2Vjb25kLw==\tunmounted\n");

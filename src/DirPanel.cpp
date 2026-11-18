@@ -5670,6 +5670,13 @@ FXbool DirPanel::openDevice(const FXString& device)
         if (!queried || xf_gvfsmount(localpath) != localpath || !xf_isdirectory(localpath))
         {
             output.trim();
+            if (queried && localpath.empty())
+            {
+                // gio reached the device, but there is no folder other programs can open
+                output = _("The device is mounted, but the desktop GVFS FUSE service is not available, so "
+                           "its files have no local folder. Install the gvfs-fuse package (or start "
+                           "gvfsd-fuse) and log in again.");
+            }
             if (output.empty()) output = info;
             if (output.empty()) output = _("The device did not provide an accessible GVFS mount.");
             appLog(APP_LOG_ERRORS, "portable-device-mount-failed", device + ": " + output);

@@ -504,6 +504,11 @@ void SidebarFrame::layout()
 // mtab polling interval (ms)
 #define MTAB_POLL_INTERVAL    1000
 
+// Restart phone discovery if it stays silent this long (ms); it reports every 10 s
+#ifndef USB_MONITOR_WATCHDOG
+#define USB_MONITOR_WATCHDOG    35000
+#endif
+
 
 // Margin for places list height (in number of items)
 #define PLACES_HEIGHT_MARGIN    2
@@ -728,6 +733,7 @@ FXDEFMAP(MountsList) MountsListMap[] =
     FXMAPFUNC(SEL_TIMEOUT, MountsList::ID_MOUNTS_REFRESH, MountsList::onMountsRefresh),
     FXMAPFUNC(SEL_IO_READ, MountsList::ID_USB_READ, MountsList::onUsbRead),
     FXMAPFUNC(SEL_TIMEOUT, MountsList::ID_USB_RESTART, MountsList::onUsbRestart),
+    FXMAPFUNC(SEL_TIMEOUT, MountsList::ID_USB_WATCHDOG, MountsList::onUsbWatchdog),
 #endif
     FXMAPFUNC(SEL_QUERY_TIP, 0, MountsList::onQueryTip)
 };
@@ -775,6 +781,7 @@ MountsList::~MountsList()
 #if defined(linux)
     getApp()->removeTimeout(this, ID_MOUNTS_REFRESH);
     getApp()->removeTimeout(this, ID_USB_RESTART);
+    getApp()->removeTimeout(this, ID_USB_WATCHDOG);
     stopUsbMonitor();
 #endif
     delete mounts;
@@ -840,10 +847,12 @@ void MountsList::startUsbMonitor()
     }
     usbFd = pipefd[0];
     getApp()->addInput(usbFd, INPUT_READ, this, ID_USB_READ);
+    getApp()->addTimeout(this, ID_USB_WATCHDOG, USB_MONITOR_WATCHDOG);
 }
 
 void MountsList::stopUsbMonitor()
 {
+    getApp()->removeTimeout(this, ID_USB_WATCHDOG);
     if (usbFd >= 0)
     {
         getApp()->removeInput(usbFd, INPUT_READ);
@@ -877,6 +886,16 @@ long MountsList::onUsbRestart(FXObject*, FXSelector, void*)
     return 1;
 }
 
+// The helper reports at least every 10 s; silence means it is stuck, so restart it.
+// The last known devices stay listed meanwhile.
+long MountsList::onUsbWatchdog(FXObject*, FXSelector, void*)
+{
+    appLog(APP_LOG_ERRORS, "usb-monitor-unresponsive", "restarting device discovery");
+    stopUsbMonitor();
+    startUsbMonitor();
+    return 1;
+}
+
 long MountsList::onUsbRead(FXObject*, FXSelector, void*)
 {
     char buffer[4096];
@@ -906,6 +925,7 @@ long MountsList::onUsbRead(FXObject*, FXSelector, void*)
         usbBuffer = usbBuffer.mid(newline + 1, usbBuffer.length());
         if (line == "DONE")
         {
+            getApp()->addTimeout(this, ID_USB_WATCHDOG, USB_MONITOR_WATCHDOG);
             setUsbStatus(pendingUsbStatus);
             pendingUsbStatus.clear();
             if (!usbSnapshotInvalid &&
@@ -933,19 +953,24 @@ long MountsList::onUsbRead(FXObject*, FXSelector, void*)
             pendingUsbStatus += line.mid(6, line.length());
             usbSnapshotInvalid = true;
         }
-        else if (line.left(7) == "DEVICE\t" && line.contains('\t') == 3)
+        else if (line.left(7) == "DEVICE\t" && (line.contains('\t') == 3 || line.contains('\t') == 4))
         {
-            gsize nameLength = 0, uriLength = 0;
+            gsize nameLength = 0, uriLength = 0, pathLength = 0;
             guchar* name = g_base64_decode(line.section('\t', 1).text(), &nameLength);
             guchar* uri = g_base64_decode(line.section('\t', 2).text(), &uriLength);
+            guchar* path = g_base64_decode(line.section('\t', 4).text(), &pathLength);
             FXString label(reinterpret_cast<char*>(name), nameLength);
             FXString location(reinterpret_cast<char*>(uri), uriLength);
+            FXString localpath(reinterpret_cast<char*>(path), pathLength);
+            // Only a GVFS FUSE folder can be browsed; anything else means "mounted, not reachable".
+            if (strlen(localpath.text()) != pathLength || xf_gvfsmount(localpath) != localpath)
+                localpath.clear();
             if (!label.empty() && (location.left(6) == "mtp://" || location.left(6) == "afc://") &&
                 strlen(label.text()) == nameLength && strlen(location.text()) == uriLength)
             {
                 pendingUsbVolumes[location] = label;
                 if (line.section('\t', 3) == "mounted")
-                    pendingMountedUsbVolumes.insert(location);
+                    pendingMountedUsbVolumes[location] = localpath;
                 else if (line.section('\t', 3) != "unmounted")
                 {
                     if (!pendingUsbStatus.empty()) pendingUsbStatus += "\n";
@@ -962,6 +987,7 @@ long MountsList::onUsbRead(FXObject*, FXSelector, void*)
             }
             g_free(name);
             g_free(uri);
+            g_free(path);
         }
         else
         {
@@ -1081,11 +1107,8 @@ void MountsList::scan()
 
     }
 
-    for (const auto& device : usbVolumes)
-        if (mountedUsbVolumes.find(device.first) == mountedUsbVolumes.end())
-            addMount(device.second, device.first, miniremovabledeviceicon);
-
     // GVFS mount points
+    std::map<FXString, FXString> portableMounts;    // GVFS folder -> device URI
     FXString gvfspath = "/run/user/" + FXStringVal(FXSystem::user()) + "/gvfs";
     DIR* dirp = opendir(gvfspath.text());
     if (dirp)
@@ -1118,14 +1141,30 @@ void MountsList::scan()
             // MTP device
             if (mounttype == "mtp" || mounttype == "afc")
             {
-                FXString uri = xf_gvfsmounturi(pathname);
-                auto volume = usbVolumes.find(uri);
-                FXString name = volume != usbVolumes.end() ? volume->second :
-                                mounttype == "afc" ? _("iOS device") : _("MTP device");
-                addMount(name, pathname, miniremovabledeviceicon);
+                portableMounts[pathname] = xf_gvfsmounturi(pathname);
             }
         }
         closedir(dirp);
+    }
+
+    // A phone keeps one row while it is plugged in: its GVFS folder when that can be browsed,
+    // otherwise its device URI, shown dimmed and mountable. Hiding it while mounted made it
+    // vanish whenever the GVFS folder was missing or the state was out of date.
+    for (const auto& device : usbVolumes)
+    {
+        FXString pathname;
+        auto mounted = mountedUsbVolumes.find(device.first);
+        if (mounted != mountedUsbVolumes.end() && portableMounts.find(mounted->second) != portableMounts.end())
+            pathname = mounted->second;
+        for (auto entry = portableMounts.begin(); pathname.empty() && entry != portableMounts.end(); ++entry)
+            if (entry->second == device.first) pathname = entry->first;
+        if (!pathname.empty()) portableMounts.erase(pathname);
+        addMount(device.second, pathname.empty() ? device.first : pathname, miniremovabledeviceicon);
+    }
+    for (const auto& entry : portableMounts)
+    {
+        FXString mounttype = FXPath::name(entry.first).before(':');
+        addMount(mounttype == "afc" ? _("iOS device") : _("MTP device"), entry.first, miniremovabledeviceicon);
     }
     for (const auto& remote : knownRemotes)
     {
@@ -1136,8 +1175,8 @@ void MountsList::scan()
 
 FXbool MountsList::disconnected(const FXString& path) const
 {
-    if (usbVolumes.find(path) != usbVolumes.end())
-        return mountedUsbVolumes.find(path) == mountedUsbVolumes.end();
+    // Phone rows that use the device URI are never browsable: activating them mounts the phone
+    if (usbVolumes.find(path) != usbVolumes.end()) return true;
     return knownRemotes.find(path) != knownRemotes.end() &&
            mountedRemotes.find(path) == mountedRemotes.end();
 }

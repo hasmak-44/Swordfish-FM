@@ -2263,6 +2263,23 @@ int download(const std::string& address, const std::string& destination)
 
 namespace
 {
+// Mount of a phone volume from the monitor's cached state. A synchronous enclosing-mount
+// lookup can block on a busy MTP backend and freeze the whole device list.
+GMount* portableVolumeMount(GVolumeMonitor* monitor, GVolume* volume, GFile* root)
+{
+    GMount* mount = g_volume_get_mount(volume);
+    if (mount) return mount;
+    GList* mounts = g_volume_monitor_get_mounts(monitor);
+    for (GList* node = mounts; node && !mount; node = node->next)
+    {
+        GFile* mountRoot = g_mount_get_root(G_MOUNT(node->data));
+        if (mountRoot && g_file_equal(mountRoot, root)) mount = G_MOUNT(g_object_ref(node->data));
+        if (mountRoot) g_object_unref(mountRoot);
+    }
+    g_list_free_full(mounts, g_object_unref);
+    return mount;
+}
+
 void usbVolumeSnapshot(GVolumeMonitor* monitor)
 {
     GList* volumes = g_volume_monitor_get_volumes(monitor);
@@ -2273,35 +2290,35 @@ void usbVolumeSnapshot(GVolumeMonitor* monitor)
         if (!root) continue;
         const gboolean mtp = g_file_has_uri_scheme(root, "mtp");
         const gboolean afc = g_file_has_uri_scheme(root, "afc");
-        if ((mtp || afc) && g_volume_can_mount(volume))
+        if (mtp || afc)
         {
-            GError* error = NULL;
-            GMount* mount = g_file_find_enclosing_mount(root, NULL, &error);
-            if (!mount && error && !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_MOUNTED))
+            GMount* mount = portableVolumeMount(monitor, volume, root);
+            char* name = g_volume_get_name(volume);
+            char* uri = g_file_get_uri(root);
+            char* path = NULL;
+            if (mount)
             {
-                gchar* detail = g_strescape(error->message, NULL);
-                std::printf("ERROR\tUnable to check portable device mount: %s\n", detail);
-                g_free(detail);
+                GFile* mountRoot = g_mount_get_root(mount);
+                path = mountRoot ? g_file_get_path(mountRoot) : NULL;
+                if (mountRoot) g_object_unref(mountRoot);
             }
-            else
+            if (name && uri)
             {
-                char* name = g_volume_get_name(volume);
-                char* uri = g_file_get_uri(root);
-                if (name && uri)
-                {
-                    char* encodedName = g_base64_encode(reinterpret_cast<const guchar*>(name), strlen(name));
-                    char* encodedUri = g_base64_encode(reinterpret_cast<const guchar*>(uri), strlen(uri));
-                    std::printf("DEVICE\t%s\t%s\t%s\n", encodedName, encodedUri,
-                                mount ? "mounted" : "unmounted");
-                    g_free(encodedName);
-                    g_free(encodedUri);
-                }
-                else std::puts("ERROR\tUnable to identify a portable device volume");
-                g_free(name);
-                g_free(uri);
+                char* encodedName = g_base64_encode(reinterpret_cast<const guchar*>(name), strlen(name));
+                char* encodedUri = g_base64_encode(reinterpret_cast<const guchar*>(uri), strlen(uri));
+                char* encodedPath = g_base64_encode(reinterpret_cast<const guchar*>(path ? path : ""),
+                                                    path ? strlen(path) : 0);
+                std::printf("DEVICE\t%s\t%s\t%s\t%s\n", encodedName, encodedUri,
+                            mount ? "mounted" : "unmounted", encodedPath);
+                g_free(encodedName);
+                g_free(encodedUri);
+                g_free(encodedPath);
             }
+            else std::puts("ERROR\tUnable to identify a portable device volume");
+            g_free(name);
+            g_free(uri);
+            g_free(path);
             if (mount) g_object_unref(mount);
-            g_clear_error(&error);
         }
         g_object_unref(root);
     }

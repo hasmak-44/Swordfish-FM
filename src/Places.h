@@ -151,8 +151,8 @@ protected:
     std::set<FXString> mountedRemotes;
     std::map<FXString, FXString> usbVolumes;
     std::map<FXString, FXString> pendingUsbVolumes;
-    std::set<FXString> mountedUsbVolumes;
-    std::set<FXString> pendingMountedUsbVolumes;
+    std::map<FXString, FXString> mountedUsbVolumes;         // URI -> GVFS local path (empty without FUSE)
+    std::map<FXString, FXString> pendingMountedUsbVolumes;
     FXString usbStatus;
     FXString pendingUsbStatus;
     FXString usbBuffer;
@@ -182,6 +182,7 @@ public:
         ID_MOUNTS_REFRESH=FXList::ID_LAST,
         ID_USB_READ,
         ID_USB_RESTART,
+        ID_USB_WATCHDOG,
         ID_LAST
     };
 
@@ -225,6 +226,7 @@ public:
     long onMountsRefresh(FXObject*, FXSelector, void*);
     long onUsbRead(FXObject*, FXSelector, void*);
     long onUsbRestart(FXObject*, FXSelector, void*);
+    long onUsbWatchdog(FXObject*, FXSelector, void*);
 
     // Display tooltip
     long onQueryTip(FXObject*, FXSelector, void*);
