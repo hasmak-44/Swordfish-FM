@@ -12,6 +12,11 @@ HOST_KEYS = (
     "XDG_CONFIG_DIRS", "XDG_DATA_DIRS", "GIO_MODULE_DIR",
 )
 
+USER_CONTENT_DIRS = (
+    "themes/colors", "textures", "patterns", "images", "custom-actions",
+    "scripts", "icons/custom-actions", "addons",
+)
+
 
 class PortableLauncherTests(unittest.TestCase):
     def setUp(self):
@@ -58,13 +63,27 @@ class PortableLauncherTests(unittest.TestCase):
         self.assertEqual(result["arguments"], ["argument with spaces"])
         self.assertIsNone(result["environment"]["GIO_USE_VFS"])
 
+    def check_empty_content_dirs(self, data_root):
+        for directory in USER_CONTENT_DIRS:
+            with self.subTest(directory=directory):
+                path = data_root / directory
+                self.assertTrue(path.is_dir())
+                self.assertEqual(list(path.iterdir()), [])
+
     def test_normal_launch_records_host_defaults(self):
         result = self.launch(self.env)
         self.check_host(result, self.expected)
         self.assertEqual(
             result["environment"]["SWORDFISH_PORTABLE_DATA"], str(self.bundle / "portable-data"))
-        self.assertTrue((self.bundle / "portable-data/icons/custom-actions").is_dir())
-        self.assertTrue((self.bundle / "portable-data/custom-actions").is_dir())
+        self.check_empty_content_dirs(self.bundle / "portable-data")
+
+    def test_launch_preserves_existing_content(self):
+        texture = self.bundle / "portable-data/textures/category/keep.png"
+        texture.parent.mkdir(parents=True)
+        texture.write_bytes(b"existing content")
+        self.launch(self.env)
+        self.assertEqual(texture.read_bytes(), b"existing content")
+        self.assertTrue((self.bundle / "portable-data/patterns").is_dir())
 
     def test_normal_launch_records_custom_host_environment(self):
         expected = dict(self.expected)
@@ -123,8 +142,7 @@ class PortableLauncherTests(unittest.TestCase):
         self.assertEqual(
             result["environment"]["SWORDFISH_PORTABLE_DATA"], str(self.root / "test.AppImage.data"))
         self.assertTrue((self.root / "test.AppImage.data/cache/pixbuf-loaders.cache").is_file())
-        self.assertTrue((self.root / "test.AppImage.data/icons/custom-actions").is_dir())
-        self.assertTrue((self.root / "test.AppImage.data/custom-actions").is_dir())
+        self.check_empty_content_dirs(self.root / "test.AppImage.data")
 
 
 if __name__ == "__main__":

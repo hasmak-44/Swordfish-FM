@@ -15,7 +15,7 @@ if [ ! -x "$app_root/usr/bin/swordfish" ]; then
     exit 1
 fi
 
-for directory in config data cache state scripts themes icons icons/custom-actions custom-actions addons; do
+for directory in config data cache state scripts themes/colors textures patterns images icons/custom-actions custom-actions addons; do
     if ! mkdir -p "$data_root/$directory"; then
         printf 'Cannot create portable data directory: %s\n' "$data_root/$directory" >&2
         exit 1

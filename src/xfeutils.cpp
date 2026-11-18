@@ -1316,6 +1316,86 @@ FXString xf_realpath(const FXString path)
     return ret;
 }
 
+static FXbool pathWithinPortableData(const FXString& path, const FXString& root)
+{
+    return path == root || (root == "/" ? path.left(1) == "/" :
+                            path.left(root.length()) == root && path[root.length()] == '/');
+}
+
+static FXbool portableCanonicalPath(const FXString& path, FXString& result)
+{
+    FXString probe = FXPath::absolute(path), suffix;
+    char buffer[MAXPATHLEN];
+    while (true)
+    {
+        if (realpath(probe.text(), buffer))
+        {
+            result = FXPath::absolute(FXString(buffer) + suffix);
+            return true;
+        }
+        if (errno != ENOENT && errno != ENOTDIR) return false;
+        struct stat info;
+        if (lstat(probe.text(), &info) == 0 || (errno != ENOENT && errno != ENOTDIR)) return false;
+        FXString parent = FXPath::directory(probe);
+        if (parent.empty() || parent == probe) return false;
+        suffix = PATHSEPSTRING + FXPath::name(probe) + suffix;
+        probe = parent;
+    }
+}
+
+FXString xf_resolveportablepath(const FXString& path, FXbool rebaseExisting)
+{
+    const char* data = getenv("SWORDFISH_PORTABLE_DATA");
+    if (!data || !*data || path.empty()) return path;
+    FXString root;
+    if (!portableCanonicalPath(data, root)) return path;
+    const FXString prefix = "@portable/";
+    FXString relative;
+    FXbool reference = path.left(prefix.length()) == prefix;
+    if (reference)
+    {
+        relative = path.mid(prefix.length(), path.length());
+        if (relative.empty()) return root;
+    }
+    else if (FXPath::isAbsolute(path) && !pathWithinPortableData(xf_realpath(path), root))
+    {
+        if (!rebaseExisting && xf_existfile(path)) return path;
+        const char* markers[] = { "/portable-data/", ".data/" };
+        for (const char* marker : markers)
+        {
+            FXint offset = path.rfind(marker);
+            if (offset >= 0)
+            {
+                relative = path.mid(offset + strlen(marker), path.length());
+                break;
+            }
+        }
+        if (relative.empty() && !xf_existfile(path) &&
+            (path.right(14) == "/portable-data" || path.right(14) == ".AppImage.data"))
+            return root;
+    }
+    if (relative.empty()) return path;
+    FXString candidate = FXPath::absolute(root + PATHSEPSTRING + relative);
+    FXString resolved;
+    if (!portableCanonicalPath(candidate, resolved) || candidate == root || !pathWithinPortableData(candidate, root) ||
+        !pathWithinPortableData(resolved, root)) return path;
+    if (reference || xf_existfile(resolved)) return resolved;
+    return path;
+}
+
+FXString xf_portablepathreference(const FXString& path, FXbool rebaseExisting)
+{
+    const char* data = getenv("SWORDFISH_PORTABLE_DATA");
+    if (!data || !*data || path.empty() || !FXPath::isAbsolute(path)) return path;
+    FXString root, resolved;
+    if (!portableCanonicalPath(data, root) ||
+        !portableCanonicalPath(xf_resolveportablepath(path, rebaseExisting), resolved) ||
+        !pathWithinPortableData(resolved, root)) return path;
+    if (resolved == root) return "@portable/";
+    FXint offset = root == "/" ? 1 : root.length() + 1;
+    return "@portable/" + resolved.mid(offset, resolved.length());
+}
+
 
 // Return the custom-script directory for the current run mode.
 FXString xf_userdatahome()

@@ -48,6 +48,7 @@ const char* parameterLegend = N_(
     "%d   First selected parent directory\n%D   Distinct selected parent directories\n"
     "%u   First selected file URI\n%U   All selected file URIs\n"
     "%p   Active pane directory\n%o   Opposite pane directory\n"
+    "%a   This action's folder (after saving)\n%r   Portable data folder (portable mode only)\n"
     "%c   Actual selection count (0 on the background)\n"
     "%w   First basename without its last extension\n%W   All basenames without their last extension\n"
     "%x   First last extension, without the dot\n%X   All last extensions, without dots\n"
@@ -61,7 +62,7 @@ const char* parameterLegend = N_(
     "With Folders enabled and no selection, file/name/URI/extension parameters\n"
     "refer to the current folder. %d/%D still mean the current directory; %c remains 0.\n"
     "Without Folders, file parameters require selected files; %p and %d remain usable.\n\n"
-    "Working directory accepts %p, %o, %d, %f and %%; it is one literal path,\n"
+    "Working directory accepts %p, %o, %d, %f, %a, %r and %%; it is one literal path,\n"
     "not shell code. Leave it empty to use the active pane directory.\n\n"
     "The command runs through /bin/sh. Quote a program path that contains spaces,\n"
     "for example '/opt/My App/run' %F.\n"
@@ -466,11 +467,16 @@ public:
             FXHorizontalFrame* directoryrow = new FXHorizontalFrame(form, LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 0, 0);
             workingDirectory = new FXTextField(directoryrow, 24, NULL, 0, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
             workingDirectory->setText(a.workingDirectory);
-            workingDirectory->setTipText(_("Empty uses the active folder. One literal path; %p, %o, %d, %f and %% are supported."));
+            workingDirectory->setTipText(_("Empty uses the active folder. One literal path; %p, %o, %d, %f, %a, %r and %% are supported."));
             new FXButton(directoryrow, _("Browse...\tChoose a working directory"), minifoldericon, this, ENTRY_DIRECTORY, BUTTON_NORMAL);
             new FXLabel(body, _("Enter the program followed by its arguments, as you would in a terminal.\n"
                                "Browse inserts a program or script path; add placeholders after it."),
                         NULL, JUSTIFY_LEFT);
+            const char* portable = getenv("SWORDFISH_PORTABLE_DATA");
+            if (portable && *portable)
+                new FXLabel(body, _("On Save, directly run external scripts are copied into the action folder.\n"
+                                   "Complex commands may require manual setup."),
+                            NULL, JUSTIFY_LEFT);
         }
         new FXLabel(form, _("Icon:"), NULL, JUSTIFY_LEFT);
         FXHorizontalFrame* iconrow = new FXHorizontalFrame(form, LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 0, 0);
@@ -505,7 +511,8 @@ public:
                 N_("%D  All selected parent directories"), N_("%u  First selected file URI"), N_("%U  All selected file URIs"),
                 N_("%p  Current pane directory"), N_("%o  Opposite pane directory"), N_("%%  Literal percent"),
                 N_("%c  Selection count"), N_("%w  First name without extension"), N_("%W  All names without extension"),
-                N_("%x  First extension"), N_("%X  All extensions")
+                N_("%x  First extension"), N_("%X  All extensions"),
+                N_("%a  Action folder"), N_("%r  Portable data folder")
             };
             for (unsigned i = 0; i < sizeof(labels) / sizeof(labels[0]); ++i) { placeholders->appendItem(_(labels[i])); }
             placeholders->setNumVisible(11);
@@ -519,7 +526,8 @@ public:
                         NULL, JUSTIFY_LEFT);
             new FXLabel(help, _("%f / %F  First / all selected paths    %n / %N  First / all filenames\n"
                                "%d / %D  Selected parent directories    %u / %U  Selected file URIs\n"
-                               "%p  Current directory    %o  Opposite pane directory    %%  Literal percent\n\n"
+                               "%p  Current directory    %o  Opposite pane directory    %%  Literal percent\n"
+                               "%a  Action folder    %r  Portable data folder (portable mode)\n\n"
                                "Filenames are quoted automatically. Use %F/%N/%D/%U as separate,\n"
                                "unquoted arguments. Use a script for complex shell substitutions."),
                         NULL, JUSTIFY_LEFT);
@@ -600,7 +608,7 @@ public:
         case ENTRY_INSERT:
         {
             const char* tokens[] = { "%f", "%F", "%n", "%N", "%d", "%D", "%u", "%U", "%p", "%o", "%%",
-                                     "%c", "%w", "%W", "%x", "%X" };
+                                     "%c", "%w", "%W", "%x", "%X", "%a", "%r" };
             int choice = placeholders->getCurrentItem();
             if (choice < 0 || choice >= (int)(sizeof(tokens) / sizeof(tokens[0]))) { return 1; }
             FXString token = tokens[choice];
@@ -909,16 +917,6 @@ bool hasAction(const CustomActions& model, const FXString& parent)
     return false;
 }
 
-FXString customActionsDirectory()
-{
-    const char* portable = getenv("SWORDFISH_PORTABLE_DATA");
-    if (portable && *portable) return FXString(portable) + "/custom-actions";
-    const char* data = getenv("XDG_DATA_HOME");
-    if (data && *data) return FXString(data) + "/swordfish/custom-actions";
-    const char* home = getenv("HOME");
-    return FXString(home && *home ? home : ".") + "/.local/share/swordfish/custom-actions";
-}
-
 bool readKnownActions(const FXString& root, std::set<std::string>& known, FXString& error)
 {
     FXString path = root + "/.swordfish-known-actions";
@@ -1081,6 +1079,9 @@ bool CustomActionsUI::writeKnownActions(const CustomActions& actions, FXString& 
 
 bool CustomActionsUI::refreshStorage(bool notify)
 {
+    FXString settingsConflict;
+    if (xf_portablesettingschanged(settingsConflict)) return false;
+
     FXString fingerprintError, fingerprint =
         CustomActions::directoryFingerprint(storageRoot, fingerprintError);
     if (!fingerprintError.empty())
@@ -1165,6 +1166,14 @@ bool CustomActionsUI::refreshStorage(bool notify)
 
 bool CustomActionsUI::saveStorage(CustomActions& saved, FXString& error, FXString& warnings)
 {
+    FXString settingsConflict;
+    if (xf_portablesettingschanged(settingsConflict))
+    {
+        error = _("Portable settings changed outside this window. Restart Swordfish before saving custom actions.") +
+                FXString("\n\n") + settingsConflict;
+        return false;
+    }
+
     FXString currentFingerprint = CustomActions::directoryFingerprint(storageRoot, error);
     if (!error.empty()) return false;
     if (currentFingerprint != storageFingerprint)
@@ -1202,7 +1211,7 @@ bool CustomActionsUI::saveStorage(CustomActions& saved, FXString& error, FXStrin
 
 CustomActionsUI::CustomActionsUI(XFileExplorer* window, FXDockSite* dock, FXMenuPane* tools, FXMenuBar* bar) : owner(window)
 {
-    storageRoot = customActionsDirectory();
+    storageRoot = CustomActions::storageDirectory();
     if (xf_mkpath(storageRoot.text(), 0700) != 0)
     {
         storageWarning = _("Cannot create custom actions folder: ") + storageRoot + ": " + strerror(errno);
@@ -1223,7 +1232,7 @@ CustomActionsUI::CustomActionsUI(XFileExplorer* window, FXDockSite* dock, FXMenu
             storageWarning = error;
             appLog(APP_LOG_ERRORS, "custom-actions-load", error);
         }
-        else if (!initialized && markerAbsent)
+        else if (!initialized && markerAbsent && !xf_portablesettingschanged(error))
         {
             CustomActions legacy;
             FXString legacyError;
@@ -1306,6 +1315,44 @@ CustomActionsUI::CustomActionsUI(XFileExplorer* window, FXDockSite* dock, FXMenu
                     appendIconError(storageWarning, reloadWarnings);
                 }
             }
+        }
+        else if (initialized && !xf_portablesettingschanged(error))
+        {
+            bool needed = false, migrationCompleted = false;
+            FXString scanWarnings, migrationError;
+            if (!model.portableScriptsNeedMigration(storageRoot, needed, scanWarnings, migrationError))
+            {
+                appendIconError(storageWarning, migrationError);
+                appLog(APP_LOG_ERRORS, "custom-actions-script-migration", migrationError);
+            }
+            else if (needed && !xf_portablesettingschanged(migrationError))
+            {
+                FXString fingerprint = CustomActions::directoryFingerprint(storageRoot, migrationError);
+                FXString migrationWarnings;
+                if (!migrationError.empty() ||
+                    !model.migratePortableScripts(storageRoot, fingerprint, migrationError, migrationWarnings))
+                {
+                    appendIconError(storageWarning,
+                        _("Custom action scripts were not migrated; the existing actions remain intact: ") +
+                        migrationError);
+                    appLog(APP_LOG_ERRORS, "custom-actions-script-migration", migrationError);
+                }
+                else
+                {
+                    migrationCompleted = true;
+                    CustomActions migrated;
+                    FXString reloadError, reloadWarnings;
+                    if (migrated.loadDirectory(storageRoot, reloadError, reloadWarnings)) model = migrated;
+                    else
+                    {
+                        appendIconError(storageWarning, reloadError);
+                        appLog(APP_LOG_ERRORS, "custom-actions-script-migration", reloadError);
+                    }
+                    appendIconError(storageWarning, reloadWarnings);
+                }
+                appendIconError(storageWarning, migrationWarnings);
+            }
+            if (!migrationCompleted) appendIconError(storageWarning, scanWarnings);
         }
     }
     toolbarShown = owner->getApp()->reg().readUnsignedEntry("CUSTOM ACTIONS UI", "toolbar", 1) != 0;

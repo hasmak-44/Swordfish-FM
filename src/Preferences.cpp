@@ -1911,7 +1911,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     iconpath = new FXTextField(group2, 1, NULL, 0, TEXTFIELD_NORMAL);
     iconpath->hide();
     FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/default-theme");
-    oldiconpath = xf_realpath(getApp()->reg().readStringEntry("SETTINGS", "iconpath", defaulticonpath.text()));
+    oldiconpath = getIconThemePath(getApp()->reg(), defaulticonpath);
     iconpath->setText(oldiconpath);
     fillIconThemeList();
 
@@ -4191,7 +4191,7 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     // Icon path has changed
     if (oldiconpath != iconpath->getText())
     {
-        getApp()->reg().writeStringEntry("SETTINGS", "iconpath", iconpath->getText().text());
+        setIconThemePath(getApp()->reg(), iconpath->getText());
         getApp()->reg().write();
         restart_theme = true;
     }

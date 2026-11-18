@@ -147,12 +147,14 @@ class PortableProfileTests(unittest.TestCase):
         subprocess.run(["xdotool", "key", "--clearmodifiers", *keys],
                        env=self.env, check=True, timeout=10)
 
-    def start(self, bundle, launcher=None):
+    def start(self, bundle, launcher=None, arguments=None):
         existing = set(self.windows("SwordFish"))
         log = (self.root / f"launch-{len(self.logs)}.log").open("w+")
         self.logs.append(log)
+        if arguments is None:
+            arguments = [str(self.home)]
         process = subprocess.Popen(
-            [str(launcher or bundle / "AppRun"), str(self.home)],
+            [str(launcher or bundle / "AppRun"), *arguments],
             env=self.env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         self.processes.append(process)
         def application_window():
@@ -189,6 +191,14 @@ class PortableProfileTests(unittest.TestCase):
     def normal_quit(self, process, window):
         self.send(window, "ctrl+q")
         self.assertEqual(process.wait(timeout=10), 0)
+        self.main_windows.pop(process.pid, None)
+
+    def replace_profile(self, source, destination):
+        incoming = destination.with_name(destination.name + "-incoming")
+        previous = destination.with_name(destination.name + "-previous")
+        shutil.copytree(source, incoming)
+        destination.rename(previous)
+        incoming.rename(destination)
 
     def copied_destination(self, appimage=False):
         source = self.bundle("source")
@@ -210,9 +220,11 @@ class PortableProfileTests(unittest.TestCase):
         else:
             destination_data = destination / "portable-data"
         source_config = self.profile(source_data, "Source", source_marker)
+        source_process, source_window = self.start(source)
+        self.normal_quit(source_process, source_window)
         destination_config = self.profile(destination_data, "Destination", destination_marker)
         process, window = self.start(destination, launcher)
-        shutil.copytree(source_data, destination_data, dirs_exist_ok=True)
+        self.replace_profile(source_data, destination_data)
         self.assertEqual(destination_config.read_bytes(), source_config.read_bytes())
         return process, window, destination_config, source_marker, destination_marker, launcher
 
@@ -248,6 +260,7 @@ class PortableProfileTests(unittest.TestCase):
         process, window, config, source_marker, destination_marker, _ = self.copied_destination()
         copied = config.read_bytes()
         self.choose(process, "k")
+        time.sleep(2)
         self.invoke(window, destination_marker)
         self.assertFalse(source_marker.exists())
         self.send(window, "ctrl+q")
@@ -349,11 +362,15 @@ class PortableProfileTests(unittest.TestCase):
         source = self.bundle("source")
         destination = self.bundle("destination")
         self.profile(source / "portable-data", "Source", self.root / "source-ran")
+        source_process, source_window = self.start(source)
+        self.normal_quit(source_process, source_window)
         config = self.profile(destination / "portable-data", "Destination", self.root / "destination-ran")
         process, window = self.start(destination)
         editor = self.editor(window, process.pid)
-        shutil.copytree(source / "portable-data", destination / "portable-data", dirs_exist_ok=True)
+        self.replace_profile(source / "portable-data", destination / "portable-data")
         copied = config.read_bytes()
+        action = destination / "portable-data/custom-actions/Source Action/action.ini"
+        copied_action = action.read_bytes()
         self.choose(process, "k")
         self.send(editor, "Return")
         failure = self.window("Cannot Save Custom Actions", process.pid)
@@ -363,6 +380,7 @@ class PortableProfileTests(unittest.TestCase):
         self.choose(process, "q")
         self.assertEqual(process.wait(timeout=10), 0)
         self.assertEqual(config.read_bytes(), copied)
+        self.assertEqual(action.read_bytes(), copied_action)
 
     def test_normal_self_saves_do_not_trigger_notice(self):
         bundle = self.bundle("normal")
@@ -376,6 +394,202 @@ class PortableProfileTests(unittest.TestCase):
             self.assertFalse(self.windows("Portable settings changed", process.pid))
         self.normal_quit(process, window)
         self.assertIn("Normal Action", config.read_text())
+
+    def test_selected_icon_theme_moves_with_profile(self):
+        source = self.bundle("source bundle")
+        destination = self.bundle("destination bundle")
+        source_data = source / "portable-data"
+        theme = source_data / "icons/Custom theme-system"
+        shutil.copytree(ROOT / "icons/default-theme", theme)
+        config = self.profile(source_data, "Source", self.root / "source-ran")
+        config.write_text(f"[SETTINGS]\niconpath={theme}\n\n" + config.read_text())
+        process, window = self.start(source)
+        self.normal_quit(process, window)
+        self.assertIn("iconpath=portable:icons/Custom theme-system", config.read_text())
+
+        destination_data = destination / "portable-data"
+        shutil.copytree(source_data, destination_data)
+        (theme / "bigfolder.png").unlink()
+        process, window = self.start(destination)
+        self.normal_quit(process, window)
+        moved_config = destination_data / "config/swordfish/xferc"
+        self.assertIn("iconpath=portable:icons/Custom theme-system", moved_config.read_text())
+
+    def test_first_launch_has_no_bundled_user_content(self):
+        bundle = self.bundle("empty profile")
+        data = bundle / "portable-data"
+        config = data / "config/swordfish/xferc"
+        config.parent.mkdir(parents=True)
+        config.write_text("[OPTIONS]\nwelcome_completed=1\n")
+        process, window = self.start(bundle)
+        self.normal_quit(process, window)
+        for directory in ("themes/colors", "textures", "patterns", "images", "scripts",
+                          "icons/custom-actions", "addons"):
+            with self.subTest(directory=directory):
+                self.assertEqual(list((data / directory).iterdir()), [])
+        actions = data / "custom-actions"
+        bookkeeping = {".swordfish-storage", ".swordfish-known-actions"}
+        self.assertEqual({entry.name for entry in actions.iterdir()} - bookkeeping, set())
+
+    def test_existing_action_scripts_are_copied_and_survive_profile_copy(self):
+        source = self.bundle("script source")
+        destination = self.bundle("script destination")
+        source_data = source / "portable-data"
+        marker = self.root / "script-ran"
+        script = self.root / "external-script.sh"
+        script.write_text(f"#!/bin/sh\n/usr/bin/touch {shlex.quote(str(marker))}\n")
+        script.chmod(0o600)
+        config = self.profile(source_data, "Script", marker)
+        config.write_text(config.read_text().replace(
+            f"item0.command=/usr/bin/touch {marker}",
+            f"item0.command=/bin/sh {script}"))
+
+        process, window = self.start(source)
+        self.invoke(window, marker)
+        self.normal_quit(process, window)
+        action = source_data / "custom-actions/Script Action/action.ini"
+        self.assertIn("%a/", action.read_text())
+        self.assertTrue((action.parent / script.name).is_file())
+
+        text = re.sub(r"(?m)^Command=.*$", f"Command=/bin/sh {script}", action.read_text())
+        text = re.sub(r"(?m)^Order=.*\n", "", text)
+        action.write_text(text + "\nUserField=kept\n")
+        process, window = self.start(source)
+        self.invoke(window, marker)
+        self.normal_quit(process, window)
+        migrated = action.read_text()
+        self.assertIn("%a/", migrated)
+        self.assertIn("UserField=kept", migrated)
+        self.assertNotRegex(migrated, r"(?m)^Order=")
+
+        destination_data = destination / "portable-data"
+        shutil.copytree(source_data, destination_data)
+        script.unlink()
+        process, window = self.start(destination)
+        self.invoke(window, marker)
+        self.normal_quit(process, window)
+
+    def test_bookmarks_and_association_icons_move_with_profile(self):
+        source = self.bundle("icon source")
+        destination = self.bundle("icon destination")
+        source_data = source / "portable-data"
+        icon = source_data / "images/bookmark.png"
+        icon.parent.mkdir(parents=True)
+        shutil.copy2(ROOT / "icons/default-theme/minibookmark.png", icon)
+        config = self.profile(source_data, "Icons", self.root / "icons-ran")
+        initial = config.read_text().replace("welcome_completed=1\n",
+                                             "welcome_completed=1\nlegacy_bookmarks=0\n")
+        config.write_text(initial +
+            f"\n[BOOKMARKS]\nbookmark0=Inside;{icon.parent};{icon}\n"
+            f"bookmark1=Home;{self.home};{icon}\n"
+            f"\n[FILETYPES]\nicon-test=open;Example;{icon};{icon};;text/example\n")
+
+        process, window = self.start(source)
+        self.normal_quit(process, window)
+        saved = config.read_text()
+        self.assertIn("bookmark0=Inside;@portable/images;@portable/images/bookmark.png", saved)
+        self.assertIn(f"bookmark1=Home;{self.home};@portable/images/bookmark.png", saved)
+        self.assertRegex(saved, r"(?m)^icon-test=.*@portable/images/bookmark\.png")
+
+        destination_data = destination / "portable-data"
+        shutil.copytree(source_data, destination_data)
+        icon.unlink()
+        process, window = self.start(destination)
+        self.normal_quit(process, window)
+        moved = (destination_data / "config/swordfish/xferc").read_text()
+        self.assertIn("bookmark0=Inside;@portable/images;@portable/images/bookmark.png", moved)
+        self.assertIn(f"bookmark1=Home;{self.home};@portable/images/bookmark.png", moved)
+        self.assertRegex(moved, r"(?m)^icon-test=.*@portable/images/bookmark\.png")
+
+    def test_saved_locations_migrate_after_copy_before_upgrade(self):
+        source = self.bundle("location source")
+        destination = self.bundle("location destination")
+        source_data = source / "portable-data"
+        documents = source_data / "documents"
+        documents.mkdir(parents=True)
+        icon = documents / "bookmark.png"
+        shutil.copy2(ROOT / "icons/default-theme/minibookmark.png", icon)
+        config = source_data / "config/swordfish/xferc"
+        config.parent.mkdir(parents=True)
+        config.write_text(
+            "[OPTIONS]\nwelcome_completed=1\nlegacy_bookmarks=0\n"
+            "startdir_mode=2\nrestore_tabs=1\n"
+            f"\n[LEFT PANEL]\nlastdir={documents}\n"
+            f"\n[RIGHT PANEL]\nlastdir={source_data}\n"
+            f"\n[LEFT TABS]\ntab0={documents}\ncurrent_tab=0\n"
+            f"\n[RIGHT TABS]\ntab0={source_data}\ncurrent_tab=0\n"
+            f"\n[BOOKMARKS]\nbookmark0=Inside;{documents};{icon}\n"
+        )
+        destination_data = destination / "portable-data"
+        shutil.copytree(source_data, destination_data)
+        source_data.rename(source / "old profile")
+
+        capture = self.root / "new-window-arguments"
+        self.env["SWORDFISH_TEST_CAPTURE"] = str(capture)
+        process, window = self.start(destination, arguments=[])
+        expected = str(destination_data / "documents")
+        wait_for(
+            lambda: expected in subprocess.run(
+                ["xdotool", "getwindowname", window], env=self.env,
+                capture_output=True, text=True, check=True).stdout,
+            "relocated startup folder")
+        binary = destination / "usr/bin/swordfish"
+        original = binary.with_name("swordfish-original")
+        binary.rename(original)
+        try:
+            binary.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$SWORDFISH_TEST_CAPTURE"\n')
+            binary.chmod(0o755)
+            self.send(window, "F3")
+            wait_for(capture.is_file, "new window command")
+            self.assertEqual(capture.read_text(), expected + "\n")
+        finally:
+            if binary.exists():
+                binary.unlink()
+            original.rename(binary)
+        self.normal_quit(process, window)
+        saved = (destination_data / "config/swordfish/xferc").read_text()
+        self.assertIn("bookmark0=Inside;@portable/documents;@portable/documents/bookmark.png", saved)
+        self.assertIn("lastdir=@portable/documents", saved)
+        self.assertIn("tab0=@portable/documents", saved)
+        self.assertIn("lastdir=@portable/", saved)
+
+    def test_legacy_icon_theme_path_migrates_after_profile_copy(self):
+        source = self.bundle("legacy source")
+        destination = self.bundle("legacy destination")
+        source_data = source / "portable-data"
+        theme = source_data / "themes/Manual theme"
+        shutil.copytree(ROOT / "icons/default-theme", theme)
+        config = self.profile(source_data, "Legacy", self.root / "legacy-ran")
+        config.write_text(f"[SETTINGS]\niconpath={theme}\n\n" + config.read_text())
+
+        destination_data = destination / "portable-data"
+        shutil.copytree(source_data, destination_data)
+        (theme / "bigfolder.png").unlink()
+        process, window = self.start(destination)
+        self.normal_quit(process, window)
+        moved_config = destination_data / "config/swordfish/xferc"
+        self.assertIn("iconpath=portable:themes/Manual theme", moved_config.read_text())
+
+    def test_selected_bundled_icon_theme_moves_with_profile(self):
+        source = self.bundle("bundled source")
+        destination = self.bundle("bundled destination")
+        for bundle in (source, destination):
+            shutil.copytree(ROOT / "icons/default-theme", bundle / "usr/share/swordfish/icons/Bundled theme")
+        source_data = source / "portable-data"
+        config = self.profile(source_data, "Bundled", self.root / "bundled-ran")
+        theme = source / "usr/share/swordfish/icons/Bundled theme"
+        config.write_text(f"[SETTINGS]\niconpath={theme}\n\n" + config.read_text())
+        process, window = self.start(source)
+        self.normal_quit(process, window)
+        self.assertIn("iconpath=bundle:icons/Bundled theme", config.read_text())
+
+        destination_data = destination / "portable-data"
+        shutil.copytree(source_data, destination_data)
+        (theme / "bigfolder.png").unlink()
+        process, window = self.start(destination)
+        self.normal_quit(process, window)
+        moved_config = destination_data / "config/swordfish/xferc"
+        self.assertIn("iconpath=bundle:icons/Bundled theme", moved_config.read_text())
 
 
 if __name__ == "__main__":

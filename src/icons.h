@@ -14,6 +14,8 @@ enum
 
 // Prototypes
 FXbool loadAppIcons(FXApp*, FXuint*);
+FXString getIconThemePath(FXSettings&, const FXString& defaultpath);
+void setIconThemePath(FXSettings&, const FXString& path);
 
 
 // Icons (global variables)

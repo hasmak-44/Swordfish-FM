@@ -8,6 +8,7 @@
 #include "MessageBox.h"
 #include "RemoteDirectory.h"
 #include "XFileExplorer.h"
+#include "xfeutils.h"
 
 
 extern FXString homedir;
@@ -1550,7 +1551,7 @@ void TabButtons::saveTabs(const char* section)
     for (FXuint i = 0; i < nbActiveTabs; i++)
     {
         FXString key = "tab" + FXStringVal(i);
-        getApp()->reg().writeStringEntry(section, key.text(), tabPaths[i].text());
+        getApp()->reg().writeStringEntry(section, key.text(), xf_portablepathreference(tabPaths[i]).text());
         key = "view" + FXStringVal(i);
         getApp()->reg().writeUnsignedEntry(section, key.text(), tabViews[i]);
         for (const auto& column : tabColumns[i])
@@ -1569,7 +1570,8 @@ FXbool TabButtons::restoreTabs(const char* section, FXuint selected)
     for (FXuint i = 0; i < NMAX_TABS; i++)
     {
         FXString key = "tab" + FXStringVal(i);
-        FXString path = getApp()->reg().readStringEntry(section, key.text(), "");
+        FXString saved = getApp()->reg().readStringEntry(section, key.text(), "");
+        FXString path = xf_resolveportablepath(saved);
         if (path.empty())
         {
             break;
@@ -1579,6 +1581,8 @@ FXbool TabButtons::restoreTabs(const char* section, FXuint selected)
             appLog(APP_LOG_ERRORS, "tab-restore-unavailable", FXString("pane=") + section + " path=\"" + path + "\"");
             continue;
         }
+        FXString reference = xf_portablepathreference(path);
+        if (reference != saved) getApp()->reg().writeStringEntry(section, key.text(), reference.text());
         if (i <= selected)
         {
             restoredSelection = nbActiveTabs;

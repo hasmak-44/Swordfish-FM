@@ -663,6 +663,8 @@ FXString xf_cleanpath(const FXString);
 FXString xf_filepath(const FXString);
 FXString xf_filepath(const FXString, const FXString);
 FXString xf_realpath(const FXString);
+FXString xf_resolveportablepath(const FXString&, FXbool rebaseExisting = false);
+FXString xf_portablepathreference(const FXString&, FXbool rebaseExisting = false);
 FXString xf_execpath(char*);
 FXString xf_userdatahome();
 FXString xf_scriptpath();

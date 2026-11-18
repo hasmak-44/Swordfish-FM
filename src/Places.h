@@ -274,7 +274,7 @@ public:
 
         FXString str = data.rbefore(';', 1);
 
-        return str.after(';', 1);
+        return xf_resolveportablepath(str.after(';', 1));
     }
 
     // Return bookmark icon path name from index
@@ -282,7 +282,7 @@ public:
     {
         FXString data = bookmarks[index];
 
-        return data.after(';', 2);
+        return xf_resolveportablepath(data.after(';', 2), true);
     }
 
     // Return bookmark name from data
@@ -296,14 +296,16 @@ public:
     {
         FXString str = data.rbefore(';', 1);
 
-        return str.after(';', 1);
+        return xf_resolveportablepath(str.after(';', 1));
     }
 
     // Return bookmark icon pathname from data
     FXString getBookmarkIconPathname(FXString& data)
     {
-        return data.after(';', 2);
+        return xf_resolveportablepath(data.after(';', 2), true);
     }
+
+    static FXString portableBookmarkData(const FXString&);
 
     // Append an item
     void appendItem(FXString&, FXString&, FXString&);

@@ -161,7 +161,7 @@ for program in swfa swfi swfp swfw; do
 done
 ln -s usr/share/swordfish/app-icon "$output_dir/app-icon"
 
-for directory in config data cache state scripts themes icons addons; do
+for directory in config data cache state scripts themes/colors textures patterns images icons/custom-actions custom-actions addons; do
     mkdir -p "$output_dir/portable-data/$directory"
 done
 

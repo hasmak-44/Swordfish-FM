@@ -40,6 +40,9 @@ public:
     void save(FXSettings&) const;
     bool loadDirectory(const FXString&, FXString&, FXString&);
     bool saveDirectory(const FXString&, FXString&, FXString&, const FXString& expectedFingerprint = FXString::null);
+    bool portableScriptsNeedMigration(const FXString&, bool&, FXString&, FXString&) const;
+    bool migratePortableScripts(const FXString&, const FXString& expectedFingerprint, FXString&, FXString&) const;
+    static FXString storageDirectory();
     static FXString directoryFingerprint(const FXString&, FXString&);
     bool move(const FXString& id, const FXString& parent, FXString& error);
     void remove(const FXString&);
@@ -48,7 +51,8 @@ public:
     std::vector<unsigned> toolbarItems() const;
     bool matches(const CustomAction&, const CustomActionContext&) const;
     bool visible(unsigned, const CustomActionContext&) const;
-    static bool expand(const FXString&, const CustomActionContext&, FXString&, FXString&, bool currentFolder = false);
+    static bool expand(const FXString&, const CustomActionContext&, FXString&, FXString&, bool currentFolder = false,
+                       const FXString& actionDirectory = FXString::null);
     static bool prepare(const CustomAction&, const CustomActionContext&, FXString& command,
                         FXString& directory, FXString& error, bool verify = true);
     static bool check(const CustomAction&, const CustomActionContext&, FXString& error);

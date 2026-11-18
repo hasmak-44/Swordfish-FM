@@ -350,7 +350,7 @@ int main(int argc, char* argv[])
     if (iconpathstatus == ICONPATH_NOT_FOUND)
     {
         MessageBox::error(application->getRootWindow(), BOX_OK, _("Error loading icons"),
-                          _("Icon path doesn't exist, default icon path was selected.\
+                          _("The configured icon theme is unavailable; the default icon theme was selected.\
 \n\nFrom Swordfish, please check your icon path in Edit / Preferences / Appearance..."));
     }
 

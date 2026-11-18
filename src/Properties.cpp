@@ -40,7 +40,6 @@ extern FXStringDict* fsdevices;
 extern FXString xdgdatahome;
 extern FXString execpath;
 
-
 // Map
 FXDEFMAP(PermsFrame) PermsFrameMap[] = {};
 
@@ -525,8 +524,8 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString file, FXString path, FXbool
             {
                 edit->setText(c.section(',', 2));
             }
-            bigic->setText(fileassoc.section(';', 2));
-            miniic->setText(fileassoc.section(';', 3));
+            bigic->setText(FileDict::associationIconPaths(fileassoc.section(';', 2), false));
+            miniic->setText(FileDict::associationIconPaths(fileassoc.section(';', 3), false));
             if (!isLink)
             {
                 fassoctab->enable();
@@ -534,7 +533,7 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString file, FXString path, FXbool
 
             // Load big and mini icons
             FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/default-theme");
-            FXString iconpath = xf_realpath(getApp()->reg().readStringEntry("SETTINGS", "iconpath", defaulticonpath.text()));
+            FXString iconpath = getIconThemePath(getApp()->reg(), defaulticonpath);
 
             FXIcon* bigicon = xf_loadiconfile(getApp(), iconpath, bigic->getText(), scalefrac, getApp()->getBaseColor());
             if (bigicon)
@@ -1367,7 +1366,8 @@ long PropertiesBox::onCmdAcceptSingle(FXObject* sender, FXSelector sel, void* pt
         fileassoc += "=";
         fileassoc += op + v + e + ";";
         fileassoc += descr->getText() + ";";
-        fileassoc += bigic->getText() + ";" + miniic->getText() + ";;";
+        fileassoc += FileDict::associationIconPaths(bigic->getText(), true) + ";" +
+                     FileDict::associationIconPaths(miniic->getText(), true) + ";;";
 
         if (ext->getText() != "")
         {
@@ -1990,7 +1990,7 @@ long PropertiesBox::onCmdBrowseIcon(FXObject* sender, FXSelector sel, void* ptr)
     }
 
     FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/default-theme");
-    FXString iconpath = xf_realpath(getApp()->reg().readStringEntry("SETTINGS", "iconpath", defaulticonpath.text()));
+    FXString iconpath = getIconThemePath(getApp()->reg(), defaulticonpath);
     const char* patterns[] =
     {
         _("PNG Images"), "*.png",

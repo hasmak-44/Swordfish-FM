@@ -1259,6 +1259,17 @@ FXDEFMAP(BookmarksList) BookmarksListMap[] =
 // Object implementation
 FXIMPLEMENT(BookmarksList, FXList, BookmarksListMap, ARRAYNUMBER(BookmarksListMap))
 
+FXString BookmarksList::portableBookmarkData(const FXString& data)
+{
+    const char* portable = getenv("SWORDFISH_PORTABLE_DATA");
+    if (!portable || !*portable || data.contains(';') != 2) return data;
+    FXString name = data.before(';', 1);
+    FXString path = data.rbefore(';', 1).after(';', 1);
+    FXString icon = data.after(';', 2);
+    return name + ";" + xf_portablepathreference(xf_resolveportablepath(path)) + ";" +
+           xf_portablepathreference(xf_resolveportablepath(icon, true), true);
+}
+
 
 // Construct bookmarks list
 BookmarksList::BookmarksList(FXWindow* owner, FXComposite* p, FXObject* tgt, FXSelector sel, FXColor listbackcolor,
@@ -1289,8 +1300,13 @@ BookmarksList::BookmarksList(FXWindow* owner, FXComposite* p, FXObject* tgt, FXS
 
             if (data != "")
             {
+                FXString normalized = portableBookmarkData(data);
+                if (normalized != data)
+                {
+                    data = normalized;
+                    getApp()->reg().writeStringEntry("BOOKMARKS", regkey.text(), data.text());
+                }
                 FXString name = getBookmarkName(data);
-                FXString pathname = getBookmarkPathname(data);
                 FXString iconpathname = getBookmarkIconPathname(data);
 
                 // Append to vector
@@ -1338,10 +1354,11 @@ BookmarksList::BookmarksList(FXWindow* owner, FXComposite* p, FXObject* tgt, FXS
             if (pathname != "")
             {
                 // Append bookmark to vector if directory exists
-                if (xf_existfile(pathname))
+                FXString resolved = xf_resolveportablepath(pathname);
+                if (xf_existfile(resolved))
                 {
                     // Append to vector
-                    FXString data = pathname + ";" + pathname + ";";
+                    FXString data = pathname + ";" + xf_portablepathreference(resolved) + ";";
                     bookmarks.push_back(data);
 
                     // Append to list with default icon
@@ -1445,10 +1462,11 @@ int BookmarksList::modifyBookmark(FXString& oldname, FXString& newname, FXString
     }
 
     // Modify bookmark
+    FXString bookmarkPath = xf_portablepathreference(getBookmarkPathname(index));
     if (newiconpathname == "" || !xf_existfile(newiconpathname))
     {
         FXList::setItem(index, newname, minibookmarkicon);   // Default icon
-        bookmarks[index] = newname + ";" + getBookmarkPathname(index) + ";" + "";
+        bookmarks[index] = newname + ";" + bookmarkPath + ";" + "";
     }
     else
     {
@@ -1461,7 +1479,7 @@ int BookmarksList::modifyBookmark(FXString& oldname, FXString& newname, FXString
 
         FXList::setItem(index, newname, icon);   // Dedicated icon
 
-        bookmarks[index] = newname + ";" + getBookmarkPathname(index) + ";" + newiconpathname;
+        bookmarks[index] = newname + ";" + bookmarkPath + ";" + xf_portablepathreference(newiconpathname);
     }
 
     // Write registry key
@@ -1517,11 +1535,11 @@ void BookmarksList::appendItem(FXString& name, FXString& pathname, FXString& ico
 
     if (xf_existfile(iconpathname))
     {
-        data = name + ";" + pathname + ";" + iconpathname;
+        data = name + ";" + xf_portablepathreference(pathname) + ";" + xf_portablepathreference(iconpathname);
     }
     else
     {
-        data = name + ";" + pathname + ";";
+        data = name + ";" + xf_portablepathreference(pathname) + ";";
     }
     bookmarks.push_back(data);
     nbBookmarks = bookmarks.size();

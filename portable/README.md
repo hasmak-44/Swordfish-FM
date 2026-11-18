@@ -140,11 +140,11 @@ and placeholders, as typed in a terminal, for example `gimp %F` or
 `wine "/path/to/application.exe"`. Quote a program path that contains spaces.
 Browse selects a program or script and inserts its quoted path; add arguments
 after it. **Working directory** defaults to the active folder when empty;
-Browse selects another folder. It accepts `%p`, `%o`, `%d`, `%f`, and `%%`
+Browse selects another folder. It accepts `%p`, `%o`, `%d`, `%f`, `%a`, `%r`, and `%%`
 without shell evaluation. Relative paths resolve from the active folder.
 Actions saved by earlier test builds with separate Program and Parameters
-fields open as one equivalent command. They are saved unchanged unless the
-command text is edited; an edited one is saved as a normal command.
+fields open as one equivalent command. They are normally saved unchanged unless
+edited, except when portable script references are migrated as described below.
 
 **Parameter Legend…** opens scrollable
 help. **Test Action** checks placeholder expansion, working directory and
@@ -170,6 +170,8 @@ you understand and trust; actions do not automatically request root access.
 Use the **Insert** chooser for placeholders: `%f`/`%F` first/all selected paths,
 `%n`/`%N` basenames, `%d`/`%D` parent directories, `%u`/`%U` local file URIs,
 `%p` current pane directory, `%o` opposite pane directory, and `%%` literal `%`.
+`%a` is the action's own folder after it has been saved; `%r` is the portable
+data folder. Both also work in the working-directory field.
 Additional codes: `%c` actual selected-item count, `%w`/`%W` first/all basenames
 without the last extension, `%x`/`%X` first/all last extensions without dots.
 For `archive.tar.gz`, these are `archive.tar` and `gz`; `.hidden` has no
@@ -235,6 +237,23 @@ are copied into this folder tree. The original `CUSTOM ACTIONS` registry data
 is retained as a backup and is not updated by later editor saves. Available
 legacy image icons are copied into their action folders. Missing or unsafe
 legacy icon paths are omitted with a warning; the action definitions remain.
+
+In portable mode, saving the editor or upgrading existing actions copies
+directly invoked external user scripts into their action folders. Simple
+interpreter commands such as `sh /path/script.sh` are supported too; executable
+permissions are preserved. Scripts already in a shared portable-data folder
+remain there and get a relocatable reference. Manually added actions are
+checked on the next startup or editor save. Missing or unreadable scripts are
+reported rather than silently discarded. Automatic upgrades retain the prior
+`action.ini` as a hidden backup in the action's folder.
+
+Automatic detection does not cover every shell command: relative paths, shell
+variables, nested commands and interpreter options requiring arguments may
+need manual attention. Put the script and any files it needs in the action
+folder and refer to it with `%a`, for example `sh "%a/process.sh" %F`. A shared
+script can be referenced as `sh "%r/scripts/process.sh" %F`. Interpreters,
+installed programs, and any dependencies not copied into the profile must
+exist on the target machine.
 
 The built-in **General**, **Tools** and **Panel** toolbars use their original
 commands, order and theme icon sizes. Experimental toolbar customization,
@@ -582,6 +601,10 @@ For user download and launch steps, see the main
 
 Writable state is kept in `portable-data` beside the AppDir:
 
+The bundle creates empty user-content folders when built; the launcher also
+creates any missing folders on first or subsequent runs without replacing
+existing files. Release archives without a profile get these folders on launch.
+
 - `config`, `data`, `cache`, and `state` are the portable XDG directories.
 - `config/swordfish/xferc` is the writable settings file. Existing custom
   action definitions in its `CUSTOM ACTIONS` section are retained as a
@@ -614,16 +637,27 @@ To copy a profile, close every Swordfish window using both the source and the
 destination. Back up the destination, then replace its complete `portable-data`
 folder with a copy of the source folder rather than merging them. This is the
 reliable way to copy a consistent set of settings and other files. Action
-definitions and copied image icons move with it; saved file paths, named system
-icons and external programs still depend on the target machine.
+definitions, copied scripts and image icons move with it. Bookmark destinations,
+saved tabs, last-visited folders and bookmark or file-association icons inside
+portable-data use relocatable references. External destinations and other saved
+file paths, named system icons and external programs still depend on the target
+machine.
+
+For older profiles, an absolute bookmark or tab location is rebased only when
+its old location no longer exists, so existing external folders are not
+redirected. To make those references portable before copying while the old
+location is still available, start the updated source copy, open each saved tab
+group, and quit normally.
 
 If a running portable window detects that its `xferc` settings file was changed
 externally, including by another Swordfish window, it stops reading and saving
 that window's stale settings and offers **Restart Now**, **Quit Without Saving**
 or **Keep Running**. Restart opens a fresh window with the changed settings;
 if it cannot start, the current window stays open and reports the error. Keeping
-the window open does not re-enable settings saves. Any unsaved settings in that
-window are lost when it closes. If a warning names a preserved settings file,
+the window open does not re-enable settings saves; custom-action refresh and
+saves also wait for a restart so an old editor cannot overwrite copied actions.
+any unsaved settings in that window are lost when it closes. If a warning names
+a preserved settings file,
 keep it until you have checked which version you need. If the filesystem lacks
 the operations needed for a safe settings save, an error is shown instead of
 overwriting the file; move the profile to a filesystem that supports them.
@@ -668,6 +702,10 @@ Portable mode reads settings from the
 sidecar, uses resources from its own `usr/share/swordfish`, and does not load
 installed XFE or Swordfish registry defaults. Icon themes can be selected from
 the bundled resources or from folders under the sidecar `themes` and `icons`.
+The selection uses a relocatable reference, so a copied profile keeps its
+selected user theme or bundled theme when that theme is present in the new
+bundle. Older portable icon paths are migrated when recognizable; an
+unavailable theme is reported and the default is selected.
 Installed system icon themes (freedesktop layout, from `/usr/share/icons`,
 `~/.local/share/icons` and the host data directories) are listed as
 "Name (system)". Choosing one converts the icons Swordfish needs to PNG with the

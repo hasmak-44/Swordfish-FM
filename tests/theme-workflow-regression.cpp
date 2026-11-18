@@ -11,6 +11,7 @@
 #include "BackgroundEffect.h"
 #include "BackgroundImage.h"
 #include "FileDialog.h"
+#include "FileDict.h"
 #include "FontDialog.h"
 #include "InputDialog.h"
 #include "MessageBox.h"
@@ -1285,6 +1286,75 @@ public:
         assert(window.getRightPanel()->getList()->getViewMode() == FileList::VIEW_ICONS);
         puts("PASS: tab groups restore panel layout/orientation and every tab's view type");
 
+        {
+            const char* previous = getenv("SWORDFISH_PORTABLE_DATA");
+            FXbool hadPortable = previous != NULL;
+            FXString previousValue = previous ? previous : "";
+            FXString source = fixture + "/portable source/portable-data";
+            FXString destination = fixture + "/portable destination/portable-data";
+            assert(xf_mkpath((source + "/documents").text(), 0755) == 0);
+            assert(xf_mkpath(FXPath::directory(destination).text(), 0755) == 0);
+            assert(setenv("SWORDFISH_PORTABLE_DATA", source.text(), 1) == 0);
+            FXString semicolonBookmark = "Special;" + source + "/folder;part;";
+            assert(BookmarksList::portableBookmarkData(semicolonBookmark) == semicolonBookmark);
+
+            BookmarksList* bookmarks = window.getDirPanel()->getBookmarksList();
+            FXString bookmarkName = "Portable documents", bookmarkPath = source + "/documents", noIcon;
+            FXString rootName = "Portable root", rootPath = source;
+            FXint firstBookmark = bookmarks->getNumItems();
+            assert(bookmarks->appendBookmark(bookmarkName, bookmarkPath, noIcon));
+            assert(bookmarks->appendBookmark(rootName, rootPath, noIcon));
+            FXString key = "bookmark" + FXStringVal(firstBookmark);
+            assert(FXString(app.reg().readStringEntry("BOOKMARKS", key.text(), "")) ==
+                   "Portable documents;@portable/documents;");
+            key = "bookmark" + FXStringVal(firstBookmark + 1);
+            assert(FXString(app.reg().readStringEntry("BOOKMARKS", key.text(), "")) ==
+                   "Portable root;@portable/;");
+
+            FXString leftSection = groupLayout + " LEFT";
+            leftTabs->clearTabs();
+            leftTabs->addTab(source + "/documents");
+            leftTabs->addTab(source);
+            leftTabs->addTab(fixture);
+            leftTabs->saveTabs(leftSection.text());
+            assert(FXString(app.reg().readStringEntry(leftSection.text(), "tab0", "")) == "@portable/documents");
+            assert(FXString(app.reg().readStringEntry(leftSection.text(), "tab1", "")) == "@portable/");
+            assert(FXString(app.reg().readStringEntry(leftSection.text(), "tab2", "")) == fixture);
+
+            assert(rename(source.text(), destination.text()) == 0);
+            assert(setenv("SWORDFISH_PORTABLE_DATA", destination.text(), 1) == 0);
+            assert(bookmarks->getItemPathname(bookmarkName) == destination + "/documents");
+            assert(bookmarks->getItemPathname(rootName) == destination);
+            assert(window.openTabGroup(0));
+            assert(leftTabs->getNumActiveTabs() == 3 && leftTabs->getPath(0) == destination + "/documents" &&
+                   leftTabs->getPath(1) == destination && leftTabs->getPath(2) == fixture);
+
+            app.reg().writeStringEntry(leftSection.text(), "tab0", (source + "/documents").text());
+            app.reg().writeStringEntry(leftSection.text(), "tab1", source.text());
+            app.reg().writeStringEntry(leftSection.text(), "dir", (source + "/documents").text());
+            assert(window.openTabGroup(0));
+            assert(leftTabs->getPath(0) == destination + "/documents" && leftTabs->getPath(1) == destination);
+            assert(FXString(app.reg().readStringEntry(leftSection.text(), "tab0", "")) == "@portable/documents");
+            assert(FXString(app.reg().readStringEntry(leftSection.text(), "tab1", "")) == "@portable/");
+            assert(FXString(app.reg().readStringEntry(leftSection.text(), "dir", "")) == "@portable/documents");
+
+            app.reg().deleteSection(leftSection.text());
+            app.reg().writeStringEntry(leftSection.text(), "dir", (source + "/documents").text());
+            assert(window.openTabGroup(0));
+            assert(window.getLeftPanel()->getDirectory() == destination + "/documents");
+            assert(FXString(app.reg().readStringEntry(leftSection.text(), "dir", "")) == "@portable/documents");
+            bookmarks->removeItem(bookmarkName);
+            bookmarks->removeItem(rootName);
+            if (hadPortable) assert(setenv("SWORDFISH_PORTABLE_DATA", previousValue.text(), 1) == 0);
+            else assert(unsetenv("SWORDFISH_PORTABLE_DATA") == 0);
+            leftTabs->clearTabs();
+            leftTabs->addTab(fixture);
+            window.getLeftPanel()->getList()->setViewMode(FileList::VIEW_ICONS);
+            leftTabs->addTab(homedir);
+            window.getLeftPanel()->getList()->setViewMode(FileList::VIEW_DETAILS);
+            puts("PASS: portable bookmarks and saved tabs follow copied profiles, including the profile root and legacy paths");
+        }
+
         FXString data = FXPath::absolute(xf_userdatahome());
         FXString globalTextures = data + "/textures";
         FXString redSource = data + "/source-red";
@@ -2541,6 +2611,90 @@ int main(int argc, char** argv)
     xdgconfighome = homedir + "/config";
     xdgdatahome = homedir + "/data";
     execpath = prefix + "/bin/swordfish";
+    {
+        const char* previous = getenv("SWORDFISH_PORTABLE_DATA");
+        FXbool hadPortable = previous != NULL;
+        FXString previousValue = previous ? previous : "";
+        FXString source = fixture + "/old portable/portable-data";
+        FXString destination = fixture + "/new portable/portable-data";
+        assert(xf_mkpath((source + "/icons/Custom theme").text(), 0755) == 0);
+        assert(xf_mkpath((source + "/themes/Manual theme").text(), 0755) == 0);
+        assert(xf_mkpath((destination + "/icons/Custom theme").text(), 0755) == 0);
+        assert(xf_mkpath((destination + "/themes/Manual theme").text(), 0755) == 0);
+        assert(xf_mkpath((destination + "/icons/AppImage theme").text(), 0755) == 0);
+        FXString defaultpath = xf_realpath(prefix + "/share/swordfish/icons/default-theme");
+        FXString sourceIcon = source + "/icons/Custom theme/bookmark.png";
+        FXString destinationIcon = destination + "/icons/Custom theme/bookmark.png";
+        assert(FXFile::copyFiles(defaultpath + "/minibookmark.png", sourceIcon, false));
+        assert(FXFile::copyFiles(defaultpath + "/minibookmark.png", destinationIcon, false));
+        FXSettings icons;
+        assert(setenv("SWORDFISH_PORTABLE_DATA", source.text(), 1) == 0);
+        FXString iconReference = xf_portablepathreference(sourceIcon);
+        assert(iconReference == "@portable/icons/Custom theme/bookmark.png");
+        assert(xf_portablepathreference(source) == "@portable/");
+        setIconThemePath(icons, source + "/icons/Custom theme");
+        assert(FXString(icons.readStringEntry("SETTINGS", "iconpath", "")) == "portable:icons/Custom theme");
+        assert(setenv("SWORDFISH_PORTABLE_DATA", destination.text(), 1) == 0);
+        assert(getIconThemePath(icons, defaultpath) == destination + "/icons/Custom theme");
+        assert(xf_resolveportablepath(iconReference) == destinationIcon);
+        assert(xf_resolveportablepath(sourceIcon) == sourceIcon);
+        assert(xf_portablepathreference(sourceIcon) == sourceIcon);
+        assert(xf_resolveportablepath(sourceIcon, true) == destinationIcon);
+        assert(xf_portablepathreference(sourceIcon, true) == iconReference);
+        assert(xf_resolveportablepath("@portable/") == destination);
+        FXString externalBookmark = "External;" + source + "/themes/Manual theme;";
+        assert(BookmarksList::portableBookmarkData(externalBookmark) == externalBookmark);
+        {
+            IconDict dictionary(&app, defaultpath);
+            assert(dictionary.insert(iconReference.text()));
+            assert(dictionary.insert(sourceIcon.text()));
+        }
+        FXString association = "open;Example;" + sourceIcon + ":minibookmark.png;" + sourceIcon + ";;text/example";
+        app.reg().writeStringEntry("FILETYPES", "portable-icon-test", association.text());
+        {
+            FileDict associations(&app);
+            FXString expectedAssociation = "open;Example;" + iconReference + ":minibookmark.png;" +
+                                           iconReference + ";;text/example";
+            assert(FXString(app.reg().readStringEntry("FILETYPES", "portable-icon-test", "")) == expectedAssociation);
+            FileAssoc* binding = associations.associate("portable-icon-test");
+            assert(binding && binding->bigicon && binding->miniicon);
+            assert(FileDict::associationIconPaths(iconReference + ":minibookmark.png", false) ==
+                   destinationIcon + ":minibookmark.png");
+        }
+        app.reg().deleteEntry("FILETYPES", "portable-icon-test");
+        assert(xf_resolveportablepath("@portable/../../outside") == "@portable/../../outside");
+        { std::ofstream outside((fixture + "/outside.png").text()); outside << "outside"; }
+        assert(symlink((fixture + "/outside.png").text(), (destination + "/icons/escape.png").text()) == 0);
+        assert(xf_resolveportablepath("@portable/icons/escape.png") == "@portable/icons/escape.png");
+        assert(xf_portablepathreference(fixture + "/host.png") == fixture + "/host.png");
+        FXString escaped = destination + "/icons/../../outside/missing.png";
+        assert(xf_portablepathreference(escaped) == escaped);
+
+        icons.writeStringEntry("SETTINGS", "iconpath", (source + "/themes/Manual theme").text());
+        assert(getIconThemePath(icons, defaultpath) == destination + "/themes/Manual theme");
+        icons.writeStringEntry("SETTINGS", "iconpath", (fixture + "/old.AppImage.data/icons/AppImage theme").text());
+        assert(getIconThemePath(icons, defaultpath) == destination + "/icons/AppImage theme");
+        icons.writeStringEntry("SETTINGS", "iconpath", (fixture + "/old/usr/share/swordfish/icons/default-theme").text());
+        assert(getIconThemePath(icons, defaultpath) == defaultpath);
+        setIconThemePath(icons, defaultpath);
+        assert(FXString(icons.readStringEntry("SETTINGS", "iconpath", "")) == "bundle:icons/default-theme");
+
+        icons.writeStringEntry("SETTINGS", "iconpath", "portable:icons/../../outside");
+        assert(getIconThemePath(icons, defaultpath) == "portable:icons/../../outside");
+        assert(symlink(fixture.text(), (destination + "/icons/outside").text()) == 0);
+        FXString escapedMissing = "@portable/icons/outside/missing.png";
+        assert(xf_resolveportablepath(escapedMissing) == escapedMissing);
+        FXString absoluteMissing = destination + "/icons/outside/missing.png";
+        assert(xf_portablepathreference(absoluteMissing) == absoluteMissing);
+        assert(xf_resolveportablepath("@portable/images/missing.png") == destination + "/images/missing.png");
+        icons.writeStringEntry("SETTINGS", "iconpath", "portable:icons/outside");
+        assert(getIconThemePath(icons, defaultpath) == "portable:icons/outside");
+        icons.writeStringEntry("SETTINGS", "iconpath", (fixture + "/unrelated/icons/Custom theme").text());
+        assert(getIconThemePath(icons, defaultpath) == fixture + "/unrelated/icons/Custom theme");
+        if (hadPortable) assert(setenv("SWORDFISH_PORTABLE_DATA", previousValue.text(), 1) == 0);
+        else assert(unsetenv("SWORDFISH_PORTABLE_DATA") == 0);
+        puts("PASS: portable icon themes relocate, migrate old paths, and reject unsafe references");
+    }
     app.reg().writeStringEntry("SETTINGS", "iconpath", (prefix + "/share/swordfish/icons/default-theme").text());
     app.reg().writeBoolEntry("OPTIONS", "automount", false);
     app.reg().writeBoolEntry("OPTIONS", "welcome_completed", true);

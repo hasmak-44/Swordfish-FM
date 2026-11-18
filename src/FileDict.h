@@ -244,6 +244,8 @@ public:
     // (comma separated open,view,edit commands; empty parts keep the mode default)
     static void setUserCommand(FXSettings& settings, const FXString& key, const FXString& command);
     static FXString associationExtension(const FXString& pathname);
+    static FXString associationIconPaths(const FXString& value, FXbool encode);
+    static void migrateAssociationIconPaths(FXSettings& settings);
 
 /*
  * Determine binding for the given file.

@@ -158,7 +158,7 @@ long BookmarkDialog::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
 long BookmarkDialog::onCmdBrowseIcon(FXObject* sender, FXSelector sel, void* ptr)
 {
     FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/default-theme");
-    FXString iconpath = xf_realpath(getApp()->reg().readStringEntry("SETTINGS", "iconpath", defaulticonpath.text()));
+    FXString iconpath = getIconThemePath(getApp()->reg(), defaulticonpath);
     const char* patterns[] =
     {
         _("PNG Images"), "*.png",

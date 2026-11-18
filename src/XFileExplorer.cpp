@@ -3120,8 +3120,8 @@ void XFileExplorer::saveConfig(FXbool restarting)
     }
 
     // Last visited directories
-    getApp()->reg().writeStringEntry("LEFT PANEL", "lastdir", lpanel->getDirectory().text());
-    getApp()->reg().writeStringEntry("RIGHT PANEL", "lastdir", rpanel->getDirectory().text());
+    getApp()->reg().writeStringEntry("LEFT PANEL", "lastdir", xf_portablepathreference(lpanel->getDirectory()).text());
+    getApp()->reg().writeStringEntry("RIGHT PANEL", "lastdir", xf_portablepathreference(rpanel->getDirectory()).text());
 
     // Read registry file to get settings that could have been changed from another Xfe instance
     FXRegistry* reg = new FXRegistry(getApp()->getAppName(), getApp()->getVendorName());
@@ -3163,7 +3163,8 @@ void XFileExplorer::saveConfig(FXbool restarting)
 
             if (data != "")
             {
-                getApp()->reg().writeStringEntry("BOOKMARKS", regkey.text(), data.text());
+                getApp()->reg().writeStringEntry("BOOKMARKS", regkey.text(),
+                                                 BookmarksList::portableBookmarkData(data).text());
                 i++;
             }
             else
@@ -3173,6 +3174,8 @@ void XFileExplorer::saveConfig(FXbool restarting)
         }
     }
     delete reg;
+
+    FileDict::migrateAssociationIconPaths(getApp()->reg());
 
     // Reset restarted flag
     getApp()->reg().writeUnsignedEntry("SETTINGS", "restarted", false);
@@ -3374,8 +3377,8 @@ void XFileExplorer::create()
 
     if (restoreSession)
     {
-        startdir1 = getApp()->reg().readStringEntry("LEFT PANEL", "lastdir", ROOTDIR);
-        startdir2 = getApp()->reg().readStringEntry("RIGHT PANEL", "lastdir", ROOTDIR);
+        startdir1 = xf_resolveportablepath(getApp()->reg().readStringEntry("LEFT PANEL", "lastdir", ROOTDIR));
+        startdir2 = xf_resolveportablepath(getApp()->reg().readStringEntry("RIGHT PANEL", "lastdir", ROOTDIR));
     }
 
     // Open left and right panels in starting directories (if specified) or in home / current or last directory
@@ -3392,7 +3395,7 @@ void XFileExplorer::create()
             break;
 
         case START_LASTDIR:
-            startdir1 = getApp()->reg().readStringEntry("LEFT PANEL", "lastdir", ROOTDIR);
+            startdir1 = xf_resolveportablepath(getApp()->reg().readStringEntry("LEFT PANEL", "lastdir", ROOTDIR));
             break;
         }
     }
@@ -3409,7 +3412,7 @@ void XFileExplorer::create()
             break;
 
         case START_LASTDIR:
-            startdir2 = getApp()->reg().readStringEntry("RIGHT PANEL", "lastdir", ROOTDIR);
+            startdir2 = xf_resolveportablepath(getApp()->reg().readStringEntry("RIGHT PANEL", "lastdir", ROOTDIR));
             break;
         }
     }
@@ -4858,7 +4861,7 @@ long XFileExplorer::onCmdNewWindow(FXObject*, FXSelector, void*)
     }
     else if (startdirmode == START_LASTDIR)
     {
-        startdir = getApp()->reg().readStringEntry("LEFT PANEL", "lastdir", ROOTDIR);
+        startdir = xf_resolveportablepath(getApp()->reg().readStringEntry("LEFT PANEL", "lastdir", ROOTDIR));
     }
     else
     {
@@ -4866,7 +4869,7 @@ long XFileExplorer::onCmdNewWindow(FXObject*, FXSelector, void*)
     }
 
     // Run
-    FXString cmd = "swordfish " + startdir + " &";
+    FXString cmd = "swordfish " + xf_quote(startdir) + " &";
 
     int ret = system(cmd.text());
 
@@ -7152,7 +7155,8 @@ long XFileExplorer::onCmdAddTabGroup(FXObject*, FXSelector, void*)
     {
         FXString section = "TAB GROUP " + id + " " + sides[pane];
         panels[pane]->getTabButtons()->saveTabs(section.text());
-        getApp()->reg().writeStringEntry(section.text(), "dir", panels[pane]->getDirectory().text());
+        getApp()->reg().writeStringEntry(section.text(), "dir",
+                                         xf_portablepathreference(panels[pane]->getDirectory()).text());
         getApp()->reg().writeUnsignedEntry(section.text(), "active", getCurrentPanel() == panels[pane]);
     }
     FXString layoutSection = "TAB GROUP " + id;
@@ -7236,10 +7240,18 @@ FXbool XFileExplorer::openTabGroup(int index)
         TabButtons* tabs = panels[pane]->getTabButtons();
         tabs->clearTabs();
         FXuint selected = getApp()->reg().readUnsignedEntry(section.text(), "current_tab", 0);
+        FXString saved = getApp()->reg().readStringEntry(section.text(), "dir", "");
+        FXString dir = xf_resolveportablepath(saved);
+        FXbool validDir = xf_isdirectory(dir);
+        if (validDir)
+        {
+            FXString reference = xf_portablepathreference(dir);
+            if (reference != saved)
+                getApp()->reg().writeStringEntry(section.text(), "dir", reference.text());
+        }
         if (!tabs->restoreTabs(section.text(), selected))
         {
-            FXString dir = getApp()->reg().readStringEntry(section.text(), "dir", "");
-            if (!xf_isdirectory(dir))
+            if (!validDir)
             {
                 dir = panels[pane]->getDirectory();
             }

@@ -248,7 +248,120 @@ static FXbool pathIsWithin(const FXString& path, const FXString& directory)
             path[directory.length()] == '/');
 }
 
+static FXString bundledIconDirectory()
+{
+    return xf_realpath(FXPath::absolute(FXPath::directory(execpath) + "/../share/swordfish/icons"));
+}
 
+static FXbool portableIconPathAllowed(const FXString& path, const FXString& data)
+{
+    FXString bundled = bundledIconDirectory();
+    FXString sidecar = xf_realpath(FXPath::absolute(data));
+    return path == xf_realpath(bundled + "/default-theme") ||
+           pathIsWithin(path, bundled) ||
+           pathIsWithin(path, sidecar + "/themes") ||
+           pathIsWithin(path, sidecar + "/icons");
+}
+
+static FXString resolvePortableIconReference(const FXString& reference, const FXString& data)
+{
+    FXString root, relative;
+    FXbool bundled = false;
+    const FXString dataIcons = "portable:icons/", dataThemes = "portable:themes/";
+    const FXString bundledIcons = "bundle:icons/";
+    if (reference.left(dataIcons.length()) == dataIcons)
+    {
+        root = xf_realpath(FXPath::absolute(data)) + "/icons";
+        relative = reference.mid(dataIcons.length(), reference.length());
+    }
+    else if (reference.left(dataThemes.length()) == dataThemes)
+    {
+        root = xf_realpath(FXPath::absolute(data)) + "/themes";
+        relative = reference.mid(dataThemes.length(), reference.length());
+    }
+    else if (reference.left(bundledIcons.length()) == bundledIcons)
+    {
+        root = bundledIconDirectory();
+        relative = reference.mid(bundledIcons.length(), reference.length());
+        bundled = true;
+    }
+    else
+    {
+        return FXString::null;
+    }
+
+    if (relative.empty()) return FXString::null;
+    FXString candidate = FXPath::absolute(root + PATHSEPSTRING + relative);
+    if (!pathIsWithin(candidate, root) || candidate == root) return FXString::null;
+    FXString resolved = xf_realpath(candidate);
+    if (!pathIsWithin(resolved, root) &&
+        !(bundled && relative == "default-theme" && resolved == xf_realpath(root + "/default-theme")))
+        return FXString::null;
+    return resolved;
+}
+
+static FXString legacyPortableIconReference(const FXString& path)
+{
+    const char* markers[][2] = {
+        {"/portable-data/icons/", "portable:icons/"},
+        {"/portable-data/themes/", "portable:themes/"},
+        {".data/icons/", "portable:icons/"},
+        {".data/themes/", "portable:themes/"},
+        {"/share/swordfish/icons/", "bundle:icons/"}
+    };
+    for (unsigned i = 0; i < sizeof(markers) / sizeof(markers[0]); ++i)
+    {
+        FXString marker = markers[i][0];
+        FXint offset = path.rfind(marker.text());
+        if (offset >= 0)
+            return FXString(markers[i][1]) + path.mid(offset + marker.length(), path.length());
+    }
+    return FXString::null;
+}
+
+FXString getIconThemePath(FXSettings& settings, const FXString& defaultpath)
+{
+    FXString saved = settings.readStringEntry("SETTINGS", "iconpath", defaultpath.text());
+    const char* data = getenv("SWORDFISH_PORTABLE_DATA");
+    if (data && *data)
+    {
+        FXString resolved = resolvePortableIconReference(saved, data);
+        if (!resolved.empty()) return resolved;
+        if (saved.left(9) == "portable:" || saved.left(7) == "bundle:") return saved;
+
+        FXString path = xf_realpath(saved);
+        if (!portableIconPathAllowed(path, data))
+        {
+            FXString legacy = legacyPortableIconReference(saved);
+            resolved = resolvePortableIconReference(legacy, data);
+            if (!resolved.empty()) return resolved;
+        }
+        return path;
+    }
+    return xf_realpath(saved);
+}
+
+void setIconThemePath(FXSettings& settings, const FXString& path)
+{
+    FXString saved = path;
+    const char* data = getenv("SWORDFISH_PORTABLE_DATA");
+    if (data && *data)
+    {
+        FXString resolved = xf_realpath(path);
+        FXString sidecar = xf_realpath(FXPath::absolute(data));
+        FXString bundled = bundledIconDirectory();
+        FXString icons = sidecar + "/icons", themes = sidecar + "/themes";
+        if (pathIsWithin(resolved, icons) && resolved != icons)
+            saved = "portable:icons/" + resolved.mid(icons.length() + 1, resolved.length());
+        else if (pathIsWithin(resolved, themes) && resolved != themes)
+            saved = "portable:themes/" + resolved.mid(themes.length() + 1, resolved.length());
+        else if (resolved == xf_realpath(bundled + "/default-theme"))
+            saved = "bundle:icons/default-theme";
+        else if (pathIsWithin(resolved, bundled) && resolved != bundled)
+            saved = "bundle:icons/" + resolved.mid(bundled.length() + 1, resolved.length());
+    }
+    settings.writeStringEntry("SETTINGS", "iconpath", saved.text());
+}
 
 // Device symbol geometry in whole pixels: solid shapes inside a thin square frame,
 // centered so vertical and horizontal edges land exactly on pixel boundaries.
@@ -429,21 +542,14 @@ FXbool loadAppIcons(FXApp* app, FXuint* iconpathstatus)
     FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/default-theme");
 
     // Select icon path
-    FXString iconpath = xf_realpath(app->reg().readStringEntry("SETTINGS", "iconpath", defaulticonpath.text()));
+    FXString iconpath = getIconThemePath(app->reg(), defaulticonpath);
     const char* portabledata = getenv("SWORDFISH_PORTABLE_DATA");
     if (portabledata && *portabledata)
     {
-        FXString sidecarThemes = FXString(portabledata) + PATHSEPSTRING "themes";
-        FXString sidecarIcons = FXString(portabledata) + PATHSEPSTRING "icons";
-
-        FXString bundledIcons = FXPath::directory(defaulticonpath);
-
-        if (!pathIsWithin(iconpath, bundledIcons) &&
-            !pathIsWithin(iconpath, sidecarThemes) &&
-            !pathIsWithin(iconpath, sidecarIcons))
+        if (!portableIconPathAllowed(iconpath, portabledata))
         {
+            *iconpathstatus = ICONPATH_NOT_FOUND;
             iconpath = defaulticonpath;
-            app->reg().writeStringEntry("SETTINGS", "iconpath", iconpath.text());
         }
     }
     if (iconpath[0] == '~')
@@ -466,8 +572,12 @@ FXbool loadAppIcons(FXApp* app, FXuint* iconpathstatus)
         else
         {
             iconpath = defaulticonpath;
-            app->reg().writeStringEntry("SETTINGS", "iconpath", iconpath.text());
+            setIconThemePath(app->reg(), iconpath);
         }
+    }
+    if (portabledata && *portabledata && *iconpathstatus != DEFAULTICONPATH_NOT_FOUND)
+    {
+        setIconThemePath(app->reg(), iconpath);
     }
 
     // Colors for blending
@@ -718,7 +828,7 @@ load:
         else
         {
             iconpath = defaulticonpath;
-            app->reg().writeStringEntry("SETTINGS", "iconpath", iconpath.text());
+            setIconThemePath(app->reg(), iconpath);
         }
 
         firstpass = false;

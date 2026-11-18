@@ -5,6 +5,9 @@
 
 #include <fx.h>
 #include <FXPNGIcon.h>
+#include <cstdlib>
+#include <vector>
+#include <utility>
 
 #include "xfedefs.h"
 #include "icons.h"
@@ -42,7 +45,7 @@ IconDict::IconDict(FXApp* a, const FXString& p) : path(p)
 void* IconDict::createData(const void* ptr)
 {
     // Load icon
-    FXIcon* icon = source->loadIconFile(FXPath::search(path, (const char*)ptr));
+    FXIcon* icon = source->loadIconFile(FXPath::search(path, xf_resolveportablepath((const char*)ptr, true)));
 
     // Scale icon
     if (icon)
@@ -99,6 +102,46 @@ static FXString commandForProgramMode(const FXString& command, FXuint)
 }
 
 static const char userAssociationsSection[] = "USER_ASSOCIATIONS";
+
+FXString FileDict::associationIconPaths(const FXString& value, FXbool encode)
+{
+    FXString result;
+    for (FXint i = 0; i <= value.contains(':'); ++i)
+    {
+        if (i) result += ':';
+        FXString path = value.section(':', i);
+        result += encode ? xf_portablepathreference(xf_resolveportablepath(path, true), true) :
+                           xf_resolveportablepath(path, true);
+    }
+    return result;
+}
+
+void FileDict::migrateAssociationIconPaths(FXSettings& settings)
+{
+    const char* data = getenv("SWORDFISH_PORTABLE_DATA");
+    if (!data || !*data) return;
+    FXStringDict* entries = settings.find("FILETYPES");
+    if (!entries) return;
+    std::vector<std::pair<FXString, FXString>> changes;
+    for (FXint i = entries->first(); i < entries->size(); i = entries->next(i))
+    {
+        FXString value = entries->data(i);
+        FXint first = value.find(';');
+        FXint second = first < 0 ? -1 : value.find(';', first + 1);
+        FXint third = second < 0 ? -1 : value.find(';', second + 1);
+        if (third < 0) continue;
+        FXint fourth = value.find(';', third + 1);
+        FXString big = value.mid(second + 1, third - second - 1);
+        FXString mini = fourth < 0 ? value.mid(third + 1, value.length()) :
+                                     value.mid(third + 1, fourth - third - 1);
+        FXString rewritten = value.left(second + 1) + FileDict::associationIconPaths(big, true) + ";" +
+                             FileDict::associationIconPaths(mini, true);
+        if (fourth >= 0) rewritten += value.mid(fourth, value.length());
+        if (rewritten != value) changes.push_back(std::make_pair(FXString(entries->key(i)), rewritten));
+    }
+    for (const std::pair<FXString, FXString>& change : changes)
+        settings.writeStringEntry("FILETYPES", change.first.text(), change.second.text());
+}
 
 // Commands set with "Open with... / Associate" or the Properties dialog win over the program mode
 static FXString applyUserCommand(FXSettings* settings, const char* key, const FXString& command)
@@ -169,9 +212,10 @@ FXIMPLEMENT(FileDict, FXDict, NULL, 0)
 // Construct an file-extension association table
 FileDict::FileDict(FXApp* a) : app(a), settings(&a->reg())
 {
+    migrateAssociationIconPaths(*settings);
     // Set icon path if it exists, otherwise set icon path to default
     FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/default-theme");
-    FXString iconpath = xf_realpath(settings->readStringEntry("SETTINGS", "iconpath", defaulticonpath.text()));
+    FXString iconpath = getIconThemePath(*settings, defaulticonpath);
 
     if (!xf_existfile(iconpath))
     {
@@ -186,7 +230,7 @@ FileDict::FileDict(FXApp* a, FXSettings* db) : app(a), settings(db)
 {
     // Set icon path if it exists, otherwise set icon path to default
     FXString defaulticonpath = xf_realpath(FXPath::directory(execpath) + "/../share/swordfish/icons/default-theme");
-    FXString iconpath = xf_realpath(settings->readStringEntry("SETTINGS", "iconpath", defaulticonpath.text()));
+    FXString iconpath = getIconThemePath(*settings, defaulticonpath);
 
     if (!xf_existfile(iconpath))
     {
@@ -339,7 +383,7 @@ void FileDict::deleteData(void* ptr)
 void FileDict::setIconPath(const FXString& path)
 {
     // Replace iconpath setting in registry
-    settings->writeStringEntry("SETTINGS", "iconpath", path.text());
+    setIconThemePath(*settings, path);
 
     // Change it in icon dictionary
     icons->setIconPath(path);
