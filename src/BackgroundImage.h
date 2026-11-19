@@ -41,6 +41,8 @@ void setWindowBackground(FXWindow*, const FXString&, const FXString&, FXint, con
 const BackgroundOverlay* windowBackground(const FXWindow*, FXint&, FXint&, FXuint* = NULL);
 void trackBackgroundOrigin(FXWindow*);
 // A fully transparent base means the target's own background colour
+// True when the window paints the window-fixed image, so scrolled pixels must be repainted, not reused
+FXbool showsBackgroundImage(const FXWindow*);
 FXbool drawBackgroundImage(FXWindow*, FXDC&, FXint, FXint, FXint, FXint, FXColor base = 0);
 FXbool drawBackgroundGaps(FXWindow*, FXDC&, FXint, FXint, FXint, FXint);
 

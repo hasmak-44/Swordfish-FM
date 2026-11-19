@@ -2780,6 +2780,18 @@ long FXMenuCheck::onPaint(FXObject*, FXSelector, void* ptr)
 
 #define HALFBOX_SIZE        4   // Half box size
 
+// Scroll contents by blitting, unless a window-fixed background image is visible behind them
+void FXScrollArea::moveContents(FXint x, FXint y)
+{
+    if (showsBackgroundImage(this))
+        update(0, 0, viewport_w, viewport_h);
+    else
+        scroll(0, 0, viewport_w, viewport_h, x - pos_x, y - pos_y);
+    pos_x = x;
+    pos_y = y;
+}
+
+
 // Draw item list
 long FXTreeList::onPaint(FXObject*, FXSelector, void* ptr)
 {

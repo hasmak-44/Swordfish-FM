@@ -104,6 +104,9 @@
   skipped.
 
 ### Fixed
+- Scrolling a file list or folder tree over a theme background image no longer
+  smears or streaks the image. The visible area is repainted while scrolling,
+  so a manual refresh is no longer needed.
 - Custom Actions no longer copy scripts into action folders or rewrite
   commands on save or startup. Scripts run from their own location, so relative
   paths keep working, and hand-edited `action.ini` commands persist after

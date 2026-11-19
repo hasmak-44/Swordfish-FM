@@ -3725,6 +3725,27 @@ scan/copy cancellation, nested-folder cleanup and restoration after a
 cancelled merge. `make -C src -j4 swordfish` and
 `bash tests/run-theme-workflow-regression.sh` passed.
 
+### 3.112. Background image distortion while scrolling (19 November 2026)
+
+The user reported that a theme background image smeared after horizontal
+scrolling and streaked after vertical scrolling in file panels; Refresh
+cleared it. Scroll areas reused on-screen pixels by blitting them by the
+scroll offset and repainted only the newly exposed strip. The image is fixed to
+the main window, so blitted pixels carried parts of it to the wrong positions.
+
+`IconList::moveContents` already repainted for list background effects; it
+now also repaints whenever a window image overlay is visible. Trees and other
+plain FOX scroll areas use a `FXScrollArea::moveContents` override in
+`moderncontrols.cpp`, which repaints when `showsBackgroundImage()` reports
+that the widget paints the image, and otherwise keeps FOX's original blit.
+`showsBackgroundImage()` respects `BackgroundImageOwner` exclusions, such as
+the active tab. `FXText` keeps its own scrolling.
+
+The theme workflow regression adds a 256×256 gradient image without a list
+effect, scrolls the file list horizontally and the folder tree vertically, and
+compares the scrolled screen with a full repaint. Both checks failed with the
+old code and pass with the fix.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

@@ -393,12 +393,23 @@ void trackBackgroundOrigin(FXWindow* window)
     windowLayer.origins[window] = std::make_pair(x, y);
 }
 
+static FXbool ownersAllowImage(const FXWindow* target)
+{
+    for (const FXWindow* owner = target; owner; owner = owner->getParent())
+        if (const BackgroundImageOwner* imageOwner = dynamic_cast<const BackgroundImageOwner*>(owner))
+            if (!imageOwner->allowsBackgroundImage(target)) return false;
+    return true;
+}
+
+FXbool showsBackgroundImage(const FXWindow* target)
+{
+    FXint x, y;
+    return ownersAllowImage(target) && windowBackground(target, x, y);
+}
+
 FXbool drawBackgroundImage(FXWindow* target, FXDC& dc, FXint x, FXint y, FXint w, FXint h, FXColor base)
 {
-    if (w <= 0 || h <= 0) return false;
-    for (FXWindow* owner = target; owner; owner = owner->getParent())
-        if (BackgroundImageOwner* imageOwner = dynamic_cast<BackgroundImageOwner*>(owner))
-            if (!imageOwner->allowsBackgroundImage(target)) return false;
+    if (w <= 0 || h <= 0 || !ownersAllowImage(target)) return false;
     FXint originX, originY;
     const BackgroundOverlay* overlay = windowBackground(target, originX, originY);
     if (!overlay) return false;

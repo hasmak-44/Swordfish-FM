@@ -1365,13 +1365,15 @@ void IconList::moveContents(int x, int y)
         top = header->getDefaultHeight();
         header->setPosition(x);
     }
-    if (backgroundEffect.empty())
+    int imageX, imageY;
+    FXuint imageSerial;
+    if (backgroundEffect.empty() && !imageOverlay(imageX, imageY, imageSerial))
     {
         scroll(0, top, FXMAX(1, viewport_w - getBackgroundGutter()), viewport_h, dx, dy);
     }
     else
     {
-        // The effect is fixed to the window: blitting scrolled pixels would move it with the items
+        // Effects and images are fixed to the window: blitting scrolled pixels would move them with the items
         update(0, top, viewport_w, viewport_h);
     }
     placeInlineEditor(true);

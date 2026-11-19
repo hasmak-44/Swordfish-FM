@@ -360,6 +360,20 @@ static FXbool windowShowsPixel(FXWindow* window, FXColor color)
     return found;
 }
 
+static std::vector<unsigned long> windowPixels(FXWindow* window)
+{
+    Display* display = static_cast<Display*>(window->getApp()->getDisplay());
+    XSync(display, False);
+    std::vector<unsigned long> pixels;
+    XImage* image = XGetImage(display, window->id(), 0, 0, window->getWidth(), window->getHeight(), AllPlanes, ZPixmap);
+    if (!image) return pixels;
+    for (FXint y = 0; y < window->getHeight(); ++y)
+        for (FXint x = 0; x < window->getWidth(); ++x)
+            pixels.push_back(XGetPixel(image, x, y));
+    XDestroyImage(image);
+    return pixels;
+}
+
 // A full theme apply repaints the whole window; slow Xvfb hosts may need more than one pump.
 static FXbool showsPixelSoon(FXApp& app, FXWindow* window, FXColor color)
 {
@@ -2470,6 +2484,55 @@ public:
             assert(leftX != rightX);
             assert(paneBackground(leftList) == FXRGB(leftX & 255, leftX >> 8, 0));
             assert(paneBackground(rightList) == FXRGB(rightX & 255, rightX >> 8, 0));
+            {
+                // Scrolling must repaint the window-fixed image rather than blit it along with the items
+                FXString gridSource = data + "/image-grid.png";
+                FXColor* grid = NULL;
+                assert(FXMALLOC(&grid, FXColor, 256 * 256));
+                for (FXint i = 0; i < 256 * 256; ++i) grid[i] = FXRGB(i & 255, i >> 8, 128);
+                {
+                    FXPNGImage image(&app);
+                    image.setData(grid, IMAGE_KEEP | IMAGE_OWNED, 256, 256);
+                    FXFileStream output;
+                    assert(output.open(gridSource, FXStreamSave) && image.savePixels(output));
+                }
+                FXString gridReference = BackgroundEffect::textureReference("Photographs/Grid.png");
+                assert(BackgroundImage::importImage(&app, gridSource, gridReference, imageError));
+                Theme gridTheme = rampTheme;
+                gridTheme.setProperty("main", "background_image", gridReference);
+                gridTheme.effect.clear();
+                FXint oldWidth = window.getWidth(), oldHeight = window.getHeight();
+                FXuint oldStyle = leftList->getListStyle();
+                FXint oldColumn = leftList->getHeaderSize(0);
+                leftList->setListStyle(oldStyle & ~(ICONLIST_MINI_ICONS | ICONLIST_BIG_ICONS));
+                leftList->setHeaderSize(0, 3000);
+                window.resize(oldWidth, 360);
+                window.applyTheme(gridTheme);
+                pump(app);
+                auto scrollMatchesRepaint = [&](FXScrollArea* area, FXint x, FXint y)
+                {
+                    area->setPosition(x, y);
+                    pump(app);
+                    std::vector<unsigned long> scrolled = windowPixels(area);
+                    area->update();
+                    pump(app);
+                    return !scrolled.empty() && scrolled == windowPixels(area);
+                };
+                FXScrollArea* treeArea = dynamic_cast<FXScrollArea*>(tree);
+                assert(treeArea && treeArea->getContentHeight() > treeArea->getViewportHeight());
+                assert(leftList->getContentWidth() > leftList->getViewportWidth());
+                assert(scrollMatchesRepaint(leftList, -37, 0));
+                assert(scrollMatchesRepaint(leftList, -11, 0));
+                assert(scrollMatchesRepaint(treeArea, 0, -29));
+                assert(scrollMatchesRepaint(treeArea, 0, -7));
+                leftList->setHeaderSize(0, oldColumn);
+                leftList->setListStyle(oldStyle);
+                leftList->setPosition(0, 0);
+                treeArea->setPosition(0, 0);
+                window.resize(oldWidth, oldHeight);
+                pump(app);
+                puts("PASS: scrolled file lists and trees repaint the fixed background image");
+            }
             rampTheme.setProperty("main", "background_image", imageReference);
             rampTheme.setProperty("main", "image_opacity", "50");
             window.applyTheme(rampTheme);
