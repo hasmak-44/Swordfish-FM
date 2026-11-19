@@ -92,6 +92,46 @@ static FXButton* findButton(FXWindow* parent, const FXString& text)
     return NULL;
 }
 
+class FolderImportResponder : public FXObject
+{
+public:
+    enum CancelMode { KEEP_IMPORTING, CANCEL_DURING_SCAN, CANCEL_AFTER_COPY };
+private:
+    FXApp& app;
+    FXString expected;
+    CancelMode cancelMode;
+public:
+    FXbool sawProgress = false, sawReport = false;
+    FXString reportText;
+    FolderImportResponder(FXApp& application, const FXString& expectedText, CancelMode cancel = KEEP_IMPORTING) :
+        app(application), expected(expectedText), cancelMode(cancel) {}
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        FXWindow* modal = app.getModalWindow();
+        if (MessageBox* report = dynamic_cast<MessageBox*>(modal))
+        {
+            assert(report->getTitle() == "Import status" && report->getText().contains(expected));
+            assert(findClass(report, "LinkText"));
+            reportText = report->getText();
+            sawReport = true;
+            report->handle(report, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_OK), NULL);
+        }
+        else
+        {
+            DialogBox* progress = dynamic_cast<DialogBox*>(modal);
+            assert(progress && progress->getTitle() == "Importing folder");
+            FXProgressBar* bar = dynamic_cast<FXProgressBar*>(findClass(progress, "FXProgressBar"));
+            FXButton* cancel = findButton(progress, "Cancel");
+            assert(bar && cancel && !findButton(progress, "OK"));
+            sawProgress = true;
+            if (cancelMode == CANCEL_DURING_SCAN || (cancelMode == CANCEL_AFTER_COPY && bar->getProgress() > 0))
+                cancel->getTarget()->handle(cancel, FXSEL(SEL_COMMAND, cancel->getSelector()), NULL);
+            app.addTimeout(this, 1, 1);
+        }
+        return 1;
+    }
+};
+
 class ThemeExportResponder : public FXObject
 {
     FXApp& app;
@@ -1714,13 +1754,14 @@ public:
                 unsupported << "not a texture";
                 assert(unsupported.good());
             }
+            {
+                std::ofstream invalid((textureFolderImport + "/Broken.png").text());
+                invalid << "not a PNG";
+                assert(invalid.good());
+            }
             FXButton* addFolder = findButton(page, "Add folder...");
             assert(addFolder);
-            ActionTimer confirmFolderReport([&] {
-                MessageBox* message = dynamic_cast<MessageBox*>(app.getModalWindow());
-                assert(message && message->getTitle() == "Texture");
-                message->handle(message, FXSEL(SEL_COMMAND, MessageBox::ID_CLICKED_OK), NULL);
-            });
+            FolderImportResponder confirmFolderReport(app, "readme.txt: Unsupported file type.");
             ActionTimer chooseFolder([&] {
                 FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
                 assert(chooser && chooser->getTitle() == "Import texture folder");
@@ -1734,6 +1775,11 @@ public:
                    xf_existfile(globalTextures + "/Batch Texture Pack/Root.png") &&
                    BackgroundEffect::parse(editor.getDraft().effect).texture ==
                        BackgroundEffect::textureReference("Batch Texture Pack/Oak/Leaves"));
+            assert(confirmFolderReport.sawReport);
+            assert(confirmFolderReport.reportText.contains("Imported: 3\nSkipped: 0") &&
+                   confirmFolderReport.reportText.contains("Successfully imported:\nOak/Leaves.png") &&
+                   confirmFolderReport.reportText.contains("Broken.png: ") &&
+                   !xf_existfile(globalTextures + "/Batch Texture Pack/Broken.png"));
 
             FXint conflictAction = 0;
             ActionTimer renameImportedFolder([&] {
@@ -1785,6 +1831,86 @@ public:
                 if (conflictAction == 3)
                     assert(xf_existfile(globalTextures + "/Alternate Parent/Batch Texture Pack/Oak/Leaves.png"));
             }
+
+            FXString beforeCancel = editor.getDraft().effect;
+            FXString cancelFolder = data + "/Cancelled Texture Pack";
+            assert(xf_mkpath((cancelFolder + "/Nested").text(), 0755) == 0);
+            for (FXint i = 0; i < 40; ++i)
+                solidPng(app, cancelFolder + FXString().format("/Nested/Tile %02d.png", i),
+                         FXRGB(30, 70, 110));
+            FolderImportResponder cancelImport(app, "Import cancelled.", FolderImportResponder::CANCEL_AFTER_COPY);
+            ActionTimer chooseCancelledFolder([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser);
+                app.addTimeout(&cancelImport, 1, 0);
+                chooseFolderInDialog(chooser, cancelFolder);
+            });
+            app.addTimeout(&chooseCancelledFolder, 1, 150);
+            addFolder->getTarget()->handle(addFolder, FXSEL(SEL_COMMAND, addFolder->getSelector()), NULL);
+            assert(cancelImport.sawProgress && cancelImport.sawReport);
+            assert(!xf_existfile(globalTextures + "/Cancelled Texture Pack") &&
+                   editor.getDraft().effect == beforeCancel);
+
+            FolderImportResponder cancelScan(app, "Import cancelled.", FolderImportResponder::CANCEL_DURING_SCAN);
+            ActionTimer chooseCancelledScan([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser);
+                app.addTimeout(&cancelScan, 1, 0);
+                chooseFolderInDialog(chooser, cancelFolder);
+            });
+            app.addTimeout(&chooseCancelledScan, 1, 150);
+            addFolder->getTarget()->handle(addFolder, FXSEL(SEL_COMMAND, addFolder->getSelector()), NULL);
+            assert(cancelScan.sawProgress && cancelScan.sawReport &&
+                   !xf_existfile(globalTextures + "/Cancelled Texture Pack") &&
+                   editor.getDraft().effect == beforeCancel);
+
+            // Cancel after a new nested file and an existing graphic have both been imported.
+            assert(xf_mkpath((textureFolderImport + "/A New Folder").text(), 0755) == 0);
+            solidPng(app, textureFolderImport + "/A New Folder/Added.png", FXRGB(15, 25, 35));
+            FXColor originalLeaves = pngPixel(app, globalTextures + "/Batch Texture Pack/Oak/Leaves.png");
+            solidPng(app, textureFolderImport + "/Oak/Leaves.png", FXRGB(215, 125, 35));
+            FolderImportResponder cancelledMergeReport(app, "Import cancelled.");
+            ActionTimer cancelMergeConflict([&] {
+                DialogBox* conflict = dynamic_cast<DialogBox*>(app.getModalWindow());
+                assert(conflict && conflict->getTitle() == "Graphic name already exists");
+                assert(xf_existfile(globalTextures + "/Batch Texture Pack/A New Folder/Added.png"));
+                assert(pngPixel(app, globalTextures + "/Batch Texture Pack/Oak/Leaves.png") != originalLeaves);
+                FXButton* cancel = findButton(conflict, "Cancel");
+                assert(cancel);
+                app.addTimeout(&cancelledMergeReport, 1, 1);
+                cancel->getTarget()->handle(cancel, FXSEL(SEL_COMMAND, cancel->getSelector()), NULL);
+            });
+            ActionTimer replaceMergeConflict([&] {
+                DialogBox* conflict = dynamic_cast<DialogBox*>(app.getModalWindow());
+                assert(conflict && conflict->getTitle() == "Graphic name already exists");
+                FXButton* replace = findButton(conflict, "Replace");
+                assert(replace);
+                app.addTimeout(&cancelMergeConflict, 1, 150);
+                replace->getTarget()->handle(replace, FXSEL(SEL_COMMAND, replace->getSelector()), NULL);
+            });
+            ActionTimer mergeForCancellation([&] {
+                DialogBox* conflict = dynamic_cast<DialogBox*>(app.getModalWindow());
+                assert(conflict && conflict->getTitle() == "Folder already exists");
+                FXButton* merge = findButton(conflict, "Merge");
+                assert(merge);
+                app.addTimeout(&replaceMergeConflict, 1, 150);
+                merge->getTarget()->handle(merge, FXSEL(SEL_COMMAND, merge->getSelector()), NULL);
+            });
+            ActionTimer chooseCancelledMerge([&] {
+                FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
+                assert(chooser);
+                app.addTimeout(&mergeForCancellation, 1, 150);
+                chooseFolderInDialog(chooser, textureFolderImport);
+            });
+            app.addTimeout(&chooseCancelledMerge, 1, 150);
+            addFolder->getTarget()->handle(addFolder, FXSEL(SEL_COMMAND, addFolder->getSelector()), NULL);
+            assert(cancelledMergeReport.sawReport);
+            assert(pngPixel(app, globalTextures + "/Batch Texture Pack/Oak/Leaves.png") == originalLeaves &&
+                   xf_existfile(globalTextures + "/Batch Texture Pack/Pine/Needles.png") &&
+                   !xf_existfile(globalTextures + "/Batch Texture Pack/A New Folder") &&
+                   editor.getDraft().effect == beforeCancel);
+            FXDir importedFiles(globalTextures + "/Batch Texture Pack/Oak");
+            while (importedFiles.next()) assert(importedFiles.name().left(18) != ".swordfish-import-");
             dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
         });
         app.addTimeout(&categoryDialog, 1, 150);
@@ -1792,6 +1918,7 @@ public:
         editor.onEditProperty(NULL, 0, NULL);
         editor.hide();
         puts("PASS: categorized texture import, safe references, theme copies and visible gallery thumbnails");
+        puts("PASS: folder import progress/status, scan/copy cancellation, nested cleanup and merged originals restored");
 
         FXString patternReference = BackgroundEffect::textureReference("Geometric/Checker Board");
         FXString patternOther = BackgroundEffect::textureReference("Geometric/Other");
@@ -1974,9 +2101,11 @@ public:
             solidPng(app, patternFolderImport + "/Lines/Needle.png", FXRGB(30, 90, 150));
             FXButton* addFolder = findButton(page, "Add folder...");
             assert(addFolder);
+            FolderImportResponder patternFolderReport(app, "Imported: 1\nSkipped: 0");
             ActionTimer choosePatternFolder([&] {
                 FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
                 assert(chooser && chooser->getTitle() == "Import pattern folder");
+                app.addTimeout(&patternFolderReport, 1, 1);
                 chooseFolderInDialog(chooser, patternFolderImport);
             });
             app.addTimeout(&choosePatternFolder, 1, 150);
@@ -1984,6 +2113,7 @@ public:
             FXString patternFolderReference = BackgroundEffect::textureReference("Batch Pattern Pack/Lines/Needle");
             assert(xf_existfile(globalPatterns + "/Batch Pattern Pack/Lines/Needle.png") &&
                    BackgroundEffect::parse(editor.getDraft().effect).patternImage == patternFolderReference);
+            assert(patternFolderReport.sawReport);
             dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
         });
         app.addTimeout(&patternDialog, 1, 150);
@@ -2197,9 +2327,11 @@ public:
             assert(FXFile::copyFiles(jpegSource, imageFolderImport + "/Pine/View.jpg", false));
             FXButton* addFolder = findButton(dialog, "Add folder...");
             assert(addFolder);
+            FolderImportResponder imageFolderReport(app, "Imported: 2\nSkipped: 0");
             ActionTimer chooseImageFolder([&] {
                 FileDialog* chooser = dynamic_cast<FileDialog*>(app.getModalWindow());
                 assert(chooser && chooser->getTitle() == "Import background-image folder");
+                app.addTimeout(&imageFolderReport, 1, 1);
                 chooseFolderInDialog(chooser, imageFolderImport);
             });
             app.addTimeout(&chooseImageFolder, 1, 150);
@@ -2208,6 +2340,7 @@ public:
                    xf_existfile(globalImages + "/Batch Background Pack/Pine/View.jpg") &&
                    editor.getDraft().property("main", "background_image") ==
                        BackgroundEffect::textureReference("Batch Background Pack/Oak/Scene.png"));
+            assert(imageFolderReport.sawReport);
             dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
         });
         app.addTimeout(&cancelImage, 1, 150);

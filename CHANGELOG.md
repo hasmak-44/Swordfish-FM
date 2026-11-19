@@ -46,6 +46,10 @@
   texture in its own colours instead of tinting it with the theme colour.
 
 ### Changed
+- Theme Editor media-folder imports show scanning activity, file progress and
+  Cancel. Cancelling removes imported media and new folders, restoring any
+  existing files replaced during a merge. A scrollable completion report
+  lists successful imports, skipped files and errors, including clean imports.
 - The custom-action icon chooser shows every matching icon on one scrollable
   page instead of 40-icon pages with Previous/Next. Icons decode lazily as
   they scroll into view; the filter field has a search icon.

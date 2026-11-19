@@ -219,10 +219,59 @@ struct FolderGraphicFile
     FXString relative;
 };
 
+class FolderImportProgress : public DialogBox
+{
+    FXLabel* current;
+    FXProgressBar* progress;
+    FXlong lastUpdate = 0;
+public:
+    FXbool cancelled = false;
+    explicit FolderImportProgress(FXWindow* owner) : DialogBox(owner, _("Importing folder"))
+    {
+        new FXLabel(this, _("Importing your folder,\nThis may take some time depending on the size of your folder"),
+                    NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        current = new FXLabel(this, _("Scanning folder..."), NULL, JUSTIFY_LEFT | LAYOUT_FIX_WIDTH | LAYOUT_FILL_X,
+                              0, 0, 480, 0);
+        progress = new FXProgressBar(this, NULL, 0, PROGRESSBAR_PERCENTAGE | FRAME_SUNKEN | LAYOUT_FILL_X);
+        progress->setTotal(1);
+        new FXButton(this, _("Cancel"), NULL, this, ID_CANCEL,
+                     BUTTON_NORMAL | BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT);
+        create();
+        show(PLACEMENT_OWNER);
+    }
+    FXbool updateProgress(const FXString& text, FXuint done = 0, FXuint total = 0, FXbool force = true)
+    {
+        if (cancelled) return false;
+        FXlong now = FXThread::time();
+        if (!force && now - lastUpdate < 50000000) return true;
+        lastUpdate = now;
+        current->setText(text);
+        progress->setTotal(FXMAX(1, total));
+        progress->setProgress(done);
+        layout();
+        repaint();
+        getApp()->runModalWhileEvents(this);
+        return !cancelled;
+    }
+    long handle(FXObject* sender, FXSelector selector, void* data) override
+    {
+        if (FXSELTYPE(selector) == SEL_CLOSE ||
+            (FXSELTYPE(selector) == SEL_COMMAND && FXSELID(selector) == ID_CANCEL))
+        {
+            cancelled = true;
+            return 1;
+        }
+        return DialogBox::handle(sender, selector, data);
+    }
+};
+
 void collectFolderGraphicFiles(const FXString& root, const FXString& directory, const FXString& relative,
                                FXint depth, FXbool images, std::vector<FolderGraphicFile>& files,
-                               FXString& failures)
+                               FXString& failures, FolderImportProgress& progress)
 {
+    if (!progress.updateProgress(_("Scanning folder: ") + (relative.empty() ? FXPath::name(root) : relative),
+                                 0, 0, false))
+        return;
     FXDir entries;
     if (!entries.open(directory))
     {
@@ -234,6 +283,8 @@ void collectFolderGraphicFiles(const FXString& root, const FXString& directory, 
     {
         FXString name = entries.name();
         if (name.empty() || name == "." || name == "..") continue;
+        if (!progress.updateProgress(FXString().format(_("Scanning folder... %u supported files found"),
+                                                       static_cast<FXuint>(files.size())), 0, 0, false)) return;
         FXString source = directory + PATHSEPSTRING + name;
         FXString child = relative.empty() ? name : relative + "/" + name;
         if (name[0] == '.')
@@ -247,7 +298,7 @@ void collectFolderGraphicFiles(const FXString& root, const FXString& directory, 
             if (depth >= 7)
                 failures += child + ": " + _("Too many nested graphic categories.") + "\n";
             else
-                collectFolderGraphicFiles(root, source, child, depth + 1, images, files, failures);
+                collectFolderGraphicFiles(root, source, child, depth + 1, images, files, failures, progress);
         }
         else if (!xf_isfile(source))
         {
@@ -266,6 +317,7 @@ void collectFolderGraphicFiles(const FXString& root, const FXString& directory, 
             else
                 failures += child + ": " + _("Unsupported file type.") + "\n";
         }
+        if (progress.cancelled) return;
     }
 }
 
@@ -706,10 +758,101 @@ FXString uniqueGraphicName(const FXString& reference, GraphicImportKind kind)
     return candidate;
 }
 
+// Keep originals beside their destinations until the whole folder import is accepted.
+class FolderImportChanges
+{
+    struct Change { FXString destination, backup; FXbool restoreFailed; };
+    std::vector<Change> changes;
+    std::set<FXString> createdFolders;
+    FXbool finished = false;
+
+    FXString restore(const Change& change)
+    {
+        if (!change.backup.empty())
+        {
+            if (::rename(change.backup.text(), change.destination.text()) != 0)
+                return _("Cannot restore original file; backup kept at ") + change.backup + ": " + strerror(errno) + "\n";
+        }
+        else if (::unlink(change.destination.text()) != 0 && errno != ENOENT)
+            return _("Cannot remove imported file: ") + change.destination + ": " + strerror(errno) + "\n";
+        return FXString::null;
+    }
+public:
+    ~FolderImportChanges()
+    {
+        if (!finished)
+        {
+            FXString errors = finish(true);
+            if (!errors.empty()) appLog(APP_LOG_ERRORS, "theme-folder-import-cleanup", errors);
+        }
+    }
+    FXbool prepare(const FXString& destination, FXbool collision, FXString& error)
+    {
+        Change change = {destination, FXString::null, false};
+        if (collision)
+        {
+            FXString pattern = FXPath::directory(destination) + "/.swordfish-import-XXXXXX";
+            std::vector<char> temporary(pattern.text(), pattern.text() + pattern.length() + 1);
+            int fd = mkstemp(temporary.data());
+            if (fd < 0)
+            {
+                error = _("Cannot back up existing file: ") + destination + ": " + strerror(errno);
+                return false;
+            }
+            close(fd);
+            change.backup = temporary.data();
+            if (::rename(destination.text(), change.backup.text()) != 0)
+            {
+                error = _("Cannot back up existing file: ") + destination + ": " + strerror(errno);
+                if (::unlink(change.backup.text()) != 0)
+                    error += "\n" + change.backup + ": " + strerror(errno);
+                return false;
+            }
+        }
+        for (FXString parent = FXPath::directory(destination); !parent.empty() && parent != "/";
+             parent = FXPath::directory(parent))
+        {
+            struct stat info;
+            if (lstat(parent.text(), &info) == 0) break;
+            if (errno != ENOENT) break; // Destination preparation reports inaccessible parents.
+            createdFolders.insert(parent);
+        }
+        changes.push_back(change);
+        return true;
+    }
+    void failed(FXString& error)
+    {
+        FXString cleanup = restore(changes.back());
+        if (cleanup.empty()) changes.pop_back();
+        else
+        {
+            changes.back().restoreFailed = true;
+            error += "\n" + cleanup;
+        }
+    }
+    FXString finish(FXbool cancelled)
+    {
+        FXString errors;
+        for (auto change = changes.rbegin(); change != changes.rend(); ++change)
+        {
+            if (cancelled) errors += restore(*change);
+            else if (!change->restoreFailed && !change->backup.empty() && ::unlink(change->backup.text()) != 0)
+                errors += _("Cannot remove import backup: ") + change->backup + ": " + strerror(errno) + "\n";
+        }
+        if (cancelled)
+            for (auto folder = createdFolders.rbegin(); folder != createdFolders.rend(); ++folder)
+                if (::rmdir(folder->text()) != 0 && errno != ENOENT)
+                    errors += _("Cannot remove imported folder: ") + *folder + ": " + strerror(errno) + "\n";
+        finished = true;
+        return errors;
+    }
+};
+
 GraphicImportResult importGraphicWithConflict(FXWindow* owner, FXApp* app, const FXString& source,
                                               FXString& reference, GraphicImportKind kind,
                                               const FXString& assetRoot, FXbool& replaceAll,
-                                              FXbool& skipAll, FXString& error)
+                                              FXbool& skipAll, FXString& error,
+                                              FolderImportChanges* changes = NULL)
 {
     while (true)
     {
@@ -777,13 +920,86 @@ GraphicImportResult importGraphicWithConflict(FXWindow* owner, FXApp* app, const
                 else replace = true;
             }
         }
+        if (changes && !changes->prepare(destination, collision, error)) return GRAPHIC_FAILED;
         FXbool imported = kind == GRAPHIC_PATTERN ?
             BackgroundEffect::importPattern(app, source, reference, false, error, replace) :
             kind == GRAPHIC_TEXTURE ?
             BackgroundEffect::importTexture(app, source, reference, false, error, replace) :
             BackgroundImage::importImage(app, source, reference, error, replace);
+        if (!imported && changes) changes->failed(error);
         return imported ? GRAPHIC_IMPORTED : GRAPHIC_FAILED;
     }
+}
+
+FXString importGraphicFolder(FXWindow* owner, const FXString& sourceFolder, const FXString& category,
+                              GraphicImportKind kind, const FXString& assetRoot)
+{
+    FolderImportProgress progress(owner);
+    FolderImportChanges changes;
+    std::vector<FolderGraphicFile> files;
+    FXString failures, successes, skipped, activeReference;
+    collectFolderGraphicFiles(sourceFolder, sourceFolder, "", 0, kind == GRAPHIC_IMAGE, files, failures, progress);
+    std::sort(files.begin(), files.end(), [](const FolderGraphicFile& a, const FolderGraphicFile& b)
+    {
+        return a.relative < b.relative;
+    });
+    if (!progress.cancelled && files.empty() && failures.empty())
+        failures = kind == GRAPHIC_IMAGE ? _("The folder contains no supported PNG or JPEG files.\n") :
+                                           _("The folder contains no supported PNG files.\n");
+    FXuint imported = 0, skipCount = 0, done = 0;
+    FXbool replaceAll = false, skipAll = false;
+    for (const FolderGraphicFile& file : files)
+    {
+        if (!progress.updateProgress(FXString().format(_("Importing %u of %u: "), done + 1,
+                                     static_cast<FXuint>(files.size())) + file.relative, done, files.size())) break;
+        FXString relative = kind == GRAPHIC_IMAGE ? file.relative :
+            file.relative.left(file.relative.length() - FXPath::extension(file.relative).length() - 1);
+        FXString reference = BackgroundEffect::textureReference(category + "/" + relative), error;
+        GraphicImportResult result = importGraphicWithConflict(&progress, owner->getApp(), file.source, reference,
+                                                               kind, assetRoot, replaceAll, skipAll, error, &changes);
+        if (result == GRAPHIC_CANCELLED) { progress.cancelled = true; break; }
+        if (result == GRAPHIC_IMPORTED)
+        {
+            if (activeReference.empty()) activeReference = reference;
+            successes += file.relative + "\n";
+            ++imported;
+        }
+        else if (result == GRAPHIC_SKIPPED)
+        {
+            skipped += file.relative + "\n";
+            ++skipCount;
+        }
+        else failures += file.relative + ": " + (error.empty() ? _("Invalid graphic name or category.") : error) + "\n";
+        ++done;
+    }
+    if (!progress.cancelled)
+        progress.updateProgress(_("Finishing import..."), files.size(), files.size());
+    FXString cleanupErrors = changes.finish(progress.cancelled);
+    if (!cleanupErrors.empty())
+    {
+        failures += cleanupErrors;
+        appLog(APP_LOG_ERRORS, "theme-folder-import-cleanup", cleanupErrors);
+    }
+    progress.hide();
+    FXString message;
+    if (progress.cancelled)
+    {
+        activeReference.clear();
+        message = cleanupErrors.empty() ?
+            _("Import cancelled. Imported media and newly created folders were removed.\nExisting files were kept.\n") :
+            _("Import cancelled. Some changes could not be undone; see the errors below.\n");
+    }
+    else
+    {
+        message.format(_("Imported: %u\nSkipped: %u\n"), imported, skipCount);
+        if (!successes.empty()) message += "\n" + FXString(_("Successfully imported:\n")) + successes;
+        if (!skipped.empty()) message += "\n" + FXString(_("Skipped:\n")) + skipped;
+    }
+    if (!failures.empty()) message += "\n" + FXString(_("Errors and unsupported items:\n")) + failures;
+    MessageBox report(owner, _("Import status"), message, failures.empty() ? biginfoicon : bigerroricon,
+                      BOX_OK, JUSTIFY_LEFT, 0, 0, true);
+    report.execute(PLACEMENT_OWNER);
+    return activeReference;
 }
 
 // Tiles match the file list's thumbnail view (IconItem::drawBigIcon with thumbnail tiles).
@@ -2368,38 +2584,8 @@ public:
             FXString destinationCategory;
             if (!resolveFolderImportCategory(this, FXPath::name(sourceFolder), pattern, false,
                                              editor->getDraft().assetRoot, destinationCategory)) return 1;
-            std::vector<FolderGraphicFile> files;
-            FXString failures;
-            collectFolderGraphicFiles(sourceFolder, sourceFolder, "", 0, false, files, failures);
-            std::sort(files.begin(), files.end(), [](const FolderGraphicFile& a, const FolderGraphicFile& b)
-            {
-                return a.relative < b.relative;
-            });
-            if (files.empty() && failures.empty()) failures = _("The folder contains no supported PNG files.");
-            FXString activeReference;
-            FXint importedCount = 0;
-            FXbool replaceAll = false, skipAll = false;
-            for (const FolderGraphicFile& file : files)
-            {
-                FXString subcategory = FXPath::directory(file.relative);
-                FXString name = FXPath::title(FXPath::name(file.relative));
-                FXString category = destinationCategory;
-                if (!subcategory.empty() && subcategory != ".") category += "/" + subcategory;
-                FXString reference = BackgroundEffect::textureReference(category + "/" + name);
-                FXString error;
-                GraphicImportResult result = importGraphicWithConflict(
-                    this, getApp(), file.source, reference, pattern ? GRAPHIC_PATTERN : GRAPHIC_TEXTURE,
-                    editor->getDraft().assetRoot, replaceAll, skipAll, error);
-                if (result == GRAPHIC_CANCELLED) break;
-                if (result == GRAPHIC_IMPORTED)
-                {
-                    if (activeReference.empty()) activeReference = reference;
-                    ++importedCount;
-                }
-                else if (result == GRAPHIC_FAILED)
-                    failures += file.relative + ": " +
-                                (error.empty() ? _("Invalid graphic name or category.") : error) + "\n";
-            }
+            FXString activeReference = importGraphicFolder(this, sourceFolder, destinationCategory,
+                pattern ? GRAPHIC_PATTERN : GRAPHIC_TEXTURE, editor->getDraft().assetRoot);
             if (!activeReference.empty())
             {
                 if (pattern)
@@ -2415,7 +2601,6 @@ public:
             }
             if (pattern) loadPatterns();
             else loadTextures();
-            reportBatchImportFailures(this, pattern ? _("Pattern") : _("Texture"), importedCount, failures);
             return 1;
         }
         if (id == ID_ADD_PATTERN || id == ID_ADD_TEXTURE)
@@ -2782,35 +2967,8 @@ public:
             FXString destinationCategory;
             if (!resolveFolderImportCategory(this, FXPath::name(sourceFolder), false, true,
                                              editor->getDraft().assetRoot, destinationCategory)) return 1;
-            std::vector<FolderGraphicFile> files;
-            FXString failures;
-            collectFolderGraphicFiles(sourceFolder, sourceFolder, "", 0, true, files, failures);
-            std::sort(files.begin(), files.end(), [](const FolderGraphicFile& a, const FolderGraphicFile& b)
-            {
-                return a.relative < b.relative;
-            });
-            if (files.empty() && failures.empty())
-                failures = _("The folder contains no supported PNG or JPEG files.");
-            FXString firstReference;
-            FXint importedCount = 0;
-            FXbool replaceAll = false, skipAll = false;
-            for (const FolderGraphicFile& file : files)
-            {
-                FXString candidate = BackgroundEffect::textureReference(destinationCategory + "/" + file.relative);
-                FXString error;
-                GraphicImportResult result = importGraphicWithConflict(
-                    this, getApp(), file.source, candidate, GRAPHIC_IMAGE, editor->getDraft().assetRoot,
-                    replaceAll, skipAll, error);
-                if (result == GRAPHIC_CANCELLED) break;
-                if (result == GRAPHIC_IMPORTED)
-                {
-                    if (firstReference.empty()) firstReference = candidate;
-                    ++importedCount;
-                }
-                else if (result == GRAPHIC_FAILED)
-                    failures += file.relative + ": " +
-                                (error.empty() ? _("Invalid image name or category.") : error) + "\n";
-            }
+            FXString firstReference = importGraphicFolder(this, sourceFolder, destinationCategory, GRAPHIC_IMAGE,
+                                                         editor->getDraft().assetRoot);
             if (!firstReference.empty())
             {
                 reference = firstReference;
@@ -2818,7 +2976,6 @@ public:
                 folder = referenceFolder(reference);
             }
             refresh();
-            reportBatchImportFailures(this, _("Background image"), importedCount, failures);
             return 1;
         }
         else if (id == ID_IMPORT)

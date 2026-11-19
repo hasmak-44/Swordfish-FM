@@ -3700,6 +3700,31 @@ The filter row shows the mini search icon beside the text field. The Custom
 Actions UI regression checks more than 50 icons on one page, no paging
 buttons, the filter icon, and that scrolling decodes more icons.
 
+### 3.111. Media-folder import progress, cancellation and status (19 November 2026)
+
+Theme Editor folder imports for patterns, textures and background images now
+share a modal progress dialog. It displays "Importing your folder, This may
+take some time depending on the size of your folder", scanning activity, the
+current file and a file-count progress bar, with Cancel as its only button.
+Events are serviced while scanning and between files; an in-progress file
+finishes before cancellation cleanup.
+
+Cancel during scanning, copying or a file-conflict prompt rolls back the
+whole folder import. Newly copied files and newly created category folders
+are removed. During a merge, existing graphics are kept in temporary hidden
+backups beside their destinations until the import completes; cancellation
+restores replaced originals without deleting unrelated content. A failed
+individual import also restores its original, and cleanup failures are
+reported rather than silently discarded.
+
+Every completed import opens a scrollable Import status dialog listing
+successes, skipped files and errors, even when everything succeeded.
+Cancellation also reports its cleanup result. The theme workflow regression
+covers successful pattern/image imports, mixed successes and invalid files,
+scan/copy cancellation, nested-folder cleanup and restoration after a
+cancelled merge. `make -C src -j4 swordfish` and
+`bash tests/run-theme-workflow-regression.sh` passed.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
