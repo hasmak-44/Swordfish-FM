@@ -431,43 +431,44 @@ class PortableProfileTests(unittest.TestCase):
         bookkeeping = {".swordfish-storage", ".swordfish-known-actions"}
         self.assertEqual({entry.name for entry in actions.iterdir()} - bookkeeping, set())
 
-    def test_existing_action_scripts_are_copied_and_survive_profile_copy(self):
+    def test_action_scripts_stay_external_and_manual_edits_survive_restart(self):
         source = self.bundle("script source")
         destination = self.bundle("script destination")
         source_data = source / "portable-data"
         marker = self.root / "script-ran"
-        script = self.root / "external-script.sh"
-        script.write_text(f"#!/bin/sh\n/usr/bin/touch {shlex.quote(str(marker))}\n")
+        script_dir = self.root / "user scripts"
+        script_dir.mkdir()
+        script = script_dir / "external-script.sh"
+        script.write_text(f"#!/bin/sh\n. ./helper.sh\n/usr/bin/touch {shlex.quote(str(marker))}\n")
+        (script_dir / "helper.sh").write_text(":\n")
         script.chmod(0o600)
         config = self.profile(source_data, "Script", marker)
         config.write_text(config.read_text().replace(
             f"item0.command=/usr/bin/touch {marker}",
-            f"item0.command=/bin/sh {script}"))
+            f"item0.command=cd {shlex.quote(str(script_dir))} && /bin/sh ./{script.name}"))
 
         process, window = self.start(source)
         self.invoke(window, marker)
         self.normal_quit(process, window)
         action = source_data / "custom-actions/Script Action/action.ini"
-        self.assertIn("%a/", action.read_text())
-        self.assertTrue((action.parent / script.name).is_file())
+        self.assertNotIn("%a/", action.read_text())
+        self.assertFalse((action.parent / script.name).exists())
 
-        text = re.sub(r"(?m)^Command=.*$", f"Command=/bin/sh {script}", action.read_text())
-        text = re.sub(r"(?m)^Order=.*\n", "", text)
-        action.write_text(text + "\nUserField=kept\n")
+        edited = re.sub(r"(?m)^Command=.*$", f"Command=/bin/sh {shlex.quote(str(script))}",
+                        action.read_text()) + "\nUserField=kept\n"
+        action.write_text(edited)
         process, window = self.start(source)
-        self.invoke(window, marker)
         self.normal_quit(process, window)
-        migrated = action.read_text()
-        self.assertIn("%a/", migrated)
-        self.assertIn("UserField=kept", migrated)
-        self.assertNotRegex(migrated, r"(?m)^Order=")
+        self.assertEqual(action.read_text(), edited)
+        self.assertFalse((action.parent / script.name).exists())
+        self.assertEqual([p.name for p in action.parent.glob(".action.ini-before-*")], [])
 
         destination_data = destination / "portable-data"
         shutil.copytree(source_data, destination_data)
-        script.unlink()
+        shutil.rmtree(source)
         process, window = self.start(destination)
-        self.invoke(window, marker)
         self.normal_quit(process, window)
+        self.assertEqual((destination_data / "custom-actions/Script Action/action.ini").read_text(), edited)
 
     def test_bookmarks_and_association_icons_move_with_profile(self):
         source = self.bundle("icon source")

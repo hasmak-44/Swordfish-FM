@@ -474,8 +474,8 @@ public:
                         NULL, JUSTIFY_LEFT);
             const char* portable = getenv("SWORDFISH_PORTABLE_DATA");
             if (portable && *portable)
-                new FXLabel(body, _("On Save, directly run external scripts are copied into the action folder.\n"
-                                   "Complex commands may require manual setup."),
+                new FXLabel(body, _("Scripts are run from where they are; they are not copied.\n"
+                                   "To keep a script with the portable profile, use %a or %r/scripts."),
                             NULL, JUSTIFY_LEFT);
         }
         new FXLabel(form, _("Icon:"), NULL, JUSTIFY_LEFT);
@@ -844,7 +844,7 @@ public:
         if (command == REMOVE && a)
         {
             if (MessageBox::question(this, BOX_OK_CANCEL, _("Remove Custom Entry"),
-                _("Remove '%s' and all its children?"), a->name.text()) == BOX_CLICKED_OK)
+                _("Remove '%s' and all its children?\n\nWhen you save, its folder and any files in it are deleted."), a->name.text()) == BOX_CLICKED_OK)
             { working.remove(selected); refresh(""); }
             return 1;
         }
@@ -1315,44 +1315,6 @@ CustomActionsUI::CustomActionsUI(XFileExplorer* window, FXDockSite* dock, FXMenu
                     appendIconError(storageWarning, reloadWarnings);
                 }
             }
-        }
-        else if (initialized && !xf_portablesettingschanged(error))
-        {
-            bool needed = false, migrationCompleted = false;
-            FXString scanWarnings, migrationError;
-            if (!model.portableScriptsNeedMigration(storageRoot, needed, scanWarnings, migrationError))
-            {
-                appendIconError(storageWarning, migrationError);
-                appLog(APP_LOG_ERRORS, "custom-actions-script-migration", migrationError);
-            }
-            else if (needed && !xf_portablesettingschanged(migrationError))
-            {
-                FXString fingerprint = CustomActions::directoryFingerprint(storageRoot, migrationError);
-                FXString migrationWarnings;
-                if (!migrationError.empty() ||
-                    !model.migratePortableScripts(storageRoot, fingerprint, migrationError, migrationWarnings))
-                {
-                    appendIconError(storageWarning,
-                        _("Custom action scripts were not migrated; the existing actions remain intact: ") +
-                        migrationError);
-                    appLog(APP_LOG_ERRORS, "custom-actions-script-migration", migrationError);
-                }
-                else
-                {
-                    migrationCompleted = true;
-                    CustomActions migrated;
-                    FXString reloadError, reloadWarnings;
-                    if (migrated.loadDirectory(storageRoot, reloadError, reloadWarnings)) model = migrated;
-                    else
-                    {
-                        appendIconError(storageWarning, reloadError);
-                        appLog(APP_LOG_ERRORS, "custom-actions-script-migration", reloadError);
-                    }
-                    appendIconError(storageWarning, reloadWarnings);
-                }
-                appendIconError(storageWarning, migrationWarnings);
-            }
-            if (!migrationCompleted) appendIconError(storageWarning, scanWarnings);
         }
     }
     toolbarShown = owner->getApp()->reg().readUnsignedEntry("CUSTOM ACTIONS UI", "toolbar", 1) != 0;

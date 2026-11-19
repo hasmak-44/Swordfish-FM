@@ -3661,6 +3661,34 @@ also checks that a successful phone can be unmounted and mounted again through
 the same connected-device URI, after both a failed attempt and an earlier
 successful mount.
 
+### 3.109. Custom Action scripts are no longer copied (19 November 2026)
+
+Feedback: script actions broke after copying into action folders, because
+copied scripts lost their relative paths. Hand-edited `action.ini` fixes only
+lasted for one session; startup re-copied the script and rewrote the command.
+The script copying and command-rewriting code has been removed from both editor
+save and the startup migration, along with its hidden settings backups.
+Commands, programs and working directories are saved exactly as entered.
+Manual `%a` and `%r` references remain supported for scripts deliberately
+kept with the portable profile. Earlier script copies are left untouched and
+are not reverted automatically; the user edits those commands. A moved script or
+Swordfish install now produces the normal script-not-found or command-not-found
+error.
+
+Removing an action or group in the editor did not delete its folder. Save
+builds a staging copy and keeps unclaimed folders as user content, so the
+removed entry's folder was copied back and reloaded. The model now records
+removed storage paths; save omits them unless a remaining entry (such as a
+duplicate sharing the folder) still uses that path. The confirmation states
+that the folder and its files are deleted on save.
+
+An audit of the other editor commands (new, edit/rename, move up/down,
+duplicate, group rename) found one more stale-path use: Move to Folder. A group
+only skipped folders of its current children, so an action moved out of a group
+(or from the top level into one) was copied to its new place and its old folder
+was kept, reloading as a duplicate. Save now skips every folder owned by a
+current or removed entry, wherever it now lives.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

@@ -129,7 +129,8 @@ actions and groups; unavailable entries are disabled. The editor
 offers **Add Action…**, **Add Folder…**, **Add Separator**, **Edit…**, **Remove**,
 **Move Up**, **Move Down**, and **Move to Folder…**. Folders can contain folders
 and actions, producing cascading **Custom Actions** context menus. Removing a
-folder also removes its children after confirmation. Empty groups remain
+folder also removes its children after confirmation. On save, a removed entry's
+folder, including any scripts or other files in it, is deleted. Empty groups remain
 visible in the editor but are hidden from menus and the custom toolbar.
 
 The editor uses an icon/name/description tree with compact side controls.
@@ -238,22 +239,17 @@ is retained as a backup and is not updated by later editor saves. Available
 legacy image icons are copied into their action folders. Missing or unsafe
 legacy icon paths are omitted with a warning; the action definitions remain.
 
-In portable mode, saving the editor or upgrading existing actions copies
-directly invoked external user scripts into their action folders. Simple
-interpreter commands such as `sh /path/script.sh` are supported too; executable
-permissions are preserved. Scripts already in a shared portable-data folder
-remain there and get a relocatable reference. Manually added actions are
-checked on the next startup or editor save. Missing or unreadable scripts are
-reported rather than silently discarded. Automatic upgrades retain the prior
-`action.ini` as a hidden backup in the action's folder.
+Custom Actions never copy or rewrite scripts. The command, program and
+working directory are saved and run exactly as entered, including commands
+edited by hand in `action.ini`, so a script keeps its own location and any
+relative paths it relies on. If the script or Swordfish is moved, update the
+command, or the action reports that the script or command was not found.
 
-Automatic detection does not cover every shell command: relative paths, shell
-variables, nested commands and interpreter options requiring arguments may
-need manual attention. Put the script and any files it needs in the action
-folder and refer to it with `%a`, for example `sh "%a/process.sh" %F`. A shared
-script can be referenced as `sh "%r/scripts/process.sh" %F`. Interpreters,
-installed programs, and any dependencies not copied into the profile must
-exist on the target machine.
+To keep a script with the portable profile, put the script and any files it
+needs in the action folder and refer to it with `%a`, for example
+`sh "%a/process.sh" %F`, or place it in a shared folder and use
+`sh "%r/scripts/process.sh" %F`. Interpreters, installed programs, and any
+dependencies outside portable-data must exist on the target machine.
 
 The built-in **General**, **Tools** and **Panel** toolbars use their original
 commands, order and theme icon sizes. Experimental toolbar customization,
@@ -644,7 +640,7 @@ To copy a profile, close every Swordfish window using both the source and the
 destination. Back up the destination, then replace its complete `portable-data`
 folder with a copy of the source folder rather than merging them. This is the
 reliable way to copy a consistent set of settings and other files. Action
-definitions, copied scripts and image icons move with it. Bookmark destinations,
+definitions, scripts stored inside portable-data and image icons move with it. Bookmark destinations,
 saved tabs, last-visited folders and bookmark or file-association icons inside
 portable-data use relocatable references. External destinations and other saved
 file paths, named system icons and external programs still depend on the target

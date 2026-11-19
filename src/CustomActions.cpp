@@ -759,478 +759,6 @@ bool relativePathSafe(const FXString& path)
     return true;
 }
 
-bool pathWithin(const FXString& path, const FXString& root)
-{
-    return path == root || (path.left(root.length()) == root && path[root.length()] == '/');
-}
-
-bool canonicalPath(const FXString& path, FXString& result)
-{
-    char resolved[PATH_MAX + 1];
-    if (!realpath(path.text(), resolved)) return false;
-    result = resolved;
-    return true;
-}
-
-bool portableDataForActions(const FXString& root, FXString& result, FXString& error)
-{
-    result.clear();
-    const char* data = getenv("SWORDFISH_PORTABLE_DATA");
-    if (!data || !*data || FXPath::absolute(root) != FXPath::absolute(FXString(data) + "/custom-actions"))
-        return true;
-    if (canonicalPath(data, result)) return true;
-    error = FXString(data) + ": cannot resolve portable data folder: " + strerror(errno);
-    return false;
-}
-
-FXString relocatedPortablePath(const FXString& path, const FXString& data)
-{
-    const char* markers[] = { "/portable-data/", ".data/" };
-    if (!pathWithin(path, data))
-    {
-        for (const char* marker : markers)
-        {
-            FXint offset = path.rfind(marker);
-            if (offset < 0) continue;
-            FXString candidate = FXPath::absolute(data + "/" + path.mid(offset + strlen(marker), path.length()));
-            FXString resolved;
-            if (pathWithin(candidate, data) && canonicalPath(candidate, resolved) && pathWithin(resolved, data))
-                return resolved;
-        }
-    }
-    FXString resolved;
-    return canonicalPath(path, resolved) ? resolved : FXString::null;
-}
-
-bool systemProgramPath(const FXString& path)
-{
-    const char* roots[] = { "/usr", "/bin", "/sbin", "/lib", "/lib64", "/opt", "/snap",
-                            "/var/lib/flatpak" };
-    for (const char* root : roots)
-        if (pathWithin(path, root)) return true;
-    const char* appdir = getenv("APPDIR");
-    FXString bundled;
-    return appdir && *appdir && canonicalPath(appdir, bundled) && pathWithin(path, bundled);
-}
-
-bool scriptExtension(const FXString& path)
-{
-    FXString extension = FXPath::extension(path).lower();
-    const char* extensions[] = { "sh", "bash", "zsh", "ksh", "py", "pl", "rb", "js", "php", "lua", "awk" };
-    for (const char* candidate : extensions)
-        if (extension == candidate) return true;
-    return false;
-}
-
-struct ShellWord
-{
-    FXint start, end;
-    FXString value;
-    bool literal;
-};
-
-ShellWord shellWord(const FXString& command, FXint& position)
-{
-    ShellWord word = { position, position, FXString::null, true };
-    char quote = 0;
-    while (position < command.length())
-    {
-        char c = command[position];
-        if (!quote && boundary(c)) break;
-        if ((c == '\'' || c == '"') && (!quote || quote == c))
-        {
-            quote = quote ? 0 : c;
-            ++position;
-            continue;
-        }
-        if (c == '\\' && quote != '\'' && position + 1 < command.length())
-        {
-            char next = command[position + 1];
-            if (!quote || next == '$' || next == '`' || next == '"' || next == '\\' || next == '\n')
-            {
-                if (next != '\n') word.value += next;
-                position += 2;
-                continue;
-            }
-        }
-        if (c == '%' && position + 1 < command.length())
-        {
-            char next = command[position + 1];
-            if (next != '%') word.literal = false;
-            word.value += c;
-            if (next != '%') word.value += next;
-            position += 2;
-            continue;
-        }
-        if (quote != '\'' && (c == '$' || c == '`')) word.literal = false;
-        if (!quote && (c == '*' || c == '?' || c == '[' || (c == '~' && word.value.empty())))
-            word.literal = false;
-        word.value += c;
-        ++position;
-    }
-    word.end = position;
-    return word;
-}
-
-bool shellAssignment(const FXString& command, const ShellWord& word)
-{
-    FXint i = word.start;
-    if (i == word.end || !((command[i] >= 'a' && command[i] <= 'z') ||
-                           (command[i] >= 'A' && command[i] <= 'Z') || command[i] == '_'))
-        return false;
-    while (++i < word.end)
-    {
-        char c = command[i];
-        if (c == '=') return true;
-        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-              (c >= '0' && c <= '9') || c == '_')) return false;
-    }
-    return false;
-}
-
-bool interpreterName(const FXString& value)
-{
-    if (value.contains('/') && !FXPath::isAbsolute(value)) return false;
-    FXString name = FXPath::name(value);
-    const char* names[] = { "sh", "bash", "dash", "zsh", "ksh", "perl", "ruby", "node", "php", "lua" };
-    for (const char* candidate : names)
-        if (name == candidate) return true;
-    if (name.left(6) != "python") return false;
-    for (FXint i = 6; i < name.length(); ++i)
-        if ((name[i] < '0' || name[i] > '9') && name[i] != '.') return false;
-    return true;
-}
-
-bool interpreterFlag(const FXString& interpreter, const FXString& flag)
-{
-    if (flag == "--") return true;
-    FXString name = FXPath::name(interpreter);
-    if (name == "sh" || name == "bash" || name == "dash" || name == "zsh" || name == "ksh")
-        return flag == "-e" || flag == "-n" || flag == "-u" || flag == "-v" || flag == "-x";
-    if (name.left(6) == "python")
-        return flag == "-u" || flag == "-B" || flag == "-E" || flag == "-I" ||
-               flag == "-S" || flag == "-s" || flag == "-v";
-    if (name == "perl") return flag == "-w" || flag == "-T" || flag == "-t" || flag == "-W";
-    if (name == "ruby") return flag == "-w";
-    if (name == "node") return flag == "--no-warnings";
-    if (name == "lua") return flag == "-E" || flag == "-v";
-    return false;
-}
-
-FXString scriptFileName(const FXString& source, const FXString& destination, FXString& error)
-{
-    FXString name = FXPath::name(source);
-    for (FXint i = 0; i < name.length(); ++i)
-        if (static_cast<unsigned char>(name[i]) < 32 || name[i] == 127) name[i] = '_';
-    if (!safeComponent(name)) name = "script";
-    if (name == "action.ini" || name == "group.ini" || name == "separator.ini")
-        name = "script-" + name;
-    FXString title = FXPath::title(name), extension = FXPath::extension(name), candidate = name;
-    for (unsigned suffix = 2; suffix < 10000; ++suffix)
-    {
-        FXString path = destination + PATHSEPSTRING + candidate;
-        struct stat info;
-        if (lstat(path.text(), &info) != 0)
-        {
-            if (errno == ENOENT) return candidate;
-            error = path + ": " + strerror(errno);
-            return FXString::null;
-        }
-        candidate = title + " (" + FXStringVal(suffix) + ")" +
-                    (extension.empty() ? FXString::null : "." + extension);
-    }
-    error = "No unused filename is available for the action script: " + source;
-    return FXString::null;
-}
-
-bool backupActionSettings(const FXString& path, FXString& error)
-{
-    struct stat source;
-    if (lstat(path.text(), &source) != 0)
-    {
-        error = path + ": cannot preserve the original action settings: " + strerror(errno);
-        return false;
-    }
-    if (!S_ISREG(source.st_mode))
-    {
-        error = path + ": the original action settings are not a regular file";
-        return false;
-    }
-    FXString base = FXPath::directory(path) + "/.action.ini-before-script-migration";
-    for (unsigned suffix = 1; suffix < 10000; ++suffix)
-    {
-        FXString destination = suffix == 1 ? base : base + "." + FXStringVal(suffix);
-        struct stat existing;
-        if (lstat(destination.text(), &existing) == 0) continue;
-        if (errno != ENOENT)
-        {
-            error = destination + ": " + strerror(errno);
-            return false;
-        }
-        return copyFile(path, destination, source.st_mode, error);
-    }
-    error = path + ": no unused filename is available for the settings backup";
-    return false;
-}
-
-FXString referenceSuffix(const FXString& path, const FXString& root)
-{
-    if (path == root) return FXString::null;
-    return path.mid(root.length(), path.length());
-}
-
-bool portableScriptReference(const CustomAction& action, const FXString& path, bool interpreterArgument,
-                             const FXString& data, const FXString& root, const FXString& destination,
-                             std::map<std::string, FXString>& copied, FXString& reference,
-                             bool& identified, FXString& warnings, FXString& error)
-{
-    reference.clear();
-    identified = false;
-    if (!FXPath::isAbsolute(path)) return true;
-    FXString source = relocatedPortablePath(path, data);
-    if (source.empty())
-    {
-        if (interpreterArgument || scriptExtension(path))
-            appendMessage(warnings, action.name + ": script could not be resolved and was not copied: " +
-                          path + ": " + strerror(errno));
-        return true;
-    }
-    if (!pathWithin(source, data) && systemProgramPath(source)) return true;
-    struct stat info;
-    if (stat(source.text(), &info) != 0)
-    {
-        error = action.name + ": cannot inspect " + source + ": " + strerror(errno);
-        return false;
-    }
-    if (!S_ISREG(info.st_mode))
-    {
-        if (interpreterArgument || scriptExtension(source))
-            appendMessage(warnings, action.name + ": script is not a regular file and was not copied: " + source);
-        return true;
-    }
-    int fd = open(source.text(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
-    if (fd < 0)
-    {
-        if (!interpreterArgument && !scriptExtension(source))
-        {
-            appendMessage(warnings, action.name + ": executable could not be inspected for portability: " +
-                          source + ": " + strerror(errno));
-            return true;
-        }
-        error = action.name + ": cannot read script " + source + ": " + strerror(errno);
-        return false;
-    }
-    char bytes[4096];
-    ssize_t count;
-    do { count = read(fd, bytes, sizeof(bytes)); } while (count < 0 && errno == EINTR);
-    if (count < 0)
-    {
-        int failure = errno;
-        close(fd);
-        error = action.name + ": cannot read script " + source + ": " + strerror(failure);
-        return false;
-    }
-    int failure = 0;
-    if (close(fd) != 0 && !failure) failure = errno;
-    if (failure)
-    {
-        error = action.name + ": cannot read script " + source + ": " + strerror(failure);
-        return false;
-    }
-    bool text = memchr(bytes, '\0', static_cast<size_t>(count)) == NULL;
-    bool shebang = count >= 2 && bytes[0] == '#' && bytes[1] == '!';
-    identified = text && (interpreterArgument || shebang || (scriptExtension(source) && (info.st_mode & 0111)));
-    if (!identified) return true;
-
-    FXString actionRoot;
-    if (!action.storagePath.empty() && relativePathSafe(action.storagePath))
-        canonicalPath(root + PATHSEPSTRING + action.storagePath, actionRoot);
-    if (!actionRoot.empty() && pathWithin(source, actionRoot))
-    {
-        reference = "%a" + referenceSuffix(source, actionRoot);
-        return true;
-    }
-    FXString actionsRoot;
-    canonicalPath(root, actionsRoot);
-    if (pathWithin(source, data) && (actionsRoot.empty() || !pathWithin(source, actionsRoot)))
-    {
-        reference = "%r" + referenceSuffix(source, data);
-        return true;
-    }
-    if (destination.empty())
-    {
-        reference = "%a/script";
-        return true;
-    }
-    std::map<std::string, FXString>::const_iterator existing = copied.find(source.text());
-    if (existing != copied.end())
-    {
-        reference = existing->second;
-        return true;
-    }
-    FXString name = scriptFileName(source, destination, error);
-    FXString target = destination + PATHSEPSTRING + name;
-    if (name.empty() || !copyFile(source, target, info.st_mode, error))
-        return false;
-    struct stat after;
-    if (stat(source.text(), &after) != 0 || info.st_dev != after.st_dev || info.st_ino != after.st_ino ||
-        info.st_size != after.st_size || info.st_mtim.tv_sec != after.st_mtim.tv_sec ||
-        info.st_mtim.tv_nsec != after.st_mtim.tv_nsec || info.st_ctim.tv_sec != after.st_ctim.tv_sec ||
-        info.st_ctim.tv_nsec != after.st_ctim.tv_nsec)
-    {
-        unlink(target.text());
-        error = action.name + ": script changed while it was being copied: " + source;
-        return false;
-    }
-    reference = "%a/" + name;
-    copied[source.text()] = reference;
-    return true;
-}
-
-FXString commandReference(const FXString& reference)
-{
-    FXString suffix = reference.mid(2, reference.length());
-    suffix.substitute("%", "%%");
-    return quoted(reference.left(2) + suffix, 0);
-}
-
-bool relocateCommandScripts(CustomAction& action, FXString& command, const FXString& data,
-                            const FXString& root, const FXString& destination, bool argumentsOnly,
-                            const FXString& initialInterpreter,
-                            std::map<std::string, FXString>& copied, bool& changed,
-                            FXString& warnings, FXString& error)
-{
-    FXString rewritten;
-    FXint position = 0, last = 0;
-    FXString interpreter = initialInterpreter;
-    bool expecting = !argumentsOnly, env = false, redirect = false;
-    while (position < command.length())
-    {
-        char c = command[position];
-        if (c == ' ' || c == '\t') { ++position; continue; }
-        if (c == '\n' || c == ';' || c == '|' || c == '&' || c == '(' || c == ')')
-        {
-            ++position;
-            expecting = true; interpreter.clear(); env = false; redirect = false;
-            continue;
-        }
-        if (c == '<' || c == '>')
-        {
-            ++position;
-            if (position < command.length() &&
-                (command[position] == c || command[position] == '&' ||
-                 (c == '>' && command[position] == '|') || (c == '<' && command[position] == '>')))
-                ++position;
-            redirect = true;
-            continue;
-        }
-        ShellWord word = shellWord(command, position);
-        if (redirect) { redirect = false; continue; }
-        if (expecting && shellAssignment(command, word)) continue;
-        if (expecting && env && word.value.left(1) == "-")
-        {
-            if (word.value != "--" && word.value != "-i" && word.value != "--ignore-environment")
-                expecting = false;
-            continue;
-        }
-        if (expecting && word.literal &&
-            (word.value == "env" || word.value == "/usr/bin/env" || word.value == "/bin/env"))
-        {
-            env = true;
-            continue;
-        }
-        if (!expecting && interpreter.empty()) continue;
-        if (!interpreter.empty() && word.value.left(1) == "-")
-        {
-            if (interpreterFlag(interpreter, word.value)) continue;
-            interpreter.clear();
-            continue;
-        }
-        FXString reference;
-        bool identified = false;
-        if (word.literal)
-        {
-            if (!portableScriptReference(action, word.value, !interpreter.empty(), data, root, destination, copied,
-                                         reference, identified, warnings, error)) return false;
-            if (!FXPath::isAbsolute(word.value) && scriptExtension(word.value))
-                appendMessage(warnings, action.name + ": relative script path was not copied: " + word.value);
-        }
-        else if ((expecting || !interpreter.empty()) && scriptExtension(word.value) &&
-                 word.value.left(3) != "%a/" && word.value.left(3) != "%r/")
-            appendMessage(warnings, action.name + ": dynamic script path was not copied: " + word.value);
-        if (!reference.empty())
-        {
-            rewritten += command.mid(last, word.start - last) + commandReference(reference);
-            last = word.end;
-            changed = true;
-        }
-        if (expecting)
-        {
-            interpreter = word.literal && !identified && interpreterName(word.value) ? word.value : FXString::null;
-            expecting = false;
-        }
-        else interpreter.clear();
-    }
-    if (last)
-    {
-        rewritten += command.mid(last, command.length());
-        command = rewritten;
-    }
-    return true;
-}
-
-bool relocatePortableAction(CustomAction& action, const FXString& data, const FXString& root,
-                            const FXString& destination, bool& changed, FXString& warnings, FXString& error)
-{
-    if (action.kind != CustomAction::ACTION) return true;
-    std::map<std::string, FXString> copied;
-    if (action.programMode)
-    {
-        FXString reference;
-        bool identified;
-        if (!portableScriptReference(action, action.program, false, data, root, destination, copied,
-                                     reference, identified, warnings, error)) return false;
-        FXString interpreter = !identified && interpreterName(action.program) ? action.program : FXString::null;
-        if (!reference.empty()) { action.program = reference; changed = true; }
-        if (!relocateCommandScripts(action, action.parameters, data, root, destination, true, interpreter,
-                                    copied, changed, warnings, error)) return false;
-    }
-    else if (!relocateCommandScripts(action, action.command, data, root, destination, false, FXString::null,
-                                     copied, changed, warnings, error)) return false;
-
-    FXString directory;
-    bool literal = true;
-    for (FXint i = 0; i < action.workingDirectory.length(); ++i)
-    {
-        char c = action.workingDirectory[i];
-        if (c == '%')
-        {
-            if (i + 1 == action.workingDirectory.length() || action.workingDirectory[++i] != '%')
-            { literal = false; break; }
-        }
-        directory += c;
-    }
-    if (literal && FXPath::isAbsolute(directory))
-    {
-        FXString source = relocatedPortablePath(directory, data), actionRoot;
-        if (!action.storagePath.empty() && relativePathSafe(action.storagePath))
-            canonicalPath(root + PATHSEPSTRING + action.storagePath, actionRoot);
-        FXString reference;
-        if (!source.empty() && !actionRoot.empty() && pathWithin(source, actionRoot))
-            reference = "%a" + referenceSuffix(source, actionRoot);
-        else if (!source.empty() && pathWithin(source, data))
-            reference = "%r" + referenceSuffix(source, data);
-        if (!reference.empty())
-        {
-            FXString suffix = reference.mid(2, reference.length());
-            suffix.substitute("%", "%%");
-            action.workingDirectory = reference.left(2) + suffix;
-            changed = true;
-        }
-    }
-    return true;
-}
-
 FXString iconFileName(const FXString& source, const FXString& destination, FXString& error)
 {
     FXString name = FXPath::name(source);
@@ -1349,123 +877,6 @@ bool CustomActions::loadDirectory(const FXString& root, FXString& error, FXStrin
     return true;
 }
 
-bool CustomActions::portableScriptsNeedMigration(const FXString& root, bool& needed,
-                                                  FXString& warnings, FXString& error) const
-{
-    needed = false;
-    warnings.clear();
-    error.clear();
-    FXString data;
-    if (!portableDataForActions(root, data, error)) return false;
-    if (data.empty()) return true;
-    for (const CustomAction& original : items)
-    {
-        CustomAction action = original;
-        if (!relocatePortableAction(action, data, root, "", needed, warnings, error)) return false;
-    }
-    return true;
-}
-
-bool CustomActions::migratePortableScripts(const FXString& root, const FXString& expectedFingerprint,
-                                           FXString& error, FXString& warnings) const
-{
-    error.clear();
-    warnings.clear();
-    FXString data;
-    if (!portableDataForActions(root, data, error)) return false;
-    if (data.empty()) return true;
-    FXString original = directoryFingerprint(root, error);
-    if (!error.empty()) return false;
-    if (!expectedFingerprint.empty() && original != expectedFingerprint)
-    {
-        error = "Custom actions changed on disk before their scripts could be migrated.";
-        return false;
-    }
-
-    FXString pattern = root + ".stage-XXXXXX";
-    std::vector<char> templateName(pattern.text(), pattern.text() + pattern.length() + 1);
-    char* made = mkdtemp(templateName.data());
-    if (!made)
-    {
-        error = root + ": cannot create a temporary action folder: " + strerror(errno);
-        return false;
-    }
-    FXString stage = made;
-    bool success = copyContents(root, stage, std::set<std::string>(), error), anyChanged = false;
-    CustomActions rewritten = *this;
-    for (size_t index = 0; index < items.size(); ++index)
-    {
-        const CustomAction& action = items[index];
-        if (!success || action.kind != CustomAction::ACTION) continue;
-        if (!relativePathSafe(action.storagePath))
-        {
-            error = "An action folder has an invalid stored path.";
-            success = false;
-            break;
-        }
-        FXString destination = stage + PATHSEPSTRING + action.storagePath;
-        CustomAction saved = action;
-        bool changed = false;
-        if (!relocatePortableAction(saved, data, root, destination, changed, warnings, error))
-        {
-            success = false;
-            break;
-        }
-        if (!changed) continue;
-        anyChanged = true;
-        rewritten.items[index] = saved;
-        FXString path = destination + "/action.ini", parseError;
-        FXSettings settings;
-        if (!readSettingsFile(path, settings, parseError))
-        {
-            error = path + ": " + parseError;
-            success = false;
-            break;
-        }
-        if (FXString(settings.readStringEntry("Action", "Command", "")) != action.command ||
-            FXString(settings.readStringEntry("Action", "Program", "")) != action.program ||
-            FXString(settings.readStringEntry("Action", "Parameters", "")) != action.parameters ||
-            FXString(settings.readStringEntry("Action", "WorkingDirectory", "")) != action.workingDirectory)
-        {
-            error = path + ": the action changed before its script could be migrated";
-            success = false;
-            break;
-        }
-        if (!backupActionSettings(path, error))
-        {
-            success = false;
-            break;
-        }
-        if (saved.command != action.command) settings.writeStringEntry("Action", "Command", saved.command.text());
-        if (saved.program != action.program) settings.writeStringEntry("Action", "Program", saved.program.text());
-        if (saved.parameters != action.parameters)
-            settings.writeStringEntry("Action", "Parameters", saved.parameters.text());
-        if (saved.workingDirectory != action.workingDirectory)
-            settings.writeStringEntry("Action", "WorkingDirectory", saved.workingDirectory.text());
-        if (!settings.unparseFile(path.text()))
-        {
-            error = path + ": cannot write action settings";
-            success = false;
-            break;
-        }
-    }
-    if (success && anyChanged) success = rewritten.validate(error);
-    if (success && anyChanged)
-    {
-        FXString current = directoryFingerprint(root, error);
-        if (!error.empty() || current != original)
-        {
-            if (error.empty()) error = "Custom actions changed on disk while their scripts were being migrated.";
-            success = false;
-        }
-        if (success) success = renameDirectoryExchange(root, stage, error);
-    }
-    FXString cleanup;
-    if (!removeTree(stage, cleanup))
-        appendMessage(warnings, "The temporary action snapshot could not be removed: " + cleanup);
-    return success;
-}
-
 bool CustomActions::saveDirectory(const FXString& root, FXString& error, FXString& warnings,
                                  const FXString& expectedFingerprint)
 {
@@ -1509,8 +920,6 @@ bool CustomActions::saveDirectory(const FXString& root, FXString& error, FXStrin
     FXString parent = FXPath::directory(root);
     if (parent.empty()) parent = ".";
     if (!makeDirectories(parent, 0700, error) || !makeDirectories(root, 0700, error)) return false;
-    FXString portableData;
-    if (!portableDataForActions(root, portableData, error)) return false;
     FXString original = directoryFingerprint(root, error);
     if (!error.empty()) return false;
     if (!expectedFingerprint.empty() && original != expectedFingerprint)
@@ -1559,11 +968,14 @@ bool CustomActions::saveDirectory(const FXString& root, FXString& error, FXStrin
     }
     FXString stage = made;
     bool success = true;
-    CustomActions rewritten = *this;
-    std::set<std::string> topLevelItems;
+    // Folders loaded for current or removed entries are never copied as leftovers, even after a move.
+    std::set<std::string> topLevelItems, owned;
     for (const CustomAction& action : items)
-        if (action.parent.empty() && !action.storagePath.empty())
-            topLevelItems.insert(action.storagePath.section('/', 0).text());
+        if (!action.storagePath.empty()) owned.insert(action.storagePath.text());
+    for (const FXString& path : removedStoragePaths)
+        if (relativePathSafe(path)) owned.insert(path.text());
+    for (const std::string& path : owned)
+        if (FXString(path.c_str()).find('/') < 0) topLevelItems.insert(path);
     success = copyContents(root, stage, topLevelItems, error);
 
     for (size_t index = 0; index < items.size(); ++index)
@@ -1590,14 +1002,11 @@ bool CustomActions::saveDirectory(const FXString& root, FXString& error, FXStrin
                 break;
             }
             std::set<std::string> childFolders;
-            for (const CustomAction& child : items)
+            for (const std::string& path : owned)
             {
-                if (child.parent != action.id || child.storagePath.empty()) continue;
-                if (child.storagePath.left(action.storagePath.length() + 1) != action.storagePath + PATHSEPSTRING)
-                    continue;
-                FXString remainder = child.storagePath.mid(action.storagePath.length() + 1,
-                                                             child.storagePath.length());
-                if (remainder.find('/') < 0) childFolders.insert(remainder.text());
+                FXString ownedPath = path.c_str();
+                if (FXPath::directory(ownedPath) == action.storagePath)
+                    childFolders.insert(FXPath::name(ownedPath).text());
             }
             if (!copyContents(source, destination, childFolders, error)) { success = false; break; }
         }
@@ -1644,16 +1053,9 @@ bool CustomActions::saveDirectory(const FXString& root, FXString& error, FXStrin
         FXString file = destination + PATHSEPSTRING +
             (action.kind == CustomAction::ACTION ? "action.ini" :
              action.kind == CustomAction::FOLDER ? "group.ini" : "separator.ini");
-        CustomAction saved = action;
-        bool relocated = false;
-        if (!portableData.empty() &&
-            !relocatePortableAction(saved, portableData, root, destination, relocated, warnings, error))
-        { success = false; break; }
-        rewritten.items[index] = saved;
-        if (!writeItemFile(file, saved, order, iconName, error)) { success = false; break; }
+        if (!writeItemFile(file, action, order, iconName, error)) { success = false; break; }
     }
 
-    if (success) success = rewritten.validate(error);
     if (success)
         success = writeMarker(stage + PATHSEPSTRING ".swordfish-storage", "1\n", error);
     if (success)
@@ -1845,7 +1247,12 @@ void CustomActions::remove(const FXString& id)
     for (unsigned i = 0; i < ids.size(); ++i) { remove(ids[i]); }
     for (unsigned i = 0; i < items.size(); ++i)
     {
-        if (items[i].id == id) { items.erase(items.begin() + i); break; }
+        if (items[i].id == id)
+        {
+            if (!items[i].storagePath.empty()) removedStoragePaths.push_back(items[i].storagePath);
+            items.erase(items.begin() + i);
+            break;
+        }
     }
 }
 

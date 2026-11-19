@@ -181,6 +181,57 @@ int main(int argc, char** argv)
         assert(collisionReload.items[1].name == "Same (2)");
         puts("PASS: duplicate imported names are safely renamed, reported and round-trip as folder labels");
 
+        FXString removeRoot = FXPath::absolute(FXPath::directory(argv[1])) + "/remove-actions";
+        CustomActions removal;
+        CustomAction keep = action("keep"); keep.name = "Keep";
+        CustomAction gone = action("gone"); gone.name = "Gone";
+        CustomAction group = action("group"); group.name = "Group"; group.kind = CustomAction::FOLDER;
+        CustomAction child = action("child"); child.name = "Child"; child.parent = group.id;
+        CustomAction sibling = action("sibling"); sibling.name = "Sibling"; sibling.parent = group.id;
+        removal.items = { keep, gone, group, child, sibling };
+        assert(removal.saveDirectory(removeRoot, error, warnings));
+        { std::ofstream note((removeRoot + "/Keep/notes.txt").text()); note << "kept\n"; }
+        { std::ofstream note((removeRoot + "/Gone/run.sh").text()); note << "exit 0\n"; }
+        assert(removal.loadDirectory(removeRoot, error, warnings) && removal.items.size() == 5);
+        FXString copyId = removal.duplicate(namedAction(removal, "Keep").id, " Copy", error);
+        assert(!copyId.empty());
+        removal.remove(copyId);
+        removal.remove(namedAction(removal, "Gone").id);
+        removal.remove(namedAction(removal, "Child").id);
+        assert(removal.saveDirectory(removeRoot, error, warnings, CustomActions::directoryFingerprint(removeRoot, error)));
+        assert(!FXStat::exists(removeRoot + "/Gone") && !FXStat::exists(removeRoot + "/Group/Child"));
+        assert(FXStat::exists(removeRoot + "/Keep/notes.txt") && FXStat::exists(removeRoot + "/Group/Sibling/action.ini"));
+        CustomActions afterRemoval;
+        assert(afterRemoval.loadDirectory(removeRoot, error, warnings) && afterRemoval.items.size() == 3);
+        afterRemoval.remove(namedAction(afterRemoval, "Group").id);
+        assert(afterRemoval.saveDirectory(removeRoot, error, warnings));
+        assert(!FXStat::exists(removeRoot + "/Group") && afterRemoval.loadDirectory(removeRoot, error, warnings) &&
+               afterRemoval.items.size() == 1 && afterRemoval.items[0].name == "Keep");
+        puts("PASS: removed actions and groups delete their folders on save; shared duplicate folders are kept");
+
+        FXString moveRoot = FXPath::absolute(FXPath::directory(argv[1])) + "/move-actions";
+        CustomActions moving;
+        CustomAction from = action("from"); from.name = "From"; from.kind = CustomAction::FOLDER;
+        CustomAction to = action("to"); to.name = "To"; to.kind = CustomAction::FOLDER;
+        CustomAction nested = action("nested"); nested.name = "Nested"; nested.parent = from.id;
+        CustomAction stays = action("stays"); stays.name = "Stays"; stays.parent = from.id;
+        CustomAction top = action("top"); top.name = "Top";
+        moving.items = { from, to, nested, stays, top };
+        assert(moving.saveDirectory(moveRoot, error, warnings));
+        { std::ofstream note((moveRoot + "/From/Nested/run.sh").text()); note << "exit 0\n"; }
+        assert(moving.loadDirectory(moveRoot, error, warnings));
+        assert(moving.move(namedAction(moving, "Nested").id, namedAction(moving, "To").id, error));
+        assert(moving.move(namedAction(moving, "Stays").id, "", error));
+        assert(moving.move(namedAction(moving, "Top").id, namedAction(moving, "From").id, error));
+        assert(moving.saveDirectory(moveRoot, error, warnings));
+        assert(FXStat::exists(moveRoot + "/To/Nested/run.sh") && FXStat::exists(moveRoot + "/Stays/action.ini") &&
+               FXStat::exists(moveRoot + "/From/Top/action.ini"));
+        assert(!FXStat::exists(moveRoot + "/From/Nested") && !FXStat::exists(moveRoot + "/From/Stays") &&
+               !FXStat::exists(moveRoot + "/Top"));
+        CustomActions afterMove;
+        assert(afterMove.loadDirectory(moveRoot, error, warnings) && afterMove.items.size() == 5);
+        puts("PASS: moving actions into, out of and between groups leaves no stale folders behind");
+
         FXString malformed = root + "/Broken";
         assert(mkdir(malformed.text(), 0700) == 0);
         std::ofstream broken((malformed + "/action.ini").text());
@@ -205,221 +256,89 @@ int main(int argc, char** argv)
 
         FXString directScript = external + "/user ' 100% $(literal) `literal`.sh";
         FXString interpretedScript = external + "/interpreted.sh";
-        FXString collisionScript = external + "/action.ini";
-        FXString namedInterpreter = external + "/python";
         FXString sharedScript = sharedDir + "/shared 100%.sh";
         {
             std::ofstream direct(directScript.text());
             direct << "#!/bin/sh\nprintf 'DIRECT:%s\\n' \"$1\"\n";
             std::ofstream interpreted(interpretedScript.text());
             interpreted << "printf 'INTERPRETED:%s\\n' \"$1\"\n";
-            std::ofstream collision(collisionScript.text());
-            collision << "#!/bin/sh\nprintf 'COLLISION\\n'\n";
-            std::ofstream named(namedInterpreter.text());
-            named << "#!/bin/sh\nprintf 'NAMED:%s\\n' \"$1\"\n";
             std::ofstream shared(sharedScript.text());
             shared << "printf 'SHARED\\n'\n";
         }
         assert(chmod(directScript.text(), 0751) == 0 && chmod(interpretedScript.text(), 0600) == 0 &&
-               chmod(collisionScript.text(), 0700) == 0 && chmod(namedInterpreter.text(), 0700) == 0 &&
                chmod(sharedScript.text(), 0600) == 0);
 
         CustomActions portable;
         CustomAction direct = action("direct"); direct.name = "Direct";
         direct.command = commandPath(directScript) + " %f";
+        direct.workingDirectory = external;
         portable.items.push_back(direct);
         CustomAction interpreted = action("interpreted"); interpreted.name = "Interpreted";
         interpreted.command = "/bin/sh -e " + commandPath(interpretedScript) + " %f";
         portable.items.push_back(interpreted);
-        CustomAction dataArgument = action("data"); dataArgument.name = "Data argument";
-        dataArgument.command = "printf '%%s' " + commandPath(directScript);
-        portable.items.push_back(dataArgument);
-        CustomAction redirect = action("redirect"); redirect.name = "Redirection";
-        redirect.command = "printf '%%s' >| " + commandPath(directScript);
-        portable.items.push_back(redirect);
-        CustomAction interpreterOption = action("option"); interpreterOption.name = "Interpreter option";
-        interpreterOption.command = "ruby -E " + commandPath(interpretedScript);
-        portable.items.push_back(interpreterOption);
-        CustomAction relativeProgram = action("relative-program"); relativeProgram.name = "Relative program";
-        relativeProgram.command = "./python " + commandPath(interpretedScript);
-        portable.items.push_back(relativeProgram);
-        CustomAction shared = action("shared"); shared.name = "Shared";
-        shared.command = "sh " + commandPath(sharedScript);
-        shared.workingDirectory = sharedDir;
-        shared.workingDirectory.substitute("%", "%%");
-        portable.items.push_back(shared);
-        CustomAction collision = action("collision"); collision.name = "Collision";
-        collision.command = commandPath(collisionScript);
-        portable.items.push_back(collision);
         CustomAction program = action("program"); program.name = "Program mode";
-        program.programMode = true; program.program = "/bin/sh";
-        program.parameters = commandPath(interpretedScript) + " %f";
+        program.programMode = true; program.program = directScript; program.parameters = "%f";
         portable.items.push_back(program);
-        CustomAction directProgram = action("direct-program"); directProgram.name = "Direct program mode";
-        directProgram.programMode = true; directProgram.program = directScript; directProgram.parameters = "%f";
-        portable.items.push_back(directProgram);
-        CustomAction namedProgram = action("named-program"); namedProgram.name = "Named program";
-        namedProgram.programMode = true; namedProgram.program = namedInterpreter;
-        namedProgram.parameters = commandPath(interpretedScript);
-        portable.items.push_back(namedProgram);
-        CustomAction programData = action("program-data"); programData.name = "Program data";
-        programData.programMode = true; programData.program = "/usr/bin/printf";
-        programData.parameters = commandPath(directScript);
-        portable.items.push_back(programData);
-        CustomAction missing = action("missing"); missing.name = "Missing script";
-        missing.command = "/bin/sh " + commandPath(external + "/missing.sh");
-        portable.items.push_back(missing);
+        CustomAction shared = action("shared"); shared.name = "Shared";
+        shared.command = "sh \"%r/scripts/shared 100%%.sh\"";
+        shared.workingDirectory = "%r/scripts";
+        portable.items.push_back(shared);
+        CustomAction absoluteShared = action("absolute-shared"); absoluteShared.name = "Absolute shared";
+        absoluteShared.command = "sh " + commandPath(sharedScript);
+        portable.items.push_back(absoluteShared);
+        CustomAction local = action("local"); local.name = "Local";
+        local.command = "sh \"%a/local.sh\" %f";
+        local.workingDirectory = "%a";
+        portable.items.push_back(local);
         FXString warnings;
-        assert(portable.saveDirectory(root, error, warnings));
-        assert(warnings.contains("script could not be resolved"));
+        assert(portable.saveDirectory(root, error, warnings) && warnings.empty());
+        { std::ofstream script((root + "/Local/local.sh").text()); script << "printf 'LOCAL:%s\\n' \"$1\"\n"; }
+
+        FXString before = CustomActions::directoryFingerprint(root, error);
         CustomActions loadedPortable;
         assert(loadedPortable.loadDirectory(root, error, warnings));
-        CustomAction& savedDirect = namedAction(loadedPortable, "Direct");
-        assert(savedDirect.command.find("%a/") >= 0);
-        assert(namedAction(loadedPortable, "Interpreted").command.find("%a/") >= 0);
-        assert(namedAction(loadedPortable, "Data argument").command == dataArgument.command);
-        assert(namedAction(loadedPortable, "Redirection").command == redirect.command);
-        assert(namedAction(loadedPortable, "Interpreter option").command == interpreterOption.command);
-        assert(namedAction(loadedPortable, "Relative program").command == relativeProgram.command);
-        assert(namedAction(loadedPortable, "Program data").parameters == programData.parameters);
-        assert(namedAction(loadedPortable, "Shared").command.find("%r/scripts/") >= 0);
-        assert(namedAction(loadedPortable, "Shared").workingDirectory == "%r/scripts");
-        assert(namedAction(loadedPortable, "Program mode").parameters.find("%a/") >= 0);
-        assert(namedAction(loadedPortable, "Direct program mode").program.left(3) == "%a/");
-        assert(namedAction(loadedPortable, "Named program").parameters == namedProgram.parameters);
-        assert(namedAction(loadedPortable, "Missing script").command == missing.command);
-        bool alreadyMigrated = true;
-        assert(loadedPortable.portableScriptsNeedMigration(root, alreadyMigrated, warnings, error) && !alreadyMigrated);
-        assert(FXStat::exists(root + "/Collision/script-action.ini"));
-        struct stat copiedInfo;
-        assert(stat((root + "/Direct/" + FXPath::name(directScript)).text(), &copiedInfo) == 0 &&
-               (copiedInfo.st_mode & 0777) == 0751);
-        assert(stat((root + "/Interpreted/interpreted.sh").text(), &copiedInfo) == 0 &&
-               (copiedInfo.st_mode & 0777) == 0600);
+        assert(CustomActions::directoryFingerprint(root, error) == before);
+        for (const CustomAction& saved : portable.items)
+        {
+            CustomAction& reloaded = namedAction(loadedPortable, saved.name);
+            assert(reloaded.command == saved.command && reloaded.program == saved.program &&
+                   reloaded.parameters == saved.parameters && reloaded.workingDirectory == saved.workingDirectory);
+        }
+        assert(!FXStat::exists(root + "/Direct/" + FXPath::name(directScript)) &&
+               !FXStat::exists(root + "/Interpreted/interpreted.sh") &&
+               !FXStat::exists(root + "/Program mode/" + FXPath::name(directScript)));
+        assert(loadedPortable.saveDirectory(root, error, warnings));
+        assert(loadedPortable.loadDirectory(root, error, warnings));
+        assert(namedAction(loadedPortable, "Direct").command == direct.command &&
+               !FXStat::exists(root + "/Direct/" + FXPath::name(directScript)));
 
         CustomActionContext context;
         context.directory = base;
         context.paths.push_back(base + "/selected ' $HOME"); context.directories.push_back(false);
         FXString command, directory;
-        assert(CustomActions::prepare(savedDirect, context, command, directory, error));
-        assert(shell(command) == std::string("DIRECT:") + context.paths[0].text() + "\n");
+        assert(CustomActions::prepare(namedAction(loadedPortable, "Direct"), context, command, directory, error));
+        assert(directory == external && shell(command) == std::string("DIRECT:") + context.paths[0].text() + "\n");
         assert(CustomActions::prepare(namedAction(loadedPortable, "Interpreted"), context, command, directory, error));
         assert(shell(command) == std::string("INTERPRETED:") + context.paths[0].text() + "\n");
         assert(CustomActions::prepare(namedAction(loadedPortable, "Program mode"), context, command, directory, error));
-        assert(shell(command) == std::string("INTERPRETED:") + context.paths[0].text() + "\n");
-        CustomAction convertedProgram = namedAction(loadedPortable, "Direct program mode");
-        assert(CustomActions::prepare(convertedProgram, context, command, directory, error));
         assert(shell(command) == std::string("DIRECT:") + context.paths[0].text() + "\n");
-        convertedProgram.command = CustomActions::commandText(convertedProgram);
-        convertedProgram.programMode = false;
-        assert(CustomActions::prepare(convertedProgram, context, command, directory, error));
-        assert(shell(command) == std::string("DIRECT:") + context.paths[0].text() + "\n");
-
-        if (geteuid() != 0)
-        {
-            FXString unreadable = external + "/unreadable.sh";
-            { std::ofstream script(unreadable.text()); script << "#!/bin/sh\nexit 0\n"; }
-            assert(chmod(unreadable.text(), 0000) == 0);
-            CustomActions failed = loadedPortable;
-            CustomAction blocked = action("blocked"); blocked.name = "Unreadable";
-            blocked.command = "/bin/sh " + commandPath(unreadable);
-            failed.items.push_back(blocked);
-            FXString before = CustomActions::directoryFingerprint(root, error);
-            assert(!failed.saveDirectory(root, error, warnings, before) && error.contains("cannot read script"));
-            assert(CustomActions::directoryFingerprint(root, error) == before);
-            assert(chmod(unreadable.text(), 0600) == 0);
-        }
-
-        savedDirect.workingDirectory = root + "/Direct";
-        FXString directId = savedDirect.id;
-        FXString duplicate = loadedPortable.duplicate(directId, " Copy", error);
-        assert(!duplicate.empty());
-        CustomAction group = action("test-group"); group.name = "Group"; group.kind = CustomAction::FOLDER;
-        loadedPortable.items.push_back(group);
-        namedAction(loadedPortable, "Direct").name = "Renamed";
-        assert(loadedPortable.move(directId, group.id, error));
-        assert(loadedPortable.saveDirectory(root, error, warnings));
 
         FXString movedParent = base + "/moved", movedData = movedParent + "/portable-data";
         assert(mkdir(movedParent.text(), 0700) == 0 && rename(data.text(), movedData.text()) == 0);
         assert(setenv("SWORDFISH_PORTABLE_DATA", movedData.text(), 1) == 0);
         root = movedData + "/custom-actions";
         assert(loadedPortable.loadDirectory(root, error, warnings));
-        assert(namedAction(loadedPortable, "Renamed").workingDirectory == "%a");
-        assert(CustomActions::prepare(namedAction(loadedPortable, "Renamed"), context, command, directory, error));
-        assert(directory == root + "/Group/Renamed" &&
-               shell(command) == std::string("DIRECT:") + context.paths[0].text() + "\n");
-        assert(namedAction(loadedPortable, "Direct Copy").workingDirectory == "%a");
-        assert(CustomActions::prepare(namedAction(loadedPortable, "Direct Copy"), context, command, directory, error));
-        assert(directory == root + "/Direct Copy" &&
-               shell(command) == std::string("DIRECT:") + context.paths[0].text() + "\n");
         assert(CustomActions::prepare(namedAction(loadedPortable, "Shared"), context, command, directory, error));
         assert(directory == movedData + "/scripts" && shell(command) == "SHARED\n");
-        assert(CustomActions::expand("printf '%%s\\n' %a %r", context, expanded, error, false,
-                                     root + "/Group/Renamed"));
-        assert(shell(expanded) == std::string((root + "/Group/Renamed").text()) + "\n" + movedData.text() + "\n");
-
-        FXString manual = root + "/Manual Z";
-        assert(mkdir(manual.text(), 0700) == 0);
-        FXSettings manualSettings;
-        manualSettings.writeStringEntry("Action", "Command", (commandPath(directScript) + " %f").text());
-        manualSettings.writeStringEntry("Action", "UserField", "kept");
-        assert(manualSettings.unparseFile((manual + "/action.ini").text()));
-        { std::ofstream note((manual + "/action.ini").text(), std::ios::app); note << "\n# User comment\n"; }
-        FXString legacyShared = root + "/Legacy shared";
-        assert(mkdir(legacyShared.text(), 0700) == 0);
-        FXSettings legacySharedSettings;
-        legacySharedSettings.writeStringEntry("Action", "Command", ("sh " + commandPath(sharedScript)).text());
-        legacySharedSettings.writeStringEntry("Action", "WorkingDirectory", shared.workingDirectory.text());
-        assert(legacySharedSettings.unparseFile((legacyShared + "/action.ini").text()));
-        FXString legacyImage = root + "/Legacy AppImage";
-        assert(mkdir(legacyImage.text(), 0700) == 0);
-        FXSettings legacyImageSettings;
-        FXString oldImageScript = base + "/old.AppImage.data/scripts/shared 100%.sh";
-        legacyImageSettings.writeStringEntry("Action", "Command", ("sh " + commandPath(oldImageScript)).text());
-        assert(legacyImageSettings.unparseFile((legacyImage + "/action.ini").text()));
-        FXString separatorFolder = root + "/manual-separator";
-        assert(mkdir(separatorFolder.text(), 0700) == 0);
-        FXSettings separatorSettings;
-        assert(separatorSettings.unparseFile((separatorFolder + "/separator.ini").text()));
-        assert(loadedPortable.loadDirectory(root, error, warnings));
-        bool needed = false;
-        assert(loadedPortable.portableScriptsNeedMigration(root, needed, warnings, error) && needed);
-        FXString fingerprint = CustomActions::directoryFingerprint(root, error);
-        assert(loadedPortable.migratePortableScripts(root, fingerprint, error, warnings));
-        FXSettings migrated;
-        assert(migrated.parseFile((manual + "/action.ini").text(), true));
-        assert(!migrated.existingEntry("Action", "Order") &&
-               FXString(migrated.readStringEntry("Action", "UserField", "")) == "kept" &&
-               FXString(migrated.readStringEntry("Action", "Command", "")).find("%a/") >= 0);
-        std::ifstream backup((manual + "/.action.ini-before-script-migration").text());
-        std::string backupText((std::istreambuf_iterator<char>(backup)), std::istreambuf_iterator<char>());
-        assert(backupText.find("# User comment") != std::string::npos);
-        assert(FXStat::exists(separatorFolder + "/separator.ini"));
-        assert(loadedPortable.loadDirectory(root, error, warnings));
-        assert(namedAction(loadedPortable, "Legacy shared").workingDirectory == "%r/scripts");
-        assert(CustomActions::prepare(namedAction(loadedPortable, "Legacy shared"), context, command, directory, error));
-        assert(directory == movedData + "/scripts" && shell(command) == "SHARED\n");
-        assert(CustomActions::prepare(namedAction(loadedPortable, "Legacy AppImage"), context, command, directory, error));
-        assert(shell(command) == "SHARED\n");
-        assert(loadedPortable.portableScriptsNeedMigration(root, needed, warnings, error) && !needed);
-
-        FXString stale = root + "/Stale";
-        assert(mkdir(stale.text(), 0700) == 0);
-        FXSettings staleSettings;
-        staleSettings.writeStringEntry("Action", "Command", commandPath(directScript).text());
-        assert(staleSettings.unparseFile((stale + "/action.ini").text()));
-        assert(loadedPortable.loadDirectory(root, error, warnings));
-        staleSettings.writeStringEntry("Action", "Command", "printf 'newer command'");
-        assert(staleSettings.unparseFile((stale + "/action.ini").text()));
-        fingerprint = CustomActions::directoryFingerprint(root, error);
-        assert(!loadedPortable.migratePortableScripts(root, fingerprint, error, warnings));
-        FXSettings untouched;
-        assert(untouched.parseFile((stale + "/action.ini").text(), true) &&
-               FXString(untouched.readStringEntry("Action", "Command", "")) == "printf 'newer command'");
+        assert(CustomActions::prepare(namedAction(loadedPortable, "Local"), context, command, directory, error));
+        assert(directory == root + "/Local" &&
+               shell(command) == std::string("LOCAL:") + context.paths[0].text() + "\n");
+        assert(namedAction(loadedPortable, "Absolute shared").command == absoluteShared.command);
+        assert(CustomActions::expand("printf '%%s\\n' %a %r", context, expanded, error, false, root + "/Local"));
+        assert(shell(expanded) == std::string((root + "/Local").text()) + "\n" + movedData.text() + "\n");
         if (hadData) assert(setenv("SWORDFISH_PORTABLE_DATA", previousData.c_str(), 1) == 0);
         else assert(unsetenv("SWORDFISH_PORTABLE_DATA") == 0);
-        puts("PASS: portable script copies, shell-safe references, permissions, collisions, data arguments, moves, profile relocation and guarded migration");
+        puts("PASS: portable script actions keep their commands, copy no scripts and resolve %a/%r after moves");
     }
     FXSettings legacy;
     model.save(legacy);

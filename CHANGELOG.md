@@ -97,6 +97,15 @@
   skipped.
 
 ### Fixed
+- Custom Actions no longer copy scripts into action folders or rewrite
+  commands on save or startup. Scripts run from their own location, so relative
+  paths keep working, and hand-edited `action.ini` commands persist after
+  restart.
+- Removing an action or group in the Custom Actions editor now deletes its
+  folder, including any files in it, on save, so it no longer reappears after
+  reload. A folder still used by a duplicated action is kept. Moving an action
+  into, out of or between groups no longer leaves its old folder behind as a
+  duplicate action.
 - Fixed-colour dialog tabs now clear the previous highlight when another tab
   is selected.
 - Removed the always-visible "Phone not listed? Check USB setup" hint from

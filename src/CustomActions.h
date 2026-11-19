@@ -31,6 +31,8 @@ class CustomActions
 {
 public:
     std::vector<CustomAction> items;
+    // Storage folders of removed entries; saveDirectory() drops them unless another entry still uses them.
+    std::vector<FXString> removedStoragePaths;
     static const unsigned MAX_ITEMS = 256;
     const CustomAction* find(const FXString&) const;
     FXString newId() const;
@@ -40,8 +42,6 @@ public:
     void save(FXSettings&) const;
     bool loadDirectory(const FXString&, FXString&, FXString&);
     bool saveDirectory(const FXString&, FXString&, FXString&, const FXString& expectedFingerprint = FXString::null);
-    bool portableScriptsNeedMigration(const FXString&, bool&, FXString&, FXString&) const;
-    bool migratePortableScripts(const FXString&, const FXString& expectedFingerprint, FXString&, FXString&) const;
     static FXString storageDirectory();
     static FXString directoryFingerprint(const FXString&, FXString&);
     bool move(const FXString& id, const FXString& parent, FXString& error);
