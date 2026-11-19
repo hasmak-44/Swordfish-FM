@@ -302,7 +302,14 @@ volumes and swap are not offered as new mountable volumes.
 
 Android and other MTP devices advertised by the host desktop also appear in
 Devices before they are mounted. Open the device or use its mount button to
-connect it; unlock the device and select USB file transfer if necessary.
+connect it. A waiting dialog stays open while you unlock the phone, select USB
+file transfer and allow access. It opens the phone when its folder is ready.
+Cancel stops retries and waits for an active GVFS mount request to finish. If
+that request mounts the phone, Swordfish tries to undo its own mount; it does
+not unmount an already-mounted device. The connected phone remains listed for
+another attempt. Some GVFS backends cannot abort a mount immediately: if
+cancellation cannot be confirmed, Swordfish warns that the phone may still
+mount, and the helper continues trying to undo a late successful mount.
 Mounted MTP devices can be unmounted from Devices. This requires the host
 GVFS MTP backend, its volume monitor and GVFS FUSE support (commonly supplied
 by `gvfs-backends` and `gvfs-fuse`), as well as a desktop session bus.
@@ -326,9 +333,9 @@ device is locked, untrusted, or unsupported by the host backend, it may not
 appear or mounting may fail; host monitor/backend errors are recorded in the
 application log.
 
-When no MTP/AFC phone is detected, the Devices sidebar shows a setup hint.
-Host backend warnings appear there with details on hover. Mount failures are
-reported in an error dialog and recorded in the application log.
+Host backend warnings appear in Devices with details on hover. While waiting,
+temporary mount failures are recorded in the application log; unsupported
+backends and other unrecoverable errors are reported in an error dialog.
 
 Device rows have separate controls at the right:
 

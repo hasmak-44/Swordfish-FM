@@ -9,8 +9,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
+#include <fcntl.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#include <sys/socket.h>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <netinet/in.h>
@@ -23,6 +25,7 @@
 #include <fx.h>
 #include <fxkeys.h>
 #include <FXPNGIcon.h>
+#include <glib.h>
 
 #include "xfedefs.h"
 #include "icons.h"
@@ -36,6 +39,7 @@
 #include "ArchInputDialog.h"
 #include "XFileExplorer.h"
 #include "MessageBox.h"
+#include "DialogBox.h"
 #include "DirPanel.h"
 #include "TabButtons.h"
 
@@ -5639,46 +5643,275 @@ static int runDiskCommand(FXWindow* owner, FXuint op, const FXString& title, con
     return status;
 }
 
+#if defined(linux)
+class PhoneMountDialog : public DialogBox
+{
+    FXDECLARE(PhoneMountDialog)
+protected:
+    PhoneMountDialog() {}
+private:
+    int channel = -1;
+    FXLabel* status = NULL;
+    FXButton* cancel = NULL;
+    FXString buffer;
+    FXString localpath;
+    FXString problem;
+    FXString lastWarning;
+    FXbool cancelling = false;
+    FXbool opening = false;
+    FXbool cancelled = false;
+
+    void finish()
+    {
+        getApp()->stopModal(this, true);
+        hide();
+    }
+
+    FXbool sendCommand(char command)
+    {
+        ssize_t result;
+        do result = send(channel, &command, 1, MSG_NOSIGNAL);
+        while (result < 0 && errno == EINTR);
+        if (result == 1) return true;
+        problem = cancelling ?
+                  _("Cancellation could not be confirmed. The phone may still mount; check Devices.") :
+                  FXString(_("The phone mount helper stopped unexpectedly: ")) + strerror(errno);
+        finish();
+        return false;
+    }
+
+public:
+    enum { ID_READ = DialogBox::ID_LAST, ID_CANCEL_TIMEOUT, ID_LAST };
+    PhoneMountDialog(FXWindow* owner, const FXString& device) :
+        DialogBox(owner, _("Waiting for phone"), DECOR_TITLE | DECOR_BORDER | DECOR_CLOSE)
+    {
+        FXVerticalFrame* body = new FXVerticalFrame(this, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+        new FXLabel(body, _("Waiting for phone...\n\nUnlock the phone and allow access to its files."),
+                    NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        status = new FXLabel(body, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        FXHorizontalFrame* buttons = new FXHorizontalFrame(body, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+        cancel = new FXButton(buttons, _("Cancel"), NULL, this, DialogBox::ID_CANCEL,
+                              BUTTON_NORMAL | LAYOUT_RIGHT);
+
+        int sockets[2];
+        if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets) != 0)
+        {
+            problem = strerror(errno);
+            return;
+        }
+        for (int i = 0; i < 2; ++i)
+        {
+            if (sockets[i] > STDERR_FILENO) continue;
+            int descriptor = fcntl(sockets[i], F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+            if (descriptor < 0)
+            {
+                problem = strerror(errno);
+                ::close(sockets[0]);
+                ::close(sockets[1]);
+                return;
+            }
+            ::close(sockets[i]);
+            sockets[i] = descriptor;
+        }
+        char executable[4096];
+        ssize_t length = readlink("/proc/self/exe", executable, sizeof(executable) - 1);
+        FXString helper = "swordfish-network";
+        if (length > 0)
+        {
+            executable[length] = '\0';
+            helper = FXPath::directory(executable) + "/swordfish-network";
+        }
+        FXString command = "exec " + xf_hostcommand(xf_quote(helper) + " --phone-mount " + xf_quote(device));
+        pid_t child = fork();
+        if (child == 0)
+        {
+            ::close(sockets[0]);
+            if (dup2(sockets[1], STDIN_FILENO) < 0 || dup2(sockets[1], STDOUT_FILENO) < 0)
+                _exit(126);
+            ::close(sockets[1]);
+            execl("/bin/sh", "sh", "-c", command.text(), static_cast<char*>(NULL));
+            _exit(127);
+        }
+        int failure = errno;
+        ::close(sockets[1]);
+        if (child < 0)
+        {
+            ::close(sockets[0]);
+            problem = strerror(failure);
+            return;
+        }
+        channel = sockets[0];
+        getApp()->addInput(channel, INPUT_READ, this, ID_READ);
+    }
+
+    ~PhoneMountDialog()
+    {
+        getApp()->removeTimeout(this, ID_CANCEL_TIMEOUT);
+        if (channel >= 0)
+        {
+            getApp()->removeInput(channel, INPUT_READ);
+            ::close(channel);
+        }
+    }
+
+    FXbool run()
+    {
+        if (!problem.empty()) return false;
+        execute(PLACEMENT_OWNER);
+        return problem.empty() && !cancelled && opening;
+    }
+    FXString path() const { return localpath; }
+    FXString error() const { return problem; }
+    FXbool wasCancelled() const { return cancelled; }
+
+    long onCancel(FXObject*, FXSelector, void*)
+    {
+        if (cancelling || opening) return 1;
+        cancelling = true;
+        cancel->disable();
+        status->setText(_("Cancelling phone mount..."));
+        if (sendCommand('C')) getApp()->addTimeout(this, ID_CANCEL_TIMEOUT, 10000);
+        return 1;
+    }
+
+    long onCancelTimeout(FXObject*, FXSelector, void*)
+    {
+        problem = _("Cancellation could not be confirmed. The phone may still mount; check Devices.");
+        finish();
+        return 1;
+    }
+
+    long onRead(FXObject*, FXSelector, void*)
+    {
+        char bytes[4096];
+        ssize_t count = read(channel, bytes, sizeof(bytes));
+        if (count < 0 && errno == EINTR) return 1;
+        if (count <= 0)
+        {
+            problem = cancelling ? _("Cancellation could not be confirmed. The phone may still mount; check Devices.") :
+                                  _("The phone mount helper stopped unexpectedly.");
+            finish();
+            return 1;
+        }
+        buffer.append(bytes, count);
+        if (buffer.length() > 65536)
+        {
+            problem = _("The phone mount helper returned invalid data.");
+            finish();
+            return 1;
+        }
+        FXint newline;
+        while ((newline = buffer.find('\n')) >= 0)
+        {
+            FXString line = buffer.left(newline);
+            buffer = buffer.mid(newline + 1, buffer.length() - newline - 1);
+            FXString type = line.before('\t');
+            FXString text;
+            if (line.contains('\t') == 1)
+            {
+                gsize size = 0;
+                guchar* decoded = g_base64_decode(line.after('\t').text(), &size);
+                text = FXString(reinterpret_cast<char*>(decoded), size);
+                g_free(decoded);
+                if (strlen(text.text()) != size) type.clear();
+            }
+            if (type == "WAIT" && !text.empty())
+            {
+                if (text != lastWarning)
+                {
+                    appLog(APP_LOG_ERRORS, "phone-mount-wait", text);
+                    lastWarning = text;
+                }
+                status->setText(_("Still waiting. Check the phone; details are in the application log."));
+            }
+            else if (type == "READY" && !text.empty() && !cancelling && !opening)
+            {
+                if (xf_gvfsmount(text) != text)
+                {
+                    problem = _("The phone mount helper returned an invalid GVFS folder.");
+                    finish();
+                    return 1;
+                }
+                localpath = text;
+                opening = true;
+                cancel->disable();
+                status->setText(_("Opening phone..."));
+                sendCommand('O');
+            }
+            else if (type == "READY" && cancelling)
+            {
+                // The cancel request is already in transit.
+            }
+            else if (type == "OPEN" && opening && line == "OPEN")
+            {
+                finish();
+                return 1;
+            }
+            else if (type == "CANCELLED" && cancelling && line == "CANCELLED")
+            {
+                cancelled = true;
+                finish();
+                return 1;
+            }
+            else if (type == "ERROR" && !text.empty())
+            {
+                problem = cancelling ?
+                          FXString(_("Cancellation could not be confirmed. The phone may still mount or remain mounted:\n")) +
+                          text : text;
+                finish();
+                return 1;
+            }
+            else
+            {
+                problem = _("The phone mount helper returned invalid data.");
+                finish();
+                return 1;
+            }
+        }
+        return 1;
+    }
+};
+
+FXDEFMAP(PhoneMountDialog) PhoneMountDialogMap[] =
+{
+    FXMAPFUNC(SEL_COMMAND, DialogBox::ID_CANCEL, PhoneMountDialog::onCancel),
+    FXMAPFUNC(SEL_IO_READ, PhoneMountDialog::ID_READ, PhoneMountDialog::onRead),
+    FXMAPFUNC(SEL_TIMEOUT, PhoneMountDialog::ID_CANCEL_TIMEOUT, PhoneMountDialog::onCancelTimeout)
+};
+FXIMPLEMENT(PhoneMountDialog, DialogBox, PhoneMountDialogMap, ARRAYNUMBER(PhoneMountDialogMap))
+#endif
+
 
 // Mount a plugged-in drive or reconnect a remembered share, then open it.
 FXbool DirPanel::openDevice(const FXString& device)
 {
+#if defined(linux)
     if (device.left(6) == "mtp://" || device.left(6) == "afc://")
     {
-        FXString output;
-        int status = -1;
-        FXString command = xf_hostcommand("timeout -k 2 30 gio mount " + xf_quote(device) + " </dev/null") + " 2>&1";
-        File* file = new File(this, _("Mount device..."), MOUNT);
-        file->create();
-        getApp()->beginWaitCursor();
-        file->mount(device, _("Please wait..."), command, &output, &status);
-        getApp()->endWaitCursor();
-        delete file;
-
-        FXString info;
-        FXbool queried = xf_hostcommandoutput("timeout -k 2 10 env LC_ALL=C gio info -a standard::name " +
-                                              xf_quote(device) + " </dev/null", info);
-        FXint pos = info.find("local path: ");
-        FXString localpath = pos < 0 ? FXString::null : info.mid(pos + 12, info.length()).before('\n').trim();
-        if (!queried || xf_gvfsmount(localpath) != localpath || !xf_isdirectory(localpath))
+        const FXString phone = device;
+        PhoneMountDialog dialog(this, phone);
+        if (!dialog.run())
         {
-            output.trim();
-            if (queried && localpath.empty())
+            if (!dialog.wasCancelled())
             {
-                // gio reached the device, but there is no folder other programs can open
-                output = _("The device is mounted, but the desktop GVFS FUSE service is not available, so "
-                           "its files have no local folder. Install the gvfs-fuse package (or start "
-                           "gvfsd-fuse) and log in again.");
+                appLog(APP_LOG_ERRORS, "portable-device-mount-failed", phone + ": " + dialog.error());
+                MessageBox::error(this, BOX_OK, _("Error"), _("Can't open %s:\n\n%s"),
+                                  phone.text(), dialog.error().text());
             }
-            if (output.empty()) output = info;
-            if (output.empty()) output = _("The device did not provide an accessible GVFS mount.");
-            appLog(APP_LOG_ERRORS, "portable-device-mount-failed", device + ": " + output);
-            MessageBox::error(this, BOX_OK, _("Error"), _("Can't open %s:\n\n%s"), device.text(), output.text());
+            if (mountslist) mountslist->invalidate();
+            return false;
+        }
+        FXString localpath = dialog.path();
+        if (xf_gvfsmount(localpath) != localpath || !xf_isdirectory(localpath))
+        {
+            appLog(APP_LOG_ERRORS, "portable-device-mount-failed", phone + ": invalid GVFS path " + localpath);
+            MessageBox::error(this, BOX_OK, _("Error"), _("The phone did not provide an accessible GVFS folder."));
             return false;
         }
         mountslist->invalidate();
         return static_cast<XFileExplorer*>(mainWindow)->getCurrentPanel()->navigatePane(localpath);
     }
+#endif
     if (disconnectedDevice(device))
     {
         FilePanel* panel = static_cast<XFileExplorer*>(mainWindow)->getCurrentPanel();

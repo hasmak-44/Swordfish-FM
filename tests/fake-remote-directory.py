@@ -1,10 +1,48 @@
 #!/usr/bin/env python3
 import base64
 import os
+import select
 import stat
 import sys
 import time
 from urllib.parse import unquote, urlsplit
+
+if len(sys.argv) == 3 and sys.argv[1] == "--phone-mount":
+    assert not os.environ.get("LD_LIBRARY_PATH")
+    assert not os.environ.get("GIO_MODULE_DIR")
+    scheme = urlsplit(sys.argv[2]).scheme.upper()
+    root = os.environ["SWORDFISH_TEST_" + scheme + "_ROOT"]
+    path = os.environ["SWORDFISH_TEST_" + scheme + "_PATH"]
+    log_path = os.environ["SWORDFISH_TEST_MOUNT_LOG"]
+    with open(log_path, "a") as log:
+        log.write(scheme.lower() + " mount\n")
+    if os.environ.get("SWORDFISH_TEST_" + scheme + "_FAIL"):
+        print("ERROR\t" + base64.b64encode(b"simulated device unavailable").decode(), flush=True)
+        sys.exit(1)
+    approval = os.environ.get("SWORDFISH_TEST_PHONE_APPROVAL")
+    if approval:
+        print("WAIT\t" + base64.b64encode(b"waiting for permission").decode(), flush=True)
+        while not os.path.exists(approval):
+            if select.select([sys.stdin], [], [], 0.05)[0]:
+                assert sys.stdin.read(1) == "C"
+                with open(log_path, "a") as log:
+                    log.write(scheme.lower() + " cancelled\n")
+                print("CANCELLED", flush=True)
+                sys.exit(0)
+    os.mkdir(root)
+    if os.environ.get("SWORDFISH_TEST_PHONE_RACE"):
+        time.sleep(0.3)
+    print("READY\t" + base64.b64encode(path.encode()).decode(), flush=True)
+    command = sys.stdin.read(1)
+    if command == "C":
+        os.rmdir(root)
+        with open(log_path, "a") as log:
+            log.write(scheme.lower() + " cancelled\n")
+        print("CANCELLED", flush=True)
+    else:
+        assert command == "O"
+        print("OPEN", flush=True)
+    sys.exit(0)
 
 if sys.argv[1:] == ["--usb-monitor"]:
     assert not os.environ.get("LD_LIBRARY_PATH")

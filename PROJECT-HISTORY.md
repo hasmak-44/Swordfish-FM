@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 17 November 2026, through the current development handoff
-(section 3.106).
+Last updated: 19 November 2026, through the current development handoff
+(section 3.108).
 Latest release: `swordfish-0.0.3-beta2`.
 Stable fallback: `swordfish-0.0.2`.
 
@@ -40,7 +40,7 @@ Historical implementation details below do not override the current code.
    automated tests but still need the user's real-machine testing.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.70-3.106. Older beta and RC notes are
+9. For the latest state, read sections 3.70-3.108. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide is a documentation addition after the frozen RC4 application commit.
@@ -3609,6 +3609,58 @@ Continue one item at a time: clarify anything unclear, fix and test it, then
 commit locally. Do not assume which report the user wants next, build a new
 portable bundle, or push without asking.
 
+### 3.107. Portable profile follow-up and test build (18 November 2026)
+
+The portable-profile and Custom Actions follow-up was committed locally in
+`9501af6` and `f75cf90`. User content has separate portable-data folders;
+bookmarks, tab groups, file associations and preferences remain in config.
+The profile-copy safeguards do not replace closing both copies before copying.
+
+The user chose not to add separate Wi-Fi phone discovery or wireless debugging
+support. Existing FTP/SFTP and other network discovery and USB phone support
+remain in place. The always-present USB setup hint was removed, while actual
+USB discovery errors remain visible. In fixed-colour dialogs, switching tabs
+now repaints the previous tab as well as the selected one. These changes and
+the reset-property regression were committed locally as `19d6368`; signing
+failed and the user approved an unsigned commit for that commit only.
+
+A clean native build, the theme workflow regression and the folder/device
+regression passed. They cover tab repainting, a selected-property reset, the
+phone notice, and existing multiple-file graphic imports and chooser previews.
+These are automated checks; USB behavior still needs a physical-phone test.
+
+At the user's request, a Linux x86_64 portable test bundle was built against
+Debian 10 (glibc 2.28), extracted and smoke-launched under Xvfb. The portable
+launcher regression passed and the archive checksum was verified. The archive
+is `build/test-download-20261118/download/Swordfish-Portable-Test.tar.gz`
+(SHA-256 `c8b349c3506d443ba7e2347ff9a8375890c59fcee6a56798cd8b14c60aa0b781`).
+The user downloaded and opened it; feature and desktop acceptance testing
+remain to be done. The temporary download server was stopped, and the
+extracted build and its dedicated builder image and large cache layer were
+removed; the archive and checksum were retained.
+
+Casting selected media to network TVs/renderers is an idea for a future
+version, not an implemented feature.
+
+### 3.108. USB phone permission wait (19 November 2026)
+
+The Android phone screenshot showed GIO reporting a local GVFS path that was
+not yet accessible while the phone awaited permission. The USB phone mount
+flow now shows an unlock/allow dialog, retries temporary failures and opens
+the phone when its folder becomes accessible. Ordinary USB drives and network
+discovery are unchanged.
+
+GVFS can cancel a client call without stopping the backend mount. Cancel
+therefore stops retries and waits for an in-flight host request, undoing a
+late mount only if this request created it. If the result cannot be confirmed
+in time, a warning is shown and the helper continues the cleanup. This is
+best-effort cancellation, not a guarantee that every host backend can abort
+immediately. A real Android phone is still needed to verify the reported
+permission flow and device-list behavior. The simulated-device regression now
+also checks that a successful phone can be unmounted and mounted again through
+the same connected-device URI, after both a failed attempt and an earlier
+successful mount.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -4098,10 +4150,9 @@ and Windows validation deferred until the user's Windows shares are ready.
 ### Theme editor, Preferences and fixed dialog colours
 
 Implemented locally in section 3.70, with the agreed palette and Preferences
-layout, and delivered as the portable test
-`build/Swordfish-Portable-Theme-Editor-20261113.tar.gz`. Awaiting the user's
-desktop testing and feedback (opacity, eyedropper, palette/texture
-import-export). The section 3.69 test archive was superseded and deleted.
+layout. The newer portable test build is recorded in section 3.107. The user
+has opened it; desktop feature testing and feedback (including opacity,
+eyedropper and palette/texture import-export) remain outstanding.
 
 ### Application and executable UX
 

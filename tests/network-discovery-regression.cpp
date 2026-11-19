@@ -14,6 +14,128 @@
 
 using namespace discovery;
 
+struct FakePhoneFile { GObject parent; };
+struct FakePhoneFileClass { GObjectClass parent; };
+struct FakePhoneMount { GObject parent; };
+struct FakePhoneMountClass { GObjectClass parent; };
+
+static void fakePhoneFileInterface(GFileIface*);
+static void fakePhoneMountInterface(GMountIface*);
+G_DEFINE_TYPE_WITH_CODE(FakePhoneFile, fake_phone_file, G_TYPE_OBJECT,
+                        G_IMPLEMENT_INTERFACE(G_TYPE_FILE, fakePhoneFileInterface))
+G_DEFINE_TYPE_WITH_CODE(FakePhoneMount, fake_phone_mount, G_TYPE_OBJECT,
+                        G_IMPLEMENT_INTERFACE(G_TYPE_MOUNT, fakePhoneMountInterface))
+static void fake_phone_file_class_init(FakePhoneFileClass*) {}
+static void fake_phone_file_init(FakePhoneFile*) {}
+static void fake_phone_mount_class_init(FakePhoneMountClass*) {}
+static void fake_phone_mount_init(FakePhoneMount*) {}
+
+static int fakePhoneResult = 0;
+static int fakePhoneUnmounts = 0;
+
+static gboolean finishFakePhoneMount(gpointer data)
+{
+    GTask* task = G_TASK(data);
+    if (fakePhoneResult == 1)
+        g_task_return_new_error(task, G_IO_ERROR, G_IO_ERROR_ALREADY_MOUNTED, "already mounted");
+    else if (fakePhoneResult == 2)
+        g_task_return_new_error(task, G_IO_ERROR, G_IO_ERROR_FAILED, "mount failed");
+    else
+        g_task_return_boolean(task, TRUE);
+    g_object_unref(task);
+    return G_SOURCE_REMOVE;
+}
+
+static void fakePhoneMount(GFile* file, GMountMountFlags, GMountOperation*, GCancellable* cancellable,
+                           GAsyncReadyCallback callback, gpointer data)
+{
+    // The test requires the real helper to retain the host's eventual result.
+    assert(!cancellable);
+    GTask* task = g_task_new(file, cancellable, callback, data);
+    g_timeout_add(30, finishFakePhoneMount, task);
+}
+
+static gboolean fakePhoneMountFinish(GFile*, GAsyncResult* result, GError** error)
+{
+    return g_task_propagate_boolean(G_TASK(result), error);
+}
+
+static void fakeFindPhoneMount(GFile* file, int, GCancellable* cancellable,
+                               GAsyncReadyCallback callback, gpointer data)
+{
+    GTask* task = g_task_new(file, cancellable, callback, data);
+    GObject* mount = G_OBJECT(g_object_new(fake_phone_mount_get_type(), NULL));
+    g_task_return_pointer(task, mount, g_object_unref);
+    g_object_unref(task);
+}
+
+static GMount* fakeFindPhoneMountFinish(GFile*, GAsyncResult* result, GError** error)
+{
+    return G_MOUNT(g_task_propagate_pointer(G_TASK(result), error));
+}
+
+static void fakeUnmountPhone(GMount* mount, GMountUnmountFlags, GMountOperation*, GCancellable* cancellable,
+                             GAsyncReadyCallback callback, gpointer data)
+{
+    ++fakePhoneUnmounts;
+    GTask* task = g_task_new(mount, cancellable, callback, data);
+    if (fakePhoneResult == 3)
+        g_task_return_new_error(task, G_IO_ERROR, G_IO_ERROR_BUSY, "unmount failed");
+    else
+        g_task_return_boolean(task, TRUE);
+    g_object_unref(task);
+}
+
+static gboolean fakeUnmountPhoneFinish(GMount*, GAsyncResult* result, GError** error)
+{
+    return g_task_propagate_boolean(G_TASK(result), error);
+}
+
+static void fakePhoneFileInterface(GFileIface* iface)
+{
+    iface->mount_enclosing_volume = fakePhoneMount;
+    iface->mount_enclosing_volume_finish = fakePhoneMountFinish;
+    iface->find_enclosing_mount_async = fakeFindPhoneMount;
+    iface->find_enclosing_mount_finish = fakeFindPhoneMountFinish;
+}
+
+static void fakePhoneMountInterface(GMountIface* iface)
+{
+    iface->unmount_with_operation = fakeUnmountPhone;
+    iface->unmount_with_operation_finish = fakeUnmountPhoneFinish;
+}
+
+static gboolean cancelFakePhone(gpointer data)
+{
+    PhoneMount* state = static_cast<PhoneMount*>(data);
+    assert(state->pending && state->mounting);
+    cancelPhoneMount(state);
+    assert(!g_cancellable_is_cancelled(state->cancellable));
+    return G_SOURCE_REMOVE;
+}
+
+static void phoneMountCompletionRaces()
+{
+    for (fakePhoneResult = 0; fakePhoneResult < 4; ++fakePhoneResult)
+    {
+        fakePhoneUnmounts = 0;
+        PhoneMount state;
+        state.loop = g_main_loop_new(NULL, FALSE);
+        state.file = G_FILE(g_object_new(fake_phone_file_get_type(), NULL));
+        state.cancellable = g_cancellable_new();
+        retryPhoneMount(&state);
+        g_timeout_add(5, cancelFakePhone, &state);
+        g_main_loop_run(state.loop);
+        assert(state.cancelled && !state.pending);
+        assert(fakePhoneUnmounts == (fakePhoneResult == 0 || fakePhoneResult == 3 ? 1 : 0));
+        assert(state.result == (fakePhoneResult == 3 ? 1 : 0));
+        g_object_unref(state.cancellable);
+        g_object_unref(state.file);
+        g_main_loop_unref(state.loop);
+    }
+    puts("PASS: cancelled phone mount waits for its real result, undoes owned mounts and preserves existing ones");
+}
+
 static const char* ENDPOINT = "urn:uuid:ce41ebfe-0a8d-457e-be20-a5965a99559e";
 
 static std::string probeReply(const std::string& relatesTo, const std::string& types, const std::string& xaddrs)
@@ -603,8 +725,44 @@ static void shareAuthentication()
     puts("PASS: anonymous-first share browsing, guest then credential fallback, blank and shell-special passwords");
 }
 
+static void phoneMountControl()
+{
+    char uris[][32] = {"mtp://nonexistent/", "afc://nonexistent/"};
+    for (char* uri : uris)
+    {
+        int channel[2];
+        assert(socketpair(AF_UNIX, SOCK_STREAM, 0, channel) == 0);
+        pid_t child = fork();
+        assert(child >= 0);
+        if (child == 0)
+        {
+            close(channel[0]);
+            assert(dup2(channel[1], STDIN_FILENO) >= 0);
+            assert(dup2(channel[1], STDOUT_FILENO) >= 0);
+            close(channel[1]);
+            char program[] = "swordfish-network", option[] = "--phone-mount";
+            char* args[] = {program, option, uri, NULL};
+            _exit(networkDiscoveryMain(3, args));
+        }
+        close(channel[1]);
+        assert(write(channel[0], "C", 1) == 1);
+        std::string output;
+        char buffer[256];
+        ssize_t count;
+        while ((count = read(channel[0], buffer, sizeof(buffer))) > 0) output.append(buffer, count);
+        close(channel[0]);
+        int status = 0;
+        assert(waitpid(child, &status, 0) == child);
+        assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+        assert(output == "CANCELLED\n");
+    }
+    puts("PASS: actual GIO phone helper accepts cancellation for MTP and AFC");
+}
+
 int main()
 {
+    phoneMountControl();
+    phoneMountCompletionRaces();
     parsers();
     serviceParsers();
     mediaServer();

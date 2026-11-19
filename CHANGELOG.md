@@ -46,6 +46,10 @@
   texture in its own colours instead of tinting it with the theme colour.
 
 ### Changed
+- USB phone mounts wait for the phone to be unlocked and access allowed, with
+  automatic opening when the GVFS folder becomes available. Cancel stops
+  retries and attempts to undo a late successful mount; a warning is shown if
+  the host backend cannot confirm cancellation.
 - Portable custom-action image icons are copied into
   `portable-data/icons/custom-actions/` with movable references; accessible
   older image paths migrate on startup, including matching files in copied
@@ -93,6 +97,10 @@
   skipped.
 
 ### Fixed
+- Fixed-colour dialog tabs now clear the previous highlight when another tab
+  is selected.
+- Removed the always-visible "Phone not listed? Check USB setup" hint from
+  Devices; USB discovery errors still appear when reported.
 - Portable windows now detect outside changes to their settings, including
   saves by another window, and block stale writes instead of overwriting copied
   settings. A warning offers restart, quit without saving, or continued use

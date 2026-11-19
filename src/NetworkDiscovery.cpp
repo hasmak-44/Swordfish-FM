@@ -2396,11 +2396,270 @@ int monitorUsbVolumes()
     g_object_unref(monitor);
     return 0;
 }
+
+struct PhoneMount
+{
+    GMainLoop* loop;
+    GFile* file;
+    GCancellable* cancellable;
+    guint retry = 0;
+    bool pending = false;
+    bool mounting = false;
+    bool cancelled = false;
+    bool mounted = false;
+    bool owned = false;
+    bool ready = false;
+    bool pathWarning = false;
+    unsigned missingPathChecks = 0;
+    int result = 1;
+};
+
+void phoneRecord(const char* type, const char* text = NULL)
+{
+    if (text)
+    {
+        gchar* encoded = g_base64_encode(reinterpret_cast<const guchar*>(text), strlen(text));
+        std::printf("%s\t%s\n", type, encoded);
+        g_free(encoded);
+    }
+    else std::puts(type);
+    std::fflush(stdout);
+}
+
+void phoneFinished(PhoneMount* state, const char* type, const char* text = NULL)
+{
+    phoneRecord(type, text);
+    state->result = strcmp(type, "ERROR") == 0 ? 1 : 0;
+    g_main_loop_quit(state->loop);
+}
+
+void phoneUnmounted(GObject* source, GAsyncResult* result, gpointer data)
+{
+    PhoneMount* state = static_cast<PhoneMount*>(data);
+    GError* error = NULL;
+    if (g_mount_unmount_with_operation_finish(G_MOUNT(source), result, &error))
+        phoneFinished(state, "CANCELLED");
+    else
+    {
+        phoneFinished(state, "ERROR", error ? error->message : "Unable to undo the phone mount");
+        g_clear_error(&error);
+    }
+}
+
+void phoneMountFound(GObject* source, GAsyncResult* result, gpointer data)
+{
+    PhoneMount* state = static_cast<PhoneMount*>(data);
+    GError* error = NULL;
+    GMount* mount = g_file_find_enclosing_mount_finish(G_FILE(source), result, &error);
+    if (!mount)
+    {
+        phoneFinished(state, "ERROR", error ? error->message : "Unable to find the phone mount to cancel it");
+        g_clear_error(&error);
+        return;
+    }
+    g_mount_unmount_with_operation(mount, G_MOUNT_UNMOUNT_NONE, NULL, NULL, phoneUnmounted, state);
+    g_object_unref(mount);
+}
+
+void finishPhoneCancellation(PhoneMount* state)
+{
+    if (state->mounted && state->owned)
+        g_file_find_enclosing_mount_async(state->file, G_PRIORITY_DEFAULT, NULL, phoneMountFound, state);
+    else
+        phoneFinished(state, "CANCELLED");
+}
+
+void cancelPhoneMount(PhoneMount* state)
+{
+    if (state->cancelled) return;
+    state->cancelled = true;
+    if (state->retry)
+    {
+        g_source_remove(state->retry);
+        state->retry = 0;
+    }
+    if (state->pending && !state->mounting)
+        g_cancellable_cancel(state->cancellable);
+    else if (!state->pending)
+        finishPhoneCancellation(state);
+}
+
+gboolean checkPhonePath(gpointer data);
+
+struct PhonePath
+{
+    char* path;
+    bool hasPath;
+};
+
+void freePhonePath(gpointer data)
+{
+    PhonePath* path = static_cast<PhonePath*>(data);
+    g_free(path->path);
+    delete path;
+}
+
+void checkPhonePathWorker(GTask* task, gpointer source, gpointer, GCancellable*)
+{
+    // Both GVFS path lookup and filesystem stat can block; keep cancellation responsive.
+    char* path = g_file_get_path(G_FILE(source));
+    PhonePath* checked = new PhonePath;
+    checked->hasPath = path != NULL;
+    checked->path = path && g_file_test(path, G_FILE_TEST_IS_DIR) ? path : NULL;
+    if (!checked->path) g_free(path);
+    g_task_return_pointer(task, checked, freePhonePath);
+}
+
+void phonePathChecked(GObject*, GAsyncResult* result, gpointer data)
+{
+    PhoneMount* state = static_cast<PhoneMount*>(data);
+    GError* error = NULL;
+    PhonePath* checked = static_cast<PhonePath*>(g_task_propagate_pointer(G_TASK(result), &error));
+    state->pending = false;
+    if (state->cancelled)
+        finishPhoneCancellation(state);
+    else if (error)
+        phoneFinished(state, "ERROR", error->message);
+    else if (checked && checked->path)
+    {
+        state->ready = true;
+        phoneRecord("READY", checked->path);
+    }
+    else
+    {
+        if (checked && !checked->hasPath && ++state->missingPathChecks >= 15)
+            phoneFinished(state, "ERROR", "The phone has no local GVFS folder; check that GVFS FUSE is running");
+        else
+        {
+            if (checked && checked->hasPath) state->missingPathChecks = 0;
+            if (!state->pathWarning)
+            {
+                phoneRecord("WAIT", "Waiting for an accessible phone folder; check that GVFS FUSE is running");
+                state->pathWarning = true;
+            }
+            state->retry = g_timeout_add(1000, checkPhonePath, state);
+        }
+    }
+    if (checked) freePhonePath(checked);
+    g_clear_error(&error);
+}
+
+gboolean checkPhonePath(gpointer data)
+{
+    PhoneMount* state = static_cast<PhoneMount*>(data);
+    state->retry = 0;
+    state->pending = true;
+    GTask* task = g_task_new(state->file, state->cancellable, phonePathChecked, state);
+    g_task_set_return_on_cancel(task, TRUE);
+    g_task_run_in_thread(task, checkPhonePathWorker);
+    g_object_unref(task);
+    return G_SOURCE_REMOVE;
+}
+
+gboolean retryPhoneMount(gpointer data);
+
+void phoneMounted(GObject* source, GAsyncResult* result, gpointer data)
+{
+    PhoneMount* state = static_cast<PhoneMount*>(data);
+    GError* error = NULL;
+    bool success = g_file_mount_enclosing_volume_finish(G_FILE(source), result, &error);
+    state->pending = false;
+    state->mounting = false;
+    state->mounted = success || g_error_matches(error, G_IO_ERROR, G_IO_ERROR_ALREADY_MOUNTED);
+    state->owned = success;
+    if (state->cancelled)
+    {
+        if (state->mounted && state->owned)
+            g_file_find_enclosing_mount_async(state->file, G_PRIORITY_DEFAULT, NULL, phoneMountFound, state);
+        else
+            phoneFinished(state, "CANCELLED");
+    }
+    else if (state->mounted)
+        checkPhonePath(state);
+    else if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED) ||
+             g_error_matches(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT))
+        phoneFinished(state, "ERROR", error->message);
+    else
+    {
+        phoneRecord("WAIT", error ? error->message : "Mount attempt failed");
+        state->retry = g_timeout_add(2000, retryPhoneMount, state);
+    }
+    g_clear_error(&error);
+}
+
+gboolean retryPhoneMount(gpointer data)
+{
+    PhoneMount* state = static_cast<PhoneMount*>(data);
+    state->retry = 0;
+    state->pending = true;
+    state->mounting = true;
+    // Cancelling the client-side GVFS call can discard its reply while the backend
+    // still mounts. Keep the reply so a late successful mount can be undone safely.
+    g_file_mount_enclosing_volume(state->file, G_MOUNT_MOUNT_NONE, NULL, NULL,
+                                  phoneMounted, state);
+    return G_SOURCE_REMOVE;
+}
+
+gboolean phoneControl(GIOChannel*, GIOCondition condition, gpointer data)
+{
+    PhoneMount* state = static_cast<PhoneMount*>(data);
+    char commands[32];
+    ssize_t count = read(STDIN_FILENO, commands, sizeof(commands));
+    if (count < 0 && errno == EINTR) return G_SOURCE_CONTINUE;
+    if (count <= 0 || (condition & (G_IO_ERR | G_IO_NVAL)))
+    {
+        cancelPhoneMount(state);
+        return G_SOURCE_REMOVE;
+    }
+    for (ssize_t i = 0; i < count; ++i)
+    {
+        if (commands[i] == 'C')
+        {
+            cancelPhoneMount(state);
+            return G_SOURCE_REMOVE;
+        }
+        if (commands[i] == 'O' && state->ready && !state->cancelled)
+        {
+            phoneFinished(state, "OPEN");
+            return G_SOURCE_REMOVE;
+        }
+    }
+    return G_SOURCE_CONTINUE;
+}
+
+int mountPhone(const char* uri)
+{
+    signal(SIGPIPE, SIG_IGN);
+    GFile* file = g_file_new_for_uri(uri);
+    if (!g_file_has_uri_scheme(file, "mtp") && !g_file_has_uri_scheme(file, "afc"))
+    {
+        g_object_unref(file);
+        phoneRecord("ERROR", "Only MTP and AFC phone devices can be mounted this way");
+        return 2;
+    }
+    PhoneMount state;
+    state.loop = g_main_loop_new(NULL, FALSE);
+    state.file = file;
+    state.cancellable = g_cancellable_new();
+    GIOChannel* control = g_io_channel_unix_new(STDIN_FILENO);
+    guint watch = g_io_add_watch(control, static_cast<GIOCondition>(G_IO_IN | G_IO_HUP | G_IO_ERR | G_IO_NVAL),
+                                 phoneControl, &state);
+    retryPhoneMount(&state);
+    g_main_loop_run(state.loop);
+    if (g_main_context_find_source_by_id(NULL, watch)) g_source_remove(watch);
+    if (state.retry) g_source_remove(state.retry);
+    g_io_channel_unref(control);
+    g_object_unref(state.cancellable);
+    g_object_unref(file);
+    g_main_loop_unref(state.loop);
+    return state.result;
+}
 }
 
 int main(int argc, char** argv)
 {
     if (argc == 2 && strcmp(argv[1], "--usb-monitor") == 0) return monitorUsbVolumes();
+    if (argc == 3 && strcmp(argv[1], "--phone-mount") == 0) return mountPhone(argv[2]);
     if (argc == 3 && strcmp(argv[1], "--list") == 0) return listDirectory(argv[2]);
     if (argc == 3 && strcmp(argv[1], "--shares") == 0)
     {
@@ -2417,6 +2676,7 @@ int main(int argc, char** argv)
     if (argc == 4 && strcmp(argv[1], "--media") == 0) return media::list(argv[2], argv[3]);
     if (argc == 4 && strcmp(argv[1], "--download") == 0) return media::download(argv[2], argv[3]);
     std::fprintf(stderr, "Usage: swordfish-network --discover | --shares smb://HOST/ | --list PATH |\n"
+                         "       --usb-monitor | --phone-mount mtp://DEVICE/ | --phone-mount afc://DEVICE/ |\n"
                          "       --media DESCRIPTION-URL dlna://HOST:PORT/PATH | --download URL FILE\n");
     return 2;
 }

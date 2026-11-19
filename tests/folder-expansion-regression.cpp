@@ -579,6 +579,34 @@ public:
     }
 };
 
+class PhoneResponder : public FXObject
+{
+public:
+    FXString approval;
+    bool cancel = false;
+    bool seen = false;
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        DialogBox* dialog = dynamic_cast<DialogBox*>(testApp->getModalWindow());
+        if (!dialog || dialog->getTitle() != "Waiting for phone")
+        {
+            testApp->addTimeout(this, 1, 20);
+            return 1;
+        }
+        assert(hasLabel(dialog, "Waiting for phone...\n\nUnlock the phone and allow access to its files."));
+        seen = true;
+        if (cancel)
+            dialog->handle(this, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
+        else
+        {
+            std::ofstream file(approval.text());
+            assert(file);
+            file << "allow";
+        }
+        return 1;
+    }
+};
+
 // Records a context menu while it is open, then runs the entry named by choose
 class PopupMenuResponder : public FXObject
 {
@@ -1507,13 +1535,52 @@ int main(int argc, char** argv)
         assert(!panel->openDevice("mtp://first/"));
         assert(failure.errors == 1 && failure.message.contains("simulated device unavailable"));
         unsetenv("SWORDFISH_TEST_MTP_FAIL");
+        const FXString approval = fixture + "/phone-approval";
+        setenv("SWORDFISH_TEST_PHONE_APPROVAL", approval.text(), 1);
+        PhoneResponder cancellation;
+        cancellation.cancel = true;
+        app.addTimeout(&cancellation, 1, 150);
+        assert(!panel->openDevice("mtp://first/"));
+        assert(cancellation.seen && mounts->disconnected("mtp://first/"));
+        assert(!xf_isdirectory(simulatedMtpPath));
+        panel->onSidebarRefresh(NULL, 0, NULL);
+        phone = NULL;
+        for (FXTreeItem* item = devices->getFirst(); item; item = item->getNext())
+            if (static_cast<SidebarItem*>(item)->path == "mtp://first/")
+                phone = static_cast<SidebarItem*>(item);
+        assert(phone && phone->deviceAction == SidebarItem::MOUNT_DEVICE);
+        PhoneResponder approved;
+        approved.approval = approval;
+        app.addTimeout(&approved, 1, 150);
         panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, 0), phone);
+        assert(approved.seen);
         assert(window->getCurrentPanel()->getDirectory() == simulatedMtpPath);
         assert(window->getCurrentPanel()->navigatePane(fixture));
+        assert(unlink(approval.text()) == 0);
+        unsetenv("SWORDFISH_TEST_PHONE_APPROVAL");
+        assert(rmdir(simulatedMtpRoot.text()) == 0);
+        assert(mounts->disconnected("mtp://first/"));
+        setenv("SWORDFISH_TEST_PHONE_APPROVAL", approval.text(), 1);
+        PhoneResponder remounted;
+        remounted.approval = approval;
+        app.addTimeout(&remounted, 1, 150);
+        assert(panel->openDevice("mtp://first/"));
+        assert(remounted.seen && window->getCurrentPanel()->getDirectory() == simulatedMtpPath);
+        assert(window->getCurrentPanel()->navigatePane(fixture));
+        assert(unlink(approval.text()) == 0);
+        unsetenv("SWORDFISH_TEST_PHONE_APPROVAL");
+        assert(rmdir(simulatedMtpRoot.text()) == 0);
+        setenv("SWORDFISH_TEST_PHONE_RACE", "1", 1);
+        PhoneResponder racingCancel;
+        racingCancel.cancel = true;
+        app.addTimeout(&racingCancel, 1, 150);
+        assert(!panel->openDevice("mtp://first/"));
+        assert(racingCancel.seen && !xf_isdirectory(simulatedMtpPath));
+        assert(mounts->disconnected("mtp://first/"));
+        unsetenv("SWORDFISH_TEST_PHONE_RACE");
         app.removeSignal(SIGCHLD);
         unsetenv("SWORDFISH_TEST_MTP_PATH");
         unsetenv("SWORDFISH_TEST_MTP_ROOT");
-        assert(rmdir(simulatedMtpRoot.text()) == 0);
         simulatedMtpPath.clear();
         simulatedMtpRoot.clear();
         usbSnapshot("");
@@ -1571,7 +1638,7 @@ int main(int argc, char** argv)
         unsetenv("SWORDFISH_TEST_USB_STATE");
         assert(unlink(usbState.text()) == 0);
         assert(unlink(getenv("SWORDFISH_TEST_MOUNT_LOG")) == 0);
-        puts("PASS: MTP and AFC mount failures are reported; successful mounts open their host GVFS paths");
+        puts("PASS: phone approval, cancellation, completion race, errors and AFC mounting");
     }
     {
         MountsList* mounts = findMounts(panel);
