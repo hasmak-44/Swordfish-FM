@@ -3764,6 +3764,28 @@ exclusion of the toolbar from both panel scopes, and unchanged Whole UI
 coverage. `make -C src -j4 swordfish` and
 `bash tests/run-theme-workflow-regression.sh` passed.
 
+### 3.114. Background-scopes portable test build and cleanup (19 November 2026)
+
+Committed the scope work locally as `3a64628` (not pushed) and built
+`build/Swordfish-Portable-Background-Scopes-20261119.tar.gz` (Debian 10 /
+glibc 2.28 baseline; SHA256 `6da53239cd3f27441e4bb808e3928d15677d52655b4074f26aa94295c43f1c60`). The first build attempt hit a transient
+Docker build-cache lease error and succeeded on retry. A 5-second Xvfb launch
+of the bundled AppRun ran without crashing. Visual scope testing is left to the user.
+
+Serving through Codespaces port 8765 was too slow (about 20 minutes for 83 MB),
+so the archive and checksum were also uploaded to a **draft** GitHub release
+(untagged, visible only to collaborators, title "TEST ONLY — Background image
+scopes (20261119)"). Drafts are a faster delivery option for large test builds.
+Delete the draft when it is no longer needed and never publish it as a release.
+
+After the user confirmed the download, the port-8765 server was stopped and its
+forwarding set back to private. Cleanup removed the extracted bundle,
+the superseded 20261113 Theme Editor archive, `test-download-20261118`, the
+duplicate `swordfish-test-themes.zip`, and screenshots of fixed bugs. Docker
+builder images and the Docker build cache were pruned (about 1.9 GB). The
+next portable build re-downloads the Debian base image. Design references,
+user-supplied themes and images, notes and the current archive were kept.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
