@@ -2746,6 +2746,42 @@ public:
             assert(undoEditor.getDraft().property("main", "background_image").empty());
         }
         assert(!xf_existfile(localOnly) && !xf_existfile(uppercaseTexture));
+        {
+            ThemeEditor historyEditor(&imported, &window, imported.Themes, cleanupIndex, ThemeEditor::EDIT_CURRENT);
+            assert(historyEditor.isReady());
+            historyEditor.create();
+            const FXString start = historyEditor.getDraft().property("list", "foreground");
+            ActionTimer overwrite([&] {
+                FXWindow* dialog = app.getModalWindow();
+                FXButton* button = dialog ? findButton(dialog, "Overwrite") : NULL;
+                assert(button);
+                button->getTarget()->handle(button, FXSEL(SEL_COMMAND, button->getSelector()), NULL);
+            });
+            const char* steps[] = {"#110000", "#002200", "#000033"};
+            for (const char* colour : steps)
+            {
+                historyEditor.draft.setProperty("list", "foreground", colour);
+                historyEditor.onApply(NULL, 0, NULL);
+                app.addTimeout(&overwrite, 1, 150);
+                assert(historyEditor.save(false));
+            }
+            for (int i = 2; i >= 0; i--)
+            {
+                historyEditor.onUndo(NULL, 0, NULL);
+                assert(historyEditor.getDraft().property("list", "foreground") == (i ? steps[i - 1] : start));
+            }
+            for (const char* colour : steps)
+            {
+                historyEditor.onRedo(NULL, 0, NULL);
+                assert(historyEditor.getDraft().property("list", "foreground") == colour);
+            }
+            historyEditor.onUndo(NULL, 0, NULL);
+            historyEditor.onUndo(NULL, 0, NULL);
+            app.addTimeout(&overwrite, 1, 150);
+            assert(historyEditor.save(false));
+            assert(imported.Themes[0].property("list", "foreground") == steps[0]);
+        }
+        puts("PASS: multi-level undo and redo across repeated saves");
 
         cleanupTheme.setProperty("main", "background_image", "");
         cleanupTheme.effect.clear();
