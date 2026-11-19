@@ -22,7 +22,8 @@ class BackgroundOverlay
 public:
     std::vector<FXColor> pixels;
     FXint width = 0, height = 0;
-    void render(const FXImage&, FXint, FXint, const FXString&, FXint);
+    void render(const FXImage&, FXint, FXint, const FXString&, FXint,
+                FXint = 0, FXint = 0, FXint = -1, FXint = -1);
     void blend(FXColor*, FXint, FXint, FXint, FXint) const;
 };
 
@@ -37,7 +38,8 @@ public:
 FXint backgroundImageOpacity(const FXString&);
 
 // One image spans the whole main window; each widget blends its own part over its background colour
-void setWindowBackground(FXWindow*, const FXString&, const FXString&, FXint, const FXString&);
+void setWindowBackground(FXWindow*, const FXString&, const FXString&, FXint, const FXString&,
+                         const FXString&, FXWindow*, FXWindow*, FXWindow*);
 const BackgroundOverlay* windowBackground(const FXWindow*, FXint&, FXint&, FXuint* = NULL);
 void trackBackgroundOrigin(FXWindow*);
 // A fully transparent base means the target's own background colour

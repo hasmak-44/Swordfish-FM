@@ -267,13 +267,15 @@ FXbool Theme::decodeProperties(const FXString& text, FXString& error)
             const char* areas[] = {"main", "list", "tree", "places", "headers", "tabs", "toolbars",
                                      "address", "status", "menus", "controls", "scrollbars"};
             for (const char* name : areas) if (area == name) valid = true;
-            if (property == "background_image" || property == "image_mode")
+            if (property == "background_image" || property == "image_mode" || property == "image_scope")
             {
                 // Images used to be set per area; those keys are still read and moved to the main window
                 FXbool supported = area == "main" || area == "list" || area == "tree" || area == "places" ||
                                    area == "tabs" || area == "toolbars";
                 valid = valid && supported && (property == "background_image" ?
-                    BackgroundImage::validReference(value) : value == "fit" || value == "fill" || value == "tile");
+                    BackgroundImage::validReference(value) : property == "image_mode" ?
+                    value == "fit" || value == "fill" || value == "tile" :
+                    area == "main" && (value == "window" || value == "files" || value == "panels"));
             }
             else if (property == "font") valid = valid && !value.empty() && value.length() <= 512;
             else if (area == "main" && (property == "shading" || property == "opacity" || property == "image_opacity"))

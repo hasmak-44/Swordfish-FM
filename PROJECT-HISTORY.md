@@ -3746,6 +3746,24 @@ effect, scrolls the file list horizontally and the folder tree vertically, and
 compares the scrolled screen with a full repaint. Both checks failed with the
 old code and pass with the fix.
 
+### 3.113. Background-image display scope
+
+The Theme Editor's Background image dialog now offers three scopes: Whole UI
+(the backward-compatible default), File panels, and All panels. File-panels
+scope shares one image across both file panels. All-panels scope shares it
+across the sidebar/tree and both file panels. In both scoped modes the image
+is fitted, filled or tiled against the combined panel bounds, rather than
+restarting separately in each panel. Existing themes without an
+`image_scope` property continue to use Whole UI; supported values are `window`,
+`files` and `panels`.
+
+The mockup preview uses the same selected scope. The theme workflow regression
+checks scope serialization/validation, editor selection, the shared image
+across both file panels, inclusion of the tree/sidebar only in All panels,
+exclusion of the toolbar from both panel scopes, and unchanged Whole UI
+coverage. `make -C src -j4 swordfish` and
+`bash tests/run-theme-workflow-regression.sh` passed.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -4238,6 +4256,37 @@ Implemented locally in section 3.70, with the agreed palette and Preferences
 layout. The newer portable test build is recorded in section 3.107. The user
 has opened it; desktop feature testing and feedback (including opacity,
 eyedropper and palette/texture import-export) remain outstanding.
+
+### Display scaling (discussion; not implemented)
+
+Users with large, high-resolution monitors have reported that the interface
+can be too small to read or use comfortably. The proposed direction is to
+separate detected display information from an independently adjustable UI
+scale, initially 100%. Scaling should cover text, icons, menus, toolbars and
+other controls together; file-pane zoom controls are explicitly out of scope
+and should remain unchanged.
+
+Do not treat pixel resolution alone as physical DPI: monitors with different
+physical sizes can have the same resolution. First audit the current scaling
+pipeline and what reliable display-density or desktop-scaling information is
+available. The existing `SETTINGS/screenres` value is a percentage despite
+the current "Screen DPI" UI, and `main.cpp` rounds it to an integer scale.
+Any replacement must preserve existing users' effective UI size and account
+for all consumers, including fonts, icons, cursors, spacing and dialogs.
+
+This is a substantial, cross-cutting change and should be planned in stages:
+audit and settle detection/fallback behavior; design settings and migration;
+implement scale propagation; then validate several scales (including a
+fractional scale), restart and monitor changes, and unchanged pane zoom.
+No implementation or testing commitment has been made yet.
+
+### Background-image scope (implemented)
+
+The user accepted three selectable scopes: the existing whole UI, both file
+panels together, or the tree/sidebar plus both file panels together. The
+background image change is recorded in section 3.113. Fit and Fill preserve
+aspect ratio; Fit shows the whole image and Fill crops to cover the selected
+scope. Tile retains original-size repetition.
 
 ### Application and executable UX
 

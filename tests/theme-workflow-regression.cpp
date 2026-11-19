@@ -360,6 +360,21 @@ static FXbool windowShowsPixel(FXWindow* window, FXColor color)
     return found;
 }
 
+static FXbool sampleBackground(FXWindow* window, FXColor& color)
+{
+    FXImage image(window->getApp(), NULL, IMAGE_KEEP, 1, 1);
+    image.create();
+    FXbool drawn = false;
+    {
+        FXDCWindow dc(&image);
+        drawn = drawBackgroundImage(window, dc, 0, 0, 1, 1);
+    }
+    if (!drawn) return false;
+    image.restore();
+    color = image.getData()[0];
+    return true;
+}
+
 static std::vector<unsigned long> windowPixels(FXWindow* window)
 {
     Display* display = static_cast<Display*>(window->getApp()->getDisplay());
@@ -652,12 +667,14 @@ public:
             editor.original.setProperty("main", "background_image", "images/Regression.png");
             editor.original.setProperty("main", "image_mode", "fill");
             editor.original.setProperty("main", "image_opacity", "55");
+            editor.original.setProperty("main", "image_scope", "panels");
             editor.original.setProperty("list", "foreground", "#123456");
             editor.applied = editor.draft = editor.saved = editor.original;
             editor.refreshProperties();
             editor.draft.setProperty("main", "background_image", "images/Other.png");
             editor.draft.setProperty("main", "image_mode", "tile");
             editor.draft.setProperty("main", "image_opacity", "20");
+            editor.draft.setProperty("main", "image_scope", "files");
             auto imageProperty = std::find(editor.propertyKeys.begin(), editor.propertyKeys.end(), "background_image");
             assert(imageProperty != editor.propertyKeys.end());
             FXint imagePropertyIndex = std::distance(editor.propertyKeys.begin(), imageProperty);
@@ -679,6 +696,7 @@ public:
             assert(editor.getDraft().property("main", "background_image") == "images/Regression.png");
             assert(editor.getDraft().property("main", "image_mode") == "fill");
             assert(editor.getDraft().property("main", "image_opacity") == "55");
+            assert(editor.getDraft().property("main", "image_scope") == "panels");
             assert(editor.getDraft().property("list", "foreground") == "#123456");
             FXButton* resetElement = findButton(&editor, "Reset this element");
             assert(resetElement);
@@ -696,6 +714,7 @@ public:
             assert(!editor.getDraft().overrides("main", "background_image"));
             assert(!editor.getDraft().overrides("main", "image_mode"));
             assert(!editor.getDraft().overrides("main", "image_opacity"));
+            assert(!editor.getDraft().overrides("main", "image_scope"));
             assert(editor.getDraft().property("list", "foreground") == "#123456");
             editor.original = savedOriginal;
             editor.applied = savedApplied;
@@ -2204,7 +2223,17 @@ public:
         assert(!decodedImages.decodeProperties("list.image_mode=stretch", imageError));
         assert(!decodedImages.decodeProperties("menus.background_image=Photo.png", imageError));
         assert(!decodedImages.decodeProperties("main.image_opacity=101", imageError));
+        assert(!decodedImages.decodeProperties("main.image_scope=desktop", imageError));
         assert(decodedImages.decodeProperties("main.image_opacity=40", imageError));
+        assert(decodedImages.decodeProperties("main.image_scope=files", imageError));
+        assert(decodedImages.property("main", "image_scope") == "files");
+        assert(decodedImages.encodeProperties().contains("main.image_scope=files"));
+        for (const char* scopeName : {"window", "panels"})
+        {
+            Theme scoped;
+            assert(scoped.decodeProperties(FXString("main.image_scope=") + scopeName, imageError));
+            assert(scoped.property("main", "image_scope") == scopeName);
+        }
         assert(decodedImages.decodeProperties("tree.background_image=" + imageReference +
                                               "&tree.image_mode=tile&tabs.background_image=" + checkerReference,
                                               imageError));
@@ -2231,8 +2260,9 @@ public:
             assert(help);
             checkManual(app, help->getTarget(), help->getSelector(), help, true);
             FXListBox* placement = findListBoxWithItem(dialog, "Fill (crop to cover)");
+            FXListBox* scope = findListBoxWithItem(dialog, "All panels");
             FXIconList* gallery = static_cast<FXIconList*>(findClass(dialog, "ThemeGallery"));
-            assert(placement && gallery && findLabel(dialog, "Images"));
+            assert(placement && scope && gallery && findLabel(dialog, "Images"));
             assert(gallery->findItem("No image") > gallery->findItem("Photographs") && gallery->findItem("Photographs") >= 0);
             screenshot(dialog, "background-image-folders");
             activateItem(gallery, "Photographs");
@@ -2257,6 +2287,17 @@ public:
             pump(app);
             assert(editor.getDraft().property("main", "background_image") == imageReference);
             assert(editor.getDraft().property("main", "image_mode") == "fill");
+            scope->setCurrentItem(1);
+            scope->getTarget()->handle(scope, FXSEL(SEL_COMMAND, scope->getSelector()), NULL);
+            assert(editor.getDraft().property("main", "image_scope") == "files");
+            scope->setCurrentItem(2);
+            scope->getTarget()->handle(scope, FXSEL(SEL_COMMAND, scope->getSelector()), NULL);
+            assert(editor.getDraft().property("main", "image_scope") == "panels");
+            scope->setCurrentItem(0);
+            scope->getTarget()->handle(scope, FXSEL(SEL_COMMAND, scope->getSelector()), NULL);
+            assert(editor.getDraft().property("main", "image_scope").empty());
+            scope->setCurrentItem(2);
+            scope->getTarget()->handle(scope, FXSEL(SEL_COMMAND, scope->getSelector()), NULL);
             FXSpinner* opacity = dynamic_cast<FXSpinner*>(findClass(dialog, "FXSpinner"));
             assert(opacity && opacity->getValue() == 100);
             opacity->setValue(40);
@@ -2532,6 +2573,29 @@ public:
                 window.resize(oldWidth, oldHeight);
                 pump(app);
                 puts("PASS: scrolled file lists and trees repaint the fixed background image");
+
+                FXColor leftPixel, rightPixel, treePixel, sidebarPixel, toolbarPixel;
+                gridTheme.setProperty("main", "image_mode", "fill");
+                gridTheme.setProperty("main", "image_scope", "files");
+                window.applyTheme(gridTheme);
+                pump(app);
+                assert(sampleBackground(leftList, leftPixel) && sampleBackground(rightList, rightPixel));
+                assert(leftPixel != rightPixel);
+                assert(!sampleBackground(tree, treePixel) && !sampleBackground(sidebar, sidebarPixel) &&
+                       !sampleBackground(toolbar, toolbarPixel));
+
+                gridTheme.setProperty("main", "image_scope", "panels");
+                window.applyTheme(gridTheme);
+                pump(app);
+                assert(sampleBackground(leftList, leftPixel) && sampleBackground(rightList, rightPixel));
+                assert(sampleBackground(tree, treePixel) && sampleBackground(sidebar, sidebarPixel));
+                assert(!sampleBackground(toolbar, toolbarPixel));
+
+                gridTheme.setProperty("main", "image_scope", "");
+                window.applyTheme(gridTheme);
+                pump(app);
+                assert(sampleBackground(toolbar, toolbarPixel));
+                puts("PASS: background image scopes cover the selected panels with one shared image");
             }
             rampTheme.setProperty("main", "background_image", imageReference);
             rampTheme.setProperty("main", "image_opacity", "50");
@@ -2616,6 +2680,7 @@ public:
             assert(editor.getDraft().property("main", "background_image").empty());
             assert(editor.getDraft().property("main", "image_mode").empty());
             assert(editor.getDraft().property("main", "image_opacity").empty());
+            assert(editor.getDraft().property("main", "image_scope").empty());
             dialog->hide();
             pump(app);
             assert(!windowShowsPixel(findClass(&editor, "ThemeMockup"), rose));

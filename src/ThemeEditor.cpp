@@ -143,6 +143,31 @@ std::vector<FXString> supportedProperties(const FXString& area)
     return result;
 }
 
+static FXbool isWithin(const FXWindow* ancestor, const FXWindow* window)
+{
+    for (const FXWindow* current = window; current; current = current->getParent())
+        if (current == ancestor) return true;
+    return false;
+}
+
+static void includeRegion(FXRectangle& bounds, FXWindow* root, FXWindow* window)
+{
+    if (!window || !window->shown() || window->getWidth() <= 0 || window->getHeight() <= 0) return;
+    FXint x, y;
+    window->translateCoordinatesTo(x, y, root, 0, 0);
+    FXRectangle rectangle(x, y, window->getWidth(), window->getHeight());
+    if (bounds.w <= 0 || bounds.h <= 0) bounds = rectangle;
+    else
+    {
+        FXint right = FXMAX(bounds.x + bounds.w, rectangle.x + rectangle.w);
+        FXint bottom = FXMAX(bounds.y + bounds.h, rectangle.y + rectangle.h);
+        bounds.x = FXMIN(bounds.x, rectangle.x);
+        bounds.y = FXMIN(bounds.y, rectangle.y);
+        bounds.w = right - bounds.x;
+        bounds.h = bottom - bounds.y;
+    }
+}
+
 FXString plainLabel(FXString text)
 {
     text = text.before('\t');
@@ -1081,6 +1106,8 @@ class ThemeMockup : public FXCanvas
         FXbool sensitive = false;
         FXbool vertical = false;
         FXbool paintImage = false;
+        FXbool inFilePanel = false;
+        FXbool inAnyPanel = false;
         FXint thumbPosition = 0, thumbSize = 0;
         std::vector<Row> rows;
         IconList* list = NULL;
@@ -1094,6 +1121,8 @@ class ThemeMockup : public FXCanvas
     std::map<FXString, FXFont*> fonts;
     BackgroundOverlay imageOverlay;
     FXString overlayKey;
+    XFileExplorer* sourceWindow = NULL;
+    FXRectangle fileImageRegion, panelImageRegion;
     std::unique_ptr<FXMainWindow> holder;
     FXImage* image = NULL;
     Theme theme;
@@ -1137,6 +1166,20 @@ class ThemeMockup : public FXCanvas
             result->create();
         }
         return result;
+    }
+
+    FXbool imageScopeAllows(const Node& node) const
+    {
+        FXString scope = theme.property("main", "image_scope");
+        return scope == "files" ? node.inFilePanel : scope == "panels" ? node.inAnyPanel : true;
+    }
+
+    FXRectangle imageRegion() const
+    {
+        FXString scope = theme.property("main", "image_scope");
+        if (scope == "files" && fileImageRegion.w > 0) return fileImageRegion;
+        if (scope == "panels" && panelImageRegion.w > 0) return panelImageRegion;
+        return FXRectangle(0, 0, sourceWidth, sourceHeight);
     }
 
     void captureList(IconList* source, Node& node)
@@ -1239,6 +1282,9 @@ class ThemeMockup : public FXCanvas
                           (dynamic_cast<FXLabel*>(window) && (!dynamic_cast<FXButton*>(window) ||
                            (static_cast<FXButton*>(window)->getButtonStyle() & BUTTON_TOOLBAR))) ||
                           (FXString(window->getClassName()) == "FXFrame");
+        node.inFilePanel = isWithin(sourceWindow->getLeftPanel(), window) ||
+                          isWithin(sourceWindow->getRightPanel(), window);
+        node.inAnyPanel = node.inFilePanel || isWithin(sourceWindow->getDirPanel(), window);
         for (FXWindow* owner = window; owner && node.paintImage; owner = owner->getParent())
             if (BackgroundImageOwner* imageOwner = dynamic_cast<BackgroundImageOwner*>(owner))
                 node.paintImage = imageOwner->allowsBackgroundImage(window);
@@ -1343,7 +1389,7 @@ class ThemeMockup : public FXCanvas
         list->setSelTextColor(theme.colorFor("list", "selection_foreground"));
         if (list->backgroundEffect != theme.effect || list->effectAssetRoot != theme.assetRoot)
             list->setBackgroundEffect(theme.effect, theme.assetRoot);
-        list->previewOverlay = imageOverlay.pixels.empty() ? NULL : &imageOverlay;
+        list->previewOverlay = imageOverlay.pixels.empty() || !imageScopeAllows(node) ? NULL : &imageOverlay;
         list->previewOverlayX = node.rectangle.x;
         list->previewOverlayY = node.rectangle.y;
         list->clearBackgroundEffect();
@@ -1383,8 +1429,12 @@ class ThemeMockup : public FXCanvas
     {
         FXString reference = theme.property("main", "background_image");
         FXString mode = theme.property("main", "image_mode");
+        FXRectangle region = imageRegion();
         FXint opacity = backgroundImageOpacity(theme.property("main", "image_opacity"));
-        FXString key = reference + "|" + mode + "|" + FXStringVal(opacity) + "|" + theme.assetRoot + "|" +
+        FXString key = reference + "|" + mode + "|" + theme.property("main", "image_scope") + "|" +
+                       FXStringVal(region.x) + "," + FXStringVal(region.y) + "," +
+                       FXStringVal(region.w) + "," + FXStringVal(region.h) + "|" +
+                       FXStringVal(opacity) + "|" + theme.assetRoot + "|" +
                        FXStringVal(sourceWidth) + "x" + FXStringVal(sourceHeight);
         if (key == overlayKey) return;
         overlayKey = key;
@@ -1399,7 +1449,8 @@ class ThemeMockup : public FXCanvas
                    (error.empty() ? _("Image was not found in the theme or its library.") : error));
             return;
         }
-        imageOverlay.render(*source, sourceWidth, sourceHeight, mode.empty() ? FXString("fit") : mode, opacity);
+        imageOverlay.render(*source, sourceWidth, sourceHeight, mode.empty() ? FXString("fit") : mode, opacity,
+                            region.x, region.y, region.w, region.h);
     }
 
     void rebuild()
@@ -1428,7 +1479,8 @@ class ThemeMockup : public FXCanvas
                 dc.setClipRectangle(r);
                 dc.setForeground(background);
                 dc.fillRectangle(r.x, r.y, r.w, r.h);
-                if (node.paintImage && !node.selected && !imageOverlay.pixels.empty() && r.w > 0 && r.h > 0)
+                if (node.paintImage && imageScopeAllows(node) && !node.selected &&
+                    !imageOverlay.pixels.empty() && r.w > 0 && r.h > 0)
                 {
                     FXColor* pixels = NULL;
                     if (!FXMALLOC(&pixels, FXColor, static_cast<size_t>(r.w) * r.h))
@@ -1570,11 +1622,15 @@ class ThemeMockup : public FXCanvas
 
 public:
     ThemeMockup(FXComposite* parent, XFileExplorer* source, ThemeEditor* target) :
-        FXCanvas(parent, NULL, 0, FRAME_SUNKEN | FRAME_THICK), editor(target)
+        FXCanvas(parent, NULL, 0, FRAME_SUNKEN | FRAME_THICK), sourceWindow(source), editor(target)
     {
         holder.reset(new FXMainWindow(getApp(), "Theme preview resources", NULL, NULL, DECOR_NONE));
         sourceWidth = FXMAX(1, source->getWidth());
         sourceHeight = FXMAX(1, source->getHeight());
+        includeRegion(fileImageRegion, source, source->getLeftPanel());
+        includeRegion(fileImageRegion, source, source->getRightPanel());
+        panelImageRegion = fileImageRegion;
+        includeRegion(panelImageRegion, source, source->getDirPanel());
         capture(source, source, "main");
         setDefaultCursor(getApp()->getDefaultCursor(DEF_CROSSHAIR_CURSOR));
     }
@@ -1720,7 +1776,8 @@ public:
                 for (const Node& node : nodes)
                 {
                     const FXRectangle& r = node.rectangle;
-                    if (node.area != area || !node.paintImage || node.selected || r.w <= 0 || r.h <= 0) continue;
+                    if (node.area != area || !node.paintImage || !imageScopeAllows(node) ||
+                        node.selected || r.w <= 0 || r.h <= 0) continue;
                     std::vector<FXColor> pixels(static_cast<size_t>(r.w) * r.h, base);
                     imageOverlay.blend(pixels.data(), r.w, r.h, r.x, r.y);
                     for (FXColor pixel : pixels) luminances.push_back(themeLuminance(pixel));
@@ -2748,6 +2805,7 @@ class BackgroundImageEditor : public DialogBox
     FXButton* up = NULL;
     FXLabel* location = NULL;
     FXListBox* placement = NULL;
+    FXListBox* scope = NULL;
     FXSpinner* opacity = NULL;
     FXTextField* targetCategory = NULL;
     ThemeGallery* gallery = NULL;
@@ -2763,7 +2821,9 @@ class BackgroundImageEditor : public DialogBox
 
     void changed()
     {
-        editor->previewImage(reference, mode(), opacity->getValue());
+        editor->previewImage(reference, mode(), opacity->getValue(),
+                             scope->getCurrentItem() == 1 ? "files" :
+                             scope->getCurrentItem() == 2 ? "panels" : "window");
     }
 
     void collect(const FXString& root, const FXString& parent, std::map<FXString, FXString>& entries,
@@ -2871,7 +2931,7 @@ class BackgroundImageEditor : public DialogBox
     }
 
 public:
-    enum { ID_SELECT = DialogBox::ID_LAST, ID_PLACEMENT, ID_UP, ID_IMPORT, ID_IMPORT_FOLDER, ID_REFRESH };
+    enum { ID_SELECT = DialogBox::ID_LAST, ID_PLACEMENT, ID_SCOPE, ID_UP, ID_IMPORT, ID_IMPORT_FOLDER, ID_REFRESH };
     BackgroundImageEditor(ThemeEditor* owner, const FXString& selectedArea) :
         DialogBox(owner, _("Background image"), DECOR_ALL, 0, 0, 720, 600),
         editor(owner), area(selectedArea), reference(owner->getDraft().property(selectedArea, "background_image"))
@@ -2897,6 +2957,15 @@ public:
         placement->setNumVisible(3);
         FXString currentMode = owner->getDraft().property(area, "image_mode");
         placement->setCurrentItem(currentMode == "fill" ? 1 : currentMode == "tile" ? 2 : 0);
+        new FXLabel(controls, _("Area:"));
+        scope = new FXListBox(controls, this, ID_SCOPE, FRAME_SUNKEN | FRAME_THICK);
+        scope->appendItem(_("Whole UI"));
+        scope->appendItem(_("File panels"));
+        scope->appendItem(_("All panels"));
+        scope->setNumVisible(3);
+        FXString currentScope = owner->getDraft().property(area, "image_scope");
+        scope->setCurrentItem(currentScope == "files" ? 1 : currentScope == "panels" ? 2 : 0);
+        scope->setTipText(_("Fit or Fill scales one image across the selected area; Tile repeats at original size."));
         new FXLabel(controls, _("Opacity %:"));
         opacity = new FXSpinner(controls, 3, this, ID_PLACEMENT, FRAME_SUNKEN | FRAME_THICK);
         opacity->setRange(5, 100);
@@ -3043,6 +3112,7 @@ public:
 FXDEFMAP(BackgroundImageEditor) BackgroundImageEditorMap[] = {
     FXMAPFUNC(SEL_COMMAND, BackgroundImageEditor::ID_SELECT, BackgroundImageEditor::onSelect),
     FXMAPFUNC(SEL_COMMAND, BackgroundImageEditor::ID_PLACEMENT, BackgroundImageEditor::onPlacement),
+    FXMAPFUNC(SEL_COMMAND, BackgroundImageEditor::ID_SCOPE, BackgroundImageEditor::onPlacement),
     FXMAPFUNCS(SEL_COMMAND, BackgroundImageEditor::ID_UP, BackgroundImageEditor::ID_REFRESH, BackgroundImageEditor::onFiles)
 };
 FXIMPLEMENT(BackgroundImageEditor, DialogBox, BackgroundImageEditorMap, ARRAYNUMBER(BackgroundImageEditorMap))
@@ -3397,7 +3467,10 @@ long ThemeEditor::onProperty(FXObject*, FXSelector, void*)
         {
             BackgroundEffect::textureRelativePath(reference, relative);
             FXString mode = draft.property(area, "image_mode");
-            description = relative + " (" + (mode.empty() ? FXString("fit") : mode) + ", " +
+            FXString scope = draft.property(area, "image_scope");
+            FXString scopeName = scope == "files" ? _("File panels") :
+                                scope == "panels" ? _("All panels") : _("Whole UI");
+            description = relative + " (" + (mode.empty() ? FXString("fit") : mode) + ", " + scopeName + ", " +
                           FXStringVal(backgroundImageOpacity(draft.property(area, "image_opacity"))) + "%)";
         }
     }
@@ -3546,11 +3619,13 @@ void ThemeEditor::previewEffect(const FXString& spec, FXbool stopEdit, const FXS
     refreshPreview();
 }
 
-void ThemeEditor::previewImage(const FXString& reference, const FXString& mode, FXint opacity)
+void ThemeEditor::previewImage(const FXString& reference, const FXString& mode, FXint opacity,
+                               const FXString& scope)
 {
     draft.setProperty("main", "background_image", reference);
     draft.setProperty("main", "image_mode", reference.empty() ? FXString::null : mode);
     draft.setProperty("main", "image_opacity", reference.empty() || opacity >= 100 ? FXString::null : FXStringVal(opacity));
+    draft.setProperty("main", "image_scope", reference.empty() || scope == "window" ? FXString::null : scope);
     refreshPreview();
 }
 
@@ -3624,6 +3699,7 @@ long ThemeEditor::onReset(FXObject*, FXSelector selector, void*)
             {
                 draft.setProperty(area, "image_mode", original.property(area, "image_mode"));
                 draft.setProperty(area, "image_opacity", original.property(area, "image_opacity"));
+                draft.setProperty(area, "image_scope", original.property(area, "image_scope"));
             }
         }
     }

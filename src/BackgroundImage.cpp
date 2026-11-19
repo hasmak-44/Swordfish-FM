@@ -146,14 +146,70 @@ FXColor sampleImage(const FXImage& image, double x, double y, double opacity)
 struct WindowLayer
 {
     FXWindow* anchor = NULL;
-    FXString reference, mode, root;
+    FXWindow* leftPanel = NULL;
+    FXWindow* rightPanel = NULL;
+    FXWindow* directoryPanel = NULL;
+    FXString reference, mode, root, scope;
     FXint opacity = 100;
+    FXRectangle region;
     std::unique_ptr<FXImage> source;
     BackgroundOverlay overlay;
     FXbool failed = false;
     FXuint serial = 1;
     std::map<const FXWindow*, std::pair<FXint, FXint>> origins;
 } windowLayer;
+
+FXbool containsWindow(const FXWindow* ancestor, const FXWindow* target)
+{
+    for (const FXWindow* window = target; window; window = window->getParent())
+        if (window == ancestor) return true;
+    return false;
+}
+
+FXRectangle windowRectangle(FXWindow* anchor, FXWindow* window)
+{
+    if (!window || !window->shown() || window->getWidth() <= 0 || window->getHeight() <= 0)
+        return FXRectangle(0, 0, 0, 0);
+    FXint x, y;
+    window->translateCoordinatesTo(x, y, anchor, 0, 0);
+    return FXRectangle(x, y, window->getWidth(), window->getHeight());
+}
+
+void includeRectangle(FXRectangle& bounds, const FXRectangle& rectangle)
+{
+    if (rectangle.w <= 0 || rectangle.h <= 0) return;
+    if (bounds.w <= 0 || bounds.h <= 0)
+    {
+        bounds = rectangle;
+        return;
+    }
+    FXint right = FXMAX(bounds.x + bounds.w, rectangle.x + rectangle.w);
+    FXint bottom = FXMAX(bounds.y + bounds.h, rectangle.y + rectangle.h);
+    bounds.x = FXMIN(bounds.x, rectangle.x);
+    bounds.y = FXMIN(bounds.y, rectangle.y);
+    bounds.w = right - bounds.x;
+    bounds.h = bottom - bounds.y;
+}
+
+FXRectangle backgroundRegion(FXWindow* anchor)
+{
+    if (windowLayer.scope != "files" && windowLayer.scope != "panels")
+        return FXRectangle(0, 0, FXMAX(1, anchor->getWidth()), FXMAX(1, anchor->getHeight()));
+    FXRectangle bounds(0, 0, 0, 0);
+    includeRectangle(bounds, windowRectangle(anchor, windowLayer.leftPanel));
+    includeRectangle(bounds, windowRectangle(anchor, windowLayer.rightPanel));
+    if (windowLayer.scope == "panels")
+        includeRectangle(bounds, windowRectangle(anchor, windowLayer.directoryPanel));
+    return bounds;
+}
+
+FXbool targetInScope(const FXWindow* target)
+{
+    if (windowLayer.scope != "files" && windowLayer.scope != "panels") return true;
+    if (containsWindow(windowLayer.leftPanel, target) || containsWindow(windowLayer.rightPanel, target))
+        return true;
+    return windowLayer.scope == "panels" && containsWindow(windowLayer.directoryPanel, target);
+}
 
 void refreshDescendants(FXWindow* window)
 {
@@ -248,7 +304,8 @@ void BackgroundImage::composite(FXColor* pixels, FXint width, FXint height, cons
     overlay.blend(pixels, width, height, 0, 0);
 }
 
-void BackgroundOverlay::render(const FXImage& source, FXint w, FXint h, const FXString& mode, FXint percent)
+void BackgroundOverlay::render(const FXImage& source, FXint w, FXint h, const FXString& mode, FXint percent,
+                                FXint regionX, FXint regionY, FXint regionWidth, FXint regionHeight)
 {
     pixels.clear();
     width = height = 0;
@@ -256,25 +313,31 @@ void BackgroundOverlay::render(const FXImage& source, FXint w, FXint h, const FX
     width = w;
     height = h;
     pixels.assign(static_cast<size_t>(w) * h, 0);
+    regionWidth = regionWidth < 0 ? w : regionWidth;
+    regionHeight = regionHeight < 0 ? h : regionHeight;
+    FXint x0 = FXMAX(0, regionX), y0 = FXMAX(0, regionY);
+    FXint x1 = FXMIN(w, regionX + regionWidth), y1 = FXMIN(h, regionY + regionHeight);
+    if (x1 <= x0 || y1 <= y0) return;
     const double opacity = FXCLAMP(0, percent, 100) / 100.0;
     if (mode == "tile")
     {
-        for (FXint y = 0; y < h; ++y)
-            for (FXint x = 0; x < w; ++x)
+        for (FXint y = y0; y < y1; ++y)
+            for (FXint x = x0; x < x1; ++x)
             {
-                FXColor color = source.getPixel(x % source.getWidth(), y % source.getHeight());
+                FXColor color = source.getPixel((x - regionX) % source.getWidth(),
+                                                (y - regionY) % source.getHeight());
                 pixels[static_cast<size_t>(y) * w + x] = FXRGBA(FXREDVAL(color), FXGREENVAL(color), FXBLUEVAL(color),
                     static_cast<FXint>(FXALPHAVAL(color) * opacity + 0.5));
             }
         return;
     }
-    double sx = w / static_cast<double>(source.getWidth());
-    double sy = h / static_cast<double>(source.getHeight());
+    double sx = regionWidth / static_cast<double>(source.getWidth());
+    double sy = regionHeight / static_cast<double>(source.getHeight());
     double scale = mode == "fill" ? FXMAX(sx, sy) : FXMIN(sx, sy);
-    double left = (w - source.getWidth() * scale) / 2.0;
-    double top = (h - source.getHeight() * scale) / 2.0;
-    for (FXint y = 0; y < h; ++y)
-        for (FXint x = 0; x < w; ++x)
+    double left = regionX + (regionWidth - source.getWidth() * scale) / 2.0;
+    double top = regionY + (regionHeight - source.getHeight() * scale) / 2.0;
+    for (FXint y = y0; y < y1; ++y)
+        for (FXint x = x0; x < x1; ++x)
         {
             double px = x + 0.5, py = y + 0.5;
             if (px < left || py < top || px >= left + source.getWidth() * scale ||
@@ -320,20 +383,28 @@ FXint backgroundImageOpacity(const FXString& value)
 }
 
 void setWindowBackground(FXWindow* anchor, const FXString& reference, const FXString& placement,
-                         FXint opacity, const FXString& root)
+                         FXint opacity, const FXString& root, const FXString& scope,
+                         FXWindow* leftPanel, FXWindow* rightPanel, FXWindow* directoryPanel)
 {
     WindowLayer& layer = windowLayer;
     FXString mode = placement.empty() ? FXString("fit") : placement;
     if (layer.anchor == anchor && layer.reference == reference && layer.mode == mode &&
-        layer.opacity == opacity && layer.root == root) return;
+        layer.opacity == opacity && layer.root == root && layer.scope == scope &&
+        layer.leftPanel == leftPanel && layer.rightPanel == rightPanel &&
+        layer.directoryPanel == directoryPanel) return;
     if (layer.reference != reference || layer.root != root) layer.source.reset();
     layer.anchor = anchor;
     layer.reference = reference;
     layer.mode = mode;
     layer.opacity = opacity;
     layer.root = root;
+    layer.scope = scope;
+    layer.leftPanel = leftPanel;
+    layer.rightPanel = rightPanel;
+    layer.directoryPanel = directoryPanel;
     layer.overlay = BackgroundOverlay();
     layer.failed = false;
+    layer.region = FXRectangle(0, 0, 0, 0);
     layer.origins.clear();
     ++layer.serial;
 }
@@ -342,7 +413,8 @@ const BackgroundOverlay* windowBackground(const FXWindow* target, FXint& x, FXin
 {
     WindowLayer& layer = windowLayer;
     x = y = 0;
-    if (!layer.anchor || layer.reference.empty() || layer.failed || layer.opacity <= 0) return NULL;
+    if (!layer.anchor || layer.reference.empty() || layer.failed || layer.opacity <= 0 || !targetInScope(target))
+        return NULL;
     // Child window positions are client-side, which avoids a server round trip on every paint
     const FXWindow* window = target;
     for (; window && window != layer.anchor; window = window->getParent())
@@ -352,7 +424,11 @@ const BackgroundOverlay* windowBackground(const FXWindow* target, FXint& x, FXin
     }
     if (!window) return NULL;
     FXint width = FXMAX(1, layer.anchor->getWidth()), height = FXMAX(1, layer.anchor->getHeight());
-    if (layer.overlay.width != width || layer.overlay.height != height)
+    FXRectangle region = backgroundRegion(layer.anchor);
+    if (region.w <= 0 || region.h <= 0) return NULL;
+    if (layer.overlay.width != width || layer.overlay.height != height ||
+        layer.region.x != region.x || layer.region.y != region.y ||
+        layer.region.w != region.w || layer.region.h != region.h)
     {
         std::unique_ptr<FXImage> loaded;
         FXImage* source = layer.source.get();
@@ -370,7 +446,9 @@ const BackgroundOverlay* windowBackground(const FXWindow* target, FXint& x, FXin
             source = loaded.get();
         }
         FXbool resized = !layer.overlay.pixels.empty();
-        layer.overlay.render(*source, width, height, layer.mode, layer.opacity);
+        layer.overlay.render(*source, width, height, layer.mode, layer.opacity,
+                             region.x, region.y, region.w, region.h);
+        layer.region = region;
         // Large originals are decoded again on the next window resize instead of being kept in memory
         if (loaded && static_cast<FXlong>(loaded->getWidth()) * loaded->getHeight() <= 16 * 1024 * 1024)
             layer.source = std::move(loaded);

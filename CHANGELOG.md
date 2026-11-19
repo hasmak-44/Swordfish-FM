@@ -29,10 +29,11 @@
   work. Pattern and texture gallery thumbnails show each PNG in its true
   colours.
 - A PNG or JPEG background image can be fitted, cropped to fill or tiled
-  across the whole main window, as if the window were transparent over a
-  desktop picture, with adjustable opacity. Older themes with per-area images
-  use their first image for the window. The editor previews images without
-  changing the live window until Save.
+  across the whole main window, the file panels, or all panels, as if the
+  selected area were transparent over a desktop picture, with adjustable
+  opacity. One image spans the selected panels; older themes with per-area
+  images still use their first image for the whole window. The editor previews
+  images without changing the live window until Save.
 - 21 additional categorized textures and 21 pattern images are bundled from
   CC0 Poly Haven assets, with source and author credits included.
 - Custom themes are saved in per-theme folders under
