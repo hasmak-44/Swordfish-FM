@@ -46,6 +46,9 @@
   texture in its own colours instead of tinting it with the theme colour.
 
 ### Changed
+- The custom-action icon chooser shows every matching icon on one scrollable
+  page instead of 40-icon pages with Previous/Next. Icons decode lazily as
+  they scroll into view; the filter field has a search icon.
 - USB phone mounts wait for the phone to be unlocked and access allowed, with
   automatic opening when the GVFS folder becomes available. Cancel stops
   retries and attempts to undo a late successful mount; a warning is shown if

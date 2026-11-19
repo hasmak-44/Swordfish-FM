@@ -180,19 +180,18 @@ public:
 
 class ActionIconChooser : public FXDialogBox
 {
-    enum { SEARCH = FXDialogBox::ID_LAST, MODE, PREVIOUS, NEXT, LOAD, SELECT, ACCEPT };
-    enum { PAGE_SIZE = 40 };
+    enum { SEARCH = FXDialogBox::ID_LAST, MODE, LOAD, SELECT, ACCEPT };
+    enum { LOAD_BATCH = 24 };
     enum { ALL_ICONS, FIRST_CATEGORY, IMAGE_FILES = FIRST_CATEGORY + SystemActionIcon::UNCATEGORIZED + 1,
            NO_ICON };
     const std::vector<SystemActionIcon>& catalog;
     std::vector<unsigned> matches;
     std::vector<FXIcon*> images;
+    std::vector<bool> loaded;
     FXTextField* search;
     FXComboBox* mode;
     FXIconList* list;
     FXLabel* status;
-    FXButton *previous, *next;
-    unsigned page = 0, loading = 0;
     FXString selection;
     int lastMode = ALL_ICONS;
 
@@ -202,24 +201,39 @@ class ActionIconChooser : public FXDialogBox
         list->clearItems();
         for (size_t i = 0; i < images.size(); ++i) { delete images[i]; }
         images.clear();
+        loaded.clear();
     }
     void populate()
     {
         clearImages();
-        unsigned end = FXMIN((unsigned)matches.size(), page + PAGE_SIZE);
-        for (unsigned i = page; i < end; ++i)
+        int current = -1;
+        for (unsigned i = 0; i < matches.size(); ++i)
         {
             const SystemActionIcon& item = catalog[matches[i]];
             list->appendItem(item.name, minirunicon, minirunicon);
-            if (selection == "theme:" + item.name) { list->setCurrentItem(i - page); list->selectItem(i - page); }
+            if (selection == "theme:" + item.name) { current = i; }
         }
-        images.resize(end - page, NULL);
+        images.resize(matches.size(), NULL);
+        loaded.resize(matches.size(), false);
+        if (current >= 0) { list->setCurrentItem(current); list->selectItem(current); list->makeItemVisible(current); }
         status->setText(matches.empty() ? _("No matching icons") :
-            FXStringVal((FXint)page + 1) + "–" + FXStringVal((FXint)end) + " / " + FXStringVal((FXint)matches.size()));
-        if (page > 0) { previous->enable(); } else { previous->disable(); }
-        if (end < matches.size()) { next->enable(); } else { next->disable(); }
-        loading = 0;
-        if (end > page) { getApp()->addTimeout(this, LOAD, 10); }
+            matches.size() == 1 ? FXString(_("1 icon")) :
+            FXStringFormat(_("%u icons"), (unsigned)matches.size()));
+        if (!matches.empty()) { getApp()->addTimeout(this, LOAD, 10); }
+    }
+    // Images are decoded only once their item scrolls into view, so large themes open quickly.
+    void loadVisible()
+    {
+        unsigned count = 0, remaining = 0;
+        for (unsigned row = 0; row < loaded.size(); ++row)
+        {
+            if (loaded[row]) { continue; }
+            if (count >= LOAD_BATCH || !list->isItemVisible(row)) { ++remaining; continue; }
+            loaded[row] = true; ++count;
+            images[row] = loadActionIcon(getApp(), catalog[matches[row]].path, 48);
+            if (images[row]) { list->setItemBigIcon(row, images[row]); }
+        }
+        if (remaining) { getApp()->addTimeout(this, LOAD, count ? 1 : 100); }
     }
     void filter()
     {
@@ -230,7 +244,7 @@ class ActionIconChooser : public FXDialogBox
             if ((category == ALL_ICONS || category == FIRST_CATEGORY + catalog[i].category) &&
                 (query.empty() || FXString(catalog[i].name).lower().find(query) >= 0))
                 matches.push_back(i);
-        page = 0; populate();
+        populate();
     }
     bool valid(const FXString& value)
     {
@@ -269,16 +283,16 @@ public:
         for (unsigned i = 0; i < ARRAYNUMBER(categories); ++i) { mode->appendItem(_(categories[i])); }
         mode->appendItem(_("Image Files")); mode->appendItem(_("No Icon"));
         mode->setNumVisible(15); mode->setCurrentItem(ALL_ICONS);
-        new FXLabel(body, _("Search installed host icons:"), NULL, JUSTIFY_LEFT);
-        search = new FXTextField(body, 35, this, SEARCH, TEXTFIELD_NORMAL | LAYOUT_FILL_X);
+        new FXLabel(body, _("Filter installed host icons:"), NULL, JUSTIFY_LEFT);
+        FXHorizontalFrame* filterRow = new FXHorizontalFrame(body, LAYOUT_FILL_X, 0, 0, 0, 0, 0, 0, 0, 0);
+        new FXLabel(filterRow, FXString::null, minisearchicon, LAYOUT_CENTER_Y);
+        search = new FXTextField(filterRow, 35, this, SEARCH, TEXTFIELD_NORMAL | LAYOUT_FILL_X | LAYOUT_CENTER_Y);
+        search->setTipText(_("Show only icons whose name contains this text"));
         list = new FXIconList(body, this, SELECT,
             ICONLIST_BROWSESELECT | ICONLIST_BIG_ICONS | ICONLIST_COLUMNS |
             LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_SUNKEN);
         list->setItemSpace(120);
-        FXHorizontalFrame* pages = new FXHorizontalFrame(body, LAYOUT_FILL_X);
-        previous = new FXButton(pages, _("Previous"), NULL, this, PREVIOUS, BUTTON_NORMAL);
-        next = new FXButton(pages, _("Next"), NULL, this, NEXT, BUTTON_NORMAL);
-        status = new FXLabel(pages, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        status = new FXLabel(body, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
         const char* portable = getenv("SWORDFISH_PORTABLE_DATA");
         new FXLabel(body, portable && *portable ?
                     _("System icons are stored by name and follow the host theme.\n"
@@ -296,17 +310,7 @@ public:
     {
         FXuint id = FXSELID(sel), type = FXSELTYPE(sel);
         if ((type == SEL_CHANGED || type == SEL_COMMAND) && id == SEARCH) { filter(); return 1; }
-        if (type == SEL_TIMEOUT && id == LOAD)
-        {
-            if (loading < images.size())
-            {
-                unsigned row = loading++;
-                images[row] = loadActionIcon(getApp(), catalog[matches[page + row]].path, 48);
-                if (images[row]) { list->setItemBigIcon(row, images[row]); }
-                if (loading < images.size()) { getApp()->addTimeout(this, LOAD, 10); }
-            }
-            return 1;
-        }
+        if (type == SEL_TIMEOUT && id == LOAD) { loadVisible(); return 1; }
         if (type == SEL_DOUBLECLICKED && id == SELECT)
             return handle(sender, FXSEL(SEL_COMMAND, ACCEPT), ptr);
         if (type != SEL_COMMAND) { return FXDialogBox::handle(sender, sel, ptr); }
@@ -316,7 +320,7 @@ public:
             if (mode->getCurrentItem() == IMAGE_FILES) { browseImage(); return 1; }
             if (mode->getCurrentItem() == NO_ICON)
             {
-                list->disable(); search->disable(); previous->disable(); next->disable();
+                list->disable(); search->disable();
             }
             else
             {
@@ -324,15 +328,13 @@ public:
             }
             lastMode = mode->getCurrentItem();
             return 1;
-        case PREVIOUS: if (page >= PAGE_SIZE) { page -= PAGE_SIZE; populate(); } return 1;
-        case NEXT: if (page + PAGE_SIZE < matches.size()) { page += PAGE_SIZE; populate(); } return 1;
         case ACCEPT:
             if (mode->getCurrentItem() == NO_ICON) { selection.clear(); }
             else
             {
                 int row = list->getCurrentItem();
-                if (row < 0 || page + row >= matches.size()) { return 1; }
-                FXString value = "theme:" + catalog[matches[page + row]].name;
+                if (row < 0 || row >= (int)matches.size()) { return 1; }
+                FXString value = "theme:" + catalog[matches[row]].name;
                 if (!valid(value)) { return 1; }
                 selection = value;
             }

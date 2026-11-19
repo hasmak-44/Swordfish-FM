@@ -3689,6 +3689,17 @@ only skipped folders of its current children, so an action moved out of a group
 was kept, reloading as a duplicate. Save now skips every folder owned by a
 current or removed entry, wherever it now lives.
 
+### 3.110. Icon chooser without pages (19 November 2026)
+
+Feedback: the custom-action icon chooser showed only 40 icons per page. The
+Previous/Next paging was removed; all icons matching the filter are listed in
+one scrollable `FXIconList`. To keep large host themes responsive, icons are
+decoded lazily: a timer loads up to 24 visible, not-yet-loaded items per tick
+(`FXIconList::isItemVisible`), polling every 100 ms for scrolling once idle.
+The filter row shows the mini search icon beside the text field. The Custom
+Actions UI regression checks more than 50 icons on one page, no paging
+buttons, the filter icon, and that scrolling decodes more icons.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

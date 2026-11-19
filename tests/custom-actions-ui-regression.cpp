@@ -320,15 +320,27 @@ public:
         modes[0]->getTarget()->handle(modes[0], FXSEL(SEL_COMMAND, modes[0]->getSelector()), NULL);
         search->setText("swordfish-fixture");
         search->getTarget()->handle(search, FXSEL(SEL_CHANGED, search->getSelector()), NULL);
-        assert(list->getNumItems() == 40);
+        int fixtures = list->getNumItems();
+        assert(fixtures > 50);
+        for (FXButton* button : widgets<FXButton>(chooser))
+            assert(button->getText() != "Next" && button->getText() != "Previous");
+        bool filterIcon = false;
+        for (FXLabel* label : widgets<FXLabel>(chooser))
+            if (label->getParent() == search->getParent() && label->getIcon()) filterIcon = true;
+        assert(filterIcon);
         chooser->resize(600, 540);
         pump(app, 100);
         int narrowRows = list->getNumRows();
+        auto decoded = [&]() { int n = 0; for (int row = 0; row < fixtures; ++row) n += list->getItemBigIcon(row) != minirunicon; return n; };
+        assert(!list->isItemVisible(fixtures - 1));
+        int beforeScroll = decoded();
+        assert(beforeScroll > 0 && beforeScroll < fixtures - 1);
+        list->makeItemVisible(fixtures - 1);
+        pump(app, 400);
+        assert(decoded() > beforeScroll);
         chooser->resize(1100, 700);
         pump(app, 100);
         assert(list->getNumRows() < narrowRows);
-        click(chooser, "Next"); assert(list->getNumItems() > 0 && list->getNumItems() <= 40);
-        click(chooser, "Previous"); assert(list->getNumItems() == 40);
         search->setText("no-such-installed-icon-729103");
         search->getTarget()->handle(search, FXSEL(SEL_CHANGED, search->getSelector()), NULL);
         assert(list->getNumItems() == 0);
@@ -1612,7 +1624,7 @@ int main(int argc, char** argv)
     CustomActions reread;
     assert(reread.loadDirectory(actionsRoot, error, warnings) && reread.items == persisted.items);
     puts("PASS: single command/cwd fields and Browse controls, no preview or mode switch, toolbar option on Appearance Conditions, scrolling legend, Basic/Appearance tabs, icon bounds, toolbar/output flags, Save and disk reload");
-    puts("PASS: maximizable categorized system-icon grid, search/paging/select; normal image chooser with live left preview, invalid-image errors, cancel and No Icon routes");
+    puts("PASS: maximizable categorized system-icon grid, single scrollable page with filter icon, lazy loading on scroll and select; normal image chooser with live left preview, invalid-image errors, cancel and No Icon routes");
     DismissDialog cancelEditor(app, "Custom Actions", "Cancel");
     app.addTimeout(&cancelEditor, 1, 30);
     actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
