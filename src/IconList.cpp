@@ -2001,6 +2001,16 @@ static FXbool validTileHeader(const FXString& path, FXString& error, FXbool patt
     return true;
 }
 
+FXbool BackgroundEffect::validateTextureHeader(const FXString& path, FXString& error)
+{
+    return validTileHeader(path, error, false);
+}
+
+FXbool BackgroundEffect::validatePatternHeader(const FXString& path, FXString& error)
+{
+    return validTileHeader(path, error, true);
+}
+
 static FXbool validateTile(FXApp* app, const FXString& path, FXString& error, FXbool pattern)
 {
     if (!validTileHeader(path, error, pattern)) return false;

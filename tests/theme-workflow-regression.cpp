@@ -92,6 +92,19 @@ static FXButton* findButton(FXWindow* parent, const FXString& text)
     return NULL;
 }
 
+static FXint windowXIn(FXWindow* window, FXWindow* ancestor)
+{
+    FXint x = 0;
+    FXWindow* current = window;
+    while (current && current != ancestor)
+    {
+        x += current->getX();
+        current = current->getParent();
+    }
+    assert(current == ancestor);
+    return x;
+}
+
 class FolderImportResponder : public FXObject
 {
 public:
@@ -1294,11 +1307,19 @@ public:
         pump(app);
 
         FileDialog chooser(&window, "Fixed file chooser");
+        chooser.setWidth(640);
         chooser.create();
+        chooser.show(PLACEMENT_SCREEN);
+        pump(app);
         assert(chooser.getBackColor() == DialogColors::background);
         FXWindow* list = findClass(&chooser, "FileList");
         assert(list && list->getBackColor() == DialogColors::field);
         assert(!static_cast<FileList*>(list)->hasBackgroundEffect());
+        FXButton* chooserOK = findButton(&chooser, "OK");
+        FXButton* chooserCancel = findButton(&chooser, "Cancel");
+        assert(chooserOK && chooserCancel);
+        assert(windowXIn(chooserOK, &chooser) + chooserOK->getWidth() <= chooser.getWidth());
+        assert(windowXIn(chooserCancel, &chooser) + chooserCancel->getWidth() <= chooser.getWidth());
         FXMenuPane childMenu(&chooser);
         new FXMenuCommand(&childMenu, "Fixed late menu");
         xf_windowcolors(&childMenu);
@@ -1486,6 +1507,13 @@ public:
         FXString redSource = data + "/source-red";
         FXString blueSource = data + "/source-blue";
         assert(xf_mkpath(globalTextures.text(), 0755) == 0);
+        FXString progressiveTextures = globalTextures + "/Progressive";
+        assert(xf_mkpath(progressiveTextures.text(), 0755) == 0);
+        for (FXint i = 0; i < 40; ++i)
+        {
+            FXString filename = FXString().format("Tile-%02d.png", i);
+            solidPng(app, progressiveTextures + PATHSEPSTRING + filename, FXRGB(30 + i, 90, 140));
+        }
         assert(xf_mkpath((redSource + "/textures").text(), 0755) == 0);
         assert(xf_mkpath((blueSource + "/textures").text(), 0755) == 0);
         solidPng(app, globalTextures + "/shared.png", FXRGB(0, 255, 0));
@@ -1689,6 +1717,11 @@ public:
             up->getTarget()->handle(up, FXSEL(SEL_COMMAND, up->getSelector()), NULL);
             assert(gallery->findItem("Natural Stone") >= 0 && gallery->findItem("River 1") < 0 && !up->isEnabled());
             assert(findLabel(page, "Textures"));
+            activateItem(gallery, "Progressive");
+            assert(gallery->getNumItems() == 1 && gallery->getItemText(0) == "..");
+            pump(app);
+            assert(gallery->getNumItems() == 41 && gallery->isItemEnabled(1));
+            activateItem(gallery, "..");
             activateItem(gallery, "Natural Stone");
             pump(app);
             assert(gallery->getNumItems() == 2 && up->isEnabled());
@@ -1957,6 +1990,13 @@ public:
         FXString patternOther = BackgroundEffect::textureReference("Geometric/Other");
         FXString differentCategory = BackgroundEffect::textureReference("Organic/Checker Board");
         FXString globalPatterns = data + "/patterns";
+        FXString progressiveFolder = globalPatterns + "/Progressive";
+        assert(xf_mkpath(progressiveFolder.text(), 0755) == 0);
+        for (FXint i = 0; i < 40; ++i)
+        {
+            FXString filename = FXString().format("Tile-%02d.png", i);
+            solidPng(app, progressiveFolder + PATHSEPSTRING + filename, FXRGB(30 + i, 90, 140));
+        }
         patternMaskPng(app, redSource + "/textures/mask.png");
         FXString patternError;
         assert(BackgroundEffect::importPattern(&app, redSource + "/textures/mask.png",
@@ -2090,6 +2130,11 @@ public:
             activateItem(gallery, "Grid");
             BackgroundEffect shape = BackgroundEffect::parse(editor.getDraft().effect);
             assert(shape.patternImage.empty() && shape.pattern == 5);
+            activateItem(gallery, "Progressive");
+            assert(gallery->getNumItems() == 1 && gallery->getItemText(0) == "..");
+            pump(app);
+            assert(gallery->getNumItems() == 41 && gallery->isItemEnabled(1));
+            activateItem(gallery, "..");
             activateItem(gallery, "Geometric");
             ActionTimer namePattern([&] {
                 InputDialog* naming = dynamic_cast<InputDialog*>(app.getModalWindow());
@@ -2111,6 +2156,7 @@ public:
             assert(xf_existfile(globalPatterns + "/Geometric/UI Added.png"));
             assert(BackgroundEffect::parse(editor.getDraft().effect).patternImage ==
                    BackgroundEffect::textureReference("Geometric/UI Added"));
+            pump(app);
             assert(gallery->getItemText(0) == ".." && gallery->findItem("UI Added") > 0 &&
                    gallery->getCurrentItem() == gallery->findItem("UI Added"));
             FXString batchPatternOne = redSource + "/textures/Batch One.png";
@@ -2176,6 +2222,13 @@ public:
 
         FXString globalImages = data + "/images";
         assert(xf_mkpath(globalImages.text(), 0755) == 0);
+        FXString progressiveImages = globalImages + "/Progressive";
+        assert(xf_mkpath(progressiveImages.text(), 0755) == 0);
+        for (FXint i = 0; i < 40; ++i)
+        {
+            FXString filename = FXString().format("Image-%02d.png", i);
+            solidPng(app, progressiveImages + PATHSEPSTRING + filename, FXRGB(30 + i, 90, 140));
+        }
         FXString imageSource = data + "/image-source.png", jpegSource = data + "/image-source.jpg";
         FXString checkerSource = data + "/image-checker.png";
         FXColor rose = FXRGB(235, 17, 173);
@@ -2265,6 +2318,11 @@ public:
             assert(placement && scope && gallery && findLabel(dialog, "Images"));
             assert(gallery->findItem("No image") > gallery->findItem("Photographs") && gallery->findItem("Photographs") >= 0);
             screenshot(dialog, "background-image-folders");
+            activateItem(gallery, "Progressive");
+            assert(gallery->getNumItems() == 1 && gallery->getItemText(0) == "..");
+            pump(app);
+            assert(gallery->getNumItems() == 41 && gallery->isItemEnabled(1));
+            activateItem(gallery, "..");
             activateItem(gallery, "Photographs");
             pump(app);
             assert(findLabel(dialog, "Images / Photographs") && gallery->findItem("No image") < 0);
@@ -2408,6 +2466,7 @@ public:
             FXIconList* gallery = static_cast<FXIconList*>(findClass(dialog, "ThemeGallery"));
             assert(placement && gallery);
             activateItem(gallery, "Photographs");
+            pump(app);
             placement->setCurrentItem(2);
             activateItem(gallery, "Rose.png");
             dialog->handle(dialog, FXSEL(SEL_COMMAND, DialogBox::ID_ACCEPT), NULL);

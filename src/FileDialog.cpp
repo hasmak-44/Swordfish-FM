@@ -245,16 +245,13 @@ FileSelector::FileSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXuint
     setFileBoxStyle(liststyle);
     attentioncolor = getApp()->reg().readColorEntry("SETTINGS", "attentioncolor", FXRGB(255, 0, 0));
 
-    // Entry buttons
-    FXMatrix* fields = new FXMatrix(cont, 3, MATRIX_BY_COLUMNS | LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
+    // Entry fields and actions
+    FXVerticalFrame* entryarea = new FXVerticalFrame(cont, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
+    FXMatrix* fields = new FXMatrix(entryarea, 2, MATRIX_BY_COLUMNS | LAYOUT_FILL_X);
     namelabel = new FXLabel(fields, _("&File Name:"), NULL, JUSTIFY_LEFT | LAYOUT_CENTER_Y);
 
-    filename = new FXTextField(fields, 25, this, ID_ACCEPT, TEXTFIELD_ENTER_ONLY |
+    filename = new FXTextField(fields, 16, this, ID_ACCEPT, TEXTFIELD_ENTER_ONLY |
                                LAYOUT_FILL_COLUMN | LAYOUT_FILL_X | FRAME_GROOVE);
-    new FXButton(fields, _("&OK"), NULL, this, ID_ACCEPT, BUTTON_DEFAULT | FRAME_GROOVE |
-                 LAYOUT_FILL_X, 0, 0, 0, 0, 20, 20);
-    accept = new FXButton(buttons, FXString::null, NULL, NULL, 0, LAYOUT_FIX_X | LAYOUT_FIX_Y |
-                          LAYOUT_FIX_WIDTH | LAYOUT_FIX_HEIGHT, 0, 0, 0, 0, 0, 0, 0, 0);
     new FXLabel(fields, _("File F&ilter:"), NULL, JUSTIFY_LEFT | LAYOUT_CENTER_Y);
     FXHorizontalFrame* filterframe = new FXHorizontalFrame(fields, LAYOUT_FILL_COLUMN |
                                                            LAYOUT_FILL_X | LAYOUT_FILL_Y);
@@ -263,8 +260,14 @@ FileSelector::FileSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXuint
 
     readonly = new FXCheckButton(filterframe, _("Read Only") + FXString(" "), NULL, 0, ICON_BEFORE_TEXT |
                                  JUSTIFY_LEFT | LAYOUT_CENTER_Y);
-    cancel = new FXButton(fields, _("&Cancel"), NULL, NULL, 0, BUTTON_INITIAL | BUTTON_DEFAULT | FRAME_GROOVE |
-                          LAYOUT_FILL_X, 0, 0, 0, 0, 20, 20);
+    FXHorizontalFrame* entrybuttons = new FXHorizontalFrame(entryarea, LAYOUT_FILL_X);
+    new FXButton(entrybuttons, _("&OK"), NULL, this, ID_ACCEPT,
+                 BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_LEFT, 0, 0, 0, 0, 20, 20);
+    cancel = new FXButton(entrybuttons, _("&Cancel"), NULL, NULL, 0,
+                          BUTTON_INITIAL | BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_LEFT,
+                          0, 0, 0, 0, 20, 20);
+    accept = new FXButton(buttons, FXString::null, NULL, NULL, 0, LAYOUT_FIX_X | LAYOUT_FIX_Y |
+                          LAYOUT_FIX_WIDTH | LAYOUT_FIX_HEIGHT, 0, 0, 0, 0, 0, 0, 0, 0);
 
     // Action buttons
     FXString key;

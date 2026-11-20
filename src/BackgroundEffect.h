@@ -32,6 +32,8 @@ struct BackgroundEffect
     static FXbool prepareImageDestination(const FXString&, const FXString&, FXString&, FXString&);
     static FXString texturePath(const FXString&, const FXString& = FXString::null);
     static FXString patternPath(const FXString&, const FXString& = FXString::null);
+    static FXbool validateTextureHeader(const FXString&, FXString&);
+    static FXbool validatePatternHeader(const FXString&, FXString&);
     static FXbool validateTexture(FXApp*, const FXString&, FXString&);
     static FXbool validatePattern(FXApp*, const FXString&, FXString&);
     static FXbool importTexture(FXApp*, const FXString&, const FXString&, FXbool, FXString&, FXbool = false);
