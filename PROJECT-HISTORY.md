@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
 Last updated: 20 November 2026, through the 0.0.3 stable release
-(section 3.115).
+and concept portable .deb (section 3.116).
 Latest release: `swordfish-0.0.3` (stable).
 Previous stable release: `swordfish-0.0.2`.
 
@@ -3809,6 +3809,27 @@ changelog extraction now matches the whole tag heading, so `swordfish-0.0.3`
 no longer also matches `swordfish-0.0.3-beta2`. The user manual ZIP is added
 to the release by hand and SHA256SUMS regenerated to cover all four assets,
 as for beta 2.
+
+### 3.116. Concept .deb wrapping the portable build (20 November 2026)
+
+To present the idea to MX Linux moderators, `packaging/deb-portable/` builds
+`swordfish-portable_<ver>-<rev>_amd64.deb` from a released portable tarball
+(`build-deb.sh [-r REV] [-o OUTDIR] Swordfish-Portable-VER.tar.gz`). The
+package ships the tarball in `/usr/lib/swordfish-portable/`, a menu entry and
+icons. `postinst` finds the desktop user (SUDO_USER, PKEXEC_UID or the active
+loginctl session), asks for a parent folder with yad/zenity (debconf fallback,
+default `~/Applications`), refuses system folders, folders the user cannot
+write to and foreign `Swordfish-Portable` folders, then extracts a
+user-owned copy (AppRun needs writable `portable-data`), writes a marker and
+links `/usr/local/bin/swordfish-portable`. Upgrade reuses the location and
+keeps settings; `dpkg-reconfigure` moves it; remove/purge deletes only a
+marked folder. Debconf messages must stay on one line (multi-line REASON hung
+the Teletype frontend); GUI messages use explicit line breaks so `--fixed`
+yad dialogs stay narrow. Verified in a Debian 12 container: 30 functional
+checks plus GUI screenshots at 1366x768 and 1024x600. Committed locally as
+`a372b85`, not pushed until the user tests it. The README lists the policy
+questions for reviewers (files outside dpkg, `/usr/local/bin`, interactive
+postinst, bundled libraries without security updates).
 
 ## 4. The archive-command / false idle-timeout bug
 
