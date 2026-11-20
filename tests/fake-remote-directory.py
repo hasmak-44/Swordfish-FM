@@ -21,15 +21,18 @@ if len(sys.argv) == 3 and sys.argv[1] == "--phone-mount":
         sys.exit(1)
     approval = os.environ.get("SWORDFISH_TEST_PHONE_APPROVAL")
     if approval:
-        print("WAIT\t" + base64.b64encode(b"waiting for permission").decode(), flush=True)
+        os.mkdir(root)
+        print("STORAGE_WAIT", flush=True)
         while not os.path.exists(approval):
             if select.select([sys.stdin], [], [], 0.05)[0]:
                 assert sys.stdin.read(1) == "C"
+                os.rmdir(root)
                 with open(log_path, "a") as log:
                     log.write(scheme.lower() + " cancelled\n")
                 print("CANCELLED", flush=True)
                 sys.exit(0)
-    os.mkdir(root)
+    else:
+        os.mkdir(root)
     if os.environ.get("SWORDFISH_TEST_PHONE_RACE"):
         time.sleep(0.3)
     print("READY\t" + base64.b64encode(path.encode()).decode(), flush=True)

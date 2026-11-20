@@ -2409,7 +2409,7 @@ struct PhoneMount
     bool mounted = false;
     bool owned = false;
     bool ready = false;
-    bool pathWarning = false;
+    std::string lastPathWarning;
     unsigned missingPathChecks = 0;
     int result = 1;
 };
@@ -2490,23 +2490,102 @@ struct PhonePath
 {
     char* path;
     bool hasPath;
+    bool accessible;
+    char* error;
 };
 
 void freePhonePath(gpointer data)
 {
     PhonePath* path = static_cast<PhonePath*>(data);
     g_free(path->path);
+    g_free(path->error);
     delete path;
 }
 
-void checkPhonePathWorker(GTask* task, gpointer source, gpointer, GCancellable*)
+bool phoneDirectoryReadable(GFile* directory, GCancellable* cancellable, GError** error)
 {
-    // Both GVFS path lookup and filesystem stat can block; keep cancellation responsive.
+    GFileEnumerator* entries = g_file_enumerate_children(directory, G_FILE_ATTRIBUTE_STANDARD_NAME,
+        G_FILE_QUERY_INFO_NONE, cancellable, error);
+    if (!entries)
+    {
+        if (!*error)
+            g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "Unable to read phone folder");
+        return false;
+    }
+    GFileInfo* first = g_file_enumerator_next_file(entries, cancellable, error);
+    if (first) g_object_unref(first);
+    bool readable = !*error;
+    g_object_unref(entries);
+    return readable;
+}
+
+bool phoneStorageAccessible(GFile* file, GCancellable* cancellable, GError** error)
+{
+    // An AFC documents folder may be empty; MTP exposes storage directories only when available.
+    if (!g_file_has_uri_scheme(file, "mtp"))
+        return phoneDirectoryReadable(file, cancellable, error);
+
+    GFileEnumerator* entries = g_file_enumerate_children(file,
+        G_FILE_ATTRIBUTE_STANDARD_NAME "," G_FILE_ATTRIBUTE_STANDARD_TYPE,
+        G_FILE_QUERY_INFO_NONE, cancellable, error);
+    if (!entries)
+    {
+        if (!*error)
+            g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "Unable to read phone storage list");
+        return false;
+    }
+    bool accessible = false;
+    GError* storageError = NULL;
+    while (true)
+    {
+        GFileInfo* info = g_file_enumerator_next_file(entries, cancellable, error);
+        if (!info) break;
+        const char* name = g_file_info_get_name(info);
+        if (name && *name && g_file_info_get_file_type(info) == G_FILE_TYPE_DIRECTORY)
+        {
+            GFile* storage = g_file_get_child(file, name);
+            GError* failure = NULL;
+            accessible = phoneDirectoryReadable(storage, cancellable, &failure);
+            g_object_unref(storage);
+            if (!accessible && !failure)
+                g_set_error_literal(&failure, G_IO_ERROR, G_IO_ERROR_FAILED, "Unable to read phone storage");
+            if (failure)
+            {
+                if (!storageError) storageError = failure;
+                else g_error_free(failure);
+            }
+        }
+        g_object_unref(info);
+        if (accessible) break;
+    }
+    g_object_unref(entries);
+    if (!accessible && !*error && storageError)
+        g_propagate_error(error, storageError);
+    else
+        g_clear_error(&storageError);
+    return accessible;
+}
+
+void checkPhonePathWorker(GTask* task, gpointer source, gpointer, GCancellable* cancellable)
+{
+    // GVFS path and storage checks can block; keep cancellation responsive.
     char* path = g_file_get_path(G_FILE(source));
     PhonePath* checked = new PhonePath;
     checked->hasPath = path != NULL;
     checked->path = path && g_file_test(path, G_FILE_TEST_IS_DIR) ? path : NULL;
     if (!checked->path) g_free(path);
+    checked->accessible = false;
+    checked->error = NULL;
+    if (checked->path)
+    {
+        GError* error = NULL;
+        checked->accessible = phoneStorageAccessible(G_FILE(source), cancellable, &error);
+        if (error)
+        {
+            checked->error = g_strdup(error->message);
+            g_error_free(error);
+        }
+    }
     g_task_return_pointer(task, checked, freePhonePath);
 }
 
@@ -2520,22 +2599,29 @@ void phonePathChecked(GObject*, GAsyncResult* result, gpointer data)
         finishPhoneCancellation(state);
     else if (error)
         phoneFinished(state, "ERROR", error->message);
-    else if (checked && checked->path)
+    else if (!checked)
+        phoneFinished(state, "ERROR", "Phone accessibility check returned no result");
+    else if (checked->path && checked->accessible)
     {
         state->ready = true;
         phoneRecord("READY", checked->path);
     }
     else
     {
-        if (checked && !checked->hasPath && ++state->missingPathChecks >= 15)
+        if (!checked->hasPath && ++state->missingPathChecks >= 15)
             phoneFinished(state, "ERROR", "The phone has no local GVFS folder; check that GVFS FUSE is running");
         else
         {
-            if (checked && checked->hasPath) state->missingPathChecks = 0;
-            if (!state->pathWarning)
+            if (checked->hasPath) state->missingPathChecks = 0;
+            const char* type = checked->path && !checked->error ? "STORAGE_WAIT" : "WAIT";
+            const char* detail = checked->error ? checked->error :
+                (checked->path ? NULL : "Waiting for an accessible phone folder; check that GVFS FUSE is running");
+            std::string warning = type;
+            if (detail) warning += detail;
+            if (state->lastPathWarning != warning)
             {
-                phoneRecord("WAIT", "Waiting for an accessible phone folder; check that GVFS FUSE is running");
-                state->pathWarning = true;
+                phoneRecord(type, detail);
+                state->lastPathWarning = warning;
             }
             state->retry = g_timeout_add(1000, checkPhonePath, state);
         }

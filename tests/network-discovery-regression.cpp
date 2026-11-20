@@ -32,6 +32,52 @@ static void fake_phone_mount_init(FakePhoneMount*) {}
 
 static int fakePhoneResult = 0;
 static int fakePhoneUnmounts = 0;
+static std::string fakePhoneRoot;
+static bool fakePhoneMtp = true;
+static gint fakePhoneDenyRoot = 0;
+static gint fakePhoneDenyStorage = 0;
+static gint fakePhoneBlock = 0;
+static gint fakePhoneProbeStarted = 0;
+static gint fakePhoneProbeStopped = 0;
+
+static gboolean fakePhoneHasScheme(GFile*, const char* scheme)
+{
+    return strcmp(scheme, fakePhoneMtp ? "mtp" : "afc") == 0;
+}
+
+static char* fakePhoneGetPath(GFile*)
+{
+    return g_strdup(fakePhoneRoot.c_str());
+}
+
+static GFileEnumerator* fakePhoneEnumerate(GFile*, const char* attributes, GFileQueryInfoFlags flags,
+                                           GCancellable* cancellable, GError** error)
+{
+    if (g_atomic_int_get(&fakePhoneBlock))
+    {
+        g_atomic_int_set(&fakePhoneProbeStarted, 1);
+        while (!g_cancellable_is_cancelled(cancellable)) g_usleep(1000);
+        g_cancellable_set_error_if_cancelled(cancellable, error);
+        g_atomic_int_set(&fakePhoneProbeStopped, 1);
+        return NULL;
+    }
+    if (g_atomic_int_get(&fakePhoneDenyRoot))
+    {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_PERMISSION_DENIED, "phone is locked");
+        return NULL;
+    }
+    GFile* root = g_file_new_for_path(fakePhoneRoot.c_str());
+    GFileEnumerator* result = g_file_enumerate_children(root, attributes, flags, cancellable, error);
+    g_object_unref(root);
+    return result;
+}
+
+static GFile* fakePhoneResolve(GFile*, const char* name)
+{
+    std::string path = fakePhoneRoot + "/" +
+                       (g_atomic_int_get(&fakePhoneDenyStorage) ? "inaccessible-storage" : name);
+    return g_file_new_for_path(path.c_str());
+}
 
 static gboolean finishFakePhoneMount(gpointer data)
 {
@@ -93,6 +139,10 @@ static gboolean fakeUnmountPhoneFinish(GMount*, GAsyncResult* result, GError** e
 
 static void fakePhoneFileInterface(GFileIface* iface)
 {
+    iface->has_uri_scheme = fakePhoneHasScheme;
+    iface->get_path = fakePhoneGetPath;
+    iface->enumerate_children = fakePhoneEnumerate;
+    iface->resolve_relative_path = fakePhoneResolve;
     iface->mount_enclosing_volume = fakePhoneMount;
     iface->mount_enclosing_volume_finish = fakePhoneMountFinish;
     iface->find_enclosing_mount_async = fakeFindPhoneMount;
@@ -134,6 +184,143 @@ static void phoneMountCompletionRaces()
         g_main_loop_unref(state.loop);
     }
     puts("PASS: cancelled phone mount waits for its real result, undoes owned mounts and preserves existing ones");
+}
+
+struct PhoneApproval
+{
+    PhoneMount* state;
+    std::string storage;
+    int scenario;
+    bool granted;
+};
+
+static gboolean approveFakePhone(gpointer data)
+{
+    PhoneApproval* approval = static_cast<PhoneApproval*>(data);
+    PhoneMount* state = approval->state;
+    if (state->mounting || state->pending) return G_SOURCE_CONTINUE;
+    assert(state->mounted && !state->ready && state->retry);
+    if (approval->scenario < 2)
+        assert(mkdir(approval->storage.c_str(), 0700) == 0);
+    else if (approval->scenario == 2)
+        g_atomic_int_set(&fakePhoneDenyStorage, 0);
+    else
+        g_atomic_int_set(&fakePhoneDenyRoot, 0);
+    approval->granted = true;
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean finishReadyPhone(gpointer data)
+{
+    PhoneMount* state = static_cast<PhoneMount*>(data);
+    if (!state->ready) return G_SOURCE_CONTINUE;
+    phoneFinished(state, "OPEN");
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean phoneTestTimeout(gpointer)
+{
+    assert(!"phone mount test timed out");
+    return G_SOURCE_REMOVE;
+}
+
+static void phoneStorageReadiness()
+{
+    GError* error = NULL;
+    char* directory = g_dir_make_tmp("swordfish-phone-test-XXXXXX", &error);
+    assert(directory && !error);
+    fakePhoneRoot = directory;
+    const std::string storage = fakePhoneRoot + "/Internal storage";
+    for (int scenario = 0; scenario < 4; ++scenario)
+    {
+        fakePhoneMtp = scenario != 3;
+        fakePhoneResult = scenario == 1 || scenario == 2 ? 1 : 0;
+        g_atomic_int_set(&fakePhoneDenyStorage, scenario == 2);
+        g_atomic_int_set(&fakePhoneDenyRoot, scenario == 3);
+        if (scenario == 2) assert(mkdir(storage.c_str(), 0700) == 0);
+
+        PhoneMount state;
+        state.loop = g_main_loop_new(NULL, FALSE);
+        state.file = G_FILE(g_object_new(fake_phone_file_get_type(), NULL));
+        state.cancellable = g_cancellable_new();
+        PhoneApproval approval = {&state, storage, scenario, false};
+        guint timeout = g_timeout_add(5000, phoneTestTimeout, NULL);
+        g_timeout_add(20, approveFakePhone, &approval);
+        g_timeout_add(20, finishReadyPhone, &state);
+        retryPhoneMount(&state);
+        g_main_loop_run(state.loop);
+        g_source_remove(timeout);
+        assert(approval.granted && state.ready && !state.pending);
+        assert(state.owned == (scenario == 0 || scenario == 3));
+        g_object_unref(state.cancellable);
+        g_object_unref(state.file);
+        g_main_loop_unref(state.loop);
+        if (scenario != 3) assert(rmdir(storage.c_str()) == 0);
+    }
+    assert(rmdir(directory) == 0);
+    g_free(directory);
+    fakePhoneRoot.clear();
+    puts("PASS: first mount and remount wait for readable MTP storage; empty AFC remains usable");
+}
+
+static gboolean cancelWaitingPhone(gpointer data)
+{
+    PhoneMount* state = static_cast<PhoneMount*>(data);
+    if (g_atomic_int_get(&fakePhoneBlock))
+    {
+        if (!g_atomic_int_get(&fakePhoneProbeStarted)) return G_SOURCE_CONTINUE;
+        assert(state->pending && !state->mounting);
+    }
+    else
+    {
+        if (state->mounting || state->pending) return G_SOURCE_CONTINUE;
+        assert(state->mounted && !state->ready && state->retry);
+    }
+    cancelPhoneMount(state);
+    return G_SOURCE_REMOVE;
+}
+
+static void phoneProbeCancellation()
+{
+    GError* error = NULL;
+    char* directory = g_dir_make_tmp("swordfish-phone-cancel-XXXXXX", &error);
+    assert(directory && !error);
+    fakePhoneRoot = directory;
+    fakePhoneMtp = true;
+    for (int blocked = 0; blocked < 2; ++blocked)
+    {
+        for (fakePhoneResult = 0; fakePhoneResult < 2; ++fakePhoneResult)
+        {
+            fakePhoneUnmounts = 0;
+            g_atomic_int_set(&fakePhoneBlock, blocked);
+            g_atomic_int_set(&fakePhoneProbeStarted, 0);
+            g_atomic_int_set(&fakePhoneProbeStopped, 0);
+            PhoneMount state;
+            state.loop = g_main_loop_new(NULL, FALSE);
+            state.file = G_FILE(g_object_new(fake_phone_file_get_type(), NULL));
+            state.cancellable = g_cancellable_new();
+            guint timeout = g_timeout_add(5000, phoneTestTimeout, NULL);
+            g_timeout_add(20, cancelWaitingPhone, &state);
+            retryPhoneMount(&state);
+            g_main_loop_run(state.loop);
+            g_source_remove(timeout);
+            assert(state.cancelled && !state.ready && !state.pending && state.result == 0);
+            assert(fakePhoneUnmounts == (fakePhoneResult == 0 ? 1 : 0));
+            if (blocked)
+            {
+                for (int i = 0; i < 1000 && !g_atomic_int_get(&fakePhoneProbeStopped); ++i) g_usleep(1000);
+                assert(g_atomic_int_get(&fakePhoneProbeStopped));
+            }
+            g_object_unref(state.cancellable);
+            g_object_unref(state.file);
+            g_main_loop_unref(state.loop);
+        }
+    }
+    g_atomic_int_set(&fakePhoneBlock, 0);
+    assert(rmdir(directory) == 0);
+    g_free(directory);
+    fakePhoneRoot.clear();
+    puts("PASS: cancelling a waiting or blocked phone probe preserves mounts it did not create");
 }
 
 static const char* ENDPOINT = "urn:uuid:ce41ebfe-0a8d-457e-be20-a5965a99559e";
@@ -763,6 +950,8 @@ int main()
 {
     phoneMountControl();
     phoneMountCompletionRaces();
+    phoneStorageReadiness();
+    phoneProbeCancellation();
     parsers();
     serviceParsers();
     mediaServer();

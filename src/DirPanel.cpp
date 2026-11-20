@@ -5686,7 +5686,8 @@ public:
         DialogBox(owner, _("Waiting for phone"), DECOR_TITLE | DECOR_BORDER | DECOR_CLOSE)
     {
         FXVerticalFrame* body = new FXVerticalFrame(this, LAYOUT_FILL_X | LAYOUT_FILL_Y);
-        new FXLabel(body, _("Waiting for phone...\n\nUnlock the phone and allow access to its files."),
+        new FXLabel(body, _("Waiting for phone...\n\nUnlock the phone and allow access to its files.\n"
+                            "On Android, select USB file transfer."),
                     NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
         status = new FXLabel(body, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
         FXHorizontalFrame* buttons = new FXHorizontalFrame(body, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
@@ -5822,7 +5823,13 @@ public:
                     appLog(APP_LOG_ERRORS, "phone-mount-wait", text);
                     lastWarning = text;
                 }
-                status->setText(_("Still waiting. Check the phone; details are in the application log."));
+                if (!cancelling && !opening)
+                    status->setText(_("Still waiting. Check the phone; details are in the application log."));
+            }
+            else if (line == "STORAGE_WAIT")
+            {
+                if (!cancelling && !opening)
+                    status->setText(_("No phone storage is available yet."));
             }
             else if (type == "READY" && !text.empty() && !cancelling && !opening)
             {

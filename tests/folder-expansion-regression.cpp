@@ -584,6 +584,7 @@ class PhoneResponder : public FXObject
 public:
     FXString approval;
     bool cancel = false;
+    bool expectEmptyMount = false;
     bool seen = false;
     long handle(FXObject*, FXSelector, void*) override
     {
@@ -593,7 +594,14 @@ public:
             testApp->addTimeout(this, 1, 20);
             return 1;
         }
-        assert(hasLabel(dialog, "Waiting for phone...\n\nUnlock the phone and allow access to its files."));
+        assert(hasLabel(dialog, "Waiting for phone...\n\nUnlock the phone and allow access to its files.\n"
+                                "On Android, select USB file transfer."));
+        if (expectEmptyMount && !hasLabel(dialog, "No phone storage is available yet."))
+        {
+            testApp->addTimeout(this, 1, 20);
+            return 1;
+        }
+        if (expectEmptyMount) assert(xf_isdirectory(simulatedMtpPath));
         seen = true;
         if (cancel)
             dialog->handle(this, FXSEL(SEL_COMMAND, DialogBox::ID_CANCEL), NULL);
@@ -1539,6 +1547,7 @@ int main(int argc, char** argv)
         setenv("SWORDFISH_TEST_PHONE_APPROVAL", approval.text(), 1);
         PhoneResponder cancellation;
         cancellation.cancel = true;
+        cancellation.expectEmptyMount = true;
         app.addTimeout(&cancellation, 1, 150);
         assert(!panel->openDevice("mtp://first/"));
         assert(cancellation.seen && mounts->disconnected("mtp://first/"));
@@ -1551,6 +1560,7 @@ int main(int argc, char** argv)
         assert(phone && phone->deviceAction == SidebarItem::MOUNT_DEVICE);
         PhoneResponder approved;
         approved.approval = approval;
+        approved.expectEmptyMount = true;
         app.addTimeout(&approved, 1, 150);
         panel->onSidebarActivate(NULL, FXSEL(SEL_COMMAND, 0), phone);
         assert(approved.seen);
@@ -1563,6 +1573,7 @@ int main(int argc, char** argv)
         setenv("SWORDFISH_TEST_PHONE_APPROVAL", approval.text(), 1);
         PhoneResponder remounted;
         remounted.approval = approval;
+        remounted.expectEmptyMount = true;
         app.addTimeout(&remounted, 1, 150);
         assert(panel->openDevice("mtp://first/"));
         assert(remounted.seen && window->getCurrentPanel()->getDirectory() == simulatedMtpPath);
