@@ -2662,12 +2662,25 @@ void phoneFinished(PhoneMount* state, const char* type, const char* text = NULL)
     g_main_loop_quit(state->loop);
 }
 
+// A cached GMount can outlive its GVFS backend, e.g. when an MTP phone resets
+// USB after the user allows access; nothing is left mounted to undo then.
+bool phoneMountGone(const GError* error)
+{
+    return g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_MOUNTED) ||
+           g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND) ||
+           g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN) ||
+           g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_NAME_HAS_NO_OWNER);
+}
+
 void phoneUnmounted(GObject* source, GAsyncResult* result, gpointer data)
 {
     PhoneMount* state = static_cast<PhoneMount*>(data);
     GError* error = NULL;
-    if (g_mount_unmount_with_operation_finish(G_MOUNT(source), result, &error))
+    if (g_mount_unmount_with_operation_finish(G_MOUNT(source), result, &error) || phoneMountGone(error))
+    {
+        g_clear_error(&error);
         phoneFinished(state, "CANCELLED");
+    }
     else
     {
         phoneFinished(state, "ERROR", error ? error->message : "Unable to undo the phone mount");
@@ -2680,6 +2693,12 @@ void phoneMountFound(GObject* source, GAsyncResult* result, gpointer data)
     PhoneMount* state = static_cast<PhoneMount*>(data);
     GError* error = NULL;
     GMount* mount = g_file_find_enclosing_mount_finish(G_FILE(source), result, &error);
+    if (!mount && phoneMountGone(error))
+    {
+        g_clear_error(&error);
+        phoneFinished(state, "CANCELLED");
+        return;
+    }
     if (!mount)
     {
         phoneFinished(state, "ERROR", error ? error->message : "Unable to find the phone mount to cancel it");
@@ -2720,6 +2739,7 @@ struct PhonePath
     char* path;
     bool hasPath;
     bool accessible;
+    bool needsMount;
     char* error;
 };
 
@@ -2797,26 +2817,22 @@ bool phoneStorageAccessible(GFile* file, GCancellable* cancellable, GError** err
 
 void checkPhonePathWorker(GTask* task, gpointer source, gpointer, GCancellable* cancellable)
 {
-    // GVFS path and storage checks can block; keep cancellation responsive.
-    char* path = g_file_get_path(G_FILE(source));
+    // Probe GVFS even without a local path: backend restarts can leave its
+    // cached FUSE path stale until a remote operation refreshes the mount.
     PhonePath* checked = new PhonePath;
+    GError* error = NULL;
+    checked->accessible = phoneStorageAccessible(G_FILE(source), cancellable, &error);
+    checked->needsMount = phoneMountGone(error) && !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND);
+    checked->error = error ? g_strdup(error->message) : NULL;
+    g_clear_error(&error);
+    char* path = g_file_get_path(G_FILE(source));
     checked->hasPath = path != NULL;
     checked->path = path && g_file_test(path, G_FILE_TEST_IS_DIR) ? path : NULL;
     if (!checked->path) g_free(path);
-    checked->accessible = false;
-    checked->error = NULL;
-    if (checked->path)
-    {
-        GError* error = NULL;
-        checked->accessible = phoneStorageAccessible(G_FILE(source), cancellable, &error);
-        if (error)
-        {
-            checked->error = g_strdup(error->message);
-            g_error_free(error);
-        }
-    }
     g_task_return_pointer(task, checked, freePhonePath);
 }
+
+gboolean retryPhoneMount(gpointer data);
 
 void phonePathChecked(GObject*, GAsyncResult* result, gpointer data)
 {
@@ -2830,6 +2846,13 @@ void phonePathChecked(GObject*, GAsyncResult* result, gpointer data)
         phoneFinished(state, "ERROR", error->message);
     else if (!checked)
         phoneFinished(state, "ERROR", "Phone accessibility check returned no result");
+    else if (checked->needsMount)
+    {
+        state->mounted = false;
+        state->owned = false;
+        phoneRecord("WAIT", checked->error);
+        state->retry = g_timeout_add(2000, retryPhoneMount, state);
+    }
     else if (checked->path && checked->accessible)
     {
         state->ready = true;
@@ -2870,8 +2893,6 @@ gboolean checkPhonePath(gpointer data)
     g_object_unref(task);
     return G_SOURCE_REMOVE;
 }
-
-gboolean retryPhoneMount(gpointer data);
 
 void phoneMounted(GObject* source, GAsyncResult* result, gpointer data)
 {

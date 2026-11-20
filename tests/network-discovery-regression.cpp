@@ -39,6 +39,9 @@ static gint fakePhoneDenyStorage = 0;
 static gint fakePhoneBlock = 0;
 static gint fakePhoneProbeStarted = 0;
 static gint fakePhoneProbeStopped = 0;
+static gint fakePhoneStalePath = 0;
+static gint fakePhoneLostMount = 0;
+static int fakePhoneMounts = 0;
 
 static gboolean fakePhoneHasScheme(GFile*, const char* scheme)
 {
@@ -47,12 +50,20 @@ static gboolean fakePhoneHasScheme(GFile*, const char* scheme)
 
 static char* fakePhoneGetPath(GFile*)
 {
+    if (g_atomic_int_get(&fakePhoneStalePath))
+        return g_strdup((fakePhoneRoot + "/stale-backend").c_str());
     return g_strdup(fakePhoneRoot.c_str());
 }
 
 static GFileEnumerator* fakePhoneEnumerate(GFile*, const char* attributes, GFileQueryInfoFlags flags,
                                            GCancellable* cancellable, GError** error)
 {
+    g_atomic_int_set(&fakePhoneStalePath, 0);
+    if (g_atomic_int_compare_and_exchange(&fakePhoneLostMount, 1, 0))
+    {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_MOUNTED, "phone backend restarted");
+        return NULL;
+    }
     if (g_atomic_int_get(&fakePhoneBlock))
     {
         g_atomic_int_set(&fakePhoneProbeStarted, 1);
@@ -95,6 +106,7 @@ static gboolean finishFakePhoneMount(gpointer data)
 static void fakePhoneMount(GFile* file, GMountMountFlags, GMountOperation*, GCancellable* cancellable,
                            GAsyncReadyCallback callback, gpointer data)
 {
+    ++fakePhoneMounts;
     // The test requires the real helper to retain the host's eventual result.
     assert(!cancellable);
     GTask* task = g_task_new(file, cancellable, callback, data);
@@ -127,6 +139,9 @@ static void fakeUnmountPhone(GMount* mount, GMountUnmountFlags, GMountOperation*
     GTask* task = g_task_new(mount, cancellable, callback, data);
     if (fakePhoneResult == 3)
         g_task_return_new_error(task, G_IO_ERROR, G_IO_ERROR_BUSY, "unmount failed");
+    else if (fakePhoneResult == 4)
+        g_task_return_new_error(task, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN,
+                                "The name :1.706 was not provided by any .service files");
     else
         g_task_return_boolean(task, TRUE);
     g_object_unref(task);
@@ -166,7 +181,7 @@ static gboolean cancelFakePhone(gpointer data)
 
 static void phoneMountCompletionRaces()
 {
-    for (fakePhoneResult = 0; fakePhoneResult < 4; ++fakePhoneResult)
+    for (fakePhoneResult = 0; fakePhoneResult < 5; ++fakePhoneResult)
     {
         fakePhoneUnmounts = 0;
         PhoneMount state;
@@ -177,13 +192,14 @@ static void phoneMountCompletionRaces()
         g_timeout_add(5, cancelFakePhone, &state);
         g_main_loop_run(state.loop);
         assert(state.cancelled && !state.pending);
-        assert(fakePhoneUnmounts == (fakePhoneResult == 0 || fakePhoneResult == 3 ? 1 : 0));
+        assert(fakePhoneUnmounts == (fakePhoneResult == 1 || fakePhoneResult == 2 ? 0 : 1));
         assert(state.result == (fakePhoneResult == 3 ? 1 : 0));
         g_object_unref(state.cancellable);
         g_object_unref(state.file);
         g_main_loop_unref(state.loop);
     }
-    puts("PASS: cancelled phone mount waits for its real result, undoes owned mounts and preserves existing ones");
+    puts("PASS: cancelled phone mount waits for its real result, undoes owned mounts, preserves existing ones "
+         "and accepts a vanished backend");
 }
 
 struct PhoneApproval
@@ -198,9 +214,9 @@ static gboolean approveFakePhone(gpointer data)
 {
     PhoneApproval* approval = static_cast<PhoneApproval*>(data);
     PhoneMount* state = approval->state;
-    if (state->mounting || state->pending) return G_SOURCE_CONTINUE;
+    if (state->mounting || state->pending || !state->mounted) return G_SOURCE_CONTINUE;
     assert(state->mounted && !state->ready && state->retry);
-    if (approval->scenario < 2)
+    if (approval->scenario < 2 || approval->scenario >= 4)
         assert(mkdir(approval->storage.c_str(), 0700) == 0);
     else if (approval->scenario == 2)
         g_atomic_int_set(&fakePhoneDenyStorage, 0);
@@ -231,8 +247,11 @@ static void phoneStorageReadiness()
     assert(directory && !error);
     fakePhoneRoot = directory;
     const std::string storage = fakePhoneRoot + "/Internal storage";
-    for (int scenario = 0; scenario < 4; ++scenario)
+    for (int scenario = 0; scenario < 6; ++scenario)
     {
+        fakePhoneMounts = 0;
+        g_atomic_int_set(&fakePhoneStalePath, scenario == 4);
+        g_atomic_int_set(&fakePhoneLostMount, scenario == 5);
         fakePhoneMtp = scenario != 3;
         fakePhoneResult = scenario == 1 || scenario == 2 ? 1 : 0;
         g_atomic_int_set(&fakePhoneDenyStorage, scenario == 2);
@@ -251,7 +270,8 @@ static void phoneStorageReadiness()
         g_main_loop_run(state.loop);
         g_source_remove(timeout);
         assert(approval.granted && state.ready && !state.pending);
-        assert(state.owned == (scenario == 0 || scenario == 3));
+        assert(state.owned == (scenario != 1 && scenario != 2));
+        assert(fakePhoneMounts == (scenario == 5 ? 2 : 1));
         g_object_unref(state.cancellable);
         g_object_unref(state.file);
         g_main_loop_unref(state.loop);
@@ -260,7 +280,7 @@ static void phoneStorageReadiness()
     assert(rmdir(directory) == 0);
     g_free(directory);
     fakePhoneRoot.clear();
-    puts("PASS: first mount and remount wait for readable MTP storage; empty AFC remains usable");
+    puts("PASS: phone readiness refreshes stale paths, reconnects lost mounts and waits for readable storage");
 }
 
 static gboolean cancelWaitingPhone(gpointer data)

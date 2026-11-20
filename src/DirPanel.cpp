@@ -5671,9 +5671,19 @@ private:
     FXbool cancelling = false;
     FXbool opening = false;
     FXbool cancelled = false;
+    FXbool finished = false;
 
     void finish()
     {
+        if (finished) return;
+        finished = true;
+        getApp()->removeTimeout(this, ID_CANCEL_TIMEOUT);
+        if (channel >= 0)
+        {
+            getApp()->removeInput(channel, INPUT_READ);
+            ::close(channel);
+            channel = -1;
+        }
         getApp()->stopModal(this, true);
         hide();
     }
@@ -5696,14 +5706,22 @@ public:
     PhoneMountDialog(FXWindow* owner, const FXString& device) :
         DialogBox(owner, _("Waiting for phone"), DECOR_TITLE | DECOR_BORDER | DECOR_CLOSE)
     {
-        FXVerticalFrame* body = new FXVerticalFrame(this, LAYOUT_FILL_X | LAYOUT_FILL_Y);
-        new FXLabel(body, _("Waiting for phone...\n\nUnlock the phone and allow access to its files.\n"
-                            "On Android, select USB file transfer."),
-                    NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
-        status = new FXLabel(body, "", NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(body, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
-        cancel = new FXButton(buttons, _("Cancel"), NULL, this, DialogBox::ID_CANCEL,
-                              BUTTON_NORMAL | LAYOUT_RIGHT);
+        FXVerticalFrame* content = new FXVerticalFrame(this, LAYOUT_FILL_X | LAYOUT_FILL_Y, 0, 0, 0, 0, 0, 0, 0, 0);
+        FXHorizontalFrame* info = new FXHorizontalFrame(content, LAYOUT_FILL_X | LAYOUT_FILL_Y,
+                                                        0, 0, 0, 0, 16, 16, 16, 12, 16, 0);
+        new FXLabel(info, FXString::null, biginfoicon, LAYOUT_TOP | LAYOUT_LEFT);
+        FXVerticalFrame* text = new FXVerticalFrame(info, LAYOUT_FILL_X | LAYOUT_FILL_Y, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10);
+        new FXLabel(text, _("Allow access on your phone to continue."), NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        new FXLabel(text, _("1.  Unlock the phone.\n"
+                            "2.  Allow access to its files when asked.\n"
+                            "3.  On Android, choose USB \"File transfer\"."),
+                    NULL, JUSTIFY_LEFT | LAYOUT_FILL_X, 0, 0, 0, 0, 12, 0, 0, 0);
+        status = new FXLabel(text, FXString::null, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        new FXHorizontalSeparator(content, SEPARATOR_GROOVE | LAYOUT_FILL_X);
+        FXHorizontalFrame* buttons = new FXHorizontalFrame(content, LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10, 10, 10);
+        cancel = new FXButton(buttons, _("&Cancel"), NULL, this, DialogBox::ID_CANCEL,
+                              BUTTON_INITIAL | BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_RIGHT,
+                              0, 0, 0, 0, 30, 30, 2, 2);
 
         int sockets[2];
         if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets) != 0)
@@ -5769,8 +5787,35 @@ public:
     FXbool run()
     {
         if (!problem.empty()) return false;
+        // Size for the longest status so later updates never add scrollbars or hide Cancel.
+        static const char* const statuses[] =
+        {
+            N_("Connecting to the phone..."),
+            N_("Still waiting. Check the phone; details are in the application log."),
+            N_("Phone connected. Waiting for its storage to become readable..."),
+            N_("Opening phone..."),
+            N_("Cancelling...")
+        };
+        create();
+        FXint width = 0;
+        for (const char* text : statuses)
+        {
+            status->setText(_(text));
+            width = FXMAX(width, status->getDefaultWidth());
+        }
+        status->setText(_(statuses[0]));
+        status->setLayoutHints(status->getLayoutHints() | LAYOUT_FIX_WIDTH);
+        status->setWidth(width);
+        resize(getDefaultWidth(), getDefaultHeight());
         execute(PLACEMENT_OWNER);
         return problem.empty() && !cancelled && opening;
+    }
+
+    // Growing is fine, but shrinking would bring back scrollbars that hide Cancel.
+    virtual void create()
+    {
+        DialogBox::create();
+        setDecorations(getDecorations() & ~DECOR_SHRINKABLE);
     }
     FXString path() const { return localpath; }
     FXString error() const { return problem; }
@@ -5781,7 +5826,7 @@ public:
         if (cancelling || opening) return 1;
         cancelling = true;
         cancel->disable();
-        status->setText(_("Cancelling phone mount..."));
+        status->setText(_("Cancelling..."));
         if (sendCommand('C')) getApp()->addTimeout(this, ID_CANCEL_TIMEOUT, 10000);
         return 1;
     }
@@ -5795,6 +5840,7 @@ public:
 
     long onRead(FXObject*, FXSelector, void*)
     {
+        if (finished) return 1;
         char bytes[4096];
         ssize_t count = read(channel, bytes, sizeof(bytes));
         if (count < 0 && errno == EINTR) return 1;
@@ -5840,7 +5886,7 @@ public:
             else if (line == "STORAGE_WAIT")
             {
                 if (!cancelling && !opening)
-                    status->setText(_("No phone storage is available yet."));
+                    status->setText(_("Phone connected. Waiting for its storage to become readable..."));
             }
             else if (type == "READY" && !text.empty() && !cancelling && !opening)
             {
@@ -5854,7 +5900,7 @@ public:
                 opening = true;
                 cancel->disable();
                 status->setText(_("Opening phone..."));
-                sendCommand('O');
+                if (!sendCommand('O')) return 1;
             }
             else if (type == "READY" && cancelling)
             {

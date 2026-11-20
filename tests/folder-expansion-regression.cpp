@@ -61,6 +61,23 @@ static FXString simulatedMtpPath;
 static FXString simulatedMtpRoot;
 static FXString simulatedAfcPath;
 static FXString simulatedAfcRoot;
+static int terminalPhoneChannel = -1;
+static int phoneErrorEofs = 0;
+
+extern "C" ssize_t read(int fd, void* bytes, size_t size)
+{
+    typedef ssize_t (*Read)(int, void*, size_t);
+    static Read realRead = reinterpret_cast<Read>(dlsym(RTLD_NEXT, "read"));
+    ssize_t count = realRead(fd, bytes, size);
+    if (count >= 6 && memcmp(bytes, "ERROR\t", 6) == 0)
+        terminalPhoneChannel = fd;
+    if (count == 0 && fd == terminalPhoneChannel && testApp)
+    {
+        MessageBox* dialog = dynamic_cast<MessageBox*>(testApp->getModalWindow());
+        if (dialog && dialog->getTitle() == "Error") ++phoneErrorEofs;
+    }
+    return count;
+}
 
 extern "C" int unlink(const char* path) noexcept
 {
@@ -561,6 +578,8 @@ public:
     int alreadyMounted = 0;
     FXString message;
     FXString title;
+    bool delayOnce = false;
+    bool checkPhoneEofs = false;
     long handle(FXObject*, FXSelector, void*) override
     {
         MessageBox* dialog = dynamic_cast<MessageBox*>(testApp->getModalWindow());
@@ -569,6 +588,13 @@ public:
             testApp->addTimeout(this, 1, 20);
             return 1;
         }
+        if (delayOnce)
+        {
+            delayOnce = false;
+            testApp->addTimeout(this, 1, 200);
+            return 1;
+        }
+        if (checkPhoneEofs) assert(phoneErrorEofs == 0);
         if (dialog->getTitle() == "Error") ++errors;
         if (dialog->getTitle() == "Success") ++successes;
         if (dialog->getTitle() == "Already mounted") ++alreadyMounted;
@@ -594,13 +620,17 @@ public:
             testApp->addTimeout(this, 1, 20);
             return 1;
         }
-        assert(hasLabel(dialog, "Waiting for phone...\n\nUnlock the phone and allow access to its files.\n"
-                                "On Android, select USB file transfer."));
-        if (expectEmptyMount && !hasLabel(dialog, "No phone storage is available yet."))
+        assert(hasLabel(dialog, "1.  Unlock the phone.\n2.  Allow access to its files when asked.\n"
+                                "3.  On Android, choose USB \"File transfer\"."));
+        if (expectEmptyMount &&
+            !hasLabel(dialog, "Phone connected. Waiting for its storage to become readable..."))
         {
             testApp->addTimeout(this, 1, 20);
             return 1;
         }
+        // Status changes must fit the opened dialog without scrollbars hiding Cancel.
+        assert(dialog->getWidth() >= dialog->getDefaultWidth() &&
+               dialog->getHeight() >= dialog->getDefaultHeight());
         if (expectEmptyMount) assert(xf_isdirectory(simulatedMtpPath));
         seen = true;
         if (cancel)
@@ -1538,6 +1568,10 @@ int main(int argc, char** argv)
         setenv("SWORDFISH_TEST_MTP_ROOT", simulatedMtpRoot.text(), 1);
         app.addSignal(SIGCHLD, window, XFileExplorer::ID_HARVEST);
         MountMessageResponder failure;
+        failure.delayOnce = true;
+        failure.checkPhoneEofs = true;
+        terminalPhoneChannel = -1;
+        phoneErrorEofs = 0;
         setenv("SWORDFISH_TEST_MTP_FAIL", "1", 1);
         app.addTimeout(&failure, 1, 20);
         assert(!panel->openDevice("mtp://first/"));
@@ -1552,6 +1586,23 @@ int main(int argc, char** argv)
         assert(!panel->openDevice("mtp://first/"));
         assert(cancellation.seen && mounts->disconnected("mtp://first/"));
         assert(!xf_isdirectory(simulatedMtpPath));
+        setenv("SWORDFISH_TEST_PHONE_CANCEL_FAIL", "1", 1);
+        PhoneResponder failedCancellation;
+        failedCancellation.cancel = true;
+        failedCancellation.expectEmptyMount = true;
+        MountMessageResponder cancelFailure;
+        cancelFailure.delayOnce = true;
+        cancelFailure.checkPhoneEofs = true;
+        terminalPhoneChannel = -1;
+        phoneErrorEofs = 0;
+        app.addTimeout(&failedCancellation, 1, 150);
+        app.addTimeout(&cancelFailure, 1, 20);
+        assert(!panel->openDevice("mtp://first/"));
+        assert(failedCancellation.seen && cancelFailure.errors == 1);
+        assert(cancelFailure.message.contains("simulated unmount failed"));
+        assert(xf_isdirectory(simulatedMtpPath));
+        assert(rmdir(simulatedMtpRoot.text()) == 0);
+        unsetenv("SWORDFISH_TEST_PHONE_CANCEL_FAIL");
         panel->onSidebarRefresh(NULL, 0, NULL);
         phone = NULL;
         for (FXTreeItem* item = devices->getFirst(); item; item = item->getNext())

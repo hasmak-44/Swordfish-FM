@@ -26,6 +26,9 @@ if len(sys.argv) == 3 and sys.argv[1] == "--phone-mount":
         while not os.path.exists(approval):
             if select.select([sys.stdin], [], [], 0.05)[0]:
                 assert sys.stdin.read(1) == "C"
+                if os.environ.get("SWORDFISH_TEST_PHONE_CANCEL_FAIL"):
+                    print("ERROR\t" + base64.b64encode(b"simulated unmount failed").decode(), flush=True)
+                    sys.exit(1)
                 os.rmdir(root)
                 with open(log_path, "a") as log:
                     log.write(scheme.lower() + " cancelled\n")
