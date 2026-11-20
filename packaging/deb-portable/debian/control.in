@@ -1,0 +1,20 @@
+Package: swordfish-portable
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: @MAINTAINER@
+Installed-Size: @SIZE@
+Depends: debconf (>= 0.5) | debconf-2.0, libc6 (>= 2.28)
+Recommends: yad | zenity
+Homepage: https://github.com/hasmak-44/Swordfish-FM
+Description: Swordfish FM file manager, installed as a portable folder
+ Swordfish FM is a lightweight X11 file manager based on Xfe.
+ .
+ This package contains the official portable build. During installation it
+ asks where to put it, copies the Swordfish-Portable folder there for the
+ installing user, adds a menu entry and links
+ /usr/local/bin/swordfish-portable to it. Settings stay inside the folder,
+ so it can still be moved or copied to another computer.
+ .
+ Removing the package deletes the copied folder, including its settings.

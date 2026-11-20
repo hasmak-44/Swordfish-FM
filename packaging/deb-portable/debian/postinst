@@ -1,0 +1,290 @@
+#!/bin/sh
+# Copies the bundled Swordfish portable folder to a location chosen by the
+# desktop user, then links /usr/local/bin/swordfish-portable to its AppRun.
+set -e
+
+. /usr/share/debconf/confmodule
+
+PAYLOAD=/usr/lib/swordfish-portable/Swordfish-Portable.tar.gz
+STATE_DIR=/var/lib/swordfish-portable
+STATE="$STATE_DIR/install"
+LINK=/usr/local/bin/swordfish-portable
+FOLDER=Swordfish-Portable
+MARKER=.installed-by-swordfish-portable-deb
+TITLE="Install Swordfish FM Portable"
+
+# stdout belongs to debconf; everything else goes to stderr.
+say() { printf 'swordfish-portable: %s\n' "$*" >&2; }
+
+state_value() {
+    [ -r "$STATE" ] || return 0
+    sed -n "s/^$1=//p" "$STATE" | head -n 1
+}
+
+is_ours() {
+    [ -n "$1" ] && [ "$(basename -- "$1")" = "$FOLDER" ] &&
+        [ -f "$1/$MARKER" ] && [ -f "$1/AppRun" ]
+}
+
+user_home() { getent passwd "$1" | cut -d: -f6; }
+
+as_user() { runuser -u "$INSTALL_USER" -- "$@"; }
+
+# The person who started the install: sudo, pkexec (Synaptic, MX Package
+# Installer) or, failing that, the owner of the active graphical session.
+detect_user() {
+    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+        printf '%s\n' "$SUDO_USER"; return
+    fi
+    if [ -n "${PKEXEC_UID:-}" ] && [ "$PKEXEC_UID" != 0 ]; then
+        getent passwd "$PKEXEC_UID" | cut -d: -f1; return
+    fi
+    command -v loginctl >/dev/null 2>&1 || return 0
+    for session in $(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $1}'); do
+        [ "$(loginctl show-session "$session" --value -p Active 2>/dev/null)" = yes ] || continue
+        case "$(loginctl show-session "$session" --value -p Type 2>/dev/null)" in
+            x11|wayland) ;;
+            *) continue ;;
+        esac
+        name=$(loginctl show-session "$session" --value -p Name 2>/dev/null)
+        if [ -n "$name" ] && [ "$name" != root ]; then
+            printf '%s\n' "$name"; return
+        fi
+    done
+}
+
+find_display() {
+    GUI_DISPLAY=${DISPLAY:-}
+    if [ -z "$GUI_DISPLAY" ] && command -v loginctl >/dev/null 2>&1; then
+        for session in $(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $1}'); do
+            [ "$(loginctl show-session "$session" --value -p Name 2>/dev/null)" = "$INSTALL_USER" ] || continue
+            GUI_DISPLAY=$(loginctl show-session "$session" --value -p Display 2>/dev/null)
+            [ -n "$GUI_DISPLAY" ] && break
+        done
+    fi
+    GUI_XAUTHORITY=
+    for candidate in "${XAUTHORITY:-}" "$INSTALL_HOME/.Xauthority"; do
+        if [ -n "$candidate" ] && [ -r "$candidate" ]; then
+            GUI_XAUTHORITY=$candidate; break
+        fi
+    done
+    [ -n "$GUI_DISPLAY" ]
+}
+
+gui() {
+    as_user env -i HOME="$INSTALL_HOME" USER="$INSTALL_USER" LOGNAME="$INSTALL_USER" \
+        PATH=/usr/bin:/bin LANG="${LANG:-C.UTF-8}" DISPLAY="$GUI_DISPLAY" \
+        XAUTHORITY="$GUI_XAUTHORITY" NO_AT_BRIDGE=1 "$@" 2>/dev/null
+}
+
+markup() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+
+gui_done() {
+    [ -n "${GUI_TOOL:-}" ] || return 0
+    gui yad --title="$TITLE" --center --width=520 --fixed --borders=12 \
+        --window-icon=/usr/share/icons/hicolor/48x48/apps/swordfish-portable.png \
+        --image=/usr/share/icons/hicolor/48x48/apps/swordfish-portable.png \
+        --text="<b>Swordfish FM is installed</b>
+
+Folder: $(markup "$1")
+
+Start it from the menu: System, Swordfish FM (Portable)
+or run <tt>swordfish-portable</tt> in a terminal." \
+        --button=_OK:0 </dev/null >/dev/null 2>&1 &
+}
+
+gui_error() {
+    case "$GUI_TOOL" in
+        yad) gui yad --title="$TITLE" --center --width=520 --fixed --borders=12 \
+                 --window-icon=/usr/share/icons/hicolor/48x48/apps/swordfish-portable.png \
+                 --image=dialog-error --text="$1" --button=_OK:0 >/dev/null || true ;;
+        zenity) gui zenity --error --title="$TITLE" --width=460 \
+                 --text="$1" >/dev/null || true ;;
+    esac
+}
+
+# Prints a reason and fails if FOLDER can't be installed inside $1.
+check_parent() {
+    case "$1" in
+        /*) ;;
+        *) echo "Enter a full folder path starting with /."; return 1 ;;
+    esac
+    parent=$(realpath -m -- "$1")
+    case "$parent" in
+        /|/bin|/bin/*|/boot|/boot/*|/dev|/dev/*|/etc|/etc/*|/lib|/lib/*|/lib32|/lib32/*|\
+        /lib64|/lib64/*|/libx32|/libx32/*|/proc|/proc/*|/root|/root/*|/run|/run/*|\
+        /sbin|/sbin/*|/sys|/sys/*|/usr|/usr/*|/var|/var/*|/home)
+            echo "This is a system folder. Choose your home folder, a data drive, or /opt."
+            return 1 ;;
+    esac
+    target="$parent/$FOLDER"
+    if [ -e "$target" ] && ! is_ours "$target"; then
+        echo "It already contains a $FOLDER folder that this package did not install.
+Choose another folder, or rename or remove that folder first."
+        return 1
+    fi
+    case "$parent" in
+        /opt|/opt/*) return 0 ;;
+    esac
+    existing=$parent
+    while [ ! -d "$existing" ]; do existing=$(dirname -- "$existing"); done
+    if ! as_user test -w "$existing"; then
+        echo "$INSTALL_USER cannot write to $existing.
+Choose a folder you can write to; Swordfish keeps its settings inside it."
+        return 1
+    fi
+}
+
+# Sets CHOSEN; returns 1 if cancelled, 2 if no graphical session is usable.
+gui_choose() {
+    [ "${DEBIAN_FRONTEND:-}" = noninteractive ] && return 2
+    if command -v yad >/dev/null 2>&1; then GUI_TOOL=yad
+    elif command -v zenity >/dev/null 2>&1; then GUI_TOOL=zenity
+    else return 2
+    fi
+    find_display || return 2
+
+    text="<big><b>Choose where to install Swordfish FM</b></big>
+
+A <b>$FOLDER</b> folder is created in the folder you choose.
+Swordfish keeps its settings inside that folder."
+    while :; do
+        case "$GUI_TOOL" in
+            yad) CHOSEN=$(gui yad --file --directory --title="$TITLE" --center \
+                     --window-icon=/usr/share/icons/hicolor/48x48/apps/swordfish-portable.png \
+                     --image=/usr/share/icons/hicolor/48x48/apps/swordfish-portable.png \
+                     --width=820 --height=520 --borders=12 --text="$text" \
+                     --filename="$1/" --button="_Cancel:1" --button="_Install here:0") || return 1 ;;
+            zenity) CHOSEN=$(gui zenity --file-selection --directory \
+                     --title="$TITLE — choose a folder" --filename="$1/") || return 1 ;;
+        esac
+        CHOSEN=${CHOSEN%%|*}
+        if problem=$(check_parent "$CHOSEN"); then
+            return 0
+        fi
+        gui_error "<b>Cannot install into $(markup "$CHOSEN")</b>
+
+$(markup "$problem")"
+    done
+}
+
+# Sets CHOSEN through a debconf question; returns 1 if it can't be answered.
+debconf_choose() {
+    db_subst swordfish-portable/install-dir USER "$INSTALL_USER"
+    db_set swordfish-portable/install-dir "$1"
+    while :; do
+        db_input high swordfish-portable/install-dir || true
+        db_go || return 1
+        db_get swordfish-portable/install-dir
+        CHOSEN=${RET:-$1}
+        if problem=$(check_parent "$CHOSEN"); then
+            return 0
+        fi
+        say "cannot install into $CHOSEN: $problem"
+        [ "${DEBIAN_FRONTEND:-}" = noninteractive ] && return 1
+        db_subst swordfish-portable/invalid-dir DIR "$CHOSEN"
+        db_subst swordfish-portable/invalid-dir REASON "$(printf %s "$problem" | tr "\n" " ")"
+        db_fset swordfish-portable/invalid-dir seen false
+        db_input critical swordfish-portable/invalid-dir || true
+        db_fset swordfish-portable/install-dir seen false
+    done
+}
+
+# Installs a fresh copy at $1, moving portable-data from $2 when it is ours.
+install_copy() {
+    target=$1 old=$2
+    parent=$(dirname -- "$target")
+    if [ ! -d "$parent" ]; then
+        case "$parent" in
+            /opt|/opt/*) mkdir -p -- "$parent" ;;
+            *) as_user mkdir -p -- "$parent" ;;
+        esac
+    fi
+    staging="$parent/.$FOLDER.installing"
+    rm -rf -- "$staging"
+    mkdir -- "$staging"
+    chown "$INSTALL_USER:$(id -gn "$INSTALL_USER")" "$staging"
+    if ! as_user tar -xzf "$PAYLOAD" -C "$staging" --strip-components=1 >&2; then
+        rm -rf -- "$staging"
+        say "could not unpack into $parent (it must support symbolic links and executable files)"
+        return 1
+    fi
+    as_user sh -c 'printf "%s\n" "$1" > "$2"' sh "$NEW_VERSION" "$staging/$MARKER"
+    if is_ours "$old" && [ -d "$old/portable-data" ]; then
+        as_user mv -- "$old/portable-data" "$staging/portable-data" ||
+            mv -- "$old/portable-data" "$staging/portable-data"
+    fi
+    if is_ours "$old"; then rm -rf -- "$old"; fi
+    if is_ours "$target"; then rm -rf -- "$target"; fi
+    mv -- "$staging" "$target"
+    if [ -L "$LINK" ] || [ ! -e "$LINK" ]; then
+        mkdir -p /usr/local/bin
+        ln -sfn -- "$target/AppRun" "$LINK"
+    else
+        say "$LINK exists and is not a link; not replacing it. Start Swordfish with $target/AppRun."
+    fi
+    mkdir -p "$STATE_DIR"
+    printf 'TARGET=%s\nOWNER=%s\n' "$target" "$INSTALL_USER" > "$STATE"
+    say "installed for $INSTALL_USER in $target"
+}
+
+finish() { db_stop; exit 0; }
+
+[ "$1" = configure ] || finish
+
+NEW_VERSION=$(dpkg-query -W -f='${Version}' swordfish-portable 2>/dev/null || echo unknown)
+OLD_TARGET=$(state_value TARGET)
+OLD_OWNER=$(state_value OWNER)
+is_ours "$OLD_TARGET" || OLD_TARGET=
+
+# Upgrades and reinstalls keep the existing location and settings;
+# dpkg-reconfigure asks again and moves the copy with its settings.
+if [ -n "$OLD_TARGET" ] && [ -z "${DEBCONF_RECONFIGURE:-}" ] && getent passwd "$OLD_OWNER" >/dev/null; then
+    INSTALL_USER=$OLD_OWNER
+    INSTALL_HOME=$(user_home "$INSTALL_USER")
+    install_copy "$OLD_TARGET" "$OLD_TARGET"
+    finish
+fi
+
+INSTALL_USER=$(detect_user)
+[ -n "$INSTALL_USER" ] || INSTALL_USER=$OLD_OWNER
+if [ -z "$INSTALL_USER" ] || ! getent passwd "$INSTALL_USER" >/dev/null; then
+    say "no desktop user found; nothing was copied."
+    say "run 'sudo dpkg-reconfigure swordfish-portable' from your desktop session to install."
+    finish
+fi
+INSTALL_HOME=$(user_home "$INSTALL_USER")
+
+created_default=
+if [ -n "$OLD_TARGET" ]; then
+    default=$(dirname -- "$OLD_TARGET")
+else
+    default="$INSTALL_HOME/Applications"
+    if [ ! -d "$default" ] && as_user mkdir -p -- "$default" 2>/dev/null; then
+        created_default=$default
+    fi
+fi
+
+CHOSEN=
+GUI_TOOL=
+status=0
+gui_choose "$default" || status=$?
+if [ "$status" = 2 ]; then
+    GUI_TOOL=
+    status=0
+    debconf_choose "$default" || status=$?
+fi
+if [ "$status" != 0 ]; then
+    [ -n "$created_default" ] && rmdir -- "$created_default" 2>/dev/null || true
+    say "installation location not chosen; nothing was copied."
+    say "run 'sudo dpkg-reconfigure swordfish-portable' to choose it later."
+    finish
+fi
+
+parent=$(realpath -m -- "$CHOSEN")
+if [ -n "$created_default" ] && [ "$parent" != "$created_default" ]; then
+    rmdir -- "$created_default" 2>/dev/null || true
+fi
+install_copy "$parent/$FOLDER" "$OLD_TARGET"
+[ "${GUI_TOOL:-}" = yad ] && gui_done "$parent/$FOLDER"
+finish

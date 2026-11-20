@@ -1,0 +1,32 @@
+#!/bin/sh
+# Removing the package removes the copied folder, including portable-data.
+set -e
+
+STATE=/var/lib/swordfish-portable/install
+LINK=/usr/local/bin/swordfish-portable
+FOLDER=Swordfish-Portable
+MARKER=.installed-by-swordfish-portable-deb
+
+case "$1" in
+    remove|purge)
+        target=
+        [ -r "$STATE" ] && target=$(sed -n 's/^TARGET=//p' "$STATE" | head -n 1)
+        if [ -L "$LINK" ] && [ -n "$target" ] && [ "$(readlink -- "$LINK")" = "$target/AppRun" ]; then
+            rm -f -- "$LINK"
+        fi
+        # Only delete a folder this package created.
+        if [ -n "$target" ] && [ "$(basename -- "$target")" = "$FOLDER" ] &&
+           [ -f "$target/$MARKER" ] && [ -f "$target/AppRun" ]; then
+            rm -rf -- "$target"
+            echo "swordfish-portable: removed $target" >&2
+        fi
+        rm -rf /var/lib/swordfish-portable
+        ;;
+esac
+
+if [ "$1" = purge ] && [ -e /usr/share/debconf/confmodule ]; then
+    . /usr/share/debconf/confmodule
+    db_purge
+fi
+
+exit 0

@@ -1,0 +1,13 @@
+Template: swordfish-portable/install-dir
+Type: string
+Default:
+Description: Folder to install Swordfish FM into:
+ A Swordfish-Portable folder will be created inside this folder for ${USER}.
+ Swordfish keeps its settings in Swordfish-Portable/portable-data, so ${USER}
+ must be able to write to it. Use a folder in your home folder, /opt or a
+ data drive that supports Linux permissions.
+
+Template: swordfish-portable/invalid-dir
+Type: error
+Description: Cannot install into ${DIR}
+ ${REASON}
