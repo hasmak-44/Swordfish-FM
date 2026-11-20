@@ -10,7 +10,7 @@ if [[ ! -d "$icons" ]]; then
 fi
 prefix=$(cd -- "$icons/../../../.." && pwd)
 scratch=$(mktemp -d /tmp/swordfish-expansion-test.XXXXXX)
-trap 'rm -f "$scratch/main.o" "$scratch/test" "$scratch/swordfish-network" "$scratch/gio" "$scratch/xdg-open" "$scratch/fake-player" "$scratch/lsblk" "$scratch/udisksctl" "$scratch/mount.log"; rm -rf "$scratch/fixture" "$scratch/home"; rmdir "$scratch"' EXIT
+trap 'rm -f "$scratch/main.o" "$scratch/test" "$scratch/swordfish-network" "$scratch/gio" "$scratch/xdg-open" "$scratch/fake-player" "$scratch/lsblk" "$scratch/udisksctl" "$scratch/mount.log" "$scratch/mount.log.discover"; rm -rf "$scratch/fixture" "$scratch/home"; rmdir "$scratch"' EXIT
 cp "$root/tests/fake-remote-directory.py" "$scratch/swordfish-network"
 chmod +x "$scratch/swordfish-network"
 ln -s swordfish-network "$scratch/gio"

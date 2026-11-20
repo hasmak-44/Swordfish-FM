@@ -11,6 +11,7 @@
 #include <net/if.h>
 #include <netinet/in.h>
 #include <set>
+#include <sstream>
 #include <string>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -268,8 +269,11 @@ const char* const WSD = "http://schemas.xmlsoap.org/ws/2005/04/discovery";
 const char* const MDNS_GROUP = "224.0.0.251";
 const guint16 MDNS_PORT = 5353;
 const guint16 SSDP_PORT = 1900;
+const guint16 JELLYFIN_PORT = 7359;
+const guint16 JELLYFIN_HTTP_PORT = 8096;
 const guint SERVICE_RETRY_MS = 1500;
-const guint SERVICE_WINDOW_MS = 5000;
+const guint SERVICE_WINDOW_MS = 8000;
+const size_t MAX_KNOWN_MEDIA = 32;
 const size_t MAX_SERVICES = 256;
 
 guint16 smbPort = 445;
@@ -282,6 +286,8 @@ struct Interface
 {
     std::string name;
     std::string address;
+    std::string broadcast;
+    guint32 network, mask;
 };
 
 struct Host
@@ -303,11 +309,14 @@ struct Service
     std::string printed;
 };
 
+enum ServiceProtocol { MDNS, SSDP, SSDP_NOTIFY, JELLYFIN };
+
 struct ServiceSocket
 {
     GSocket* socket;
     GSource* source;
-    bool mdns;
+    ServiceProtocol protocol;
+    std::string broadcast;
 };
 
 struct ProbeMatch
@@ -332,6 +341,7 @@ struct State
     std::string probeId, probe;
     std::map<std::string, Service> services;
     std::set<std::string> ssdpLocations;
+    std::set<std::string> jellyfinPeers;
     std::vector<ServiceSocket> serviceSockets;
     std::string mdnsQuery;
     int pending = 0;
@@ -719,7 +729,7 @@ struct UpnpService
 struct UpnpDevice
 {
     std::vector<std::string> types;
-    std::string name, presentation, base;
+    std::string name, presentation, base, udn;
     std::vector<UpnpService> services;
 };
 
@@ -752,6 +762,7 @@ void descriptionEnd(GMarkupParseContext*, const gchar*, gpointer data, GError**)
     else if (element == "presentationURL" && parent == "device" && device.presentation.empty())
         device.presentation = value;
     else if (element == "URLBase") device.base = value;
+    else if (element == "UDN" && parse->stack.size() == 3) device.udn = value;
     else if (element == "serviceType" && parent == "service") parse->service.type = value;
     else if (element == "controlURL" && parent == "service") parse->service.control = value;
     else if (element == "service" && !parse->service.type.empty() && !parse->service.control.empty())
@@ -803,26 +814,100 @@ std::string classifyDevice(const UpnpDevice& device)
     return result;
 }
 
-// LOCATION of an SSDP M-SEARCH "200 OK" reply.
+// LOCATION of an SSDP M-SEARCH "200 OK" reply or of an "ssdp:alive" NOTIFY announcement.
 std::string ssdpLocation(const std::string& reply)
 {
-    const size_t end = reply.find("\r\n");
-    if (end == std::string::npos || reply.compare(0, 9, "HTTP/1.1 ") != 0 ||
-        reply.substr(0, end).find(" 200") == std::string::npos)
-        return "";
-    size_t position = end + 2;
-    while (position < reply.size())
+    std::istringstream lines(reply);
+    std::string line, location, nts;
+    if (!std::getline(lines, line)) return "";
+    line = trim(line);
+    const bool response = line.compare(0, 5, "HTTP/") == 0 && line.find(" 200") != std::string::npos;
+    const bool notify = line.compare(0, 9, "NOTIFY * ") == 0;
+    if (!response && !notify) return "";
+    while (std::getline(lines, line))
     {
-        size_t next = reply.find("\r\n", position);
-        if (next == std::string::npos) next = reply.size();
-        const std::string line = reply.substr(position, next - position);
-        const size_t colon = line.find(':');
-        if (colon != std::string::npos && lower(trim(line.substr(0, colon))) == "location")
-            return trim(line.substr(colon + 1));
+        line = trim(line);
         if (line.empty()) break;
-        position = next + 2;
+        const size_t colon = line.find(':');
+        if (colon == std::string::npos) continue;
+        const std::string name = lower(trim(line.substr(0, colon)));
+        if (name == "location" && location.empty()) location = trim(line.substr(colon + 1));
+        else if (name == "nts") nts = lower(trim(line.substr(colon + 1)));
+    }
+    return notify && nts != "ssdp:alive" ? "" : location;
+}
+
+// Value of a top-level "key":"string" member of a small flat JSON object ("" if absent or escaped oddly).
+std::string jsonString(const std::string& json, const std::string& key)
+{
+    const std::string quoted = "\"" + key + "\"";
+    size_t position = json.find(quoted);
+    if (position == std::string::npos) return "";
+    position = json.find_first_not_of(" \t\r\n", position + quoted.size());
+    if (position == std::string::npos || json[position] != ':') return "";
+    position = json.find_first_not_of(" \t\r\n", position + 1);
+    if (position == std::string::npos || json[position] != '"') return "";
+    std::string value;
+    for (++position; position < json.size(); ++position)
+    {
+        char c = json[position];
+        if (c == '"') return value;
+        if (c == '\\')
+        {
+            if (++position >= json.size()) return "";
+            c = json[position];
+            if (c != '"' && c != '\\' && c != '/') return "";
+        }
+        value += c;
     }
     return "";
+}
+
+// Jellyfin (and Emby, which it was forked from) answer "who is JellyfinServer?" /
+// "who is EmbyServer?" on UDP 7359 with {"Address":"http://IP:8096/base","Id":"<hex>",...}.
+// Their DLNA server, whose SSDP replies are unreliable in many versions, serves its
+// UPnP description on the HTTP port at [base]/dlna/<id>/description.xml: the id is
+// dashed since Jellyfin 10.8, undashed before, and older releases ignored the base
+// path. Returns the candidate description URLs on the replying address, most likely first.
+std::vector<std::string> jellyfinDescriptions(const std::string& reply, const std::string& peer)
+{
+    std::string id;
+    for (char c : lower(jsonString(reply, "Id")))
+        if (c != '-') id += c;
+    if (id.size() != 32 || id.find_first_not_of("0123456789abcdef") != std::string::npos) return {};
+    const std::string dashed = id.substr(0, 8) + "-" + id.substr(8, 4) + "-" + id.substr(12, 4) + "-" +
+                               id.substr(16, 4) + "-" + id.substr(20);
+
+    // Address may be a published https URL; DLNA is plain http on the LAN address.
+    const std::string address = jsonString(reply, "Address");
+    const size_t scheme = address.find("://");
+    if (scheme == std::string::npos) return {};
+    const bool http = g_ascii_strncasecmp(address.c_str(), "http://", 7) == 0;
+    const size_t slash = address.find('/', scheme + 3);
+    const std::string authority = address.substr(scheme + 3, slash == std::string::npos ? std::string::npos
+                                                                                        : slash - scheme - 3);
+    std::string base = slash == std::string::npos ? "" : address.substr(slash, address.find_first_of("?#", slash) - slash);
+    while (!base.empty() && base.back() == '/') base.pop_back();
+
+    std::vector<std::string> ports;
+    const size_t colon = authority.rfind(':');
+    if (http)
+        ports.push_back(colon == std::string::npos || authority.back() == ']' ? "80" : authority.substr(colon + 1));
+    if (ports.empty() || ports[0] != std::to_string(JELLYFIN_HTTP_PORT))
+        ports.push_back(std::to_string(JELLYFIN_HTTP_PORT));
+    std::vector<std::string> bases{base};
+    if (!base.empty()) bases.push_back("");
+
+    std::vector<std::string> result;
+    for (const std::string& port : ports)
+        for (const std::string& prefix : bases)
+            for (const std::string& udn : {dashed, id})
+            {
+                const std::string location = "http://" + peer + ":" + port + prefix + "/dlna/" + udn + "/description.xml";
+                HttpUrl url;
+                if (parseHttpUrl(location, url) && url.host == peer) result.push_back(location);
+            }
+    return result;
 }
 
 struct MdnsType
@@ -1545,40 +1630,101 @@ bool sameHostPage(const std::string& page, const std::string& peer)
     return true;
 }
 
-struct DescriptionJob
-{
-    std::string location, peer, error, body;
-};
-
-void describeDevice(const std::string& location, const std::string& peer)
+// The host a description URL may be fetched from: the device that answered, or another
+// device on one of this computer's networks (servers may advertise a sibling address).
+std::string locationHost(const std::string& location, const std::string& peer)
 {
     HttpUrl url;
-    if (!parseHttpUrl(location, url) || url.host != peer || state->ssdpLocations.size() >= MAX_SERVICES ||
-        !state->ssdpLocations.insert(location).second)
+    if (!parseHttpUrl(location, url) || !isIPv4(url.host) || state->localAddresses.count(url.host)) return "";
+    if (url.host == peer) return url.host;
+    struct in_addr address;
+    if (inet_pton(AF_INET, url.host.c_str(), &address) != 1) return "";
+    const guint32 host = ntohl(address.s_addr);
+    for (const Interface& iface : state->interfaces)
+        if (iface.mask && (host & iface.mask) == iface.network && host != iface.network &&
+            (host | iface.mask) != 0xffffffff)
+            return url.host;
+    return "";
+}
+
+// A UDN usable as a stable service key, so a server found several ways is listed once.
+bool safeUdn(const std::string& udn)
+{
+    if (udn.size() < 6 || udn.size() > 128) return false;
+    for (char c : udn)
+        if (!g_ascii_isalnum(c) && c != '-' && c != ':' && c != '.' && c != '_') return false;
+    return true;
+}
+
+struct DescriptionJob
+{
+    std::vector<std::string> locations;
+    std::string host, source, location, error, body;
+};
+
+// Fetch the first candidate UPnP description that answers; only "ssdp" reports failures,
+// the guessed (jellyfin) and remembered (saved) locations are skipped silently.
+void describeDevice(const std::vector<std::string>& candidates, const std::string& peer, const char* source)
+{
+    DescriptionJob* job = new DescriptionJob{{}, "", source, "", "", ""};
+    for (const std::string& location : candidates)
+    {
+        const std::string host = locationHost(location, peer);
+        if (host.empty() || (!job->host.empty() && host != job->host)) continue;
+        if (job->source == "ssdp" && (state->ssdpLocations.size() >= MAX_SERVICES ||
+                                      !state->ssdpLocations.insert(location).second))
+            continue;
+        job->host = host;
+        job->locations.push_back(location);
+    }
+    if (job->locations.empty())
+    {
+        delete job;
         return;
-    runThread<DescriptionJob>(new DescriptionJob{location, peer, "", ""},
-        [](DescriptionJob* job) { job->error = httpGet(job->location, job->body); },
+    }
+    runThread<DescriptionJob>(job,
+        [](DescriptionJob* job)
+        {
+            for (const std::string& location : job->locations)
+            {
+                job->location = location;
+                job->body.clear();
+                job->error = httpGet(location, job->body);
+                UpnpDevice device;
+                if (job->error.empty() && (job->locations.size() == 1 || parseDescription(job->body, device)))
+                    return;
+            }
+        },
         [](DescriptionJob* job)
         {
             UpnpDevice device;
-            if (!job->error.empty()) status("ssdp", job->location + ": " + job->error);
-            else if (!parseDescription(job->body, device)) status("ssdp", job->location + ": invalid description");
+            const bool quiet = job->source != "ssdp";
+            const char* source = job->source.c_str();
+            if (!job->error.empty())
+            {
+                if (!quiet) status(source, job->location + ": " + job->error);
+            }
+            else if (!parseDescription(job->body, device))
+            {
+                if (!quiet) status(source, job->location + ": invalid description");
+            }
             else
             {
                 const std::string kind = classifyDevice(device);
                 const std::string base = device.base.empty() ? job->location : device.base;
                 std::string page = resolveUrl(base, device.presentation);
-                if (!sameHostPage(page, job->peer)) page = "http://" + job->peer + "/";
+                if (!sameHostPage(page, job->host)) page = "http://" + job->host + "/";
                 if (kind == "media")
                 {
                     HttpUrl control;
                     if (parseHttpUrl(contentDirectory(device, job->location).control, control) &&
-                        control.host == job->peer)
-                        addService(kind, "media@" + job->location, job->peer, device.name, job->location, "ssdp");
+                        control.host == job->host)
+                        addService(kind, "media@" + (safeUdn(device.udn) ? lower(device.udn) : job->location),
+                                   job->host, device.name, job->location, source);
                 }
-                else if (!kind.empty())
+                else if (!kind.empty() && !quiet)
                 {
-                    addService(kind, kind + "@" + job->peer, job->peer, device.name, page, "ssdp");
+                    addService(kind, kind + "@" + job->host, job->host, device.name, page, source);
                 }
             }
             delete job;
@@ -1601,9 +1747,14 @@ void addMdnsService(const MdnsService& found)
     }
 }
 
+const char* protocolName(ServiceProtocol protocol)
+{
+    return protocol == MDNS ? "mdns" : protocol == JELLYFIN ? "jellyfin" : "ssdp";
+}
+
 gboolean serviceReadable(GSocket* socket, GIOCondition, gpointer data)
 {
-    const bool mdns = data != NULL;
+    const ServiceProtocol protocol = static_cast<ServiceProtocol>(GPOINTER_TO_INT(data));
     char buffer[9000];
     for (;;)
     {
@@ -1613,7 +1764,7 @@ gboolean serviceReadable(GSocket* socket, GIOCondition, gpointer data)
         if (bytes < 0)
         {
             if (!g_error_matches(error, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK))
-                status(mdns ? "mdns" : "ssdp", std::string("receive failed: ") + error->message);
+                status(protocolName(protocol), std::string("receive failed: ") + error->message);
             g_error_free(error);
             break;
         }
@@ -1628,32 +1779,82 @@ gboolean serviceReadable(GSocket* socket, GIOCondition, gpointer data)
         if (sender) g_object_unref(sender);
         if (!isIPv4(peer)) continue;
         const std::string reply(buffer, bytes);
-        if (mdns)
+        if (protocol == MDNS)
             for (const MdnsService& service : parseMdnsReply(reply, peer)) addMdnsService(service);
-        else
-            describeDevice(ssdpLocation(reply), peer);
+        else if (protocol == SSDP || protocol == SSDP_NOTIFY)
+            describeDevice({ssdpLocation(reply)}, peer, "ssdp");
+        else if (state->jellyfinPeers.size() < MAX_SERVICES && state->jellyfinPeers.insert(peer).second)
+            describeDevice(jellyfinDescriptions(reply, peer), peer, "jellyfin");
     }
     return G_SOURCE_CONTINUE;
 }
 
+// Servers differ in which search targets they answer, so ask for media servers explicitly too.
+const char* const SSDP_TARGETS[] = {"ssdp:all", "upnp:rootdevice", "urn:schemas-upnp-org:device:MediaServer:1",
+                                    "urn:schemas-upnp-org:service:ContentDirectory:1"};
+// Jellyfin answers the first, Emby the second.
+const char* const MEDIA_QUERIES[] = {"who is JellyfinServer?", "who is EmbyServer?"};
+
+void sendPacket(const ServiceSocket& item, const char* host, guint16 port, const std::string& packet)
+{
+    GInetAddress* group = g_inet_address_new_from_string(host);
+    if (!group) return;
+    GSocketAddress* destination = g_inet_socket_address_new(group, port);
+    GError* error = NULL;
+    if (g_socket_send_to(item.socket, destination, packet.data(), packet.size(), NULL, &error) < 0)
+    {
+        status(protocolName(item.protocol), std::string("send failed: ") + error->message);
+        g_error_free(error);
+    }
+    g_object_unref(destination);
+    g_object_unref(group);
+}
+
 void sendServiceQueries()
 {
-    const std::string search = "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\n"
-                               "MX: 2\r\nST: ssdp:all\r\nUSER-AGENT: Linux UPnP/1.1 swordfish-network/1\r\n\r\n";
     for (const ServiceSocket& item : state->serviceSockets)
     {
-        GInetAddress* group = g_inet_address_new_from_string(item.mdns ? MDNS_GROUP : WSD_GROUP);
-        GSocketAddress* destination = g_inet_socket_address_new(group, item.mdns ? MDNS_PORT : SSDP_PORT);
-        const std::string& packet = item.mdns ? state->mdnsQuery : search;
-        GError* error = NULL;
-        if (g_socket_send_to(item.socket, destination, packet.data(), packet.size(), NULL, &error) < 0)
-        {
-            status(item.mdns ? "mdns" : "ssdp", std::string("send failed: ") + error->message);
-            g_error_free(error);
-        }
-        g_object_unref(destination);
-        g_object_unref(group);
+        if (item.protocol == MDNS)
+            sendPacket(item, MDNS_GROUP, MDNS_PORT, state->mdnsQuery);
+        else if (item.protocol == SSDP)
+            for (const char* target : SSDP_TARGETS)
+                sendPacket(item, WSD_GROUP, SSDP_PORT,
+                           std::string("M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\n"
+                                       "MX: 2\r\nST: ") + target +
+                           "\r\nUSER-AGENT: Linux UPnP/1.1 swordfish-network/1\r\n\r\n");
+        else if (item.protocol == JELLYFIN)
+            for (const char* query : MEDIA_QUERIES)
+                sendPacket(item, item.broadcast.c_str(), JELLYFIN_PORT, query);
     }
+}
+
+// Servers that never answer searches still announce themselves every few minutes, and
+// whenever they start: listen on the SSDP port too, if no other program holds it exclusively.
+void listenSsdpNotify()
+{
+    GSocket* socket = g_socket_new(G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_DATAGRAM, G_SOCKET_PROTOCOL_UDP, NULL);
+    if (!socket) return;
+    GInetAddress* any = g_inet_address_new_any(G_SOCKET_FAMILY_IPV4);
+    GSocketAddress* bound = g_inet_socket_address_new(any, SSDP_PORT);
+    GInetAddress* group = g_inet_address_new_from_string(WSD_GROUP);
+    bool joined = false;
+    if (g_socket_bind(socket, bound, true, NULL))
+        for (const Interface& iface : state->interfaces)
+            joined = g_socket_join_multicast_group(socket, group, false, iface.name.c_str(), NULL) || joined;
+    g_object_unref(group);
+    g_object_unref(bound);
+    g_object_unref(any);
+    if (!joined)
+    {
+        g_object_unref(socket);
+        return;
+    }
+    g_socket_set_blocking(socket, false);
+    GSource* source = g_socket_create_source(socket, G_IO_IN, NULL);
+    g_source_set_callback(source, reinterpret_cast<GSourceFunc>(reinterpret_cast<void (*)()>(serviceReadable)),
+                          GINT_TO_POINTER(SSDP_NOTIFY), NULL);
+    g_source_attach(source, NULL);
+    state->serviceSockets.push_back(ServiceSocket{socket, source, SSDP_NOTIFY, ""});
 }
 
 void stopServices()
@@ -1670,12 +1871,13 @@ void stopServices()
     maybeFinish();
 }
 
-// mDNS (FTP, SFTP, printers) and SSDP (media servers, printers, routers): advertised services only.
+// mDNS (FTP, SFTP, printers), SSDP searches and announcements (media servers, printers,
+// routers) and Jellyfin/Emby UDP discovery (their DLNA server): advertised services only.
 void startServices()
 {
     state->mdnsQuery = mdnsQuery(static_cast<guint16>(g_random_int_range(1, 65536)));
     for (const Interface& iface : state->interfaces)
-        for (bool mdns : {true, false})
+        for (ServiceProtocol protocol : {MDNS, SSDP, JELLYFIN})
         {
             GError* error = NULL;
             GSocket* socket = g_socket_new(G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_DATAGRAM,
@@ -1691,19 +1893,21 @@ void startServices()
             g_object_unref(local);
             if (!ok)
             {
-                status(mdns ? "mdns" : "ssdp", iface.name + ": " + (error ? error->message : strerror(errno)));
+                status(protocolName(protocol), iface.name + ": " + (error ? error->message : strerror(errno)));
                 g_clear_error(&error);
                 if (socket) g_object_unref(socket);
                 continue;
             }
-            g_socket_set_multicast_ttl(socket, mdns ? 255 : 2);
+            g_socket_set_multicast_ttl(socket, protocol == MDNS ? 255 : 2);
+            if (protocol == JELLYFIN) g_socket_set_broadcast(socket, true);
             g_socket_set_blocking(socket, false);
             GSource* source = g_socket_create_source(socket, G_IO_IN, NULL);
             g_source_set_callback(source, reinterpret_cast<GSourceFunc>(reinterpret_cast<void (*)()>(serviceReadable)),
-                                  mdns ? GINT_TO_POINTER(1) : NULL, NULL);
+                                  GINT_TO_POINTER(protocol), NULL);
             g_source_attach(source, NULL);
-            state->serviceSockets.push_back(ServiceSocket{socket, source, mdns});
+            state->serviceSockets.push_back(ServiceSocket{socket, source, protocol, iface.broadcast});
         }
+    listenSsdpNotify();
     if (state->serviceSockets.empty()) return;
     state->servicesOpen = true;
     sendServiceQueries();
@@ -1747,9 +1951,33 @@ void readInterfaces()
         char text[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &reinterpret_cast<struct sockaddr_in*>(item->ifa_addr)->sin_addr, text, sizeof(text));
         state->localAddresses.insert(text);
-        if (searchableInterface(item->ifa_flags)) state->interfaces.push_back(Interface{item->ifa_name, text});
+        if (!searchableInterface(item->ifa_flags)) continue;
+        char broadcast[INET_ADDRSTRLEN] = "255.255.255.255";
+        if ((item->ifa_flags & IFF_BROADCAST) && item->ifa_broadaddr && item->ifa_broadaddr->sa_family == AF_INET)
+            inet_ntop(AF_INET, &reinterpret_cast<struct sockaddr_in*>(item->ifa_broadaddr)->sin_addr,
+                      broadcast, sizeof(broadcast));
+        Interface iface{item->ifa_name, text, broadcast, 0, 0};
+        if (item->ifa_netmask && item->ifa_netmask->sa_family == AF_INET)
+        {
+            iface.mask = ntohl(reinterpret_cast<struct sockaddr_in*>(item->ifa_netmask)->sin_addr.s_addr);
+            iface.network = ntohl(reinterpret_cast<struct sockaddr_in*>(item->ifa_addr)->sin_addr.s_addr) & iface.mask;
+        }
+        state->interfaces.push_back(iface);
     }
     freeifaddrs(list);
+}
+
+// Media servers found by earlier searches: checked again quietly, for servers that are
+// up but neither answer nor announce during this search.
+std::vector<std::string> knownMedia;
+
+void describeKnownMedia()
+{
+    for (const std::string& location : knownMedia)
+    {
+        HttpUrl url;
+        if (parseHttpUrl(location, url)) describeDevice({location}, url.host, "saved");
+    }
 }
 
 int run()
@@ -1762,6 +1990,7 @@ int run()
     startGvfs();
     startWsd();
     startServices();
+    describeKnownMedia();
     g_timeout_add(DEADLINE_MS, [](gpointer) -> gboolean
     {
         status("discovery", "time limit reached");
@@ -2758,10 +2987,15 @@ int main(int argc, char** argv)
         }
         return listDirectory(argv[2], true);
     }
-    if (argc == 2 && strcmp(argv[1], "--discover") == 0) return discovery::run();
+    if (argc >= 2 && strcmp(argv[1], "--discover") == 0)
+    {
+        for (int i = 2; i < argc && discovery::knownMedia.size() < discovery::MAX_KNOWN_MEDIA; ++i)
+            discovery::knownMedia.push_back(argv[i]);
+        return discovery::run();
+    }
     if (argc == 4 && strcmp(argv[1], "--media") == 0) return media::list(argv[2], argv[3]);
     if (argc == 4 && strcmp(argv[1], "--download") == 0) return media::download(argv[2], argv[3]);
-    std::fprintf(stderr, "Usage: swordfish-network --discover | --shares smb://HOST/ | --list PATH |\n"
+    std::fprintf(stderr, "Usage: swordfish-network --discover [MEDIA-DESCRIPTION-URL...] | --shares smb://HOST/ | --list PATH |\n"
                          "       --usb-monitor | --phone-mount mtp://DEVICE/ | --phone-mount afc://DEVICE/ |\n"
                          "       --media DESCRIPTION-URL dlna://HOST:PORT/PATH | --download URL FILE\n");
     return 2;

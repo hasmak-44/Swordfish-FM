@@ -88,6 +88,8 @@ static FXString networkSourcesText(FXString sources)
     sources.substitute("gvfs", "GVFS");
     sources.substitute("mdns", "Zeroconf");
     sources.substitute("ssdp", "UPnP");
+    sources.substitute("jellyfin", "Jellyfin/Emby");
+    sources.substitute("saved", _("previously found"));
     sources.substitute(",", ", ");
     return sources;
 }
@@ -2323,7 +2325,16 @@ void DirPanel::startNetworkDiscovery()
         executable[length] = '\0';
         helper = FXPath::directory(executable) + "/swordfish-network";
     }
-    const FXString command = FXString("exec ") + xf_hostcommand(xf_quote(helper) + " --discover");
+    // Media servers found before are checked directly too, in case they stay silent this time
+    FXString arguments = " --discover";
+    FXStringDict* media = getApp()->reg().find("NETWORK MEDIA");
+    for (FXint i = media ? media->first() : 0, count = 0; media && i < media->size() && count < 32;
+         i = media->next(i), ++count)
+    {
+        const FXString location = FXString(media->data(i)).before('\t');
+        if (safeServiceUrl("media", location)) arguments += " " + xf_quote(location);
+    }
+    const FXString command = FXString("exec ") + xf_hostcommand(xf_quote(helper) + arguments);
     networkPid = fork();
     if (networkPid < 0)
     {

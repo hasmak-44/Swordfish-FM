@@ -2160,6 +2160,13 @@ int main(int argc, char** argv)
         assert(network->getNumChildren() > 2 && static_cast<SidebarItem*>(network->getLast())->muted);
         waitForSearch();
         assert(!static_cast<SidebarItem*>(network->getLast())->muted);
+        // Media servers found before are checked directly too
+        {
+            std::ifstream arguments(std::string(getenv("SWORDFISH_TEST_MOUNT_LOG")) + ".discover");
+            std::string line;
+            assert(std::getline(arguments, line) &&
+                   line.find("--discover") == 0 && line.find(" http://192.168.1.70:8200/rootDesc.xml") != std::string::npos);
+        }
         // Disconnecting does not search; the same connection again does not search either
         simulatedInterfaces = "";
         panel->noteNetworkInterfaces(simulatedInterfaces);

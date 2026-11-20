@@ -538,12 +538,52 @@ static void serviceParsers()
 {
     assert(ssdpLocation("HTTP/1.1 200 OK\r\nST: ssdp:all\r\nlocation:  http://192.168.1.5:8200/rootDesc.xml \r\n\r\n") ==
            "http://192.168.1.5:8200/rootDesc.xml");
+    assert(ssdpLocation("NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nNT: upnp:rootdevice\r\n"
+                        "NTS: ssdp:alive\r\nLocation: http://192.168.1.20:8096/dlna/x/description.xml\r\n\r\n") ==
+           "http://192.168.1.20:8096/dlna/x/description.xml");
+    assert(ssdpLocation("NOTIFY * HTTP/1.1\nNTS: ssdp:alive\nLOCATION: http://192.168.1.20/d.xml\n\n") ==
+           "http://192.168.1.20/d.xml");
+    assert(ssdpLocation("NOTIFY * HTTP/1.1\r\nNTS: ssdp:byebye\r\nLOCATION: http://x/\r\n\r\n") == "");
     assert(ssdpLocation("NOTIFY * HTTP/1.1\r\nLOCATION: http://x/\r\n\r\n") == "");
+    assert(ssdpLocation("M-SEARCH * HTTP/1.1\r\nLOCATION: http://x/\r\n\r\n") == "");
     assert(ssdpLocation("HTTP/1.1 404 Not Found\r\nLOCATION: http://x/\r\n\r\n") == "");
+
+    // Jellyfin 10.8+ (dashed id) and older (undashed) DLNA paths, with and without the base path, on the
+    // advertised HTTP port and Jellyfin's default
+    const std::string jellyfinId = "0123456789ABCDEF0123456789abcdef";
+    const std::string dashed = "/dlna/01234567-89ab-cdef-0123-456789abcdef/description.xml";
+    const std::string plain = "/dlna/0123456789abcdef0123456789abcdef/description.xml";
+    const std::string peer = "192.168.1.20";
+    assert((jellyfinDescriptions("{\"Address\":\"http:\\/\\/192.168.1.20:8096\",\"Id\":\"" + jellyfinId +
+                                 "\",\"Name\":\"Den\",\"EndpointAddress\":null}", peer) ==
+            std::vector<std::string>{"http://192.168.1.20:8096" + dashed, "http://192.168.1.20:8096" + plain}));
+    assert((jellyfinDescriptions("{\"Address\" : \"http://jelly.lan:9000/media/\", \"Id\" : \"" + jellyfinId + "\"}",
+                                 peer) ==
+            std::vector<std::string>{"http://192.168.1.20:9000/media" + dashed, "http://192.168.1.20:9000/media" + plain,
+                                     "http://192.168.1.20:9000" + dashed, "http://192.168.1.20:9000" + plain,
+                                     "http://192.168.1.20:8096/media" + dashed, "http://192.168.1.20:8096/media" + plain,
+                                     "http://192.168.1.20:8096" + dashed, "http://192.168.1.20:8096" + plain}));
+    assert((jellyfinDescriptions("{\"Address\":\"https://jelly.example.com\",\"Id\":\"01234567-89ab-cdef-0123-"
+                                 "456789abcdef\"}", peer) ==
+            std::vector<std::string>{"http://192.168.1.20:8096" + dashed, "http://192.168.1.20:8096" + plain}));
+    assert((jellyfinDescriptions("{\"Address\":\"http://emby.lan\",\"Id\":\"" + jellyfinId + "\"}", peer) ==
+            std::vector<std::string>{"http://192.168.1.20:80" + dashed, "http://192.168.1.20:80" + plain,
+                                     "http://192.168.1.20:8096" + dashed, "http://192.168.1.20:8096" + plain}));
+    assert(jellyfinDescriptions("{\"Address\":\"http://192.168.1.20:8096\",\"Id\":\"not-a-guid\"}", peer).empty());
+    assert((jellyfinDescriptions("{\"Address\":\"http://x:8096/a b\",\"Id\":\"" + jellyfinId + "\"}", peer) ==
+            std::vector<std::string>{"http://192.168.1.20:8096" + dashed, "http://192.168.1.20:8096" + plain}));
+    assert(jellyfinDescriptions("who is JellyfinServer?", peer).empty());
 
     UpnpDevice device;
     assert(parseDescription(MEDIA_DESCRIPTION, device));
-    assert(classifyDevice(device) == "media" && device.name == "Living Room NAS");
+    assert(classifyDevice(device) == "media" && device.name == "Living Room NAS" && device.udn.empty());
+    device = UpnpDevice();
+    assert(parseDescription("<root><device><deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>"
+                            "<UDN>uuid:ABC-123</UDN><deviceList><device><UDN>uuid:embedded</UDN></device>"
+                            "</deviceList></device></root>", device));
+    assert(device.udn == "uuid:ABC-123");
+    device = UpnpDevice();
+    assert(parseDescription(MEDIA_DESCRIPTION, device));
     UpnpService directory = contentDirectory(device, "http://192.168.1.5:8200/desc/root.xml");
     assert(directory.type == "urn:schemas-upnp-org:service:ContentDirectory:1");
     assert(directory.control == "http://192.168.1.5:8200/desc/ctl");
