@@ -95,8 +95,9 @@ jobs:
         env:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
+          # Match the whole tag so swordfish-0.0.3 does not also take -beta2's notes.
           awk -v head="## $RELEASE_TAG" '
-            index($0, head) == 1 { on = 1; next }
+            !on && ($0 == head || index($0, head " ") == 1) { on = 1; next }
             on && /^## / { exit }
             on { print }
           ' CHANGELOG.md > build/release-notes.md

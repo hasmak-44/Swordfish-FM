@@ -10,16 +10,17 @@ For the development history, confirmed decisions, known limitations and recovery
 instructions if the conversation is lost, read
 [Project history and recovery guide](PROJECT-HISTORY.md).
 
-> **Swordfish-Portable v0.0.3 beta 2 — latest release**
+> **Swordfish-Portable v0.0.3 — latest stable release**
 >
-> Adds discovery of media servers (UPnP/DLNA, browsed read-only with Play,
-> Play With and downloads with progress), FTP/SFTP servers, printers and
-> routers; a combined Trash that includes other file managers' and mounted
-> drives' Trash; the MX Blues theme; a custom toolbar icon size; and fixes for
-> FTP unmount, dragging files to other programs and desktop launchers.
-> Beta 1 added Custom Actions, a separate custom toolbar, categorized icon
-> selection, an offline beginner manual, optional desktop integration and
-> per-pane column preferences. This is a **beta**; [0.0.2 remains the stable fallback](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.2).
+> Adds USB phones (Android MTP and iPhone/iPad) under Devices, broader media
+> server discovery (UPnP AV, Jellyfin and Emby), a Theme Editor with textures,
+> patterns and background images, fourteen built-in themes, a Preferences
+> redesign, clearer copy/move conflicts, right-button drag and drop, optional
+> copy verification, per-drive Trash and faster file operations. It also
+> includes the 0.0.3 betas: Custom Actions, a custom toolbar, an offline
+> beginner manual, media servers, FTP/SFTP, printers, routers and a combined
+> Trash. [0.0.2](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.2)
+> remains available.
 >
 > 0.0.2 makes Swordfish fully independent of an installed Xfe: its automount
 > helper is now `swf-automount`, so it can no longer overwrite or stop Xfe's
@@ -71,14 +72,14 @@ system. It currently supports 64-bit x86 Linux.
 The portable build runs on 64-bit x86 Linux. It does not install Swordfish
 system-wide or require extra software to download it.
 
-1. Open the [Swordfish 0.0.3 beta 2 release](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.3-beta2)
-   and download **Swordfish-Portable-0.0.3-beta2.zip** under **Assets** (recommended).
+1. Open the [Swordfish 0.0.3 release](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.3)
+   and download **Swordfish-Portable-0.0.3.zip** under **Assets** (recommended).
    Your browser downloads the ZIP using its normal download settings.
 2. Extract the ZIP to the place where you want to keep Swordfish. The ZIP
-   contains the complete `Swordfish-Portable-0.0.3-beta2` folder. **Extract the whole
+   contains the complete `Swordfish-Portable-0.0.3` folder. **Extract the whole
    folder; do not move files out of it. Keep the folder together.**
-3. For this beta, first extract into a **new folder** and keep your working
-   copy as a fallback. Back up `portable-data` before transferring settings.
+3. If you are upgrading, first extract into a **new folder** and keep your
+   working copy until the new one works. Back up `portable-data` before transferring settings.
    To update an existing copy, copy the contents of the extracted folder
    into your existing Swordfish folder. If asked, choose to replace the
    existing app files. Your settings and customizations in `portable-data`
@@ -95,12 +96,12 @@ The portable build is not a system-wide installation.
 
 | Asset | Purpose |
 | --- | --- |
-| **Swordfish-Portable-0.0.3-beta2.zip** | **Recommended.** Beta release package built against Debian 10 / glibc 2.28 and launch-tested before publication. |
-| Swordfish-Portable-0.0.3-beta2.tar.gz | The same release package in tar.gz format. |
-| Swordfish-FM-0.0.3-beta2-source.tar.gz | Source code, not a ready-to-run application. |
-| Swordfish-User-Manual-0.0.3-beta2.zip | Offline HTML manual and its illustrations; also included in the portable package. |
+| **Swordfish-Portable-0.0.3.zip** | **Recommended.** Stable release package built against Debian 10 / glibc 2.28 and launch-tested before publication. |
+| Swordfish-Portable-0.0.3.tar.gz | The same release package in tar.gz format. |
+| Swordfish-FM-0.0.3-source.tar.gz | Source code, not a ready-to-run application. |
+| Swordfish-User-Manual-0.0.3.zip | Offline HTML manual and its illustrations; also included in the portable package. |
 
-Use `Swordfish-0.0.3-beta2-SHA256SUMS` to verify the downloads.
+Use `Swordfish-0.0.3-SHA256SUMS` to verify the downloads.
 You need only one portable package.
 
 For technical details or to build it yourself, see

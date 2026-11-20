@@ -1,8 +1,30 @@
 # Swordfish FM portable changelog
 
-## Unreleased
+## swordfish-0.0.3 — 20 November 2026
+
+Stable release. It replaces 0.0.2 as the recommended version and includes
+everything from 0.0.3 beta 1 and beta 2. Extract into a new folder and launch
+`AppRun`; back up existing `portable-data` before transferring settings.
+Release archives contain no settings profile or test data.
 
 ### Added
+- USB phones: Android (MTP) and iPhone/iPad (AFC) devices are listed under
+  Devices and mounted through the desktop's GVFS service. A phone keeps one
+  row while plugged in, dimmed when unmounted. Mounting waits until the phone
+  is unlocked and access is allowed, then opens it automatically.
+- Media server discovery also finds UPnP AV servers that announce themselves
+  only with NOTIFY messages, on non-default ports or by specific device type,
+  Jellyfin and Emby servers (including older versions) through their own
+  discovery, and media servers found before.
+- Right-button drag and drop: dropping opens Copy Here, Move Here, Link Here,
+  Extract Here (one archive) and Create Archive Here.
+- Optional MD5 verification of copied and moved files (Preferences > File
+  operations > Copy and move). Off by default because it is slower; a damaged
+  copy is reported and removed and the source is kept.
+- Tab groups also save and restore the panel layout, orientation and splitter
+  positions.
+- Fourteen built-in colour themes, including red-green-accessible dark and
+  light palettes; first-run settings use Ocean Depth.
 - Separate Theme Editor under Preferences > Appearance > Theme, with a safe
   snapshot of the current view, supported element properties, live preview,
   undo/redo, comparison, scoped resets and privacy masking. Apply changes only
@@ -33,7 +55,8 @@
   selected area were transparent over a desktop picture, with adjustable
   opacity. One image spans the selected panels; older themes with per-area
   images still use their first image for the whole window. The editor previews
-  images without changing the live window until Save.
+  images without changing the live window until Save. The image can cover the
+  whole window, only the file panels, or all panels including the sidebar.
 - 21 additional categorized textures and 21 pattern images are bundled from
   CC0 Poly Haven assets, with source and author credits included.
 - Custom themes are saved in per-theme folders under
@@ -47,6 +70,18 @@
   texture in its own colours instead of tinting it with the theme colour.
 
 ### Changed
+- Panel layout shortcuts are now Alt+Shift+1–4 and Go to Trash is
+  Alt+Shift+T, because Ctrl+F1–F4 and Ctrl+F8 switch workspaces on Xfce/MX.
+  Profiles still using the old defaults are updated at startup.
+- Dialog windows can be resized and scroll instead of being cut off; wheel
+  scrolling moves by lines and continues to the enclosing page at the end of
+  a list. Dialog scrollbar thumbs are visible, and tab frames have rounded
+  upper corners.
+- "Warn if running as root" can now be set by normal users; it still only
+  applies when Swordfish runs as root.
+- Theme Editor image, texture and pattern galleries open large folders
+  immediately and fill in thumbnails as they load. The Theme Editor's file
+  chooser keeps OK and Cancel visible without scrolling.
 - Theme Editor media-folder imports show scanning activity, file progress and
   Cancel. Cancelling removes imported media and new folders, restoring any
   existing files replaced during a merge. A scrollable completion report
@@ -105,7 +140,11 @@
   skipped.
 
 ### Fixed
-- Scrolling a file list or folder tree over a theme background image no longer
+- USB phones: the phone no longer appears ready before access is allowed, and
+  mounting recovers when the phone's connection restarts after you allow
+  access. Cancel no longer reports an error when that connection is already
+  gone, and the following error message is no longer drawn blank. The waiting
+  dialog has clear steps and keeps Cancel visible at every status.
   smears or streaks the image. The visible area is repainted while scrolling,
   so a manual refresh is no longer needed.
 - Custom Actions no longer copy scripts into action folders or rewrite

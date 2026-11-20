@@ -1,9 +1,9 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 19 November 2026, through the current development handoff
-(section 3.108).
-Latest release: `swordfish-0.0.3-beta2`.
-Stable fallback: `swordfish-0.0.2`.
+Last updated: 20 November 2026, through the 0.0.3 stable release
+(section 3.115).
+Latest release: `swordfish-0.0.3` (stable).
+Previous stable release: `swordfish-0.0.2`.
 
 **Purpose:** preserve enough history, decisions, architecture and operational
 knowledge to resume development if the chat, development machine or temporary
@@ -21,12 +21,13 @@ Historical implementation details below do not override the current code.
    and [portable/README.md](portable/README.md).
 2. Inspect the current branch, commit and both staged and unstaged changes.
    Do not reset or clean the worktree to make it look like a fresh checkout.
-3. The current published stable baseline is **0.0.2**:
+3. The current published stable baseline is **0.0.3**:
    - Repository: <https://github.com/hasmak-44/Swordfish-FM>
    - Development/default branch used for this work: `portable-layout`
-   - Release tag: `swordfish-0.0.2`
-   - Application commit: `30a9a315476a9cf358560b5beba27f6c00a3fac7`
-   - [Stable release](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.2)
+   - Release tag: `swordfish-0.0.3` (the application commit is the tagged one)
+   - [Stable release](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.3)
+   - The previous stable release, `swordfish-0.0.2` (application commit
+     `30a9a315476a9cf358560b5beba27f6c00a3fac7`), remains published.
 4. Treat published releases as locked. Do not move their tags, replace their
    assets, or present local test builds as a new stable release.
 5. The **Network discovery section is intentionally hidden**, not accidentally
@@ -3785,6 +3786,29 @@ duplicate `swordfish-test-themes.zip`, and screenshots of fixed bugs. Docker
 builder images and the Docker build cache were pruned (about 1.9 GB). The
 next portable build re-downloads the Debian base image. Design references,
 user-supplied themes and images, notes and the current archive were kept.
+
+### 3.115. Phone recovery, media discovery and 0.0.3 stable release (20 November 2026)
+
+After the background-scopes build, four changes were tested on real hardware:
+theme galleries load thumbnails progressively and the Theme Editor file
+chooser keeps its buttons visible (`ca18cd3`); phone mounts wait for readable
+storage (`1870a22`); UPnP AV discovery also accepts NOTIFY-only, non-default
+port and device-type announcements, plus Jellyfin and Emby discovery
+(`86733ea`); and the phone helper recovers when allowing access restarts the
+GVFS MTP backend (`58c134c`). That last change treats vanished mounts and
+D-Bus `SERVICE_UNKNOWN`/`NAME_HAS_NO_OWNER` as cancelled or remountable, stops
+the waiting dialog's EOF loop that left the error dialog blank, and redesigns
+the waiting dialog (heading, numbered steps, fixed-width status, Cancel always
+visible, minimum size equal to its default size). The user tested the build
+and asked to publish it as stable **0.0.3**.
+
+Release changes: `configure.ac` version 0.0.3; README, portable README,
+manual, RELEASE-NOTES and CHANGELOG updated, the CHANGELOG backfilled with
+features committed since beta 2 without entries. The release workflow's
+changelog extraction now matches the whole tag heading, so `swordfish-0.0.3`
+no longer also matches `swordfish-0.0.3-beta2`. The user manual ZIP is added
+to the release by hand and SHA256SUMS regenerated to cover all four assets,
+as for beta 2.
 
 ## 4. The archive-command / false idle-timeout bug
 

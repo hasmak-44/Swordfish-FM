@@ -1,15 +1,8 @@
 # Portable Linux build
 
-Current latest release: **0.0.3 beta 2** (`swordfish-0.0.3-beta2`).
-This is beta software; stable 0.0.2 remains available unchanged. Extract into a
-new folder for testing and back up existing `portable-data` before migrating it.
-Release archives do not include a settings profile or test data.
-
-The beta 2 ZIP was repackaged on 12 November 2026 to avoid newer 7-Zip
-rejecting relative icon links as "Dangerous link path". It contains ordinary
-files instead of symbolic links, with the same application binaries.
-Download it again if extraction failed, and use the updated SHA256SUMS.
-The tar.gz, source and manual archives were not replaced.
+Current latest release: **0.0.3** (`swordfish-0.0.3`), a stable release.
+Extract into a new folder and back up existing `portable-data` before
+migrating it. Release archives do not include a settings profile or test data.
 
 The portable build produces a relocatable AppDir-style directory for Linux
 x86_64. It includes the Swordfish programs, installed resources, and shared
@@ -49,7 +42,7 @@ dark background. A normal installation places them in
 Choose **Help > User Manual** for the bundled, illustrated beginner guide.
 It opens in your browser and works offline; the HTML file is
 `usr/share/swordfish/manual/index.html`. Its screenshots describe the matching
-0.0.3-beta2 interface. The same HTML and images can be hosted online without
+0.0.3 interface. The same HTML and images can be hosted online without
 maintaining a separate manual.
 
 A new personal settings profile shows a welcome with manual access, then

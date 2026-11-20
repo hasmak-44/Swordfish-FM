@@ -1,6 +1,32 @@
+Swordfish Portable 0.0.3 — 20 November 2026
+==========================================
+Latest stable release; replaces 0.0.2 as the recommended version and includes
+0.0.3 beta 1 and beta 2. Extract into a new folder and launch AppRun. Back up
+existing portable-data before transferring settings. Release archives contain
+no test settings.
+
+- USB phones: Android (MTP) and iPhone/iPad (AFC) devices under Devices; the
+  mount waits for the phone to be unlocked and access allowed, recovers when
+  the phone's connection restarts, and Cancel works at every step.
+- Media discovery also finds NOTIFY-only and non-default-port UPnP AV
+  servers, Jellyfin and Emby.
+- Theme Editor with live preview, colour tools, textures, patterns, background
+  images and self-contained theme folders; fourteen built-in themes.
+- Preferences redesign, fixed readable dialog colours, resizable scrolling
+  dialogs, clearer copy/move conflicts with Replace/Merge/Rename/Skip.
+- Right-button drag and drop menu, optional MD5 copy verification, tab groups
+  that restore layout, per-drive Trash, faster copy/move/delete.
+- Custom Actions run scripts in place and removed actions stay removed;
+  portable profiles and custom-action icons are relocatable.
+- New shortcuts: Alt+Shift+1-4 for layouts and Alt+Shift+T for Trash.
+
+Validated with local model/GUI regressions, Debian 10/glibc 2.28 portable
+builds and testing on real hardware. The user accepted the final test build.
+See CHANGELOG.md, PROJECT-HISTORY.md and Help > User Manual for details.
+
 Swordfish Portable 0.0.3 beta 2 — 10 November 2026
 ================================================
-Latest release, explicitly beta; stable 0.0.2 remains available unchanged.
+Beta release; superseded by 0.0.3.
 Extract into a new folder and launch AppRun. Back up existing portable-data
 before transferring settings. Release archives contain no test settings.
 
