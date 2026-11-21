@@ -597,9 +597,11 @@ had no architecture in their portable file names. A
 
 If the GitHub release does not exist yet, the workflow creates it, using the
 matching `CHANGELOG.md` section as release notes. Versions containing `rc`,
-`test`, `preview`, `beta` or `alpha` become prereleases. It then attaches the
-files once every architecture has built. A release that already has any
-files is left unchanged. Each architecture's files are kept as a GitHub
+`test`, `preview`, `beta` or `alpha` become draft prereleases, which must be
+reviewed and published manually. It then attaches the files once every
+architecture has built and passed the portable version and Debian package
+installation checks. A release that already has any files is left unchanged.
+Each architecture's files are kept as a GitHub
 Actions artifact for 90 days. A build can be
 rerun for an existing tag from the Actions page with "Run workflow".
 

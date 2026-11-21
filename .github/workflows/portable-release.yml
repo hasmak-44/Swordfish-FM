@@ -121,6 +121,24 @@ jobs:
           sh packaging/deb-portable/build-deb.sh -a "$ARCH" -o "$out" "$out/$name.tar.gz"
           ls -l "$out"
 
+      - name: Check portable version and Debian installation
+        env:
+          ARCH: ${{ matrix.arch }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          case "$ARCH" in
+            amd64) platform=linux/amd64 ;;
+            i386) platform=linux/386 ;;
+            armhf) platform=linux/arm/v7 ;;
+            arm64) platform=linux/arm64 ;;
+          esac
+          docker run --rm --platform "$platform" \
+            --mount "type=bind,src=$PWD/build/Swordfish-Portable-$ARCH,dst=/bundle" \
+            "swordfish-portable-builder:debian-buster-slim-$ARCH" \
+            /bundle/AppRun --version | tee build/version.txt
+          grep -Fx "swordfish version $RELEASE_VERSION" build/version.txt
+          sh tests/run-portable-deb-regression.sh build/release/swordfish-portable_*_"$ARCH".deb
+
       - name: Upload build for download from the Actions page
         uses: actions/upload-artifact@v4
         with:
@@ -197,7 +215,7 @@ jobs:
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             flags=()
             if [[ "$PRERELEASE" == true ]]; then
-              flags+=(--prerelease --latest=false)
+              flags+=(--draft --prerelease --latest=false)
             fi
             gh release create "$RELEASE_TAG" --verify-tag \
               --title "Swordfish $RELEASE_VERSION" \

@@ -42,9 +42,6 @@ extern "C" int swordfish_main(int, char**);
 
 static FXString crossDeviceSource;
 static int crossDeviceRenames;
-static File* cancelReadOperation;
-static FXString cancelReadPath;
-static int cancelReadBlocks;
 
 extern "C" int rename(const char* source, const char* destination) noexcept
 {
@@ -66,7 +63,7 @@ extern "C" ssize_t read(int fd, void* buffer, size_t count)
     typedef ssize_t (*Read)(int, void*, size_t);
     static Read realRead = reinterpret_cast<Read>(dlsym(RTLD_NEXT, "read"));
     const char* slow = getenv("SWORDFISH_TEST_SLOW_FILE");
-    if ((slow || cancelReadOperation) && count >= 65536)
+    if (slow && count >= 65536)
     {
         char link[64], path[PATH_MAX];
         snprintf(link, sizeof(link), "/proc/self/fd/%d", fd);
@@ -74,16 +71,7 @@ extern "C" ssize_t read(int fd, void* buffer, size_t count)
         if (length >= 0)
         {
             path[length] = '\0';
-            if (slow && strcmp(path, slow) == 0) usleep(250000);
-            // Press Cancel once part of the file has already been written to the target
-            if (cancelReadOperation && cancelReadPath == path && --cancelReadBlocks == 0)
-            {
-                ssize_t result = realRead(fd, buffer, count);
-                File* operation = cancelReadOperation;
-                cancelReadOperation = NULL;
-                operation->handle(NULL, FXSEL(SEL_COMMAND, File::ID_CANCEL_BUTTON), NULL);
-                return result;
-            }
+            if (strcmp(path, slow) == 0) usleep(250000);
         }
     }
     return realRead(fd, buffer, count);
@@ -746,45 +734,6 @@ static void checkCopyVerification(FXApp& app, FXWindow* owner, const FXString& f
     assert(readConflictFile(source + "/bad-move.txt") == "precious" && !xf_existfile(destination + "/bad-move.txt"));
     app.reg().writeUnsignedEntry("OPTIONS", "verify_copy", false);
     puts("PASS: copy verification is skipped when disabled; when enabled, copies and cross-device moves are MD5-checked, and a damaged copy is reported, removed and never replaces the move source");
-}
-
-static void checkCancelRemovesPartialCopy(FXWindow* owner, const FXString& fixture)
-{
-    const FXString source = fixture + "/cancel-source", destination = fixture + "/cancel-destination";
-    assert(mkdir(source.text(), 0700) == 0 && mkdir(destination.text(), 0700) == 0);
-    assert(mkdir((source + "/folder").text(), 0700) == 0);
-    const FXulong start = xf_getcurrenttime() - 1;
-    std::string large(3 * 1024 * 1024 + 17, 'c');
-    for (size_t i = 0; i < large.size(); ++i) large[i] = static_cast<char>('a' + i % 19);
-    for (const char* name : {"/copy.bin", "/move.bin", "/folder/big.bin"})
-        std::ofstream(source.text() + std::string(name)) << large;
-    writeConflictFile(source + "/folder/small.txt", "small");
-
-    struct Case { const char* path; int op; };
-    for (const Case& test : {Case{"/copy.bin", COPY}, Case{"/move.bin", MOVE}, Case{"/folder/big.bin", MOVE}})
-    {
-        File operation(owner, "Cancel partial copy regression", test.op);
-        operation.create();
-        cancelReadOperation = &operation;
-        cancelReadPath = source + test.path;
-        cancelReadBlocks = 2;
-        if (test.op == COPY)
-            assert(operation.copy(source + test.path, destination, "3 MB", large.size(), start) == 0);
-        else
-        {
-            crossDeviceSource = source + "/";
-            const FXString item = FXString(test.path).contains("/folder/") ? source + "/folder" : source + test.path;
-            assert(operation.fmove(item, destination, "3 MB", large.size(), start) == 0);
-            crossDeviceSource.clear();
-        }
-        assert(!cancelReadOperation);
-        assert(!xf_existfile(destination + test.path));
-        assert(readConflictFile(source + test.path) == large);
-    }
-    // Files finished before Cancel stay moved; the rest, including the source folder, stay put
-    assert(xf_existfile(source + "/folder/small.txt") != xf_existfile(destination + "/folder/small.txt"));
-    assert(xf_isdirectory(source + "/folder"));
-    puts("PASS: cancelling a copy or a cross-device file/folder move removes the half-copied target file and keeps the original");
 }
 
 static void checkFileConflicts(FXApp& app, FXWindow* owner, const FXString& fixture)
@@ -2223,7 +2172,6 @@ int main(int argc, char** argv)
     app.create();
     checkFileConflicts(app, mainWindow, fixture);
     checkCopyVerification(app, mainWindow, fixture);
-    checkCancelRemovesPartialCopy(mainWindow, fixture);
     TestSearch* search = new TestSearch(&app);
     search->create();
     search->show(PLACEMENT_SCREEN);

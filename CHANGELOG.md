@@ -1,5 +1,32 @@
 # Swordfish FM portable changelog
 
+## swordfish-0.0.4-beta1 — 21 November 2026
+
+Beta release for testing. Portable ZIP, tar.gz and portable `.deb` packages
+are supplied for amd64, i386, armhf and arm64. Back up `portable-data` before
+trying the beta; 0.0.3 remains the latest stable release.
+
+### Changes since 0.0.3
+- Copy and move operations have independent progress windows and continue
+  after the main window closes. Destination panes refresh as items arrive.
+  Overlapping transfers wait to avoid conflicting operations.
+- The file context menu and Sort submenu are reorganized.
+- Places labels wrap on narrow sidebars, and removed devices refresh.
+- File-list columns can be fitted automatically or sized manually, with
+  tab and bookmark settings retained.
+- The Custom Actions tree is more compact and supports collapsing folders.
+- Fixed-palette dialog outlines and scrollbars are easier to see.
+
+### Known limitations
+- Cancelling a copy or move may leave a partially copied file at the
+  destination. Check and remove it manually if necessary. Completed items
+  are not rolled back; a cross-device move keeps the source of a file whose
+  copy did not finish.
+- Physical USB removal, real phone transfers and external drag-and-drop
+  interoperability still need further testing.
+- Removing the portable `.deb` also removes the installed portable folder and
+  its settings. Back up `portable-data` before uninstalling.
+
 ## swordfish-0.0.3 — 20 November 2026
 
 Stable release. It replaces 0.0.2 as the recommended version and includes

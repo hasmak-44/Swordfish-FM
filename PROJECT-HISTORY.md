@@ -4129,27 +4129,20 @@ screenshots, test themes and the `My theme` archive were deleted from `build/`
 with the user's approval. About 3.2 GB was then free; `build/` holds only
 notes, logs and `MX Blue.swordfish-theme`.
 
-### 3.127. Cancel removes the half-copied file (21 November 2026)
+### 3.127. Cancel cleanup deferred for 0.0.4 beta 1 (21 November 2026)
 
-While testing the amd64 build, the user found that cancelling a copy left the
-unfinished file at the target. It kept its full name, so it looked like a
-complete file. The user chose to delete only the half-copied file: files that
-finished before Cancel stay, and for a move their originals are already gone.
-A cancelled move must also remove the half-copied file while keeping the
-original.
+The user reported that Cancel can leave a partial destination file and
+requested removing that file while retaining the source of an unfinished
+move. A local implementation and regression were committed as `22fa864`.
+Review then found that pathname-based cleanup could remove a replacement made
+by another program, and that cleanup errors were not surfaced. The MTP
+cleanup was not tested on a real phone.
 
-`File::copyfile` now deletes the target file it was writing when copying stops
-because of the Cancel button, Cancel after a read or write error, or Cancel
-after a disk-sync failure. On phone (MTP) mounts, a cancelled `gio copy`
-target is removed with `gio remove` only if no file of that name existed
-before the copy, so an earlier file is never deleted. A move removes its
-source only after a complete copy, and a cancelled folder move stops before
-removing the source folder, so originals are kept.
-
-The search/transfer regression adds a Cancel test. It covers a copy, a
-cross-drive file move and a cross-drive folder move, pressing Cancel after
-1 MiB is written. The test failed without the fix and all 52 checks pass with
-it. Phone-mount cancellation was not tested on a real device.
+The user asked to omit this change and release the previously tested version.
+The commit is reversed without rewriting history. Cancellation may therefore
+leave a partial destination file, which is documented in the beta notes.
+The four-architecture workflow will stage beta releases as drafts for review
+and check the version and Debian install, reinstall and removal per target.
 
 ## 4. The archive-command / false idle-timeout bug
 

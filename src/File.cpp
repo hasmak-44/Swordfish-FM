@@ -1207,8 +1207,6 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                 }
 
                 // Copy using gio command (regular copy does not work on MTP mounts)
-                struct stat existing;
-                FXbool targetexisted = xf_lstat(destfile.text(), &existing) == 0;
                 notifyChange(destfile);
                 FXString cmd = "gio copy " + xf_quote(source) + " " + xf_quote(destfile);
                 FXString ret;
@@ -1226,12 +1224,6 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                 if (cancelled)
                 {
                     ::close(src);
-                    // Only remove a file this copy created; an earlier file may still be intact
-                    if (!targetexisted)
-                    {
-                        xf_getcommandoutput(xf_hostcommand("gio remove " + xf_quote(destfile)));
-                        notifyChange(destfile);
-                    }
                     return false;
                 }
                 if (!copied)
@@ -1277,14 +1269,6 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                 // Copy file block by block
                 if ((dst = ::open(destfile.text(), O_WRONLY | O_CREAT | O_TRUNC, info.st_mode)) >= 0)
                 {
-                    // A cancelled copy must not leave a truncated file that looks complete
-                    auto discardPartial = [&]()
-                    {
-                        ::close(dst);
-                        ::close(src);
-                        ::unlink(destfile.text());
-                        notifyChange(destfile);
-                    };
                     notifyChange(destfile);
                     int error = false;
                     std::unique_ptr<GChecksum, decltype(&g_checksum_free)> srcsum(
@@ -1314,7 +1298,9 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                             restartTimeout();
                             if (answer == BOX_CLICKED_CANCEL)
                             {
-                                discardPartial();
+                                ::close(dst);
+                                ::close(src);
+                                notifyChange(destfile);
                                 cancelled = true;
 
                                 return false;
@@ -1373,7 +1359,10 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                         // If cancel button was clicked, close files and return
                         if (cancelled)
                         {
-                            discardPartial();
+                            ::close(dst);
+                            ::close(src);
+                            notifyChange(destfile);
+
                             return false;
                         }
                         errno = 0;
@@ -1397,7 +1386,9 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                             restartTimeout();
                             if (answer == BOX_CLICKED_CANCEL)
                             {
-                                discardPartial();
+                                ::close(dst);
+                                ::close(src);
+                                notifyChange(destfile);
                                 cancelled = true;
                                 
                                 return false;
@@ -1435,8 +1426,6 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                         restartTimeout();
                         if (answer == BOX_CLICKED_CANCEL)
                         {
-                            ::unlink(destfile.text());
-                            notifyChange(destfile);
                             cancelled = true;
                             return false;
                         }
