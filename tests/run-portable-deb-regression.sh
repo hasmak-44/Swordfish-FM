@@ -7,7 +7,13 @@ if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
 fi
 
 deb=$(realpath -- "$1")
-docker run --rm --network none \
+case "$(dpkg-deb -f "$deb" Architecture)" in
+    i386) platform=linux/386 ;;
+    armhf) platform=linux/arm/v7 ;;
+    arm64) platform=linux/arm64 ;;
+    *) platform=linux/amd64 ;;
+esac
+docker run --rm --network none --platform "$platform" \
     --mount "type=bind,src=$deb,dst=/tmp/swordfish-portable.deb,readonly" \
     debian:bookworm-slim sh -eu -c '
         useradd -m tester

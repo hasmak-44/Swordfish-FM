@@ -5,7 +5,7 @@ Extract into a new folder and back up existing `portable-data` before
 migrating it. Release archives do not include a settings profile or test data.
 
 The portable build produces a relocatable AppDir-style directory for Linux
-x86_64. It includes the Swordfish programs, installed resources, and shared
+on amd64 (x86_64), i386, armhf (32-bit ARMv7) or arm64. It includes the Swordfish programs, installed resources, and shared
 libraries collected by `linuxdeploy`. Run `AppRun` from the generated folder;
 do not run `make install` as root.
 
@@ -21,6 +21,14 @@ internet access are required to build:
 ```sh
 ./portable/build-portable.sh
 ```
+
+This builds for the host's architecture. Set `ARCH` to `amd64`, `i386`,
+`armhf` or `arm64` to build for another one, for example
+`ARCH=arm64 ./portable/build-portable.sh build/Swordfish-Portable-arm64`.
+Building for an architecture the host cannot run natively uses QEMU user
+emulation, which must be registered first (for example with
+`docker run --privileged --rm tonistiigi/binfmt --install arm,arm64`) and is
+much slower.
 
 The output is `build/Swordfish-Portable`, with a compressed archive at
 `build/Swordfish-Portable.tar.gz`. The folder can be copied directly and
@@ -577,16 +585,22 @@ and does not elevate the entire file-manager session.
 Pushing a release tag such as `swordfish-0.0.3` (or an older-style
 `swordfish-portable-*` / `SwordFish-Portable-*` tag) starts the
 `portable-release.yml` workflow. It builds the portable folder in the Debian
-10 container and packages `Swordfish-Portable-<version>.zip`,
-`Swordfish-Portable-<version>.tar.gz`, `Swordfish-FM-<version>-source.tar.gz`
-and `Swordfish-<version>-SHA256SUMS`, without `portable-data`. A
+10 container for amd64, i386, armhf and arm64 (armhf under QEMU emulation)
+and, for each architecture `<arch>`, packages
+`Swordfish-Portable-<version>-<arch>.zip`,
+`Swordfish-Portable-<version>-<arch>.tar.gz` and
+`swordfish-portable_<version>-1_<arch>.deb`, without `portable-data`. It also
+adds `Swordfish-FM-<version>-source.tar.gz` and
+`Swordfish-<version>-SHA256SUMS`. Releases up to 0.0.3 were amd64 only and
+had no architecture in their portable file names. A
 `swordfish-<version>` tag must match the version in `configure.ac`.
 
 If the GitHub release does not exist yet, the workflow creates it, using the
 matching `CHANGELOG.md` section as release notes. Versions containing `rc`,
 `test`, `preview`, `beta` or `alpha` become prereleases. It then attaches the
-files. A release that already has any of these files is left unchanged. The
-same files are kept as a GitHub Actions artifact for 90 days. A build can be
+files once every architecture has built. A release that already has any
+files is left unchanged. Each architecture's files are kept as a GitHub
+Actions artifact for 90 days. A build can be
 rerun for an existing tag from the Actions page with "Run workflow".
 
 The project website is built from the main README, which links to the latest

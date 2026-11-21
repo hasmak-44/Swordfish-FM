@@ -41,6 +41,10 @@ gh release download swordfish-0.0.3 -p 'Swordfish-Portable-0.0.3.tar.gz'
 packaging/deb-portable/build-deb.sh -o /tmp/deb Swordfish-Portable-0.0.3.tar.gz
 ```
 
+The archive can be for amd64, i386, armhf or arm64. The architecture is
+taken from `-a ARCH`, otherwise from a `-ARCH` suffix in the archive name
+(`Swordfish-Portable-<version>-arm64.tar.gz`), otherwise amd64. The script
+refuses an archive whose programs are for a different architecture.
 `-r` sets the Debian revision (default 1). Set `DEB_MAINTAINER` to change
 the maintainer field.
 
@@ -50,7 +54,10 @@ For an isolated Debian install, reinstall and removal regression check:
 sh tests/run-portable-deb-regression.sh /tmp/deb/swordfish-portable_0.0.3-1_amd64.deb
 ```
 
-The check uses Docker and may download the `debian:bookworm-slim` image.
+The check uses Docker and may download the `debian:bookworm-slim` image. It
+runs the image for the package's architecture, so testing a package for
+another architecture needs QEMU emulation registered as described in
+`portable/README.md`.
 
 ## Questions for reviewers
 

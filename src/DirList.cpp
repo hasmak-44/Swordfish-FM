@@ -2425,7 +2425,7 @@ void DirList::setDirectory(const FXString& pathname, FXbool notify)
     if (elapsed >= 1000000000LL)
     {
         appLog(APP_LOG_FILE_OPERATIONS, "slow-tree-synchronization",
-               FXString("path=\"") + pathname + "\" elapsed_ms=" + FXStringVal(elapsed / 1000000));
+               FXString("path=\"") + pathname + "\" elapsed_ms=" + FXStringVal((FXlong)(elapsed / 1000000)));
     }
 }
 

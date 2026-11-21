@@ -18,10 +18,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-portable:
+  prepare:
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
     steps:
       - name: Check out tagged source
         uses: actions/checkout@v4
@@ -60,18 +62,50 @@ jobs:
           printf 'tag=%s\nversion=%s\nprerelease=%s\n' \
             "$RELEASE_TAG" "$version" "$prerelease" >> "$GITHUB_OUTPUT"
 
+  build-portable:
+    needs: prepare
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: i386
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+          # GitHub's ARM runners cannot execute 32-bit ARM, so armhf is emulated.
+          - arch: armhf
+            runner: ubuntu-24.04
+            qemu: arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 340
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
+
+      - name: Set up QEMU emulation
+        if: matrix.qemu
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.qemu }}
+
       - name: Build portable bundle
-        run: ./portable/build-portable.sh
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: ./portable/build-portable.sh "build/Swordfish-Portable-$ARCH"
 
       - name: Package release files
         env:
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          name="Swordfish-Portable-$RELEASE_VERSION"
+          name="Swordfish-Portable-$RELEASE_VERSION-$ARCH"
           out=build/release
           mkdir -p "$out/stage"
-          cp -a build/Swordfish-Portable "$out/stage/$name"
+          cp -a "build/Swordfish-Portable-$ARCH" "$out/stage/$name"
           # The build script creates portable-data; users' own data must
           # never be replaced by a download, so it is not shipped.
           rm -rf "$out/stage/$name/portable-data"
@@ -79,21 +113,67 @@ jobs:
           (cd "$out/stage" && zip -qr "../$name.zip" "$name")
           unzip -tq "$out/$name.zip"
           tar -C "$out/stage" -czf "$out/$name.tar.gz" "$name"
-          git archive --format=tar.gz --prefix="Swordfish-FM-$RELEASE_VERSION/" \
-            -o "$out/Swordfish-FM-$RELEASE_VERSION-source.tar.gz" HEAD
           if unzip -l "$out/$name.zip" | grep -q '/portable-data/'; then
             printf 'portable-data must not be packaged\n' >&2
             exit 1
           fi
-          (cd "$out" && sha256sum "$name.zip" "$name.tar.gz" \
-            "Swordfish-FM-$RELEASE_VERSION-source.tar.gz" \
-            > "Swordfish-$RELEASE_VERSION-SHA256SUMS")
           rm -rf "$out/stage"
+          sh packaging/deb-portable/build-deb.sh -a "$ARCH" -o "$out" "$out/$name.tar.gz"
+          ls -l "$out"
+
+      - name: Upload build for download from the Actions page
+        uses: actions/upload-artifact@v4
+        with:
+          name: Swordfish-Portable-${{ needs.prepare.outputs.version }}-linux-${{ matrix.arch }}
+          path: build/release/*
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    needs: [prepare, build-portable]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
+
+      - name: Collect builds for every architecture
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Swordfish-Portable-${{ needs.prepare.outputs.version }}-linux-*
+          path: build/release
+          merge-multiple: true
+
+      - name: Add source archive and checksums
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          out=build/release
+          for arch in amd64 i386 armhf arm64; do
+            for file in "Swordfish-Portable-$RELEASE_VERSION-$arch.zip" \
+                "Swordfish-Portable-$RELEASE_VERSION-$arch.tar.gz"; do
+              if [[ ! -f "$out/$file" ]]; then
+                printf 'Missing %s\n' "$file" >&2
+                exit 1
+              fi
+            done
+            if ! ls "$out"/swordfish-portable_*_"$arch".deb >/dev/null 2>&1; then
+              printf 'Missing %s .deb\n' "$arch" >&2
+              exit 1
+            fi
+          done
+          git archive --format=tar.gz --prefix="Swordfish-FM-$RELEASE_VERSION/" \
+            -o "$out/Swordfish-FM-$RELEASE_VERSION-source.tar.gz" HEAD
+          (cd "$out" && sha256sum -- * > "../Swordfish-$RELEASE_VERSION-SHA256SUMS")
+          mv "build/Swordfish-$RELEASE_VERSION-SHA256SUMS" "$out/"
           cat "$out/Swordfish-$RELEASE_VERSION-SHA256SUMS"
 
       - name: Write release notes
         env:
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           # Match the whole tag so swordfish-0.0.3 does not also take -beta2's notes.
           awk -v head="## $RELEASE_TAG" '
@@ -102,7 +182,7 @@ jobs:
             on { print }
           ' CHANGELOG.md > build/release-notes.md
           if ! grep -q '[^[:space:]]' build/release-notes.md; then
-            printf 'Portable Linux x86_64 build of %s.\n' "$RELEASE_TAG" \
+            printf 'Portable Linux builds (amd64, i386, armhf, arm64) of %s.\n' "$RELEASE_TAG" \
               > build/release-notes.md
           fi
 
@@ -110,9 +190,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             flags=()
@@ -125,20 +205,11 @@ jobs:
           fi
           # Never replace or mix with files already on a release: a
           # hand-checked release keeps exactly the files that were verified.
+          # Older releases use different file names, so any existing file
+          # means the release is already populated.
           existing=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
-          for file in build/release/*; do
-            if grep -Fxq "$(basename "$file")" <<<"$existing"; then
-              printf 'Release already has %s; leaving its files unchanged.\n' \
-                "$(basename "$file")"
-              exit 0
-            fi
-          done
+          if [[ -n "$existing" ]]; then
+            printf 'Release already has files; leaving them unchanged:\n%s\n' "$existing"
+            exit 0
+          fi
           gh release upload "$RELEASE_TAG" build/release/*
-
-      - name: Upload build for download from the Actions page
-        uses: actions/upload-artifact@v4
-        with:
-          name: Swordfish-Portable-${{ steps.release.outputs.version }}-linux-x86_64
-          path: build/release/*
-          if-no-files-found: error
-          retention-days: 90

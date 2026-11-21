@@ -23,15 +23,36 @@ tar -C "$source_root" \
     --exclude='*.zip' \
     -cf - . | tar -C "$source_copy" -xf -
 
-linuxdeploy_appimage=/tmp/linuxdeploy-x86_64.AppImage
+arch=$(dpkg --print-architecture)
+if [ -n "${SWORDFISH_ARCH:-}" ] && [ "$SWORDFISH_ARCH" != "$arch" ]; then
+    printf 'Requested %s but the build image is %s.\n' "$SWORDFISH_ARCH" "$arch" >&2
+    exit 1
+fi
+case "$arch" in
+    amd64) linuxdeploy_arch=x86_64
+        linuxdeploy_sha256=c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d ;;
+    i386) linuxdeploy_arch=i386
+        linuxdeploy_sha256=a2a88d142aac42db779483ca07c10dbf318b27f514691107fc88a202faae17b5 ;;
+    armhf) linuxdeploy_arch=armhf
+        linuxdeploy_sha256=e359161979fa4bee50b92ce7102fb510299caebf34f711d983fba7a8f4bb1c2e ;;
+    arm64) linuxdeploy_arch=aarch64
+        linuxdeploy_sha256=620095110d693282b8ebeb244a95b5e911cf8f65f76c88b4b47d16ae6346fcff ;;
+    *)
+        printf 'Unsupported build architecture: %s\n' "$arch" >&2
+        exit 1
+        ;;
+esac
+
+linuxdeploy_appimage=/tmp/linuxdeploy-$linuxdeploy_arch.AppImage
 linuxdeploy_dir=/tmp/linuxdeploy
 curl --fail --location --retry 3 \
     --output "$linuxdeploy_appimage" \
-    https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+    "https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-$linuxdeploy_arch.AppImage"
 chmod 755 "$linuxdeploy_appimage"
-printf '%s  %s\n' \
-    c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d \
-    "$linuxdeploy_appimage" | sha256sum --check
+printf '%s  %s\n' "$linuxdeploy_sha256" "$linuxdeploy_appimage" | sha256sum --check
+# QEMU's binfmt handlers only accept a plain ELF header, so clear the AppImage
+# marker bytes (offset 8) that would otherwise stop emulated builds.
+printf '\0\0\0' | dd of="$linuxdeploy_appimage" bs=1 seek=8 conv=notrunc status=none
 mkdir -p "$linuxdeploy_dir"
 (cd "$linuxdeploy_dir" && "$linuxdeploy_appimage" --appimage-extract >/dev/null)
 linuxdeploy="$linuxdeploy_dir/squashfs-root/AppRun"
@@ -165,4 +186,4 @@ for directory in config data cache state scripts themes/colors textures patterns
     mkdir -p "$output_dir/portable-data/$directory"
 done
 
-printf 'Built portable folder against %s (%s) at %s\n' "$(. /etc/os-release; printf '%s' "$PRETTY_NAME")" "$glibc_version" "$output_dir"
+printf 'Built %s portable folder against %s (%s) at %s\n' "$arch" "$(. /etc/os-release; printf '%s' "$PRETTY_NAME")" "$glibc_version" "$output_dir"

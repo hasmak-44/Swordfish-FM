@@ -8374,11 +8374,11 @@ fnd:
     if (elapsed >= 1000000000LL)
     {
         appLog(APP_LOG_FILE_OPERATIONS, "slow-directory-listing",
-               FXString("path=\"") + directory + "\" elapsed_ms=" + FXStringVal(elapsed / 1000000) +
+               FXString("path=\"") + directory + "\" elapsed_ms=" + FXStringVal((FXlong)(elapsed / 1000000)) +
                " items=" + FXStringVal(items.no()) +
-               " entry_metadata_ms=" + FXStringVal(metadataTime / 1000000) +
+               " entry_metadata_ms=" + FXStringVal((FXlong)(metadataTime / 1000000)) +
                " entry_metadata_calls=" + FXStringVal(metadataCalls) +
-               " folder_access_ms=" + FXStringVal(permissionTime / 1000000) +
+               " folder_access_ms=" + FXStringVal((FXlong)(permissionTime / 1000000)) +
                " folder_access_calls=" + FXStringVal(permissionCalls));
     }
 }

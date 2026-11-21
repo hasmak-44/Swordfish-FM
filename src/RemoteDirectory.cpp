@@ -414,7 +414,7 @@ long RemoteQueue::tick(FXObject*, FXSelector, void*)
                 appLog(APP_LOG_ERRORS, "remote-list-failed", FXString(pair.first.c_str()) + ": " + listing.diagnostic);
             appLog(APP_LOG_FILE_OPERATIONS, "remote-list-completed",
                    FXString("path=\"") + pair.first.c_str() + "\" entries=" + FXStringVal(listing.rows.size()) +
-                   " elapsed_ms=" + FXStringVal((listing.completed - listing.started) / 1000000));
+                   " elapsed_ms=" + FXStringVal((FXlong)((listing.completed - listing.started) / 1000000)));
         }
         if (listing.dirty)
         {

@@ -44,7 +44,12 @@ export XDG_CACHE_HOME="$data_root/cache"
 export XDG_STATE_HOME="$data_root/state"
 export PATH="$app_root/usr/bin:$PATH"
 
-library_path="$app_root/usr/lib:$app_root/usr/lib64:$app_root/usr/lib/x86_64-linux-gnu"
+library_path="$app_root/usr/lib:$app_root/usr/lib64"
+for multiarch_dir in "$app_root"/usr/lib/*-linux-gnu*; do
+    if [ -d "$multiarch_dir" ]; then
+        library_path="$library_path:$multiarch_dir"
+    fi
+done
 if [ -n "${LD_LIBRARY_PATH:-}" ]; then
     library_path="$library_path:$LD_LIBRARY_PATH"
 fi

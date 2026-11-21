@@ -249,7 +249,7 @@ FXString Preview::request(FXApp* app, const FXString& path, FXint size, FXbool p
     size = FXCLAMP(32, size, 512);
     FXString identity = FXPath::absolute(path) + ":" + FXStringVal(info.st_dev) + ":" +
                         FXStringVal(info.st_ino) + ":" + FXStringVal(info.st_size) + ":" +
-                        FXStringVal(info.st_mtim.tv_sec) + ":" + FXStringVal(info.st_mtim.tv_nsec) +
+                        FXStringVal((FXlong)info.st_mtim.tv_sec) + ":" + FXStringVal((FXlong)info.st_mtim.tv_nsec) +
                         ":" + FXStringVal(size) + ":v1";
     gchar* digest = g_compute_checksum_for_string(G_CHECKSUM_SHA256, identity.text(), identity.length());
     if (queue.directory.empty())

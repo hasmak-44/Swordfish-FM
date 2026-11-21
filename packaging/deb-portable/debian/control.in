@@ -2,7 +2,7 @@ Package: swordfish-portable
 Version: @VERSION@
 Section: utils
 Priority: optional
-Architecture: amd64
+Architecture: @ARCH@
 Maintainer: @MAINTAINER@
 Installed-Size: @SIZE@
 Depends: debconf (>= 0.5) | debconf-2.0, libc6 (>= 2.28)

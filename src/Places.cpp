@@ -575,7 +575,7 @@ long SidebarTree::onExpandItem(FXObject*, FXSelector, void* ptr)
     {
         appLog(APP_LOG_FILE_OPERATIONS, "slow-sidebar-expansion",
                FXString("path=\"") + item->path + "\" elapsed_ms=" +
-               FXStringVal(elapsed / 1000000) + " children=" + FXStringVal(item->getNumChildren()));
+               FXStringVal((FXlong)(elapsed / 1000000)) + " children=" + FXStringVal(item->getNumChildren()));
     }
     return 1;
 }
