@@ -62,6 +62,7 @@ extern FXuint clipboard_type;
 
 // Global variables
 extern FXMainWindow* mainWindow;
+extern FXString execpath;
 
 extern FXString xdgdatahome;
 
@@ -1164,6 +1165,9 @@ long DirPanel::onSidebarActivate(FXObject*, FXSelector sel, void* ptr)
         }
         getApp()->flush();
         static_cast<XFileExplorer*>(mainWindow)->getCurrentPanel()->navigatePane(item->path);
+        if (item->kind == SidebarItem::BOOKMARK)
+            bookmarkslist->restoreColumnSizing(item->key,
+                static_cast<XFileExplorer*>(mainWindow)->getCurrentPanel()->getList());
     }
     return 1;
 }
@@ -1274,6 +1278,9 @@ long DirPanel::onSidebarAction(FXObject*, FXSelector sel, void*)
     if (FXSELID(sel) == ID_SIDEBAR_OPEN_TAB)
     {
         static_cast<XFileExplorer*>(mainWindow)->getTabButtons()->addTab(path);
+        if (sidebarContext->kind == SidebarItem::BOOKMARK)
+            bookmarkslist->restoreColumnSizing(sidebarContext->key,
+                static_cast<XFileExplorer*>(mainWindow)->getCurrentPanel()->getList());
     }
     else
     {
@@ -1849,6 +1856,7 @@ long DirPanel::onCmdOpenBookmarkNewTab(FXObject*, FXSelector, void*)
     TabButtons* tabbuttons = ((XFileExplorer*)mainWindow)->getTabButtons();
 
     tabbuttons->addTab(directory);
+    bookmarkslist->restoreColumnSizing(name, ((XFileExplorer*)mainWindow)->getCurrentPanel()->getList());
 
     return 1;
 }
@@ -1860,7 +1868,7 @@ long DirPanel::onCmdOpenBookmarkNewWindow(FXObject*, FXSelector, void*)
     FXString name = bookmarkslist->getCurrentItem();
     FXString directory = bookmarkslist->getItemPathname(name);
 
-    FXString cmd = "swordfish " + directory + " &";
+    FXString cmd = xf_quote(execpath) + " --bookmark " + xf_quote(name) + " " + xf_quote(directory) + " &";
 
     int ret = system(cmd.text());
 
@@ -2037,6 +2045,7 @@ long DirPanel::onCmdGotoBookmark(FXObject*, FXSelector, void*)
 
     FilePanel* currentpanel = ((XFileExplorer*)mainWindow)->getCurrentPanel();
     currentpanel->setDirectory(directory, true);
+    bookmarkslist->restoreColumnSizing(name, currentpanel->getList());
     currentpanel->updatePath();
     setDirectory(directory, true);
 

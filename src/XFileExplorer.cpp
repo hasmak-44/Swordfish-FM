@@ -4807,6 +4807,7 @@ long XFileExplorer::onCmdGotoBookmark(FXObject* sender, FXSelector, void*)
 
     // Go to bookmark location
     lpanel->getCurrent()->setDirectory(pathname);
+    dirpanel->getBookmarksList()->restoreColumnSizing(key, lpanel->getCurrent()->getList());
     lpanel->getCurrent()->updatePath();
     dirpanel->setDirectory(pathname, true);
 

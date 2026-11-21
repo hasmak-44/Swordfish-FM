@@ -30,6 +30,20 @@
 #include "DirList.h"
 #include "AppLogger.h"
 #include "RemoteDirectory.h"
+#include "XFileExplorer.h"
+#include "TabButtons.h"
+
+static FXString bookmarkColumnSection(const FXString& name)
+{
+    return "BOOKMARK COLUMNS " + FXURL::encode(name);
+}
+
+void BookmarksList::restoreColumnSizing(const FXString& name, FileList* list)
+{
+    FXString section = bookmarkColumnSection(name);
+    if (getApp()->reg().existingEntry(section.text(), "column_mode"))
+        list->setColumnSizing(FileList::loadColumnSizing(getApp()->reg(), section.text(), "", list->getColumnSizing()));
+}
 
 FXDEFMAP(SidebarTree) SidebarTreeMap[] =
 {
@@ -1749,6 +1763,17 @@ int BookmarksList::modifyBookmark(FXString& oldname, FXString& newname, FXString
     FXString regkey = "bookmark" + FXStringVal(index);
     getApp()->reg().writeStringEntry("BOOKMARKS", regkey.text(), bookmarks[index].text());
 
+    if (oldname != newname)
+    {
+        FXString oldsection = bookmarkColumnSection(oldname);
+        if (getApp()->reg().existingEntry(oldsection.text(), "column_mode"))
+        {
+            FileList::ColumnSizing sizing = FileList::loadColumnSizing(getApp()->reg(), oldsection.text(), "",
+                                                                      FileList::ColumnSizing());
+            FileList::saveColumnSizing(getApp()->reg(), bookmarkColumnSection(newname).text(), "", sizing);
+            getApp()->reg().deleteSection(oldsection.text());
+        }
+    }
     // Update registry
     getApp()->reg().write();
 
@@ -1758,7 +1783,8 @@ int BookmarksList::modifyBookmark(FXString& oldname, FXString& newname, FXString
 
 // Append bookmark
 // Return 1 if success else return 0
-int BookmarksList::appendBookmark(FXString& name, FXString& pathname, FXString& iconpathname)
+int BookmarksList::appendBookmark(FXString& name, FXString& pathname, FXString& iconpathname,
+                                  const FileList::ColumnSizing* sizing)
 {
     // Check name
     if (name == "")
@@ -1785,6 +1811,12 @@ int BookmarksList::appendBookmark(FXString& name, FXString& pathname, FXString& 
 
     // Append bookmark
     appendItem(name, pathname, iconpathname);
+    FileList::ColumnSizing snapshot;
+    if (sizing) snapshot = *sizing;
+    else if (XFileExplorer* explorer = dynamic_cast<XFileExplorer*>(getShell()))
+        snapshot = explorer->getCurrentPanel()->getList()->getColumnSizing();
+    FileList::saveColumnSizing(getApp()->reg(), bookmarkColumnSection(name).text(), "", snapshot);
+    getApp()->reg().write();
 
     return 1;
 }
@@ -1854,6 +1886,7 @@ void BookmarksList::removeItem(const FXString& name)
     // Delete bookmarks section
     getApp()->reg().read();
     getApp()->reg().deleteSection("BOOKMARKS");
+    getApp()->reg().deleteSection(bookmarkColumnSection(name).text());
 
     // Add bookmarks to registry
     for (FXuint i = 0; i < nbBookmarks; i++)
@@ -1870,6 +1903,9 @@ void BookmarksList::removeItem(const FXString& name)
 // Remove all items
 void BookmarksList::removeAllItems(void)
 {
+    getApp()->reg().read();
+    for (FXuint i = 0; i < nbBookmarks; ++i)
+        getApp()->reg().deleteSection(bookmarkColumnSection(getBookmarkName(i)).text());
     // Remove all bookmarks from list
     FXList::clearItems();
 
@@ -1878,7 +1914,6 @@ void BookmarksList::removeAllItems(void)
     nbBookmarks = 0;
 
     // Remove registry section
-    getApp()->reg().read();
     getApp()->reg().deleteSection("BOOKMARKS");
 
     // Update registry
@@ -2031,7 +2066,7 @@ long BookmarksList::onDNDMotion(FXObject* sender, FXSelector sel, void* ptr)
 
 
 // Add a folder as a bookmark named after it (a number is appended if the name is taken)
-int BookmarksList::bookmarkFolder(const FXString& folder)
+int BookmarksList::bookmarkFolder(const FXString& folder, const FileList::ColumnSizing* sizing)
 {
     FXString pathname = folder;
     if (!xf_isdirectory(pathname))
@@ -2063,7 +2098,20 @@ int BookmarksList::bookmarkFolder(const FXString& folder)
         name = base + " (" + FXStringVal(n) + ")";
     }
     FXString icon = "";
-    return appendBookmark(name, pathname, icon);
+    FileList::ColumnSizing draggedSizing;
+    FXWindow* source = getApp()->getDragWindow();
+    for (FXWindow* parent = source; !sizing && parent; parent = parent->getParent())
+        if (TabButtons* tabs = dynamic_cast<TabButtons*>(parent))
+        {
+            FXuint index = source->getSelector() - TabButtons::ID_START_TAB;
+            if (index < tabs->getNumActiveTabs() && tabs->getPath(index) == folder)
+            {
+                draggedSizing = tabs->getColumnSizing(index);
+                sizing = &draggedSizing;
+            }
+            break;
+        }
+    return appendBookmark(name, pathname, icon, sizing);
 }
 
 

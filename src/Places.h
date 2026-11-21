@@ -5,6 +5,7 @@
 #include "icons.h"
 #include "FileDict.h"
 #include "BackgroundImage.h"
+#include "FileList.h"
 #include <map>
 #include <set>
 #include <vector>
@@ -389,7 +390,7 @@ public:
     int modifyBookmark(FXString&, FXString&, FXString&, FXString&, FXString&);
 
     // Append bookmark
-    int appendBookmark(FXString&, FXString&, FXString&);
+    int appendBookmark(FXString&, FXString&, FXString&, const FileList::ColumnSizing* = NULL);
 
     // Move bookmark up
     void moveUp(FXString&);
@@ -404,7 +405,8 @@ public:
     long onDNDEnter(FXObject*, FXSelector, void*);
     long onDNDMotion(FXObject*, FXSelector, void*);
     long onDNDDrop(FXObject*, FXSelector, void*);
-    int bookmarkFolder(const FXString&);
+    int bookmarkFolder(const FXString&, const FileList::ColumnSizing* = NULL);
+    void restoreColumnSizing(const FXString&, FileList*);
 };
 
 #endif

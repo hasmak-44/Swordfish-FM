@@ -336,6 +336,7 @@ static const FXuchar hand3_mask_bits[] =
         -v,   --version      Print version information and exit.\n\
         -i,   --iconic       Start iconified.\n\
         -m,   --maximized    Start maximized.\n\
+              --bookmark name Open a bookmark with its saved column sizing.\n\
         -p n, --panel n      Force panel view mode to n (n=0 => Tree and one panel,\n\
                              n=1 => One panel, n=2 => Two panels, n=3 => Tree and two panels).\n\
 \n\
@@ -394,6 +395,7 @@ int main(int argc, char* argv[])
     int panel_mode = -1;
     FXString xmodifiers;
     FXString cmd;
+    FXString startupBookmark;
 
     // Vector of URIs to open on startup
     vector_FXString startURIs;
@@ -484,6 +486,15 @@ int main(int argc, char* argv[])
         else if ((compare(argv[i], "-m") == 0) || (compare(argv[i], "--maximized") == 0))
         {
             maximized = true;
+        }
+        else if (compare(argv[i], "--bookmark") == 0)
+        {
+            if (++i >= argc || !argv[i][0])
+            {
+                fprintf(stderr, _("Error: --bookmark requires a bookmark name\n"));
+                return EXIT_FAILURE;
+            }
+            startupBookmark = argv[i];
         }
         else if ((compare(argv[i], "-p") == 0) || (compare(argv[i], "--panel") == 0) ||
                  (compare(argv[i], "--panels") == 0))
@@ -625,6 +636,20 @@ int main(int argc, char* argv[])
     application->addSignal(SIGINT, mainWindow, XFileExplorer::ID_QUIT);
 
     application->create();
+    if (!startupBookmark.empty())
+    {
+        XFileExplorer* explorer = static_cast<XFileExplorer*>(mainWindow);
+        BookmarksList* bookmarks = explorer->getDirPanel()->getBookmarksList();
+        FXString path = bookmarks->getItemPathname(startupBookmark);
+        if (path.empty() || !xf_isdirectory(path) || !xf_isreadexecutable(path))
+        {
+            fprintf(stderr, _("Error: Bookmark %s is missing or its folder is unavailable\n"), startupBookmark.text());
+            return EXIT_FAILURE;
+        }
+        explorer->getCurrentPanel()->navigatePane(path);
+        bookmarks->restoreColumnSizing(startupBookmark, explorer->getCurrentPanel()->getList());
+        bookmarks->setBookmark(startupBookmark);
+    }
     setNetWmIcon(mainWindow, xfedockicon);
     if (restartChannel >= 0)
     {

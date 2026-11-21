@@ -25,6 +25,7 @@ protected:
     FXuint tabViews[NMAX_TABS] = { 0 };
     typedef std::map<FXuint, FXuint> ColumnWidths;
     ColumnWidths tabColumns[NMAX_TABS];
+    FXuint tabColumnModes[NMAX_TABS] = {};
     ColumnWidths captureColumns() const;
     void applyColumns(FXuint);
     
@@ -60,6 +61,7 @@ public:
         std::vector<FXString> paths;
         std::vector<FXuint> views;
         std::vector<ColumnWidths> columns;
+        std::vector<FXuint> columnModes;
         std::vector<FXuint> columnOrder;
         FXuint selected = 0;
     };
@@ -107,6 +109,7 @@ public:
     long onCmdBookmarkGroup(FXObject*, FXSelector, void*);
 
     void addTab(FXString, FXbool activate = true);
+    FileList::ColumnSizing getColumnSizing(FXuint);
     long onQueryTip(FXObject*, FXSelector, void*);
     long onCmdNewTab(FXObject*, FXSelector, void*);
     long onCmdRemoveAllTabs(FXObject*, FXSelector, void*);

@@ -1267,7 +1267,7 @@ long IconList::onConfigure(FXObject*, FXSelector, void*)
     }
 
     // Update the relative header sizes
-    if (relative_resize && (count >= 1))
+    if (relative_resize && (count >= 1) && !applyColumnWidths())
     {
         // If not in a search list, initialize the extra header pcts if necessary
         if ( !(options & ICONLIST_SEARCH) )
@@ -1291,6 +1291,7 @@ long IconList::onConfigure(FXObject*, FXSelector, void*)
     }
 
     // Update the counter
+    applyColumnWidths();
     if (count <= 2)
     {
         count++;
@@ -2468,6 +2469,7 @@ int IconList::getContentHeight()
 // Recalculate layout
 void IconList::layout()
 {
+    applyColumnWidths();
     // Update scroll bars
     FXScrollArea::layout();
 
@@ -2555,6 +2557,7 @@ long IconList::onCmdHeaderClicked(FXObject*, FXSelector, void* ptr)
 // we want to update the content size w/o re-measuring the items...
 long IconList::onHeaderChanged(FXObject*, FXSelector, void* ptr)
 {
+    applyColumnWidths();
     // Obtain the main window width
     int width = (this->getShell())->getWidth();
 
@@ -2575,41 +2578,10 @@ long IconList::onHeaderChanged(FXObject*, FXSelector, void* ptr)
 long IconList::onHeaderResize(FXObject*, FXSelector, void* ptr)
 {
     int hi = (int)(FXival)ptr;
-    int i, iw, tw, w, nw = 0;
-    FXString text;
-
     // For detailed icon list
     if (!(options & (ICONLIST_MINI_ICONS | ICONLIST_BIG_ICONS)))
     {
-        for (i = 0; i < items.no(); i++)
-        {
-            w = 0;
-
-            // The first header item may have an icon
-            if (hi == 0)
-            {
-                if (items[i]->miniIcon)
-                {
-                    iw = items[i]->miniIcon->getWidth();
-                    w += iw + DETAIL_TEXT_SPACING + SIDE_SPACING / 2;
-                }
-            }
-
-            // Measure section of text
-            text = items[i]->label.section('\t', hi);
-            if (!text.empty())
-            {
-                tw = font->getTextWidth(text.text(), text.length());
-                w += tw + SIDE_SPACING + 2;
-            }
-
-            // Keep the max
-            if (w > nw)
-            {
-                nw = w;
-            }
-        }
-
+        FXint nw = getHeaderFitWidth(hi);
         // Set new header width
         if ((nw > 0) && (nw != header->getItemSize(hi)))
         {
@@ -2617,7 +2589,28 @@ long IconList::onHeaderResize(FXObject*, FXSelector, void* ptr)
             flags &= ~FLAG_RECALC;
         }
     }
+    applyColumnWidths();
     return 1;
+}
+
+FXint IconList::getHeaderFitWidth(FXint column) const
+{
+    FXString title = getHeaderText(column);
+    FXint widest = header->getFont()->getTextWidth(title.text(), title.length()) + SIDE_SPACING + 20;
+    for (FXint i = 0; i < items.no(); ++i)
+    {
+        FXString text = items[i]->label.section('\t', column);
+        FXint size = font->getTextWidth(text.text(), text.length()) + SIDE_SPACING + 2;
+        if (column == 0)
+        {
+            if (items[i]->miniIcon)
+                size += items[i]->miniIcon->getWidth() + DETAIL_TEXT_SPACING + SIDE_SPACING / 2;
+            if (items[i]->treeMark >= 0)
+                size += items[i]->treeDepth * TREE_INDENT + TREE_MARK_W;
+        }
+        widest = FXMAX(widest, size);
+    }
+    return widest;
 }
 
 
@@ -2626,40 +2619,11 @@ long IconList::onHeaderResize(FXObject*, FXSelector, void* ptr)
 // Note: name header has always index 0
 void IconList::autosizeNameHeader(void)
 {
+    if (applyColumnWidths()) return;
     // Only apply in detailed list and when autosize is enabled
     if (!(options & (ICONLIST_MINI_ICONS | ICONLIST_BIG_ICONS)) && (options & ICONLIST_AUTOSIZE))
     {
-        int hi = 0;
-
-        int i, iw, tw, w, nw = 0;
-        FXString text;
-
-        for (i = 0; i < items.no(); i++)
-        {
-            w = 0;
-
-            // Measure icon
-            if (items[i]->miniIcon)
-            {
-                iw = items[i]->miniIcon->getWidth();
-                w += iw + DETAIL_TEXT_SPACING + SIDE_SPACING / 2;
-            }
-
-            // Measure section of text
-            text = items[i]->label.section('\t', hi);
-            if (!text.empty())
-            {
-                tw = font->getTextWidth(text.text(), text.length());
-                w += tw + SIDE_SPACING + 2;
-            }
-
-            // Keep the max
-            if (w > nw)
-            {
-                nw = w;
-            }
-        }
-
+        FXint nw = getHeaderFitWidth(0);
         // Set new header width
         if ((nw > 0) && (nw != header->getItemSize(0)))
         {
@@ -2672,7 +2636,7 @@ void IconList::autosizeNameHeader(void)
             {
                 nw = MAX_NAME_SIZE;
             }
-            header->setItemSize(hi, nw);
+            header->setItemSize(0, nw);
         }
     }
 }

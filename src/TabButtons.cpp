@@ -718,22 +718,29 @@ TabButtons::~TabButtons()
 // Add new tab
 TabButtons::ColumnWidths TabButtons::captureColumns() const
 {
-    ColumnWidths widths;
-    FileList* list = filepanel->getList();
-    for (FXint column = 0; column < list->getNumHeaders(); ++column)
-        widths[list->getHeaderId(column)] = list->getHeaderSize(column);
-    return widths;
+    return filepanel->getList()->getColumnSizing().widths;
 }
 
 void TabButtons::applyColumns(FXuint index)
 {
     FileList* list = filepanel->getList();
     for (const auto& column : captureColumns()) tabColumns[index].emplace(column.first, column.second);
-    for (FXint column = 0; column < list->getNumHeaders(); ++column)
+    FileList::ColumnSizing sizing;
+    sizing.mode = tabColumnModes[index];
+    sizing.widths = tabColumns[index];
+    list->setColumnSizing(sizing);
+}
+
+FileList::ColumnSizing TabButtons::getColumnSizing(FXuint index)
+{
+    onUpdCurrentTab(this, 0, NULL);
+    FileList::ColumnSizing sizing;
+    if (index < nbActiveTabs)
     {
-        ColumnWidths::const_iterator width = tabColumns[index].find(list->getHeaderId(column));
-        if (width != tabColumns[index].end()) list->setHeaderSize(column, width->second);
+        sizing.mode = tabColumnModes[index];
+        sizing.widths = tabColumns[index];
     }
+    return sizing;
 }
 
 void TabButtons::addTab(FXString pathname, FXbool activate)
@@ -758,7 +765,9 @@ void TabButtons::addTab(FXString pathname, FXbool activate)
         // Tab path
         tabPaths[index] = pathname;
         tabViews[index] = filepanel->getList()->getViewMode();
-        tabColumns[index] = captureColumns();
+        FileList::ColumnSizing defaults = filepanel->getList()->defaultColumnSizing();
+        tabColumnModes[index] = defaults.mode;
+        tabColumns[index] = defaults.mode == FileList::ColumnSizing::LEGACY ? captureColumns() : defaults.widths;
 
         // Tab label
         tabButtons[index]->setText(tabLabel(pathname));
@@ -855,6 +864,7 @@ long TabButtons::onCmdCloseButton(FXObject* sender, FXSelector sel, void* ptr)
         tabPaths[i] = tabPaths[i + 1];
         tabViews[i] = tabViews[i + 1];
         tabColumns[i] = tabColumns[i + 1];
+        tabColumnModes[i] = tabColumnModes[i + 1];
     }
 
     // Hide last button and reset its label and path
@@ -990,6 +1000,7 @@ TabButtons::State TabButtons::saveState()
         saved.paths.push_back(tabPaths[i]);
         saved.views.push_back(tabViews[i]);
         saved.columns.push_back(tabColumns[i]);
+        saved.columnModes.push_back(tabColumnModes[i]);
     }
     return saved;
 }
@@ -1006,6 +1017,7 @@ void TabButtons::restoreState(const State& saved)
             tabPaths[i] = saved.paths[i];
             tabViews[i] = saved.views[i];
             tabColumns[i] = saved.columns[i];
+            tabColumnModes[i] = i < saved.columnModes.size() ? saved.columnModes[i] : FileList::ColumnSizing::LEGACY;
             tabButtons[i]->setText(tabLabel(tabPaths[i]));
             tabButtons[i]->show();
             tabButtons[i]->getParent()->show();
@@ -1091,6 +1103,7 @@ void TabButtons::closeMount(const FXString& mountpoint)
         tabPaths[kept] = tabPaths[i];
         tabViews[kept] = tabViews[i];
         tabColumns[kept] = tabColumns[i];
+        tabColumnModes[kept] = tabColumnModes[i];
         tabButtons[kept]->setText(tabButtons[i]->getText());
         ++kept;
     }
@@ -1102,6 +1115,7 @@ void TabButtons::closeMount(const FXString& mountpoint)
         tabPaths[0] = FXSystem::getHomeDirectory();
         tabViews[0] = filepanel->getList()->getViewMode();
         tabColumns[0] = captureColumns();
+        tabColumnModes[0] = filepanel->getList()->getColumnSizing().mode;
         tabButtons[0]->setText(tabLabel(tabPaths[0]));
     }
     currentTab = activeRemoved ? FXMIN(oldCurrent, nbActiveTabs - 1) : selected;
@@ -1147,6 +1161,7 @@ long TabButtons::onUpdCurrentTab(FXObject* senderbj, FXSelector sel, void* ptr)
     // Set current name and path
     tabPaths[currentTab] = pathname;
     tabViews[currentTab] = filepanel->getList()->getViewMode();
+    tabColumnModes[currentTab] = filepanel->getList()->getColumnSizing().mode;
     for (const auto& column : captureColumns()) tabColumns[currentTab][column.first] = column.second;
     tabButtons[currentTab]->setText(tabLabel(pathname));
 
@@ -1258,6 +1273,7 @@ long TabButtons::onCmdMoveLeft(FXObject* sender, FXSelector sel, void* ptr)
         tabPaths[index] = left_path;        
         tabViews[index] = left_view;
         std::swap(tabColumns[index], tabColumns[index - 1]);
+        std::swap(tabColumnModes[index], tabColumnModes[index - 1]);
 
         // Update previous and current tab
         if (index == currentTab)
@@ -1310,6 +1326,7 @@ long TabButtons::onCmdMoveRight(FXObject* sender, FXSelector sel, void* ptr)
         tabPaths[index] = right_path;        
         tabViews[index] = right_view;
         std::swap(tabColumns[index], tabColumns[index + 1]);
+        std::swap(tabColumnModes[index], tabColumnModes[index + 1]);
 
         // Update previous and current tab
         if (index == currentTab)
@@ -1345,7 +1362,8 @@ long TabButtons::onCmdBookmarkTab(FXObject*, FXSelector sel, void*)
     onUpdCurrentTab(this, 0, NULL);
     if (index < nbActiveTabs)
     {
-        dirpanel->getBookmarksList()->bookmarkFolder(tabPaths[index]);
+        FileList::ColumnSizing sizing = getColumnSizing(index);
+        dirpanel->getBookmarksList()->bookmarkFolder(tabPaths[index], &sizing);
         appLog(APP_LOG_UI, "tab-bookmarked", FXString("path=\"") + tabPaths[index] + "\"");
     }
     return 1;
@@ -1408,6 +1426,7 @@ void TabButtons::moveTab(FXuint from, FXuint to)
     FXString path = tabPaths[from];
     FXuint view = tabViews[from];
     ColumnWidths columns = tabColumns[from];
+    FXuint columnMode = tabColumnModes[from];
     const int step = (to > from) ? 1 : -1;
     for (FXuint i = from; i != to; i += step)
     {
@@ -1415,11 +1434,13 @@ void TabButtons::moveTab(FXuint from, FXuint to)
         tabPaths[i] = tabPaths[i + step];
         tabViews[i] = tabViews[i + step];
         tabColumns[i] = tabColumns[i + step];
+        tabColumnModes[i] = tabColumnModes[i + step];
     }
     tabButtons[to]->setText(label);
     tabPaths[to] = path;
     tabViews[to] = view;
     tabColumns[to] = columns;
+    tabColumnModes[to] = columnMode;
 
     if (currentTab == from)
     {
@@ -1554,11 +1575,10 @@ void TabButtons::saveTabs(const char* section)
         getApp()->reg().writeStringEntry(section, key.text(), xf_portablepathreference(tabPaths[i]).text());
         key = "view" + FXStringVal(i);
         getApp()->reg().writeUnsignedEntry(section, key.text(), tabViews[i]);
-        for (const auto& column : tabColumns[i])
-        {
-            key = "width" + FXStringVal(i) + "_" + FXStringVal(column.first);
-            getApp()->reg().writeUnsignedEntry(section, key.text(), column.second);
-        }
+        FileList::ColumnSizing sizing;
+        sizing.mode = tabColumnModes[i];
+        sizing.widths = tabColumns[i];
+        FileList::saveColumnSizing(getApp()->reg(), section, FXStringVal(i), sizing);
     }
     getApp()->reg().writeUnsignedEntry(section, "current_tab", currentTab);
 }
@@ -1593,15 +1613,11 @@ FXbool TabButtons::restoreTabs(const char* section, FXuint selected)
         if (mode > FileList::VIEW_THUMBNAILS) mode = FileList::VIEW_DETAILS;
         tabViews[currentTab] = mode;
         filepanel->getList()->setViewMode((FileList::ViewMode)mode);
-        for (FXuint id = FileList::ID_COL_NAME; id <= FileList::ID_COL_LINK; ++id)
-        {
-            key = "width" + FXStringVal(i) + "_" + FXStringVal(id);
-            if (!getApp()->reg().existingEntry(section, key.text())) continue;
-            FXuint width = getApp()->reg().readUnsignedEntry(section, key.text(), 0);
-            if (width < 16 || width > 16384)
-                appLog(APP_LOG_ERRORS, "tab-column-width-invalid", key);
-            else tabColumns[currentTab][id] = width;
-        }
+        FileList::ColumnSizing fallback = getColumnSizing(currentTab);
+        fallback.mode = FileList::ColumnSizing::LEGACY;
+        FileList::ColumnSizing sizing = FileList::loadColumnSizing(getApp()->reg(), section, FXStringVal(i), fallback);
+        tabColumnModes[currentTab] = sizing.mode;
+        tabColumns[currentTab] = sizing.widths;
         applyColumns(currentTab);
     }
     if (!nbActiveTabs)

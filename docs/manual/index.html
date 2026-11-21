@@ -557,6 +557,15 @@
         <li>Click <strong>OK</strong> to apply the choices immediately. No restart is needed for column changes. <strong>Cancel</strong> discards your changes.</li>
       </ol>
       <p>These are the same choices used by the heading menu and heading dragging, not a separate set of defaults. They are remembered when you reopen Swordfish. Right-click blank space and open <strong>Sort</strong>, or use <span class="menu">Panel → Sort</span> from an item's context menu, to choose the sort field and options. Sorting does not show or hide columns. Previews can take time and may not be supported for every format; an empty preview does not mean the file is empty.</p>
+      <h3>Choose automatic or manual column widths</h3>
+      <ol class="steps">
+        <li>Open <strong>Preferences</strong>, choose <strong>File List</strong>, then <strong>Column widths</strong>.</li>
+        <li>Select the left/top or right/bottom panel.</li>
+        <li>Check <strong>Automatically fit columns to the widest item</strong> to fit every displayed column in Details view. Widths update as folder contents change; the manual fields are disabled.</li>
+        <li>Clear the checkbox to edit each column's width in pixels. Sensible initial widths are provided. Manual mode does not stretch columns when the window is resized; you can still drag a header divider.</li>
+        <li>Click <strong>Apply</strong> or <strong>OK</strong>. The selected panel's current tab changes, and newly opened tabs use these defaults. Other tabs and existing bookmarks keep their own settings. <strong>Cancel</strong> discards unapplied changes.</li>
+      </ol>
+      <p>Each tab remembers its sizing mode and widths, including when you restore tabs at startup or open a saved tab group. A new bookmark captures the source tab's sizing settings; opening it from the menu or sidebar, in a new tab, or in a new window restores that snapshot. Renaming or moving the bookmark keeps it. Existing bookmarks without a sizing snapshot retain their previous behavior. From a terminal, <code>swordfish --bookmark "Bookmark name"</code> opens a bookmark with its saved sizing.</p>
       <div class="warning"><p><strong>Warning:</strong> revealing hidden items is safe, but changing or deleting hidden configuration files may disrupt applications or your desktop.</p></div>
     </section>
 

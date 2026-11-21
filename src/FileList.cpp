@@ -703,6 +703,98 @@ std::vector<FXuint> FileList::getColumnLayout() const
     return std::vector<FXuint>(idCol, idCol + nbCols);
 }
 
+void FileList::saveColumnSizing(FXSettings& settings, const char* section, const FXString& suffix,
+                                const ColumnSizing& sizing)
+{
+    settings.writeUnsignedEntry(section, ("column_mode" + suffix).text(), sizing.mode);
+    for (const auto& column : sizing.widths)
+        settings.writeUnsignedEntry(section, ("width" + suffix + "_" + FXStringVal(column.first)).text(), column.second);
+}
+
+FileList::ColumnSizing FileList::loadColumnSizing(FXSettings& settings, const char* section,
+                                                  const FXString& suffix, const ColumnSizing& fallback)
+{
+    ColumnSizing sizing = fallback;
+    FXString key = "column_mode" + suffix;
+    FXuint mode = settings.readUnsignedEntry(section, key.text(), fallback.mode);
+    if (mode > ColumnSizing::MANUAL)
+        appLog(APP_LOG_ERRORS, "column-sizing-mode-invalid", FXString(section) + "/" + key);
+    else sizing.mode = mode;
+    for (FXuint id = ID_COL_NAME; id <= ID_COL_DIRNAME; ++id)
+    {
+        key = "width" + suffix + "_" + FXStringVal(id);
+        if (!settings.existingEntry(section, key.text())) continue;
+        FXuint width = settings.readUnsignedEntry(section, key.text(), 0);
+        if (width < 16 || width > 16384)
+            appLog(APP_LOG_ERRORS, "column-width-invalid", FXString(section) + "/" + key);
+        else sizing.widths[id] = width;
+    }
+    return sizing;
+}
+
+FileList::ColumnSizing FileList::defaultColumnSizing() const
+{
+    ColumnSizing defaults;
+    const FXuint sizes[] = {250, 100, 160, 100, 180, 100, 100, 140, 100};
+    for (FXuint column = 0; column < NMAX_COLS; ++column) defaults.widths[ID_COL_NAME + column] = sizes[column];
+    return columnSettingsSection.empty() ? defaults :
+           loadColumnSizing(getApp()->reg(), columnSettingsSection.text(), "default", defaults);
+}
+
+FileList::ColumnSizing FileList::getColumnSizing()
+{
+    ColumnSizing sizing;
+    sizing.mode = columnSizingMode;
+    sizing.widths = normalColumnWidths;
+    for (FXint column = 0; column < getNumHeaders(); ++column)
+        sizing.widths[getHeaderId(column)] = getHeaderSize(column);
+    return sizing;
+}
+
+void FileList::setColumnSizing(const ColumnSizing& sizing)
+{
+    if (sizing.mode > ColumnSizing::MANUAL)
+    {
+        appLog(APP_LOG_ERRORS, "column-sizing-mode-invalid", FXStringVal(sizing.mode));
+        return;
+    }
+    columnSizingMode = sizing.mode;
+    for (const auto& column : sizing.widths) normalColumnWidths[column.first] = column.second;
+    for (FXint column = 0; column < getNumHeaders(); ++column)
+    {
+        auto size = sizing.widths.find(getHeaderId(column));
+        if (size != sizing.widths.end()) setHeaderSize(column, size->second);
+    }
+    recalc();
+    applyColumnWidths();
+}
+
+void FileList::recalc()
+{
+    columnFitDirty = true;
+    IconList::recalc();
+}
+
+FXbool FileList::applyColumnWidths()
+{
+    if (columnSizingMode == ColumnSizing::AUTO_FIT &&
+        !(options & (ICONLIST_MINI_ICONS | ICONLIST_BIG_ICONS)))
+    {
+        if (columnFitDirty || columnFitWidths.size() != static_cast<size_t>(getNumHeaders()))
+        {
+            columnFitWidths.resize(getNumHeaders());
+            for (FXint i = 0; i < getNumHeaders(); ++i) columnFitWidths[i] = getHeaderFitWidth(i);
+        }
+        for (FXint i = 0; i < getNumHeaders(); ++i)
+        {
+            FXint size = columnFitWidths[i];
+            if (size != getHeaderSize(i)) setHeaderSize(i, size);
+        }
+        columnFitDirty = false;
+    }
+    return columnSizingMode != ColumnSizing::LEGACY;
+}
+
 void FileList::setColumnLayout(const std::vector<FXuint>& columns)
 {
     if (columns == getColumnLayout()) return;
@@ -731,6 +823,8 @@ void FileList::setColumnLayout(const std::vector<FXuint>& columns)
     FXuint sortedColumn = getHeaderId(getSortHeader());
     std::map<FXuint, FXint> widths;
     for (FXint i = 0; i < getNumHeaders(); ++i) widths[getHeaderId(i)] = getHeaderSize(i);
+    if (!inTrash)
+        for (const auto& column : widths) normalColumnWidths[column.first] = column.second;
     nbCols = columns.size();
     for (FXuint i = 0; i < nbCols; ++i) idCol[i] = columns[i];
     for (FXuint id : columns)
@@ -797,6 +891,8 @@ void FileList::setColumnLayout(const std::vector<FXuint>& columns)
 void FileList::bindColumnSettings(const char* section, const char* legacyTabs)
 {
     columnSettingsSection = section;
+    ColumnSizing defaults = defaultColumnSizing();
+    if (defaults.mode != ColumnSizing::LEGACY) setColumnSizing(defaults);
     FXString saved = getApp()->reg().readStringEntry(section, "column_layout", "");
     if (saved.empty())
     {

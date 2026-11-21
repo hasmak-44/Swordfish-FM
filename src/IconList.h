@@ -327,6 +327,8 @@ public:
     void setViewMetrics(int iconSize, int detailSize, FXbool thumbnails);
     virtual long showColumnMenu(FXEvent*) { return 0; }
     virtual void moveColumn(FXint, FXint) {}
+    virtual FXbool applyColumnWidths() { return false; }
+    FXint getHeaderFitWidth(FXint) const;
     int getViewIconSize() const { return viewIconSize; }
     int getDetailIconSize() const { return detailIconSize; }
     FXbool hasThumbnailTiles() const { return thumbnailTiles; }

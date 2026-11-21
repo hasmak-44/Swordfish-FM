@@ -30,6 +30,7 @@
 #include <fxkeys.h>
 #include <dlfcn.h>
 #include <fstream>
+#include <algorithm>
 #include <iterator>
 #include <vector>
 #include <sys/stat.h>
@@ -1850,6 +1851,245 @@ static int runTransferParentClose(char** argv)
     std::_Exit(xf_startTransfer(explorer, COPY, {TransferItem(source, target)}) ? 0 : 1);
 }
 
+class ColumnWidthsRegression : public FXObject
+{
+    PreferencesBox* preferences;
+public:
+    FXbool accept = false;
+    void screenshot(const char* name)
+    {
+        FXApp* app = preferences->getApp();
+        app->repaint();
+        app->flush(true);
+        Display* display = static_cast<Display*>(app->getDisplay());
+        XWindowAttributes attributes;
+        assert(XGetWindowAttributes(display, preferences->id(), &attributes) && attributes.map_state == IsViewable);
+        captureTransferWindow(preferences->id(), name);
+    }
+    explicit ColumnWidthsRegression(PreferencesBox* box) : preferences(box)
+    {
+        if (getenv("SWORDFISH_TEST_TRANSFER_SCREENSHOTS"))
+            for (const Theme& theme : preferences->Themes)
+                if (theme.name == (getenv("SWORDFISH_TEST_COLUMNS_DARK") ? "Dark" : "Clearlooks"))
+                {
+                    theme.writeActive(preferences->getApp()->reg());
+                    preferences->currTheme = theme;
+                }
+    }
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        preferences->widthPane->setCurrentItem(0);
+        preferences->onCmdColumnPane(preferences->widthPane, 0, NULL);
+        preferences->autoColumnWidths->setCheck(true);
+        preferences->onCmdColumnWidths(NULL, 0, NULL);
+        for (FXuint column = 0; column < NMAX_COLS; ++column)
+            assert(!preferences->columnWidths[column]->isEnabled());
+        preferences->autoColumnWidths->setCheck(false);
+        preferences->columnWidths[0]->setValue(333);
+        preferences->columnWidths[2]->setValue(91);
+        preferences->columnWidths[8]->setValue(213);
+        preferences->onCmdColumnWidths(NULL, 0, NULL);
+        preferences->widthPane->setCurrentItem(1);
+        preferences->onCmdColumnPane(preferences->widthPane, 0, NULL);
+        preferences->autoColumnWidths->setCheck(false);
+        preferences->columnWidths[1]->setValue(117);
+        preferences->onCmdColumnWidths(NULL, 0, NULL);
+        preferences->widthPane->setCurrentItem(0);
+        preferences->onCmdColumnPane(preferences->widthPane, 0, NULL);
+        assert(!preferences->autoColumnWidths->getCheck() && preferences->columnWidths[0]->getValue() == 333);
+        for (FXuint column = 0; column < NMAX_COLS; ++column)
+            assert(preferences->columnWidths[column]->isEnabled() && preferences->columnWidths[column]->getValue() >= 32);
+        if (getenv("SWORDFISH_TEST_TRANSFER_SCREENSHOTS") && accept)
+        {
+            preferences->show(PLACEMENT_OWNER);
+            preferences->selectCategory(PreferencesBox::FILE_LIST);
+            FXTabBook* tabs = preferences->categories[PreferencesBox::FILE_LIST].tabs;
+            for (FXWindow* child = tabs->getFirst(); child; child = child->getNext())
+            {
+                FXTabItem* tab = dynamic_cast<FXTabItem*>(child);
+                if (tab && tab->getText() == "Column widths")
+                    tabs->setCurrent(tabs->indexOfChild(child) / 2);
+            }
+            preferences->layout();
+            pumpTransferEvents(*preferences->getApp(), 200000000LL);
+            screenshot("column-widths-manual");
+            preferences->autoColumnWidths->setCheck(true);
+            preferences->onUpdColumnWidths(NULL, 0, NULL);
+            pumpTransferEvents(*preferences->getApp(), 200000000LL);
+            screenshot("column-widths-auto");
+            preferences->autoColumnWidths->setCheck(false);
+            preferences->onUpdColumnWidths(NULL, 0, NULL);
+            preferences->resize(620, 440);
+            preferences->layout();
+            pumpTransferEvents(*preferences->getApp(), 200000000LL);
+            screenshot("column-widths-narrow");
+            preferences->autoColumnWidths->setCheck(true);
+            preferences->onUpdColumnWidths(NULL, 0, NULL);
+            pumpTransferEvents(*preferences->getApp(), 200000000LL);
+            screenshot("column-widths-auto-narrow");
+            preferences->autoColumnWidths->setCheck(false);
+            preferences->onUpdColumnWidths(NULL, 0, NULL);
+            checkPreferencesScrolling(*preferences->getApp(), preferences);
+            FXScrollWindow* outer = dynamic_cast<FXScrollWindow*>(preferences->getFirst());
+            assert(outer);
+            outer->setPosition(-outer->getContentWidth(), -outer->getContentHeight());
+            pumpTransferEvents(*preferences->getApp(), 200000000LL);
+            screenshot("column-widths-narrow-bottom");
+        }
+        if (accept) preferences->onCmdAccept(NULL, 0, NULL);
+        else preferences->onCmdCancel(NULL, 0, NULL);
+        return 1;
+    }
+};
+
+static void checkColumnWidthPreferences(FXApp& app, XFileExplorer* explorer, const FXString& fixture)
+{
+    FileList* left = explorer->getLeftPanel()->getList();
+    FileList* right = explorer->getRightPanel()->getList();
+    TabButtons::State leftTabs = explorer->getLeftPanel()->getTabButtons()->saveState();
+    TabButtons::State rightTabs = explorer->getRightPanel()->getTabButtons()->saveState();
+    FileList::ColumnSizing original = left->getColumnSizing();
+    FileList::ColumnSizing originalRight = right->getColumnSizing();
+    const std::vector<FXuint> leftLayout = left->getColumnLayout(), rightLayout = right->getColumnLayout();
+    FXString longest;
+    for (int i = 0; i < 180; ++i) longest += "W";
+    FXString folder = fixture + "/widths";
+    assert(mkdir(folder.text(), 0700) == 0);
+    writeConflictFile(folder + "/" + longest, "long");
+    writeConflictFile(folder + "/short.txt", "short");
+    left->setDirectory(folder);
+    right->setDirectory(folder);
+    std::vector<FXuint> columns;
+    for (FXuint i = 0; i < NMAX_COLS; ++i) columns.push_back(FileList::ID_COL_NAME + i);
+    left->setColumnLayout(columns);
+    right->setColumnLayout(columns);
+    right->moveColumn(2, 1);
+    FileList::ColumnSizing automatic = left->getColumnSizing();
+    automatic.mode = FileList::ColumnSizing::AUTO_FIT;
+    left->setColumnSizing(automatic);
+    left->layout();
+    FXint widest = left->getHeaderSize(0);
+    assert(widest > 1000 && widest >= left->getFont()->getTextWidth(longest.text(), longest.length()));
+    for (FXint column = 0; column < left->getNumHeaders(); ++column)
+    {
+        for (FXint item = 0; item < left->getNumItems(); ++item)
+        {
+            FXString text = left->getItemText(item).section('\t', column);
+            assert(left->getHeaderSize(column) >= left->getFont()->getTextWidth(text.text(), text.length()));
+        }
+    }
+    assert(unlink((folder + "/" + longest).text()) == 0);
+    left->scan(true);
+    left->layout();
+    assert(left->getHeaderSize(0) < widest);
+    TabButtons* tabs = explorer->getLeftPanel()->getTabButtons();
+    FXuint autoTab = tabs->getCurrentTab();
+    tabs->addTab(folder);
+    FXuint manualTab = tabs->getCurrentTab();
+
+    PreferencesBox preferences(explorer);
+    preferences.create();
+    ColumnWidthsRegression driver(&preferences);
+    app.addTimeout(&driver, 1, 10);
+    preferences.execute(PLACEMENT_OWNER);
+    assert(!app.reg().existingEntry("LEFT PANEL", "column_modedefault"));
+    assert(left->getColumnSizing().mode == FileList::ColumnSizing::LEGACY);
+    driver.accept = true;
+    app.addTimeout(&driver, 1, 10);
+    preferences.execute(PLACEMENT_OWNER);
+    assert(left->getColumnSizing().mode == FileList::ColumnSizing::MANUAL &&
+           right->getColumnSizing().mode == FileList::ColumnSizing::MANUAL);
+    assert(left->getHeaderSize(0) == 333 && left->getHeaderSize(left->getHeaderIndex(FileList::ID_COL_TYPE)) == 91);
+    assert(right->getHeaderSize(right->getHeaderIndex(FileList::ID_COL_SIZE)) == 117);
+    left->moveColumn(2, 1);
+    left->layout();
+    assert(left->getHeaderSize(left->getHeaderIndex(FileList::ID_COL_TYPE)) == 91);
+    std::vector<FXuint> hidden = left->getColumnLayout();
+    left->setHeaderSize(left->getHeaderIndex(FileList::ID_COL_LINK), 229);
+    hidden.erase(std::find(hidden.begin(), hidden.end(), FileList::ID_COL_LINK));
+    left->setColumnLayout(hidden);
+    hidden.push_back(FileList::ID_COL_LINK);
+    left->setColumnLayout(hidden);
+    assert(left->getHeaderSize(left->getHeaderIndex(FileList::ID_COL_LINK)) == 229);
+    left->setHeaderSize(0, 357);
+    left->onHeaderChanged(NULL, 0, NULL);
+    assert(left->getHeaderSize(0) == 357);
+    explorer->resize(700, 500);
+    left->onConfigure(NULL, 0, NULL);
+    assert(left->getHeaderSize(0) == 357);
+    tabs->setCurrentTab(autoTab);
+    assert(left->getColumnSizing().mode == FileList::ColumnSizing::AUTO_FIT && left->getHeaderSize(0) != 333);
+    tabs->setCurrentTab(manualTab);
+    assert(left->getColumnSizing().mode == FileList::ColumnSizing::MANUAL && left->getHeaderSize(0) == 357);
+    assert(left->getHeaderSize(left->getHeaderIndex(FileList::ID_COL_LINK)) == 229);
+    tabs->addTab(folder);
+    assert(left->getColumnSizing().mode == FileList::ColumnSizing::MANUAL && left->getHeaderSize(0) == 333);
+    left->setListStyle(ICONLIST_BIG_ICONS);
+    left->layout();
+    left->setListStyle(ICONLIST_DETAILED);
+    left->layout();
+    assert(left->getHeaderSize(0) == 333);
+    BookmarksList* bookmarks = explorer->getDirPanel()->getBookmarksList();
+    FXString bookmarkName = "Column widths regression", bookmarkIcon;
+    assert(bookmarks->appendBookmark(bookmarkName, folder, bookmarkIcon) == 1);
+    left->setColumnSizing(automatic);
+    bookmarks->setBookmark(bookmarkName);
+    explorer->getDirPanel()->onCmdGotoBookmark(NULL, 0, NULL);
+    assert(left->getColumnSizing().mode == FileList::ColumnSizing::MANUAL && left->getHeaderSize(0) == 333);
+    left->setColumnSizing(automatic);
+    FXString renamed = "Renamed column widths";
+    assert(bookmarks->modifyBookmark(bookmarkName, renamed, bookmarkIcon, bookmarkIcon, folder) == 1);
+    bookmarks->restoreColumnSizing(renamed, left);
+    assert(left->getColumnSizing().mode == FileList::ColumnSizing::MANUAL && left->getHeaderSize(0) == 333);
+    left->setColumnSizing(automatic);
+    explorer->getDirPanel()->onCmdOpenBookmarkNewTab(NULL, 0, NULL);
+    assert(left->getColumnSizing().mode == FileList::ColumnSizing::MANUAL && left->getHeaderSize(0) == 333);
+    tabs->setCurrentTab(autoTab);
+    assert(left->getColumnSizing().mode == FileList::ColumnSizing::AUTO_FIT);
+    tabs->saveTabs("LEFT TABS");
+    explorer->getRightPanel()->getTabButtons()->saveTabs("RIGHT TABS");
+    app.reg().writeUnsignedEntry("OPTIONS", "restore_tabs", true);
+    assert(app.reg().write());
+    explorer->saveConfig();
+    app.reg().writeUnsignedEntry("LEFT TABS", "test_count", tabs->getNumActiveTabs());
+    app.reg().writeUnsignedEntry("RIGHT TABS", "test_count", explorer->getRightPanel()->getTabButtons()->getNumActiveTabs());
+    assert(app.reg().write());
+    assert(app.reg().unparseFile(fixture + "/columns-expected.rc"));
+    pid_t child = fork();
+    assert(child >= 0);
+    if (!child)
+    {
+        setenv("SWORDFISH_TEST_COLUMNS_RESTORE", "1", 1);
+        execl("/proc/self/exe", "swordfish-columns-test", FXPath::directory(FXPath::directory(execpath)).text(),
+              fixture.text(), (char*)NULL);
+        _exit(127);
+    }
+    int childStatus;
+    assert(waitpid(child, &childStatus, 0) == child && WIFEXITED(childStatus) && WEXITSTATUS(childStatus) == 0);
+    bookmarks->removeItem(renamed);
+    left->setColumnSizing(automatic);
+    bookmarks->restoreColumnSizing(renamed, left);
+    assert(left->getColumnSizing().mode == FileList::ColumnSizing::AUTO_FIT);
+    FXSettings saved;
+    FXString filename = xdgconfighome + "/swordfish/" + app.getAppName() + "rc";
+    assert(saved.parseFile(filename, true));
+    assert(FileList::loadColumnSizing(saved, "LEFT PANEL", "default", original).widths[FileList::ID_COL_NAME] == 333 &&
+           FileList::loadColumnSizing(saved, "RIGHT PANEL", "default", originalRight).widths[FileList::ID_COL_SIZE] == 117);
+    for (const char* section : {"LEFT PANEL", "RIGHT PANEL"})
+    {
+        app.reg().deleteEntry(section, "column_modedefault");
+        for (FXuint column = 0; column < NMAX_COLS; ++column)
+            app.reg().deleteEntry(section, ("widthdefault_" + FXStringVal(FileList::ID_COL_NAME + column)).text());
+    }
+    left->setColumnLayout(leftLayout);
+    right->setColumnLayout(rightLayout);
+    explorer->getLeftPanel()->getTabButtons()->restoreState(leftTabs);
+    explorer->getRightPanel()->getTabButtons()->restoreState(rightTabs);
+    left->setColumnSizing(original);
+    right->setColumnSizing(originalRight);
+    puts("PASS: optional widest-item fitting, exclusive manual controls, independent tab sizing, new-tab defaults, bookmark restore/rename/remove and fresh-process startup; Cancel changes nothing");
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && FXString(argv[1]) == "--internal-transfer-worker")
@@ -1867,7 +2107,7 @@ int main(int argc, char** argv)
     execpath = prefix + "/bin/swordfish";
     FXuint status;
     assert(loadAppIcons(&app, &status));
-    if (getenv("SWORDFISH_TEST_RESTORE_SESSION"))
+    if (getenv("SWORDFISH_TEST_RESTORE_SESSION") || getenv("SWORDFISH_TEST_COLUMNS_RESTORE"))
     {
         assert(app.reg().read());
         vector_FXString noPaths;
@@ -1877,7 +2117,8 @@ int main(int argc, char** argv)
         FilePanel* panels[] = {restored->getLeftPanel(), restored->getRightPanel()};
         const char* sections[] = {"LEFT TABS", "RIGHT TABS"};
         FXSettings expected;
-        assert(expected.parseFile(fixture + "/session-expected.rc", true));
+        assert(expected.parseFile(fixture + (getenv("SWORDFISH_TEST_COLUMNS_RESTORE") ?
+                                  "/columns-expected.rc" : "/session-expected.rc"), true));
         for (FXint pane = 0; pane < 2; ++pane)
         {
             TabButtons* tabs = panels[pane]->getTabButtons();
@@ -1890,10 +2131,18 @@ int main(int argc, char** argv)
                 assert(state.paths[i] == expected.readStringEntry(sections[pane], key.text(), ""));
                 key = "view" + FXStringVal(i);
                 assert(state.views[i] == expected.readUnsignedEntry(sections[pane], key.text(), 99));
-                for (const auto& width : state.columns[i])
+                key = "column_mode" + FXStringVal(i);
+                assert(state.columnModes[i] == expected.readUnsignedEntry(sections[pane], key.text(), 99));
+                for (FXuint id = FileList::ID_COL_NAME; id <= FileList::ID_COL_DIRNAME; ++id)
                 {
-                    key = "width" + FXStringVal(i) + "_" + FXStringVal(width.first);
-                    assert(width.second == expected.readUnsignedEntry(sections[pane], key.text(), 0));
+                    key = "width" + FXStringVal(i) + "_" + FXStringVal(id);
+                    if (!expected.existingEntry(sections[pane], key.text())) continue;
+                    auto width = state.columns[i].find(id);
+                    assert(width != state.columns[i].end());
+                    if (width->second != expected.readUnsignedEntry(sections[pane], key.text(), 0))
+                        fprintf(stderr, "pane %d tab %u column %u width %u, expected %u\n", pane, i, id, width->second,
+                                expected.readUnsignedEntry(sections[pane], key.text(), 0));
+                    assert(width->second == expected.readUnsignedEntry(sections[pane], key.text(), 0));
                 }
                 FXString order;
                 for (FXuint id : state.columnOrder)
@@ -1901,8 +2150,10 @@ int main(int argc, char** argv)
                     if (!order.empty()) order += ",";
                     order += FXStringVal(id - FileList::ID_COL_NAME);
                 }
-                assert(order == expected.readStringEntry(pane ? "RIGHT PANEL" : "LEFT PANEL",
-                                                          "column_layout", ""));
+                FXString expectedOrder = expected.readStringEntry(pane ? "RIGHT PANEL" : "LEFT PANEL", "column_layout", "");
+                if (order != expectedOrder)
+                    fprintf(stderr, "pane %d restored columns '%s', expected '%s'\n", pane, order.text(), expectedOrder.text());
+                assert(order == expectedOrder);
             }
         }
         assert(restored->getLeftPanel()->shown() && restored->getRightPanel()->shown());
@@ -1969,6 +2220,12 @@ int main(int argc, char** argv)
     explorer->show();
     FilePanel* panel = explorer->getCurrentPanel();
     FileList* files = panel->getList();
+    if (getenv("SWORDFISH_TEST_COLUMNS_ONLY"))
+    {
+        checkColumnWidthPreferences(app, explorer, fixture);
+        std::fflush(stdout);
+        std::_Exit(0);
+    }
     checkColumns(files);
     checkIndependentTransfers(app, explorer, prefix, fixture);
     {
@@ -2189,6 +2446,7 @@ int main(int argc, char** argv)
     panel->setActive();
     files->setDirectory(data);
     puts("PASS: Preferences edits left/right columns independently, Cancel discards, Accept applies immediately to every tab");
+    checkColumnWidthPreferences(app, explorer, fixture);
     assert(explorer->onCmdUserManual(NULL, 0, NULL) == 1);
     for (int i = 0; i < 500 && access(browserLog.text(), F_OK) != 0; ++i)
     {

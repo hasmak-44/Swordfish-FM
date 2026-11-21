@@ -111,6 +111,7 @@ private:
     void populateProgramChoices();
     friend class ProgramSettingsSmokeTest;
     friend class PaneColumnsRegression;
+    friend class ColumnWidthsRegression;
 #if defined(linux) && defined(XFE_AUTOMOUNTER)
     FXGroupBox* automountgroup = NULL;
 #endif
@@ -226,6 +227,12 @@ private:
     FXCheckButton* linkcol = NULL;
     FXList* listcol = NULL;
     FXListBox* columnPane = NULL;
+    FXListBox* widthPane = NULL;
+    FXCheckButton* autoColumnWidths = NULL;
+    FXSpinner* columnWidths[NMAX_COLS] = {};
+    FXbool paneAutoWidths[2] = {};
+    FXbool paneWidthChanges[2] = {};
+    FXint paneManualWidths[2][NMAX_COLS] = {};
     FXint selectedColumnPane = 0;
     std::vector<FXuint> paneColumns[2];
     void loadPaneColumns();
@@ -384,6 +391,7 @@ public:
         ID_DIRPANEL_PLACES_STARTUP,
         ID_VIEW_COL,
         ID_COLUMN_PANE,
+        ID_COLUMN_WIDTH,
         ID_LISTCOL,
         ID_LISTCOL_UP,
         ID_LISTCOL_DOWN,
@@ -396,6 +404,8 @@ public:
     };
 
 public:
+    long onCmdColumnWidths(FXObject*, FXSelector, void*);
+    long onUpdColumnWidths(FXObject*, FXSelector, void*);
     long onCmdCustomActions(FXObject*, FXSelector, void*);
     PreferencesBox(FXWindow* win, FXColor listbackcolor = FXRGB(255, 255, 255), FXColor listforecolor = FXRGB(0, 0, 0),
                    FXColor highlightcolor = FXRGB(238, 238, 238), FXColor pbarcolor = FXRGB(10, 36, 106),

@@ -181,6 +181,9 @@ protected:
     FXuint deldate_size = 0;
     FXuint origpath_size = 0;
     std::map<FXuint, FXuint> normalColumnWidths;
+    FXuint columnSizingMode = 0;
+    FXbool columnFitDirty = true;
+    std::vector<FXint> columnFitWidths;
     FXWindow* focuswindow = NULL;                       // Window used to test focus
     int renameClickIndex = -1;                          // Item clicked again while selected (slow click rename)
     FXbool panelActive = true;                          // The panel showing the list is the active one
@@ -511,6 +514,19 @@ public:
     std::vector<FXuint> getColumnLayout() const;
     void setColumnLayout(const std::vector<FXuint>&);
     void bindColumnSettings(const char* section, const char* legacyTabs);
+    FXbool applyColumnWidths() override;
+    void recalc() override;
+    struct ColumnSizing
+    {
+        enum Mode { LEGACY, AUTO_FIT, MANUAL };
+        FXuint mode = LEGACY;
+        std::map<FXuint, FXuint> widths;
+    };
+    ColumnSizing getColumnSizing();
+    ColumnSizing defaultColumnSizing() const;
+    void setColumnSizing(const ColumnSizing&);
+    static void saveColumnSizing(FXSettings&, const char*, const FXString&, const ColumnSizing&);
+    static ColumnSizing loadColumnSizing(FXSettings&, const char*, const FXString&, const ColumnSizing&);
     FXString columnSettingsSection;
     virtual long showColumnMenu(FXEvent*);
     virtual void moveColumn(FXint, FXint);

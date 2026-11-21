@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
 Last updated: 21 November 2026, through the independent-transfer fixes
-(section 3.120).
+(section 3.121).
 Latest release: `swordfish-0.0.3` (stable).
 Previous stable release: `swordfish-0.0.2`.
 
@@ -3965,6 +3965,42 @@ catalogs in its read-only source tree; a separate out-of-tree build hits
 existing literal `*.png` icon targets. These packaging issues were not
 changed. Real USB eject/unplug and external GTK/Qt drag interoperability
 still need physical testing. No new portable build was published.
+
+### 3.121. Optional automatic fitting and persistent manual column widths
+
+Preferences now has a File List / Column widths page for each panel. One
+optional checkbox fits every displayed Details column to its widest heading
+or item, including the Name icon and expanded-folder indentation. Automatic
+fitting updates when rows change and caches measurements between updates.
+Clearing the checkbox enables nine pixel-width fields with sensible defaults.
+Manual sizing is not overridden by relative window resizing. Disabled fields,
+borders and spinner arrows are visibly muted.
+
+Apply and OK change the selected panel's current tab and defaults for new
+tabs, without overwriting other tabs or existing bookmarks. Each tab carries
+its own sizing mode and semantic-column widths through switching, reordering,
+closing, tab-group snapshots and startup restoration. Existing saved tabs
+retain the legacy sizing policy until explicitly changed.
+
+New bookmarks capture the source tab's sizing snapshot, including an inactive
+tab bookmarked from its context menu or dragged to the sidebar. Opening a
+bookmark in the current tab, a new tab or a new window restores its snapshot;
+rename/reorder preserve it and removal cleans it up. The new-window route uses
+the quoted executable, bookmark name and folder, with a documented
+`--bookmark name` option. Old bookmarks without sizing metadata keep their
+previous behavior.
+
+A clean native build staged in `/tmp` and the full search-window regression
+passed. Focused tests cover widest-item fitting, shrinking after removal,
+exclusive controls, Cancel, manual resize/reorder/hidden columns, independent
+tabs, new-tab defaults, bookmark restore/rename/removal and fresh-process
+startup. Default and narrow auto/manual screenshots were captured under
+Clearlooks and Dark; Preferences intentionally retains its existing fixed
+dialog palette under both themes. An independent visual review prompted the
+disabled-state contrast improvement; final screenshots also verify access to
+all fields and action buttons through the existing narrow-dialog scroller.
+The user manual and command-line help were updated. This work is local and
+unreleased; no portable build was published.
 
 ## 4. The archive-command / false idle-timeout bug
 

@@ -910,6 +910,8 @@ FXDEFMAP(PreferencesBox) PreferencesMap[] =
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_LISTCOL_DOWN, PreferencesBox::onCmdColDown),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_VIEW_COL, PreferencesBox::onCmdViewCol),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_COLUMN_PANE, PreferencesBox::onCmdColumnPane),
+    FXMAPFUNC(SEL_UPDATE, PreferencesBox::ID_COLUMN_WIDTH, PreferencesBox::onUpdColumnWidths),
+    FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_COLUMN_WIDTH, PreferencesBox::onCmdColumnWidths),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_DIRPANEL_PLACES_STARTUP, PreferencesBox::onCmdDirPanelStartup),
     FXMAPFUNC(SEL_COMMAND, PreferencesBox::ID_DIRPANEL_TREE_STARTUP, PreferencesBox::onCmdDirPanelStartup),
     FXMAPFUNC(SEL_UPDATE, PreferencesBox::ID_LISTCOL_UP, PreferencesBox::onUpdListColUpDown),
@@ -1685,6 +1687,27 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
                               FRAME_GROOVE | LAYOUT_LEFT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 10, 10);
     listcol_down = new FXButton(frame, _("\tMove down"), minidownicon, this, ID_LISTCOL_DOWN,
                                 FRAME_GROOVE | LAYOUT_LEFT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 10, 10);
+
+    FXVerticalFrame* widthsPage = addPage(FILE_LIST, _("Column widths"));
+    widthPane = new FXListBox(widthsPage, this, ID_COLUMN_PANE, FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X);
+    widthPane->appendItem(_("Left / Top Panel"));
+    widthPane->appendItem(_("Right / Bottom Panel"));
+    widthPane->setNumVisible(2);
+    autoColumnWidths = new FXCheckButton(widthsPage, _("Automatically fit columns to the widest item"),
+                                         this, ID_COLUMN_WIDTH, JUSTIFY_LEFT | ICON_BEFORE_TEXT | LAYOUT_FILL_X);
+    new FXLabel(widthsPage, _("Clear automatic fitting to edit widths.\nChanges affect the current tab and new tabs in this panel."),
+                NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    group = new FXGroupBox(widthsPage, _("Default column widths"),
+                           GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
+    matrix = new FXMatrix(group, 2, MATRIX_BY_COLUMNS | LAYOUT_FILL_X);
+    new FXLabel(matrix, _("Column"), NULL, JUSTIFY_LEFT);
+    new FXLabel(matrix, _("Width (pixels)"), NULL, JUSTIFY_LEFT);
+    for (FXuint column = 0; column < NMAX_COLS; ++column)
+    {
+        new FXLabel(matrix, getHeaderName(FileList::ID_COL_NAME + column), NULL, JUSTIFY_LEFT | LAYOUT_CENTER_Y);
+        columnWidths[column] = new FXSpinner(matrix, 6, this, ID_COLUMN_WIDTH, FRAME_SUNKEN | FRAME_THICK);
+        columnWidths[column]->setRange(32, 10000);
+    }
 
     FXVerticalFrame* folderSizes = addPage(FILE_LIST, _("Folder sizes and previews"));
     group = new FXGroupBox(folderSizes, _("Folder Sizes"), GROUPBOX_TITLE_LEFT | FRAME_GROOVE | LAYOUT_FILL_X);
@@ -4059,6 +4082,15 @@ long PreferencesBox::onCmdRestoreKeyBindings(FXObject*, FXSelector, void*)
 void PreferencesBox::storePaneColumns()
 {
     paneColumns[selectedColumnPane].assign(idCol, idCol + nbCols);
+    if (paneAutoWidths[selectedColumnPane] != autoColumnWidths->getCheck())
+        paneWidthChanges[selectedColumnPane] = true;
+    paneAutoWidths[selectedColumnPane] = autoColumnWidths->getCheck();
+    for (FXuint column = 0; column < NMAX_COLS; ++column)
+    {
+        FXint size = columnWidths[column]->getValue();
+        if (size != paneManualWidths[selectedColumnPane][column]) paneWidthChanges[selectedColumnPane] = true;
+        paneManualWidths[selectedColumnPane][column] = size;
+    }
 }
 
 void PreferencesBox::loadPaneColumns()
@@ -4077,6 +4109,12 @@ void PreferencesBox::loadPaneColumns()
     for (FXuint id : paneColumns[selectedColumnPane]) listcol->appendItem(getHeaderName(id));
     listcol->disableItem(0);
     if (nbCols > 1) listcol->selectItem(1);
+    autoColumnWidths->setCheck(paneAutoWidths[selectedColumnPane]);
+    for (FXuint column = 0; column < NMAX_COLS; ++column)
+    {
+        columnWidths[column]->setValue(paneManualWidths[selectedColumnPane][column]);
+    }
+    onUpdColumnWidths(NULL, 0, NULL);
 }
 
 void PreferencesBox::resetPaneColumns()
@@ -4084,17 +4122,55 @@ void PreferencesBox::resetPaneColumns()
     XFileExplorer* explorer = static_cast<XFileExplorer*>(mainWindow);
     paneColumns[0] = explorer->getLeftPanel()->getList()->getColumnLayout();
     paneColumns[1] = explorer->getRightPanel()->getList()->getColumnLayout();
+    FileList* lists[] = {explorer->getLeftPanel()->getList(), explorer->getRightPanel()->getList()};
+    for (FXuint pane = 0; pane < 2; ++pane)
+    {
+        paneWidthChanges[pane] = false;
+        FileList::ColumnSizing current = lists[pane]->getColumnSizing();
+        paneAutoWidths[pane] = current.mode != FileList::ColumnSizing::MANUAL;
+        FileList::ColumnSizing manual = current.mode == FileList::ColumnSizing::MANUAL ?
+                                         current : lists[pane]->defaultColumnSizing();
+        for (FXuint column = 0; column < NMAX_COLS; ++column)
+            paneManualWidths[pane][column] = manual.widths[FileList::ID_COL_NAME + column];
+    }
     selectedColumnPane = explorer->getCurrentPanel() == explorer->getRightPanel() ? 1 : 0;
     columnPane->setCurrentItem(selectedColumnPane);
+    widthPane->setCurrentItem(selectedColumnPane);
     loadPaneColumns();
 }
 
-long PreferencesBox::onCmdColumnPane(FXObject*, FXSelector, void*)
+long PreferencesBox::onCmdColumnPane(FXObject* sender, FXSelector, void*)
 {
     storePaneColumns();
-    selectedColumnPane = columnPane->getCurrentItem();
+    selectedColumnPane = sender == widthPane ? widthPane->getCurrentItem() : columnPane->getCurrentItem();
+    columnPane->setCurrentItem(selectedColumnPane);
+    widthPane->setCurrentItem(selectedColumnPane);
     loadPaneColumns();
     return 1;
+}
+
+long PreferencesBox::onUpdColumnWidths(FXObject*, FXSelector, void*)
+{
+    FXbool automatic = autoColumnWidths->getCheck();
+    FXColor ink = automatic ? themeBlend(DialogColors::field, DialogColors::text, 0.55) : DialogColors::text;
+    FXColor edge = automatic ? ink : DialogColors::accent;
+    for (FXuint column = 0; column < NMAX_COLS; ++column)
+    {
+        if (!automatic) columnWidths[column]->enable();
+        else columnWidths[column]->disable();
+        columnWidths[column]->setTextColor(ink);
+        columnWidths[column]->setUpArrowColor(ink);
+        columnWidths[column]->setDownArrowColor(ink);
+        for (FXWindow* child = columnWidths[column]->getFirst(); child; child = child->getNext())
+            if (FXFrame* frame = dynamic_cast<FXFrame*>(child)) frame->setBorderColor(edge);
+    }
+    return 1;
+}
+
+long PreferencesBox::onCmdColumnWidths(FXObject*, FXSelector, void*)
+{
+    paneWidthChanges[selectedColumnPane] = true;
+    return onUpdColumnWidths(NULL, 0, NULL);
 }
 
 long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
@@ -4481,6 +4557,18 @@ long PreferencesBox::onCmdAccept(FXObject* sender, FXSelector sel, void* ptr)
     XFileExplorer* explorer = static_cast<XFileExplorer*>(mainWindow);
     explorer->getLeftPanel()->getList()->setColumnLayout(paneColumns[0]);
     explorer->getRightPanel()->getList()->setColumnLayout(paneColumns[1]);
+    FileList* columnLists[] = {explorer->getLeftPanel()->getList(), explorer->getRightPanel()->getList()};
+    for (FXuint pane = 0; pane < 2; ++pane)
+    {
+        const char* section = columnLists[pane]->columnSettingsSection.text();
+        if (!paneWidthChanges[pane]) continue;
+        FileList::ColumnSizing sizing;
+        sizing.mode = paneAutoWidths[pane] ? FileList::ColumnSizing::AUTO_FIT : FileList::ColumnSizing::MANUAL;
+        for (FXuint column = 0; column < NMAX_COLS; ++column)
+            sizing.widths[FileList::ID_COL_NAME + column] = paneManualWidths[pane][column];
+        FileList::saveColumnSizing(getApp()->reg(), section, "default", sizing);
+        columnLists[pane]->setColumnSizing(sizing);
+    }
 
 #if defined(linux) && defined(XFE_AUTOMOUNTER)
     if (automountbutton->getCheck() != automount_prev || autoopenbutton->getCheck() != autoopen_prev)

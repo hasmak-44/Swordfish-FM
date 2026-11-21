@@ -4,6 +4,7 @@ xfe \- A lightweight file manager for X Window
 .SH "SYNOPSIS"
 \fBxfe\fP [\-h] [\-\-help] [\-v] [\-\-version] [\-i] [\-\-iconic]
 [\-m] [\-\-maximized] [\-p n] [\-\-panel n] [\fIFOLDER | FILE...\fP]
+[\-\-bookmark \fIname\fP]
 .SH "DESCRIPTION"
 X File Explorer (xfe) is a lightweight file manager for X Window, written using the FOX toolkit.
 It is desktop independent and can easily be customized.
@@ -25,6 +26,9 @@ Start iconified.
 .TP 
 .B \-m, \-\-maximized
 Start maximized.
+.TP
+.B \-\-bookmark name
+Open the named bookmark with its saved column sizing.
 .TP 
 .B \-p n, \-\-panel n
 Force panel view mode to n (n=0 => Tree and one panel,
