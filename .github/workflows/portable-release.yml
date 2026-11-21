@@ -76,7 +76,7 @@ jobs:
             runner: ubuntu-24.04-arm
           # GitHub's ARM runners cannot execute 32-bit ARM, so armhf is emulated.
           - arch: armhf
-            runner: ubuntu-24.04
+            runner: ubuntu-24.04-arm
             qemu: arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 340
@@ -165,6 +165,11 @@ jobs:
           path: build/release
           merge-multiple: true
 
+      - name: Install source archive tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake autopoint gettext libtool
+
       - name: Add source archive and checksums
         env:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
@@ -183,8 +188,12 @@ jobs:
               exit 1
             fi
           done
-          git archive --format=tar.gz --prefix="Swordfish-FM-$RELEASE_VERSION/" \
-            -o "$out/Swordfish-FM-$RELEASE_VERSION-source.tar.gz" HEAD
+          source_dir="Swordfish-FM-$RELEASE_VERSION"
+          mkdir -p "build/source/$source_dir"
+          git archive HEAD | tar -x -C "build/source/$source_dir"
+          (cd "build/source/$source_dir" && autoreconf -fi)
+          tar --exclude=autom4te.cache --exclude='*~' -C build/source -czf \
+            "$out/$source_dir-source.tar.gz" "$source_dir"
           (cd "$out" && sha256sum -- * > "../Swordfish-$RELEASE_VERSION-SHA256SUMS")
           mv "build/Swordfish-$RELEASE_VERSION-SHA256SUMS" "$out/"
           cat "$out/Swordfish-$RELEASE_VERSION-SHA256SUMS"

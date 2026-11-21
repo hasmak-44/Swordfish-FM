@@ -4144,6 +4144,14 @@ leave a partial destination file, which is documented in the beta notes.
 The four-architecture workflow will stage beta releases as drafts for review
 and check the version and Debian install, reinstall and removal per target.
 
+The first beta build succeeded for amd64, i386 and arm64, including those
+checks, but armhf failed to verify a download certificate under x86 QEMU; a
+retry failed the same way. An ARM64 runner with ARM32 emulation is being
+tried without disabling TLS verification. The original source-archive step
+also included stale generated autotools files. The release workflow now
+regenerates them from the tagged source before archiving; a locally regenerated
+archive configured and built successfully, reporting 0.0.4-beta1.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
