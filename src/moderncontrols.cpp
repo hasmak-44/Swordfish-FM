@@ -3366,7 +3366,7 @@ long FXTabItem::onPaint(FXObject*, FXSelector, void* ptr)
             active = bar->indexOfChild(this) == bar->getCurrent();
         dc.setForeground(active ? DialogColors::accent : DialogColors::field);
         dc.fillRectangle(0, 0, width, height);
-        dc.setForeground(DialogColors::accent);
+        dc.setForeground(DialogColors::outline);
         dc.drawRectangle(0, 0, width - 1, height - 1);
         if (!label.empty())
         {

@@ -4153,7 +4153,7 @@ long PreferencesBox::onUpdColumnWidths(FXObject*, FXSelector, void*)
 {
     FXbool automatic = autoColumnWidths->getCheck();
     FXColor ink = automatic ? themeBlend(DialogColors::field, DialogColors::text, 0.55) : DialogColors::text;
-    FXColor edge = automatic ? ink : DialogColors::accent;
+    FXColor edge = automatic ? ink : DialogColors::outline;
     for (FXuint column = 0; column < NMAX_COLS; ++column)
     {
         if (!automatic) columnWidths[column]->enable();

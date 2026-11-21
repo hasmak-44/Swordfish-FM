@@ -4003,6 +4003,18 @@ all fields and action buttons through the existing narrow-dialog scroller.
 The user manual and command-line help were updated. This work is local and
 unreleased; no portable build was published.
 
+### 3.122. Brighter fixed-palette outlines and scrollbar thumbs
+
+The fixed dialog palette gains `DialogColors::outline` (RGB 86,148,255) for
+field and frame borders, fixed toggle and tab edges, the enabled column-width
+field edge and the colour-picker selection. The scrollbar thumb changes from
+RGB 102,111,115 to 140,150,156. Contrast against the dialog background rises
+from 2.0:1 to 4.3:1 for outlines and from 2.5:1 to 4.2:1 for thumbs. Fills,
+text and disabled text are unchanged because they were already readable.
+A clean staged build passed the full search-window regression under Clearlooks
+and Dark; before/after screenshots of Preferences, transfer progress, conflict
+and error windows were reviewed and approved by the user. Local, unreleased.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

@@ -783,7 +783,8 @@ namespace DialogColors
     const FXColor field = FXRGB(30, 36, 45);
     const FXColor accent = FXRGB(15, 86, 217);
     const FXColor text = FXRGB(255, 255, 255);
-    const FXColor scrollthumb = FXRGB(0x66, 0x6f, 0x73);
+    const FXColor outline = FXRGB(86, 148, 255);
+    const FXColor scrollthumb = FXRGB(140, 150, 156);
 }
 
 // True for widgets painted with the fixed dialog palette rather than the active theme

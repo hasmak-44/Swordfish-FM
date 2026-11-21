@@ -3739,7 +3739,7 @@ static void xf_equalizecontrols(FXWindow* parent)
 void xf_dialogcolors(FXWindow* window)
 {
     xf_widgetcolors(window, DialogColors::background, DialogColors::field, DialogColors::text,
-                    DialogColors::accent, DialogColors::accent, DialogColors::text);
+                    DialogColors::outline, DialogColors::accent, DialogColors::text);
     // Clickable controls use the field colour so they stand out from the dialog background
     if (dynamic_cast<FXButton*>(window) || dynamic_cast<FXToggleButton*>(window) ||
         dynamic_cast<FXMenuButton*>(window) || dynamic_cast<FXArrowButton*>(window))

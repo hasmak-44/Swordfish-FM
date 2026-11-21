@@ -4481,7 +4481,7 @@ static void fixedToggleFrame(FXDCWindow& dc, FXWindow* window)
 {
     dc.setForeground(window->isEnabled() && window->underCursor() ? FIXED_TOGGLE_HOVER : DialogColors::field);
     dc.fillRectangle(0, 0, window->getWidth(), window->getHeight());
-    dc.setForeground(window->isEnabled() ? DialogColors::accent : FIXED_DISABLED);
+    dc.setForeground(window->isEnabled() ? DialogColors::outline : FIXED_DISABLED);
     dc.drawRectangle(0, 0, window->getWidth() - 1, window->getHeight() - 1);
 }
 

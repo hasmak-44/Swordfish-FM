@@ -35,7 +35,7 @@ public:
                 dc.setForeground(pixels[y * 9 + x]);
                 dc.fillRectangle(x * 12, y * 12, 12, 12);
             }
-        dc.setForeground(DialogColors::accent);
+        dc.setForeground(DialogColors::outline);
         dc.setLineWidth(2);
         dc.drawRectangle(selectedX * 12 - 1, selectedY * 12 - 1, 14, 14);
         return 1;
