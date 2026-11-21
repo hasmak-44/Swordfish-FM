@@ -4015,6 +4015,21 @@ A clean staged build passed the full search-window regression under Clearlooks
 and Dark; before/after screenshots of Preferences, transfer progress, conflict
 and error windows were reviewed and approved by the user. Local, unreleased.
 
+### 3.123. Collapsible, compact Custom Actions tree
+
+The Custom Actions editor list used 42 px two-line rows with 32 px icons and
+faint dotted lines. Top-level folders had no expand box, and every edit
+re-expanded all folders. Rows now show one line: a 16 px icon, the name and a
+dimmed description. A small `ActionTree` subclass paints solid grey connector
+lines and 11 px expand boxes, including on root folders. Collapsed folders
+stay collapsed after add, edit, move and duplicate; the selected item's
+parents are expanded so it stays visible. Left/Right keys and box clicks
+collapse and expand; double-click still edits. The UI regression also now
+waits for the asynchronous copy/move introduced in 3.120 (it had been failing
+since then). Its new assertions cover root box hits, real-click collapse,
+preserved collapse state and compact row height. Default and narrow
+screenshots passed an independent review. Local, unreleased.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

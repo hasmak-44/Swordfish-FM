@@ -12,6 +12,7 @@
 #include "AppLogger.h"
 #include "SystemIcons.h"
 #include "HistInputDialog.h"
+#include "Theme.h"
 #include <stdint.h>
 #include <fxkeys.h>
 #include <algorithm>
@@ -682,33 +683,111 @@ public:
 class ActionTreeItem : public FXTreeItem
 {
     FXString description;
-protected:
+    static const FXint ICON_SIZE = 16, TEXT_GAP = 6, DETAIL_GAP = 12;
+public:
     void draw(const FXTreeList* list, FXDC& dc, FXint x, FXint y, FXint w, FXint h) const
     {
         dc.setForeground(isSelected() ? list->getSelBackColor() : list->getBackColor());
         dc.fillRectangle(x, y, w, h);
         FXIcon* image = isExpanded() ? getOpenIcon() : getClosedIcon();
-        const FXint textX = x + 40;
-        if (image) { dc.drawIcon(image, x + 4, y + (h - image->getHeight()) / 2); }
+        if (image) { dc.drawIcon(image, x + 2 + (ICON_SIZE - image->getWidth()) / 2, y + (h - image->getHeight()) / 2); }
         FXFont* font = list->getFont();
+        const FXint textX = x + 2 + ICON_SIZE + TEXT_GAP, baseline = y + (h - font->getFontHeight()) / 2 + font->getFontAscent();
         dc.setFont(font);
-        dc.setForeground(isSelected() ? list->getSelTextColor() : list->getTextColor());
-        dc.drawText(textX, y + 4 + font->getFontAscent(), getText());
-        dc.drawText(textX, y + 5 + font->getFontHeight() + font->getFontAscent(), description);
+        FXColor ink = isSelected() ? list->getSelTextColor() : list->getTextColor();
+        dc.setForeground(ink);
+        dc.drawText(textX, baseline, getText());
+        if (!description.empty())
+        {
+            dc.setForeground(isSelected() ? ink : themeBlend(list->getBackColor(), ink, 0.62));
+            dc.drawText(textX + font->getTextWidth(getText()) + DETAIL_GAP, baseline, description);
+        }
         if (hasFocus()) { dc.drawFocusRectangle(x + 1, y + 1, w - 2, h - 2); }
     }
+protected:
     FXint hitItem(const FXTreeList* list, FXint x, FXint y) const
     {
         return x >= 0 && y >= 0 && x < getWidth(list) && y < getHeight(list) ? 2 : 0;
     }
 public:
-    ActionTreeItem(const FXString& name, const FXString& detail, FXIcon* image, unsigned n) :
-        FXTreeItem(name, image, image, (void*)(uintptr_t)(n + 1)), description(detail) {}
-    FXint getHeight(const FXTreeList* list) const { return FXMAX(42, list->getFont()->getFontHeight() * 2 + 10); }
+    ActionTreeItem(const FXString& name, const FXString& detail, FXIcon* openImage, FXIcon* closedImage, unsigned n) :
+        FXTreeItem(name, openImage, closedImage, (void*)(uintptr_t)(n + 1)), description(detail) {}
+    FXint getHeight(const FXTreeList* list) const { return FXMAX(ICON_SIZE + 4, list->getFont()->getFontHeight() + 6); }
     FXint getWidth(const FXTreeList* list) const
     {
         FXFont* font = list->getFont();
-        return 48 + FXMAX(font->getTextWidth(getText()), font->getTextWidth(description));
+        FXint width = 2 + ICON_SIZE + TEXT_GAP + font->getTextWidth(getText()) + 4;
+        if (!description.empty()) { width += DETAIL_GAP + font->getTextWidth(description); }
+        return width;
+    }
+};
+
+// Solid connector lines and larger expand boxes; geometry matches FXTreeList so box clicks still hit
+class ActionTree : public FXTreeList
+{
+    static const FXint HALF_BOX = 5;
+public:
+    ActionTree(FXComposite* parent, FXObject* target, FXSelector selector, FXuint options) :
+        FXTreeList(parent, target, selector, options) {}
+    long handle(FXObject* sender, FXSelector sel, void* ptr)
+    {
+        if (FXSELTYPE(sel) != SEL_PAINT || FXSELID(sel) != 0) { return FXTreeList::handle(sender, sel, ptr); }
+        FXEvent* event = (FXEvent*)ptr;
+        FXDCWindow dc(this, event);
+        dc.setFont(font);
+        FXint x = pos_x + 4 + indent, y = pos_y;
+        for (FXTreeItem* item = firstitem; item && y < event->rect.y + event->rect.h;)
+        {
+            const FXint w = item->getWidth(this), h = item->getHeight(this);
+            if (event->rect.y <= y + h)
+            {
+                dc.setForeground(backColor);
+                dc.fillRectangle(0, y, width, h);
+                static_cast<ActionTreeItem*>(item)->draw(this, dc, x, y, w, h);
+                const FXint yh = y + h / 2, xh = x - indent + 2;
+                const bool box = item->hasItems() || item->getFirst();
+                dc.setForeground(lineColor);
+                FXint xp = xh;
+                for (FXTreeItem* p = item->getParent(); p; p = p->getParent())
+                {
+                    xp -= indent + p->getHeight(this) / 2;
+                    if (p->getNext()) { dc.fillRectangle(xp, y, 1, h); }
+                }
+                const FXint gap = box ? HALF_BOX : 0;
+                if (item->getPrev() || item->getParent()) { dc.fillRectangle(xh, y, 1, h / 2 - gap); }
+                if (item->getNext()) { dc.fillRectangle(xh, yh + gap, 1, y + h - yh - gap); }
+                dc.fillRectangle(xh + gap, yh, FXMAX(0, x - xh - gap), 1);
+                if (box)
+                {
+                    dc.setForeground(backColor);
+                    dc.fillRectangle(xh - HALF_BOX, yh - HALF_BOX, 2 * HALF_BOX, 2 * HALF_BOX);
+                    dc.setForeground(lineColor);
+                    dc.drawRectangle(xh - HALF_BOX, yh - HALF_BOX, 2 * HALF_BOX, 2 * HALF_BOX);
+                    dc.setForeground(textColor);
+                    dc.fillRectangle(xh - HALF_BOX + 3, yh, 2 * HALF_BOX - 5, 1);
+                    if (!item->isExpanded()) { dc.fillRectangle(xh, yh - HALF_BOX + 3, 1, 2 * HALF_BOX - 5); }
+                }
+            }
+            y += h;
+            if (item->getFirst() && item->isExpanded())
+            {
+                x += indent + h / 2;
+                item = item->getFirst();
+                continue;
+            }
+            while (!item->getNext() && item->getParent())
+            {
+                item = item->getParent();
+                x -= indent + item->getHeight(this) / 2;
+            }
+            item = item->getNext();
+        }
+        if (y < event->rect.y + event->rect.h)
+        {
+            dc.setForeground(backColor);
+            dc.fillRectangle(event->rect.x, y, event->rect.w, event->rect.y + event->rect.h - y);
+        }
+        return 1;
     }
 };
 
@@ -720,6 +799,20 @@ class ActionEditor : public FXDialogBox
     CustomActionContext editorContext;
     FXTreeList* tree;
     std::vector<FXIcon*> itemIcons;
+    std::set<FXString> collapsedFolders;
+    void rememberCollapsed(FXTreeItem* item)
+    {
+        for (; item; item = item->getNext())
+        {
+            if (item->getFirst())
+            {
+                const FXString& id = working.items[(uintptr_t)item->getData() - 1].id;
+                if (item->isExpanded()) { collapsedFolders.erase(id); }
+                else { collapsedFolders.insert(id); }
+                rememberCollapsed(item->getFirst());
+            }
+        }
+    }
     FXString selectedId() const
     {
         FXTreeItem* item = tree->getCurrentItem();
@@ -734,25 +827,34 @@ class ActionEditor : public FXDialogBox
             const CustomAction& a = working.items[n];
             FXString text = a.kind == CustomAction::SEPARATOR ? _("--- Separator ---") : a.name;
             if (a.toolbar) { text += _("  [toolbar]"); }
-            FXIcon* nodeIcon = loadActionIcon(getApp(), a.icon, 32);
+            FXIcon* nodeIcon = loadActionIcon(getApp(), a.icon, 16);
+            FXIcon* openIcon = nodeIcon;
             if (nodeIcon) { itemIcons.push_back(nodeIcon); }
-            else { nodeIcon = a.kind == CustomAction::FOLDER ? minifoldericon : minirunicon; }
+            else if (a.kind == CustomAction::FOLDER) { nodeIcon = minifoldericon; openIcon = minifolderopenicon; }
+            else { nodeIcon = openIcon = minirunicon; }
             FXString detail = a.description;
             detail.substitute("\n", " "); detail.substitute("\r", " "); detail.substitute("\t", " ");
             if (a.kind == CustomAction::FOLDER && detail.empty()) { detail = _("Cascading folder"); }
-            FXTreeItem* item = tree->appendItem(parent, new ActionTreeItem(text, detail, nodeIcon, n));
+            FXTreeItem* item = tree->appendItem(parent, new ActionTreeItem(text, detail, openIcon, nodeIcon, n));
             populate(item, a.id, select);
-            tree->expandTree(item);
+            if (!collapsedFolders.count(a.id)) { tree->expandTree(item); }
             if (a.id == select) { tree->setCurrentItem(item); }
         }
     }
     void refresh(const FXString& select)
     {
+        rememberCollapsed(tree->getFirstItem());
         tree->clearItems();
         for (unsigned i = 0; i < itemIcons.size(); ++i) { delete itemIcons[i]; }
         itemIcons.clear();
         populate(NULL, "", select);
         if (!tree->getCurrentItem() && tree->getFirstItem()) { tree->setCurrentItem(tree->getFirstItem()); }
+        for (FXTreeItem* p = tree->getCurrentItem() ? tree->getCurrentItem()->getParent() : NULL; p; p = p->getParent())
+        {
+            collapsedFolders.erase(working.items[(uintptr_t)p->getData() - 1].id);
+            tree->expandTree(p);
+        }
+        if (tree->getCurrentItem()) { tree->makeItemVisible(tree->getCurrentItem()); }
     }
     FXString folderPath(const CustomAction& a) const
     {
@@ -779,8 +881,9 @@ public:
                            "and the independent custom toolbar. Folders create cascading submenus."),
                     NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
         FXHorizontalFrame* body = new FXHorizontalFrame(this, LAYOUT_FILL_X | LAYOUT_FILL_Y);
-        tree = new FXTreeList(body, this, EDIT, TREELIST_SHOWS_LINES | TREELIST_SHOWS_BOXES |
-                             TREELIST_BROWSESELECT | LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_SUNKEN);
+        tree = new ActionTree(body, this, EDIT, TREELIST_SHOWS_LINES | TREELIST_SHOWS_BOXES | TREELIST_ROOT_BOXES |
+                              TREELIST_BROWSESELECT | LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_SUNKEN);
+        tree->setIndent(10);
         FXVerticalFrame* tools = new FXVerticalFrame(body, LAYOUT_FILL_Y | PACK_UNIFORM_WIDTH, 0, 0, 0, 0, 0, 0);
         const char* tips[] = { N_("Add Action..."), N_("Add Folder..."), N_("Add Separator"), N_("Edit..."), N_("Remove"),
                                N_("Move Up"), N_("Move Down"), N_("Move to Folder..."), N_("Duplicate Action") };
@@ -794,6 +897,7 @@ public:
         refresh("");
         xf_scrollabledialog(this);
         xf_dialogcolors(this);
+        tree->setLineColor(DialogColors::scrollthumb);
     }
     ~ActionEditor()
     {

@@ -17,6 +17,7 @@
 #include <cassert>
 #include <cstdio>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <set>
 #include <string>
@@ -55,6 +56,17 @@ static void mouseClick(FXWindow* window, int button, int x = 2, int y = 2)
     command = button == 1 ? "xdotool mousedown 1; sleep 0.3; xdotool mouseup 1" :
                             "xdotool click " + FXStringVal(button);
     assert(system(command.text()) == 0);
+}
+
+// Copy and move run in an independent worker process
+static bool waitFor(FXApp& app, const std::function<bool()>& done)
+{
+    for (int waited = 0; waited < 300; ++waited)
+    {
+        if (done()) { return true; }
+        pump(app, 50);
+    }
+    return done();
 }
 
 static FXTopWindow* dialog(FXApp& app, const char* title)
@@ -1016,6 +1028,30 @@ static void finishCommand(FXApp& app, CommandWindow* output)
     assert(!app.hasChore(output, CommandWindow::ID_WATCHPROCESS));
 }
 
+static void captureWindow(FXWindow* window, const char* name)
+{
+    const char* directory = getenv("SWORDFISH_TEST_CUSTOM_ACTIONS_SCREENSHOTS");
+    if (!directory) { return; }
+    window->raise();
+    window->getApp()->repaint();
+    window->getApp()->flush(true);
+    pump(*window->getApp(), 400);
+    FXString command;
+    command.format("import -window 0x%lx '%s/%s.png'", (unsigned long)window->id(), directory, name);
+    assert(system(command.text()) == 0);
+}
+
+static FXTreeItem* findTreeItem(FXTreeItem* item, const char* prefix)
+{
+    for (; item; item = item->getNext())
+    {
+        if (item->getText().find(prefix) == 0) { return item; }
+        FXTreeItem* child = findTreeItem(item->getFirst(), prefix);
+        if (child) { return child; }
+    }
+    return NULL;
+}
+
 static FXTreeItem* findActionItem(FXTreeItem* item)
 {
     for (; item; item = item->getNext())
@@ -1041,6 +1077,35 @@ public:
         tree->setCurrentItem(source);
         if (!save)
         {
+            captureWindow(editor, "actions-editor");
+            // Top-level folders get an expand box; collapsing survives edits that rebuild the tree
+            FXTreeItem* utilities = tree->getFirstItem();
+            assert(utilities->getText().find("Utilities") == 0 && utilities->isExpanded());
+            const FXint rowHeight = utilities->getHeight(tree);
+            assert(rowHeight < 30 && tree->hitItem(utilities, 6, rowHeight / 2) == 3);
+            mouseClick(tree, 1, 6, rowHeight / 2); pump(app, 100);
+            assert(!utilities->isExpanded());
+            captureWindow(editor, "actions-editor-collapsed");
+            mouseClick(tree, 1, 6, rowHeight / 2); pump(app, 100);
+            assert(utilities->isExpanded());
+            tree->collapseTree(findTreeItem(tree->getFirstItem(), "Nested"));
+            tree->setCurrentItem(utilities);
+            click(editor, "Add Separator");
+            assert(!findTreeItem(tree->getFirstItem(), "Nested")->isExpanded());
+            assert(tree->getCurrentItem()->getParent() == tree->getFirstItem() && tree->getFirstItem()->isExpanded());
+            captureWindow(editor, "actions-editor-nested-collapsed");
+            if (getenv("SWORDFISH_TEST_CUSTOM_ACTIONS_SCREENSHOTS"))
+            {
+                const FXint w = editor->getWidth(), h = editor->getHeight();
+                editor->resize(560, 400); pump(app, 200);
+                captureWindow(editor, "actions-editor-narrow");
+                editor->resize(w, h); pump(app, 200);
+            }
+            source = findActionItem(tree->getFirstItem()); assert(source);
+            tree->setCurrentItem(source);
+        }
+        if (!save)
+        {
             class Properties : public FXObject
             {
                 FXApp& app;
@@ -1064,6 +1129,7 @@ public:
         }
         click(editor, "Duplicate Action");
         assert(tree->getCurrentItem() && tree->getCurrentItem()->getText().find("Record (copy)") == 0);
+        assert(tree->getCurrentItem()->getParent()->isExpanded());
         if (save) { click(editor, "Save"); return 1; }
         for (int route = 0; route < 3; ++route)
         {
@@ -1527,15 +1593,16 @@ int main(int argc, char** argv)
         const FXString copyName = "one 'quoted'.txt";
         selectOne(copyName);
         left->onCmdFileToPlace(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_FILE_COPY_HOME), NULL);
-        assert(xf_existfile(homedir + "/" + copyName));
-        assert(read(homedir + "/" + copyName) == read(fixture + "/" + copyName));
+        assert(waitFor(app, [&] { return xf_existfile(homedir + "/" + copyName) &&
+                                         read(homedir + "/" + copyName) == read(fixture + "/" + copyName); }));
         assert(unlink((homedir + "/" + copyName).text()) == 0);
 
         assert(mkdir(desktop.text(), 0700) == 0);
         const FXString moveName = "two $HOME.txt";
         selectOne(moveName);
         left->onCmdFileToPlace(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_FILE_MOVE_DESKTOP), NULL);
-        assert(!xf_existfile(fixture + "/" + moveName) && xf_existfile(desktop + "/" + moveName));
+        assert(waitFor(app, [&] { return !xf_existfile(fixture + "/" + moveName) &&
+                                         xf_existfile(desktop + "/" + moveName); }));
         assert(rename((desktop + "/" + moveName).text(), (fixture + "/" + moveName).text()) == 0);
         assert(rmdir(desktop.text()) == 0);
         left->onCmdRefresh(NULL, 0, NULL);
