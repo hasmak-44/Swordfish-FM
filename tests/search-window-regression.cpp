@@ -1986,6 +1986,10 @@ static void checkColumnWidthPreferences(FXApp& app, XFileExplorer* explorer, con
     FXuint autoTab = tabs->getCurrentTab();
     tabs->addTab(folder);
     FXuint manualTab = tabs->getCurrentTab();
+    BookmarksList* bookmarks = explorer->getDirPanel()->getBookmarksList();
+    FXString earlyBookmark = "Column widths before preferences", earlyIcon, earlyFolder = fixture + "/widths-early";
+    assert(mkdir(earlyFolder.text(), 0700) == 0);
+    assert(bookmarks->appendBookmark(earlyBookmark, earlyFolder, earlyIcon, &automatic) == 1);
 
     PreferencesBox preferences(explorer);
     preferences.create();
@@ -2029,7 +2033,6 @@ static void checkColumnWidthPreferences(FXApp& app, XFileExplorer* explorer, con
     left->setListStyle(ICONLIST_DETAILED);
     left->layout();
     assert(left->getHeaderSize(0) == 333);
-    BookmarksList* bookmarks = explorer->getDirPanel()->getBookmarksList();
     FXString bookmarkName = "Column widths regression", bookmarkIcon;
     assert(bookmarks->appendBookmark(bookmarkName, folder, bookmarkIcon) == 1);
     left->setColumnSizing(automatic);
@@ -2070,6 +2073,11 @@ static void checkColumnWidthPreferences(FXApp& app, XFileExplorer* explorer, con
     left->setColumnSizing(automatic);
     bookmarks->restoreColumnSizing(renamed, left);
     assert(left->getColumnSizing().mode == FileList::ColumnSizing::AUTO_FIT);
+    tabs->setCurrentTab(manualTab);
+    assert(left->getColumnSizing().mode == FileList::ColumnSizing::MANUAL);
+    bookmarks->restoreColumnSizing(earlyBookmark, left);
+    assert(left->getColumnSizing().mode == FileList::ColumnSizing::AUTO_FIT && left->getHeaderSize(0) != 333);
+    bookmarks->removeItem(earlyBookmark);
     FXSettings saved;
     FXString filename = xdgconfighome + "/swordfish/" + app.getAppName() + "rc";
     assert(saved.parseFile(filename, true));
@@ -2087,7 +2095,7 @@ static void checkColumnWidthPreferences(FXApp& app, XFileExplorer* explorer, con
     explorer->getRightPanel()->getTabButtons()->restoreState(rightTabs);
     left->setColumnSizing(original);
     right->setColumnSizing(originalRight);
-    puts("PASS: optional widest-item fitting, exclusive manual controls, independent tab sizing, new-tab defaults, bookmark restore/rename/remove and fresh-process startup; Cancel changes nothing");
+    puts("PASS: optional widest-item fitting, exclusive manual controls, independent tab sizing, new-tab defaults, earlier bookmarks preserved, bookmark restore/rename/remove and fresh-process startup; Cancel changes nothing");
 }
 
 int main(int argc, char** argv)

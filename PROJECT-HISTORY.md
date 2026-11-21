@@ -3994,7 +3994,8 @@ A clean native build staged in `/tmp` and the full search-window regression
 passed. Focused tests cover widest-item fitting, shrinking after removal,
 exclusive controls, Cancel, manual resize/reorder/hidden columns, independent
 tabs, new-tab defaults, bookmark restore/rename/removal and fresh-process
-startup. Default and narrow auto/manual screenshots were captured under
+startup. A follow-up check confirms that a bookmark saved before Preferences
+changed still restores its own auto-fit setting afterwards. Default and narrow auto/manual screenshots were captured under
 Clearlooks and Dark; Preferences intentionally retains its existing fixed
 dialog palette under both themes. An independent visual review prompted the
 disabled-state contrast improvement; final screenshots also verify access to
