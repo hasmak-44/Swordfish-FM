@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 21 November 2026, through the context-menu reorganization
-(section 3.118).
+Last updated: 21 November 2026, through the independent-transfer fixes
+(section 3.120).
 Latest release: `swordfish-0.0.3` (stable).
 Previous stable release: `swordfish-0.0.2`.
 
@@ -3896,10 +3896,75 @@ the disabled Other Pane choices in one-pane mode were also reviewed.
 The user approved the selected-item menu preview but has not tested this code.
 No new portable test package or release was made.
 
-The other requested fixes remain open: separate-process copy/move, always
-showing an independent progress window that survives closing the main window
-and provides pause/cancel and a three-second completion notice; target-tab
-refresh; a reproducible stale-USB case; and wrapping long Places labels.
+At this point the other requested fixes were still open.
+
+### 3.119. Places wrapping and unplugged-device refresh (21 November 2026)
+
+Long sidebar labels now wrap at UTF-8 character boundaries and reflow when
+the sidebar is resized. Selection, hit testing and device controls follow the
+wrapped row. In a narrow sidebar, the mount/unmount and eject controls move
+below the label so they do not squeeze the text into single characters;
+a small gap separates those controls from the next row. Names also wrap at
+hyphens, underscores and slashes when possible.
+
+A simulated eject/unplug sequence reproduced a stale device: the kernel
+topology changed before udev removed the device node and `lsblk` updated its
+inventory, so no later scan was guaranteed. Device refresh also observes
+`/dev` and `/dev/mapper` and omits missing nodes. The last successful
+inventory is retained if `lsblk` fails, without listing a cached unmounted
+device that is already mounted.
+Testing with the user's physical USB device is still needed.
+
+Validation used a clean staged build in `/tmp` and the folder-expansion
+regression, including selection and scrolled device actions, narrow resizing,
+UTF-8, delayed device-node removal and reconnect, and inventory failures.
+An earlier run exceeded the UI-latency limit under concurrent load; repeated
+synchronous inventory retries were removed, and the final full regression
+passed. Xvfb previews cover light and dark themes, wide and narrow sidebars,
+and selected and unselected mounted/unmounted devices.
+
+The separate-process transfers and sorted target updates were still open at
+this point; they are covered in the next section.
+
+### 3.120. Independent transfers and destination refresh (21 November 2026)
+
+Regular copy and move actions now start a separate Swordfish worker with its
+own progress window, including file panels, the folder tree, search results,
+paste and URI drops. The worker continues if the main window closes. Pause,
+Resume and Cancel remain available during transfer; completed, cancelled and
+skipped operations show a status for three seconds before closing. Errors and
+warnings remain visible. Cancellation does not undo completed items and may
+leave an incomplete destination file.
+
+Active panes refresh as items arrive, retaining their current sort order;
+inactive tabs refresh when selected. Overlapping transfers wait for one
+another, and queued sources and destination folders are checked before use.
+Cross-drive moves keep and report a source changed during copying. Newly
+added folder contents remain at the source and are reported as skipped;
+selected hard links remain movable without hiding subsequent changes.
+These checks are best effort and cannot prevent every concurrent filesystem
+change. URI drag moves acknowledge a copy to prevent external applications
+from deleting sources before the worker finishes.
+
+Validation used a clean build staged in `/tmp`, the search-window transfer
+regression in dark and light configurations and again without screenshots,
+and the folder-expansion/device regression. Tests cover three-second
+completion, pause/cancel, main-window exit, sorted refresh, conflicts, hard
+links, changed sources, GIO errors and simulated device unplug/reconnect.
+Default and narrow Xvfb screenshots were reviewed for transfer states in both
+theme configurations. The new warning also uses short lines so its button
+remains visible at narrow widths. The user manual and translation extraction
+inputs were updated. The fixes were committed locally as `d4a7ccd`.
+
+The generated source archive contains the new transfer files, but the
+pre-existing archive omits `swordfish-open`, so a clean root build fails until
+that tracked script is supplied. With the script supplied, the archive built
+and installed in a temporary prefix. `make distcheck` also fails when the
+existing dist hook makes the translation template newer than the compiled
+catalogs in its read-only source tree; a separate out-of-tree build hits
+existing literal `*.png` icon targets. These packaging issues were not
+changed. Real USB eject/unplug and external GTK/Qt drag interoperability
+still need physical testing. No new portable build was published.
 
 ## 4. The archive-command / false idle-timeout bug
 
