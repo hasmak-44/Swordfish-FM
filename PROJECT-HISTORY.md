@@ -4123,6 +4123,34 @@ active Copilot package cache was kept. Most of the space in use on the
 workspace disk lies outside this repository (about 0.5 GB) and the user's
 home folder (about 3 GB).
 
+Later the user removed Firefox, and the C/C++ VS Code extension was
+uninstalled. Generated previews, older test builds and archives, user
+screenshots, test themes and the `My theme` archive were deleted from `build/`
+with the user's approval. About 3.2 GB was then free; `build/` holds only
+notes, logs and `MX Blue.swordfish-theme`.
+
+### 3.127. Cancel removes the half-copied file (21 November 2026)
+
+While testing the amd64 build, the user found that cancelling a copy left the
+unfinished file at the target. It kept its full name, so it looked like a
+complete file. The user chose to delete only the half-copied file: files that
+finished before Cancel stay, and for a move their originals are already gone.
+A cancelled move must also remove the half-copied file while keeping the
+original.
+
+`File::copyfile` now deletes the target file it was writing when copying stops
+because of the Cancel button, Cancel after a read or write error, or Cancel
+after a disk-sync failure. On phone (MTP) mounts, a cancelled `gio copy`
+target is removed with `gio remove` only if no file of that name existed
+before the copy, so an earlier file is never deleted. A move removes its
+source only after a complete copy, and a cancelled folder move stops before
+removing the source folder, so originals are kept.
+
+The search/transfer regression adds a Cancel test. It covers a copy, a
+cross-drive file move and a cross-drive folder move, pressing Cancel after
+1 MiB is written. The test failed without the fix and all 52 checks pass with
+it. Phone-mount cancellation was not tested on a real device.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
