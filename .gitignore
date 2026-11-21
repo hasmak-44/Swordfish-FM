@@ -25,6 +25,7 @@ swordfishrc
 *.desktop
 *.desktop.in
 !src/*.desktop.in.orig
+!packaging/deb-portable/swordfish-portable.desktop
 po/Makefile
 po/POTFILES
 po/Makefile.in

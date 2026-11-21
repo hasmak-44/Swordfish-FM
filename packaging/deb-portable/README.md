@@ -17,7 +17,8 @@ self-contained folder, instead of spreading files across `/usr`.
 3. **Copy.** A `Swordfish-Portable` folder is created inside the chosen
    folder, owned by that user. Settings stay in
    `Swordfish-Portable/portable-data`, so the folder can still be copied to a
-   USB stick or another computer.
+   USB stick or another computer. Each install uses a new staging folder;
+   existing staging folders are left untouched.
 4. **Menu and command.** "Swordfish FM (Portable)" appears under System /
    File Manager, and `/usr/local/bin/swordfish-portable` links to the copy's
    `AppRun`, so `swordfish-portable` works in a terminal.
@@ -42,6 +43,14 @@ packaging/deb-portable/build-deb.sh -o /tmp/deb Swordfish-Portable-0.0.3.tar.gz
 
 `-r` sets the Debian revision (default 1). Set `DEB_MAINTAINER` to change
 the maintainer field.
+
+For an isolated Debian install, reinstall and removal regression check:
+
+```sh
+sh tests/run-portable-deb-regression.sh /tmp/deb/swordfish-portable_0.0.3-1_amd64.deb
+```
+
+The check uses Docker and may download the `debian:bookworm-slim` image.
 
 ## Questions for reviewers
 

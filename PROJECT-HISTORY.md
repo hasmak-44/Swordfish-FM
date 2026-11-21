@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 20 November 2026, through the 0.0.3 stable release
-and concept portable .deb (section 3.116).
+Last updated: 21 November 2026, through the portable .deb staging fix
+(section 3.117).
 Latest release: `swordfish-0.0.3` (stable).
 Previous stable release: `swordfish-0.0.2`.
 
@@ -3830,6 +3830,27 @@ checks plus GUI screenshots at 1366x768 and 1024x600. Committed locally as
 `a372b85`, not pushed until the user tests it. The README lists the policy
 questions for reviewers (files outside dpkg, `/usr/local/bin`, interactive
 postinst, bundled libraries without security updates).
+
+### 3.117. Portable .deb staging safety follow-up (21 November 2026)
+
+Before publication, an isolated Debian test showed that the revision 1
+installer unconditionally deleted an existing `.Swordfish-Portable.installing`
+folder, which could contain user data. The installer now creates a uniquely
+named staging folder instead. The regression in
+`tests/run-portable-deb-regression.sh` fails with the original package and
+passes for the revised package, checking installation, reinstallation,
+removal and preservation of existing staging data. A separate container test
+upgraded revision 1 to revision 2 and preserved both settings and staging data.
+
+The original downloadable .deb was removed from the workspace during the
+previous cleanup without checking whether the user wanted it retained; the
+user's downloaded copy and the 0.0.3 release remain untouched. The package
+was rebuilt from the verified official 0.0.3 portable tarball as
+`swordfish-portable_0.0.3-2_amd64.deb` (SHA-256
+`6c253a87ea849e33783bccb24656bcac3247110429110416a7eb07ebc2872cec`).
+The desktop-entry source, accidentally excluded from the earlier local commit
+by the `*.desktop` ignore rule, is now included. The user chose to test this
+revised package before publication; do not publish or push it until approved.
 
 ## 4. The archive-command / false idle-timeout bug
 

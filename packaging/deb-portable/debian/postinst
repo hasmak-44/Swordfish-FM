@@ -200,9 +200,7 @@ install_copy() {
             *) as_user mkdir -p -- "$parent" ;;
         esac
     fi
-    staging="$parent/.$FOLDER.installing"
-    rm -rf -- "$staging"
-    mkdir -- "$staging"
+    staging=$(mktemp -d -- "$parent/.$FOLDER.installing.XXXXXX")
     chown "$INSTALL_USER:$(id -gn "$INSTALL_USER")" "$staging"
     if ! as_user tar -xzf "$PAYLOAD" -C "$staging" --strip-components=1 >&2; then
         rm -rf -- "$staging"
