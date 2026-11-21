@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 21 November 2026, through the independent-transfer fixes
-(section 3.121).
+Last updated: 21 November 2026, through extension planning, multi-architecture
+build support and the downloaded amd64 test build (section 3.126).
 Latest release: `swordfish-0.0.3` (stable).
 Previous stable release: `swordfish-0.0.2`.
 
@@ -18,7 +18,8 @@ Historical implementation details below do not override the current code.
 ## 1. Start here if the conversation is lost
 
 1. Read this file, [README.md](README.md), [RELEASE-NOTES.txt](RELEASE-NOTES.txt),
-   and [portable/README.md](portable/README.md).
+   and [portable/README.md](portable/README.md). For the agreed extension
+   direction, read [the extension discussion](docs/design/extensions.md).
 2. Inspect the current branch, commit and both staged and unstaged changes.
    Do not reset or clean the worktree to make it look like a fresh checkout.
 3. The current published stable baseline is **0.0.3**:
@@ -41,7 +42,7 @@ Historical implementation details below do not override the current code.
    automated tests but still need the user's real-machine testing.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.70-3.108. Older beta and RC notes are
+9. For the latest state, read sections 3.118-3.126. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide is a documentation addition after the frozen RC4 application commit.
@@ -4030,6 +4031,87 @@ since then). Its new assertions cover root box hits, real-click collapse,
 preserved collapse state and compact row height. Default and narrow
 screenshots passed an independent review. Local, unreleased.
 
+### 3.124. Extension model and cloud-first direction (21 November 2026)
+
+The extension brainstorm is recorded in
+[docs/design/extensions.md](docs/design/extensions.md), including the original
+cloud/email/casting candidates, host API ideas, provider setup, authentication,
+portability, updates and unresolved decisions. This is planning, not an
+implemented extension system.
+
+The user confirmed separate downloads, language-independent modules and one
+self-contained portable folder per extension. All dependencies and all
+extension-owned data nest under that folder. rclone ships with the Cloud
+extension, not with Swordfish. The earlier separate `extension-data/cloud/`
+proposal is superseded. Updates must preserve nested user data.
+
+Cloud integration is the first priority: an rclone front end with a separate
+left-pane Cloud tab for many accounts. Start with provider presets and account
+configuration, including backend-specific login and 2FA; full synchronization
+is deferred. Writable mounts can still have pending uploads, which must not
+be confused with a completed local copy. Credentials, the exact manifest and
+API, host prerequisites and safe update/unmount behavior remain to be designed.
+Casting as the first proof of concept was reconsidered in favor of a small
+test extension exercising cloud-facing APIs. Casting and email remain ideas.
+
+### 3.125. Four-architecture portable build support (21 November 2026)
+
+Local commit `dbbadcb` adds amd64, i386, armhf and arm64 targets to the portable
+scripts and release workflow, architecture-specific linuxdeploy downloads and
+checksums, generalized multiarch library paths, and `.deb` architecture
+metadata/ELF checks. Required 32-bit FOX numeric-conversion fixes are included.
+The workflow builds each architecture separately and publishes only after
+all build jobs succeed, without replacing an already-populated release.
+Related portable/package documentation was updated.
+
+Initial checks covered shell syntax, YAML parsing and whitespace only because
+the shared workspace volume was nearly full. The commit is local; it was not
+pushed, and no release or tag was published. Build targets in a matrix are not
+proof of runtime validation on all four architectures.
+
+### 3.126. Downloaded amd64 test build and cleanup (21 November 2026)
+
+The user requested a test build from `dbbadcb`. Source, compilation and
+packaging were staged under `/tmp/swordfish-test-20261121-dbbadcb`, preserving
+earlier workspace builds and archives. A Debian 10 root was exported and
+prepared in temporary storage to avoid installing a large Docker builder on
+the nearly-full workspace volume. Initial user-namespace package setup hit
+ownership limitations; setup was completed through an isolated container/chroot.
+The unchanged portable build entry point then compiled the amd64 bundle
+against glibc 2.28.
+
+The archive is
+`Swordfish-Portable-0.0.3-test-20261121-dbbadcb-amd64.tar.gz` (87,157,726 bytes),
+with SHA-256
+`ea5fba2e57df10dfa77228c42939a3144d3714aa23372983b8b082532ab4f62d`.
+It excludes `portable-data`. An extracted copy opened visible GUI windows
+under Xvfb and remained running. Seven portable-launcher tests passed;
+amd64 `.deb` metadata and rejection of an arm64 label on amd64 programs passed.
+The `.deb` was checked locally, not offered as an installed-package validation.
+
+The first search/transfer test combined Debian-compiled objects with the host
+test harness. Its slow-stat fixture could not intercept the older `__lxstat`
+symbol and failed a marker assertion. A fresh native build with matching
+headers/compiler passed all 51 search/transfer checks; the folder/sidebar/device
+suite passed 61 checks. The search harness emitted missing-helper and X11
+BadWindow warnings despite passing. i386, armhf and arm64 were not built or
+runtime-tested in this delivery; physical USB and external drag testing remain
+outstanding.
+
+The portable archive and checksum were served privately on port 8765. A full
+local HTTP download matched the checksum. The user confirmed downloading it,
+not yet completing real-machine testing, and requested port closure. The
+server was stopped and the forwarded port disappeared.
+
+Cleanup removed five identified, inactive Swordfish Docker build-cache records
+(about 1.0 GB), the temporary Debian image, and three unopened, regenerable
+IntelliSense cache files (about 338 MiB). The shared workspace's reported free
+space increased from about 1.8 to 2.2 GiB (94% to 93% used); Docker's reclaimed
+cache size is not added to that filesystem measurement. Working builds,
+download archives, nested user data and session history were preserved.
+Named temporary apt-index and autotools metadata caches were also removed;
+the test archive's checksum was rechecked after cleanup.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -4570,6 +4652,8 @@ all panes/search/menu entry points before changing it.
 
 Discussed, not blanket implementation claims:
 
+- Separately downloaded, self-contained extensions, with cloud integration
+  first; see [the recorded extension design](docs/design/extensions.md).
 - Persistent context menus and deliberate right-button drag/drop semantics.
 - Customizable menus and well-scoped custom actions.
 - Operation centre/queues, conflict handling and clearer progress.
