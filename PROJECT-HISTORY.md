@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 21 November 2026, through the portable .deb publication
-(section 3.117).
+Last updated: 21 November 2026, through the context-menu reorganization
+(section 3.118).
 Latest release: `swordfish-0.0.3` (stable).
 Previous stable release: `swordfish-0.0.2`.
 
@@ -3865,6 +3865,41 @@ local; their source is available in the new release asset.
 The temporary port-8765 server was stopped and its forwarding set to private.
 The local test package is retained in `/tmp/swordfish-deb-publish.RT3YVb/`;
 the published release is its durable copy.
+
+### 3.118. File context menus and sorting (21 November 2026)
+
+The user approved a shorter selected-item menu and requested a Sort submenu
+in the folder menu. Copy to and Move to now group Other Pane, Home, Desktop
+and Choose Folder; Link groups Other Pane and Choose Folder. Existing archive,
+execution, script and panel commands remain available. Direct Home/Desktop
+destinations are checked before a transfer, so a missing Desktop cannot be
+mistaken for a new filename. Other Pane commands remain disabled when only one
+pane is visible.
+
+Sorting choices and their existing handlers are grouped under Sort both for
+blank folder space and under the selected-item Panel submenu. Folder Sizes
+remains separate. Cascades open left at the screen edge and preserve their
+direction for nested menus. Menu-local contrast adjustments make disabled
+text and unchecked indicators readable in dark themes. Existing translations
+are reused for Copy to, Move to and Rename; new labels fall back to English
+until the translation catalogs are updated. The manual and its context-menu
+illustration were updated.
+
+Validation used a clean staged build under `/tmp` and the window-manager
+Custom Actions UI regression. It checks sort state and ordering, screen-edge
+placement, contrast, single-pane availability, direct Home/Desktop transfers
+and a missing Desktop.
+Xvfb previews covered dark/light themes, changed sort states, German long
+labels and the application's minimum supported window width. An independent
+visual review passed after fixing contrast and recapturing the manual image;
+the disabled Other Pane choices in one-pane mode were also reviewed.
+The user approved the selected-item menu preview but has not tested this code.
+No new portable test package or release was made.
+
+The other requested fixes remain open: separate-process copy/move, always
+showing an independent progress window that survives closing the main window
+and provides pause/cancel and a three-second completion notice; target-tab
+refresh; a reproducible stale-USB case; and wrapping long Places labels.
 
 ## 4. The archive-command / false idle-timeout bug
 

@@ -30,6 +30,7 @@
 #include "TabButtons.h"
 #include "Places.h"
 #include "Properties.h"
+#include "Theme.h"
 #include "XFileExplorer.h"
 #include "CustomActionsUI.h"
 #include <gio/gio.h>
@@ -130,8 +131,8 @@ FXDEFMAP(FilePanel) FilePanelMap[] =
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_NEW_TAB, FilePanel::onCmdTabs),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_OPEN_NEW_TAB, FilePanel::onCmdOpenNewTab),
     FXMAPFUNC(SEL_UPDATE, FilePanel::ID_OPEN_NEW_TAB, FilePanel::onUpdOpenNewTab),
-    FXMAPFUNC(SEL_COMMAND, FilePanel::ID_LINK_OTHER_PANE, FilePanel::onCmdOtherPane),
-    FXMAPFUNC(SEL_UPDATE, FilePanel::ID_LINK_OTHER_PANE, FilePanel::onUpdOtherPane),
+    FXMAPFUNCS(SEL_COMMAND, FilePanel::ID_COPY_OTHER_PANE, FilePanel::ID_LINK_OTHER_PANE, FilePanel::onCmdOtherPane),
+    FXMAPFUNCS(SEL_UPDATE, FilePanel::ID_COPY_OTHER_PANE, FilePanel::ID_LINK_OTHER_PANE, FilePanel::onUpdOtherPane),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_REMOVE_ALL_TABS, FilePanel::onCmdTabs),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_CLOSE_TAB, FilePanel::onCmdTabs),
     FXMAPFUNC(SEL_CLIPBOARD_LOST, 0, FilePanel::onClipboardLost),
@@ -160,6 +161,8 @@ FXDEFMAP(FilePanel) FilePanelMap[] =
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_FILE_CUT, FilePanel::onCmdFileMan),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_FILE_COPYTO, FilePanel::onCmdFileMan),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_FILE_MOVETO, FilePanel::onCmdFileMan),
+    FXMAPFUNCS(SEL_COMMAND, FilePanel::ID_FILE_COPY_HOME, FilePanel::ID_FILE_MOVE_DESKTOP, FilePanel::onCmdFileToPlace),
+    FXMAPFUNCS(SEL_UPDATE, FilePanel::ID_FILE_COPY_HOME, FilePanel::ID_FILE_MOVE_DESKTOP, FilePanel::onUpdMenu),
     FXMAPFUNC(SEL_COMMAND, FilePanel::ID_FILE_RENAME, FilePanel::onCmdFileMan),
     FXMAPFUNCS(SEL_COMMAND, FilePanel::ID_CONTEXT_RENAME, FilePanel::ID_CONTEXT_BULK_RENAME, FilePanel::onCmdContextRename),
     FXMAPFUNCS(SEL_UPDATE, FilePanel::ID_CONTEXT_RENAME, FilePanel::ID_CONTEXT_BULK_RENAME, FilePanel::onUpdContextRename),
@@ -2698,6 +2701,8 @@ long FilePanel::onUpdOtherPane(FXObject* sender, FXSelector, void*)
 long FilePanel::onCmdOtherPane(FXObject* sender, FXSelector sel, void* ptr)
 {
     if (!current->next->shown() || current->list->getNumSelectedItems() == 0) return 0;
+    if (FXSELID(sel) == ID_COPY_OTHER_PANE) sel = FXSEL(SEL_COMMAND, ID_FILE_COPY);
+    else if (FXSELID(sel) == ID_MOVE_OTHER_PANE) sel = FXSEL(SEL_COMMAND, ID_FILE_CUT);
     return onCmdFileMan(sender, sel, ptr);
 }
 
@@ -3539,9 +3544,38 @@ long FilePanel::bulkRename(FXObject* sender, const FXString& title, const FXStri
     return 1;
 }
 
+long FilePanel::onCmdFileToPlace(FXObject* sender, FXSelector sel, void* ptr)
+{
+    const FXuint id = FXSELID(sel);
+    FilePanel* panel = current ? current : this;
+    FXString target = (id == ID_FILE_COPY_HOME || id == ID_FILE_MOVE_HOME) ?
+                      FXSystem::getHomeDirectory() : dirpanel->getDesktopDirectory();
+    if (target.empty())
+    {
+        MessageBox::error(panel, BOX_OK, _("Error"), _("Unable to determine the destination folder."));
+        return 1;
+    }
+    if (!xf_existfile(target))
+    {
+        MessageBox::error(panel, BOX_OK, _("Error"), _("Folder %s doesn't exist"), target.text());
+        return 1;
+    }
+    if (!xf_isdirectory(target))
+    {
+        MessageBox::error(panel, BOX_OK, _("Error"), _("%s is not a folder"), target.text());
+        return 1;
+    }
+    panel->placeTargetDir = target;
+    const FXuint command = (id == ID_FILE_COPY_HOME || id == ID_FILE_COPY_DESKTOP) ? ID_FILE_COPY : ID_FILE_CUT;
+    return panel->onCmdFileMan(sender, FXSEL(SEL_COMMAND, command), ptr);
+}
+
+
 // Copy/Move/Rename/Symlink file(s)
 long FilePanel::onCmdFileMan(FXObject* sender, FXSelector sel, void* ptr)
 {
+    const FXString forcedTargetDir = placeTargetDir;
+    placeTargetDir.clear();
     if (requiresMountedShare()) return 1;
     int num;
     FXString src, targetdir, target, name, source;
@@ -3641,6 +3675,10 @@ long FilePanel::onCmdFileMan(FXObject* sender, FXSelector sel, void* ptr)
         if (!current->next->shown() || (FXSELID(sel) == ID_FILE_RENAME))
         {
             targetdir = current->list->getDirectory();
+        }
+        if (!forcedTargetDir.empty())
+        {
+            targetdir = forcedTargetDir;
         }
     }
 
@@ -6624,6 +6662,84 @@ long FilePanel::onCmdItemFilter(FXObject* sender, FXSelector sel, void*)
 }
 
 
+class FileContextMenuPane : public FXMenuPane
+{
+    FXMenuPane* parentMenu;
+    FXbool openedLeft = false;
+
+public:
+    FileContextMenuPane(FXWindow* owner, FXMenuPane* parent) : FXMenuPane(owner), parentMenu(parent) {}
+
+    virtual void popup(FXWindow* grabto, FXint x, FXint y, FXint w = 0, FXint h = 0)
+    {
+        const FXint width = ((options & POPUP_SHRINKWRAP) || w <= 1) ? getDefaultWidth() : w;
+        FXint parentX, parentY;
+        parentMenu->translateCoordinatesTo(parentX, parentY, getRoot(), 0, 0);
+        FileContextMenuPane* parent = dynamic_cast<FileContextMenuPane*>(parentMenu);
+        const FXint left = parentX - width;
+        if (((parent && parent->openedLeft) || x + width > getRoot()->getX() + getRoot()->getWidth()) &&
+            left >= getRoot()->getX())
+        {
+            x = left;
+        }
+        openedLeft = x < parentX;
+        FXMenuPane::popup(grabto, x, y, w, h);
+    }
+};
+
+
+static FXString cascadeLabel(const FXString& translated)
+{
+    FXString label = translated;
+    label.trim();
+    if (label.right(3) == "...")
+    {
+        label = label.left(label.length() - 3);
+        label.trim();
+    }
+    return label;
+}
+
+
+static void improveFileMenuContrast(FXMenuPane* menu)
+{
+    for (FXWindow* child = menu->getFirst(); child; child = child->getNext())
+    {
+        FXMenuCaption* caption = dynamic_cast<FXMenuCaption*>(child);
+        if (!caption) continue;
+        const FXbool dimShadow = themeContrast(caption->getShadowColor(), caption->getBackColor()) < 3.0;
+        const FXbool dimHilite = themeContrast(caption->getHiliteColor(), caption->getBackColor()) < 3.0;
+        if (!dimShadow && !dimHilite) continue;
+        FXColor muted = themeBlend(caption->getBackColor(), caption->getTextColor(), 0.65);
+        if (themeContrast(muted, caption->getBackColor()) < 3.0) muted = caption->getTextColor();
+        if (dimShadow) caption->setShadowColor(muted);
+        if (dimHilite) caption->setHiliteColor(muted);
+    }
+}
+
+
+static FXMenuPane* appendFileSortMenu(FXWindow* owner, FXMenuPane* parent, FileList* list)
+{
+    FXMenuPane* menu = new FileContextMenuPane(owner, parent);
+    new FXMenuCascade(parent, _("&Sort"), NULL, menu);
+    new FXMenuRadio(menu, _("&Name"), list, FileList::ID_COL_NAME);
+    new FXMenuRadio(menu, _("Si&ze"), list, FileList::ID_COL_SIZE);
+    new FXMenuRadio(menu, _("&Type"), list, FileList::ID_COL_TYPE);
+    new FXMenuRadio(menu, _("E&xtension"), list, FileList::ID_COL_EXT);
+    new FXMenuRadio(menu, _("&Date"), list, FileList::ID_COL_DATE);
+    new FXMenuRadio(menu, _("&User"), list, FileList::ID_COL_USER);
+    new FXMenuRadio(menu, _("&Group"), list, FileList::ID_COL_GROUP);
+    new FXMenuRadio(menu, _("Per&missions"), list, FileList::ID_COL_PERMS);
+    new FXMenuRadio(menu, _("&Link"), list, FileList::ID_COL_LINK);
+    new FXMenuRadio(menu, _("&Deletion Date"), list, FileList::ID_COL_DELDATE);
+    new FXMenuSeparator(menu);
+    new FXMenuCheck(menu, _("Ignore C&ase"), list, FileList::ID_SORT_CASE);
+    new FXMenuCheck(menu, _("Fold&ers First"), list, FileList::ID_DIRS_FIRST);
+    new FXMenuCheck(menu, _("Re&verse Order"), list, FileList::ID_SORT_REVERSE);
+    return menu;
+}
+
+
 // Panel context menu
 long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
 {
@@ -6744,6 +6860,9 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
 
     // Popup menu pane
     FXMenuPane* menu = new FXMenuPane(this);
+    std::vector<FXMenuPane*> ownedPanes;
+    CustomActionMenu* customMenu = NULL;
+    XFileExplorer* explorer = dynamic_cast<XFileExplorer*>(mainWindow);
     int x, y;
     FXuint state;
     getRoot()->getCursorPosition(x, y, state);
@@ -6800,20 +6919,7 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuCommand(menu, _("Zoom &In"), minizoominicon, current->list, FileList::ID_ZOOM_IN);
         new FXMenuCommand(menu, _("&Reset Zoom"), minizoom100icon, current->list, FileList::ID_ZOOM_RESET);
         new FXMenuSeparator(menu);
-        new FXMenuRadio(menu, _("&Name"), current->list, FileList::ID_COL_NAME);
-        new FXMenuRadio(menu, _("Si&ze"), current->list, FileList::ID_COL_SIZE);
-        new FXMenuRadio(menu, _("&Type"), current->list, FileList::ID_COL_TYPE);
-        new FXMenuRadio(menu, _("E&xtension"), current->list, FileList::ID_COL_EXT);
-        new FXMenuRadio(menu, _("&Date"), current->list, FileList::ID_COL_DATE);
-        new FXMenuRadio(menu, _("&User"), current->list, FileList::ID_COL_USER);
-        new FXMenuRadio(menu, _("&Group"), current->list, FileList::ID_COL_GROUP);
-        new FXMenuRadio(menu, _("Per&missions"), current->list, FileList::ID_COL_PERMS);
-        new FXMenuRadio(menu, _("&Link"), current->list, FileList::ID_COL_LINK);
-        new FXMenuRadio(menu, _("&Deletion Date"), current->list, FileList::ID_COL_DELDATE);
-        new FXMenuSeparator(menu);
-        new FXMenuCheck(menu, _("Ignore C&ase"), current->list, FileList::ID_SORT_CASE);
-        new FXMenuCheck(menu, _("Fold&ers First"), current->list, FileList::ID_DIRS_FIRST);
-        new FXMenuCheck(menu, _("Re&verse Order"), current->list, FileList::ID_SORT_REVERSE);
+        ownedPanes.push_back(appendFileSortMenu(this, menu, current->list));
         FileList::appendFolderSizeMenu(this, menu, current->list);
     }
     // Non empty selection
@@ -6826,7 +6932,8 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         }
 
         // Panel submenu items
-        FXMenuPane* submenu = new FXMenuPane(this);
+        FXMenuPane* submenu = new FileContextMenuPane(this, menu);
+        ownedPanes.push_back(submenu);
         new FXMenuCommand(submenu, _("Ne&w File..."), mininewfileicon, current, FilePanel::ID_NEW_FILE);
         new FXMenuCommand(submenu, _("New F&older..."), minifoldernewicon, current, FilePanel::ID_NEW_DIR);
         new FXMenuCommand(submenu, _("New S&ymlink..."), mininewlinkicon, current, FilePanel::ID_NEW_SYMLINK);
@@ -6845,23 +6952,8 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuCommand(submenu, _("Zoom &In"), minizoominicon, current->list, FileList::ID_ZOOM_IN);
         new FXMenuCommand(submenu, _("&Reset Zoom"), minizoom100icon, current->list, FileList::ID_ZOOM_RESET);
         new FXMenuSeparator(submenu);
-        new FXMenuRadio(submenu, _("&Name"), current->list, FileList::ID_COL_NAME);
-        new FXMenuRadio(submenu, _("Si&ze"), current->list, FileList::ID_COL_SIZE);
-        new FXMenuRadio(submenu, _("&Type"), current->list, FileList::ID_COL_TYPE);
-        new FXMenuRadio(submenu, _("E&xtension"), current->list, FileList::ID_COL_EXT);
-        new FXMenuRadio(submenu, _("&Date"), current->list, FileList::ID_COL_DATE);
-        new FXMenuRadio(submenu, _("&User"), current->list, FileList::ID_COL_USER);
-        new FXMenuRadio(submenu, _("&Group"), current->list, FileList::ID_COL_GROUP);
-        new FXMenuRadio(submenu, _("Per&missions"), current->list, FileList::ID_COL_PERMS);
-        new FXMenuRadio(submenu, _("&Link"), current->list, FileList::ID_COL_LINK);
-        new FXMenuRadio(submenu, _("&Deletion Date"), current->list, FileList::ID_COL_DELDATE);
-        new FXMenuSeparator(submenu);
-        new FXMenuCheck(submenu, _("Ignore C&ase"), current->list, FileList::ID_SORT_CASE);
-        new FXMenuCheck(submenu, _("Fold&ers First"), current->list, FileList::ID_DIRS_FIRST);
-        new FXMenuCheck(submenu, _("Re&verse Order"), current->list, FileList::ID_SORT_REVERSE);
+        ownedPanes.push_back(appendFileSortMenu(this, submenu, current->list));
         FileList::appendFolderSizeMenu(this, submenu, current->list);
-        new FXMenuCascade(menu, _("Pane&l"), NULL, submenu);
-        new FXMenuSeparator(menu);
 
 #if defined(linux)
         FXString name = current->list->getItemPathname(itm);
@@ -6879,162 +6971,195 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         }
 #endif
 
+        // Open: how to open or run the selection
+        const FXbool isfile = current->list->getItem(itm) && current->list->isItemFile(itm);
+        enum { MENU_NOT_ARCHIVE, MENU_ARCHIVE, MENU_COMPRESSED, MENU_PACKAGE } archiveKind = MENU_NOT_ARCHIVE;
+        FXString itemname = isfile ? current->list->getItemText(itm).section('\t', 0) : FXString::null;
+        FXString ext1 = itemname.rafter('.', 1).lower();
+        FXString ext2 = itemname.rafter('.', 2).lower();
+        FXbool tar2 = (ext2 == "tar.gz") || (ext2 == "tar.bz2") || (ext2 == "tar.xz") || (ext2 == "tar.zst") ||
+                      (ext2 == "tar.z");
+        if (isfile && (num == 1))
+        {
+            if (tar2 || (ext1 == "tar") || (ext1 == "tgz") || (ext1 == "tbz2") || (ext1 == "tbz") ||
+                (ext1 == "tzst") || (ext1 == "taz") || (ext1 == "txz") || (ext1 == "zip") || (ext1 == "7z") ||
+                (ext1 == "lzh") || (ext1 == "rar") || (ext1 == "ace") || (ext1 == "arj"))
+            {
+                archiveKind = MENU_ARCHIVE;
+            }
+            else if ((ext1 == "gz") || (ext1 == "bz2") || (ext1 == "zst") || (ext1 == "xz") || (ext1 == "z"))
+            {
+                archiveKind = MENU_COMPRESSED;
+            }
+#if defined(linux)
+            else if ((ext1 == "rpm") || (ext1 == "deb"))
+            {
+                archiveKind = MENU_PACKAGE;
+            }
+#endif
+        }
+        const FXbool ar = archiveKind != MENU_NOT_ARCHIVE;
+
         if (num == 1 && current->list->isItemDirectory(itm))
         {
             new FXMenuCommand(menu, _("Open in New &Tab"), minifolderopenicon, current,
                               FilePanel::ID_OPEN_NEW_TAB);
         }
-        FXbool ar = false;
-        if (current->list->getItem(itm) && current->list->isItemFile(itm))
+        if (isfile)
         {
-            new FXMenuCommand(menu, _("E&xecute"), miniexecicon, current, FilePanel::ID_EXECUTE);
-            if (xf_administratorActionAvailable(num, current->list->getItemPathname(itm)))
-            {
-                new FXMenuCommand(menu, _("Run as Administrator..."), miniexecicon, current,
-                                  FilePanel::ID_RUN_AS_ADMINISTRATOR);
-            }
-            new FXMenuCommand(menu, _("Run from &Terminal"), minishellicon, current, FilePanel::ID_RUN_IN_TERMINAL);
             new FXMenuCommand(menu, _("Open with &Default App"), minifileopenicon, current, FilePanel::ID_OPEN_DEFAULT_APP);
             new FXMenuCommand(menu, _("Open &With..."), minifileopenicon, current, FilePanel::ID_OPEN_WITH);
-            FXString name = current->list->getItemText(itm).section('\t', 0);
-
-            // Last and before last file extensions
-            FXString ext1 = name.rafter('.', 1).lower();
-            FXString ext2 = name.rafter('.', 2).lower();
-
-            // Destination folder name
-            FXString extract_to_folder;
-            if ((ext2 == "tar.gz") || (ext2 == "tar.bz2") || (ext2 == "tar.xz") || (ext2 == "tar.zst") ||
-                (ext2 == "tar.z"))
+            if (archiveKind == MENU_PACKAGE)
             {
-                extract_to_folder = _("Extr&act to Folder ") + name.section('\t', 0).rbefore('.', 2);
-            }
-            else
-            {
-                extract_to_folder = _("Extr&act to Folder ") + name.section('\t', 0).rbefore('.', 1);
-            }
-
-            // Display the extract and package menus according to the archive extensions
-            if ((num == 1) &&
-                ((ext2 == "tar.gz") || (ext2 == "tar.bz2") || (ext2 == "tar.xz") || (ext2 == "tar.zst") ||
-                 (ext2 == "tar.z")))
-            {
-                ar = true;
-                new FXMenuCommand(menu, _("&Extract Here"), miniarchexticon, current, FilePanel::ID_EXTRACT_HERE);
-                new FXMenuCommand(menu, extract_to_folder, miniarchexticon, current, FilePanel::ID_EXTRACT_TO_FOLDER);
-                new FXMenuCommand(menu, _("E&xtract to..."), miniarchexticon, current, FilePanel::ID_EXTRACT);
-            }
-            else if ((num == 1) &&
-                     ((ext1 == "gz") || (ext1 == "bz2") || (ext1 == "zst") || (ext1 == "xz") || (ext1 == "z")))
-            {
-                ar = true;
-                new FXMenuCommand(menu, _("&Extract here"), miniarchexticon, current, FilePanel::ID_EXTRACT_HERE);
-            }
-            else if ((num == 1) && ((ext1 == "tar") || (ext1 == "tgz") || (ext1 == "tbz2") || (ext1 == "tbz")
-                                    || (ext1 == "tzst") || (ext1 == "taz") || (ext1 == "txz") || (ext1 == "zip") ||
-                                    (ext1 == "7z")
-                                    || (ext1 == "lzh") || (ext1 == "rar") || (ext1 == "ace") || (ext1 == "arj")))
-            {
-                ar = true;
-                new FXMenuCommand(menu, _("&Extract Here"), miniarchexticon, current, FilePanel::ID_EXTRACT_HERE);
-                new FXMenuCommand(menu, extract_to_folder, miniarchexticon, current, FilePanel::ID_EXTRACT_TO_FOLDER);
-                new FXMenuCommand(menu, _("E&xtract to..."), miniarchexticon, current, FilePanel::ID_EXTRACT);
-            }
-#if defined(linux)
-            else if ((num == 1) && ((ext1 == "rpm") || (ext1 == "deb")))
-            {
-                ar = true;
                 new FXMenuCommand(menu, _("&View"), minipackageicon, current, FilePanel::ID_VIEW);
-                new FXMenuCommand(menu, _("Install / Up&grade"), minipackageicon, current, ID_PKG_INSTALL);
-                new FXMenuCommand(menu, _("Un&install"), minipackageicon, current, ID_PKG_UNINSTALL);
             }
-#endif
-#if defined(linux)
-            // Open the archive as a folder, or close it if it is already open
-            if ((num == 1) && archiveMountable(name))
-            {
-                if (archiveMountedAt(current->list->getItemPathname(itm)).empty())
-                {
-                    new FXMenuCommand(menu, _("Open Archive as &Folder"), minifoldericon, current,
-                                      FilePanel::ID_ARCHIVE_OPEN);
-                }
-                else
-                {
-                    new FXMenuCommand(menu, _("Close Archive Folder (save changes)"), miniunmounticon, current,
-                                      FilePanel::ID_ARCHIVE_CLOSE);
-                }
-            }
-#endif
-
-            // Not archive nor package
-            if (!ar)
+            else if (!ar)
             {
                 new FXMenuCommand(menu, _("&View"), miniviewicon, current, FilePanel::ID_VIEW);
                 new FXMenuCommand(menu, _("&Edit"), miniediticon, current, FilePanel::ID_EDIT);
                 new FXMenuCommand(menu, _("Edit With..."), miniediticon, current, FilePanel::ID_EDIT_WITH);
             }
-        }
-        
-        // Not a file
-        if (!ar)
-        {
-            // Not archive nor package
-            if (num == 1)
+            FXMenuPane* runmenu = new FileContextMenuPane(this, menu);
+            ownedPanes.push_back(runmenu);
+            new FXMenuCascade(menu, _("R&un"), miniexecicon, runmenu);
+            new FXMenuCommand(runmenu, _("E&xecute"), miniexecicon, current, FilePanel::ID_EXECUTE);
+            new FXMenuCommand(runmenu, _("Run from &Terminal"), minishellicon, current, FilePanel::ID_RUN_IN_TERMINAL);
+            if (xf_administratorActionAvailable(num, current->list->getItemPathname(itm)))
             {
-                new FXMenuCommand(menu, _("Com&pare..."), minicompareicon, current, FilePanel::ID_COMPARE);
+                new FXMenuCommand(runmenu, _("Run as Administrator..."), miniexecicon, current,
+                                  FilePanel::ID_RUN_AS_ADMINISTRATOR);
+            }
+        }
+
+        // Organize: clipboard, copy, move, rename and link
+        new FXMenuSeparator(menu);
+        new FXMenuCommand(menu, _("&Copy"), minicopyicon, current, FilePanel::ID_COPY_CLIPBOARD);
+        FXMenuPane* copymenu = new FileContextMenuPane(this, menu);
+        ownedPanes.push_back(copymenu);
+        new FXMenuCascade(menu, cascadeLabel(_("Cop&y to...")), minicopyicon, copymenu);
+        new FXMenuCommand(copymenu, _("Other Pane"), minicopyicon, current, ID_COPY_OTHER_PANE);
+        new FXMenuCommand(copymenu, _("Home"), minihomeicon, current, ID_FILE_COPY_HOME);
+        new FXMenuCommand(copymenu, _("Desktop"), minidesktopicon, current, ID_FILE_COPY_DESKTOP);
+        new FXMenuSeparator(copymenu);
+        new FXMenuCommand(copymenu, _("Choose Folder..."), minifoldericon, current, FilePanel::ID_FILE_COPYTO);
+        new FXMenuCommand(menu, _("Copy &Path"), minicopyicon, current, FilePanel::ID_COPYNAME_CLIPBOARD);
+        FXMenuPane* movemenu = new FileContextMenuPane(this, menu);
+        ownedPanes.push_back(movemenu);
+        new FXMenuCascade(menu, cascadeLabel(_("&Move to...")), minimoveicon, movemenu);
+        new FXMenuCommand(movemenu, _("Other Pane"), minimoveicon, current, ID_MOVE_OTHER_PANE);
+        new FXMenuCommand(movemenu, _("Home"), minihomeicon, current, ID_FILE_MOVE_HOME);
+        new FXMenuCommand(movemenu, _("Desktop"), minidesktopicon, current, ID_FILE_MOVE_DESKTOP);
+        new FXMenuSeparator(movemenu);
+        new FXMenuCommand(movemenu, _("Choose Folder..."), minifoldericon, current, FilePanel::ID_FILE_MOVETO);
+        new FXMenuCommand(menu, _("C&ut"), minicuticon, current, FilePanel::ID_CUT_CLIPBOARD);
+        new FXMenuCommand(menu, _("&Paste"), minipasteicon, current, FilePanel::ID_PASTE_CLIPBOARD);
+        if (num == 1)
+        {
+            new FXMenuCommand(menu, cascadeLabel(_("Re&name...")), minirenameicon, current,
+                              FilePanel::ID_CONTEXT_RENAME);
+        }
+        if ((num > 1) || (current->bulkRenameFolderItem() >= 0))
+        {
+            new FXMenuCommand(menu, _("&Bulk Rename..."), minirenameicon, current, FilePanel::ID_CONTEXT_BULK_RENAME);
+        }
+        FXMenuPane* linkmenu = new FileContextMenuPane(this, menu);
+        ownedPanes.push_back(linkmenu);
+        new FXMenuCascade(menu, _("&Link"), minilinktoicon, linkmenu);
+        new FXMenuCommand(linkmenu, _("Other Pane"), minilinktoicon, current, ID_LINK_OTHER_PANE);
+        new FXMenuSeparator(linkmenu);
+        new FXMenuCommand(linkmenu, _("Choose Folder..."), minifoldericon, current, FilePanel::ID_FILE_SYMLINK);
+        // Archive and analysis tools
+        new FXMenuSeparator(menu);
+        if (archiveKind == MENU_ARCHIVE)
+        {
+            FXString folder = tar2 ? itemname.rbefore('.', 2) : itemname.rbefore('.', 1);
+            new FXMenuCommand(menu, _("&Extract Here"), miniarchexticon, current, FilePanel::ID_EXTRACT_HERE);
+            new FXMenuCommand(menu, _("Extr&act to Folder ") + folder, miniarchexticon, current,
+                              FilePanel::ID_EXTRACT_TO_FOLDER);
+            new FXMenuCommand(menu, _("E&xtract to..."), miniarchexticon, current, FilePanel::ID_EXTRACT);
+        }
+        else if (archiveKind == MENU_COMPRESSED)
+        {
+            new FXMenuCommand(menu, _("&Extract here"), miniarchexticon, current, FilePanel::ID_EXTRACT_HERE);
+        }
+#if defined(linux)
+        else if (archiveKind == MENU_PACKAGE)
+        {
+            new FXMenuCommand(menu, _("Install / Up&grade"), minipackageicon, current, ID_PKG_INSTALL);
+            new FXMenuCommand(menu, _("Un&install"), minipackageicon, current, ID_PKG_UNINSTALL);
+        }
+        // Open the archive as a folder, or close it if it is already open
+        if (isfile && (num == 1) && archiveMountable(itemname))
+        {
+            if (archiveMountedAt(current->list->getItemPathname(itm)).empty())
+            {
+                new FXMenuCommand(menu, _("Open Archive as &Folder"), minifoldericon, current,
+                                  FilePanel::ID_ARCHIVE_OPEN);
             }
             else
             {
-                new FXMenuCommand(menu, _("Com&pare"), minicompareicon, current, FilePanel::ID_COMPARE);
+                new FXMenuCommand(menu, _("Close Archive Folder (save changes)"), miniunmounticon, current,
+                                  FilePanel::ID_ARCHIVE_CLOSE);
             }
-            new FXMenuCommand(menu, _("&Add to Archive..."), miniarchaddicon, current, FilePanel::ID_ADD_TO_ARCH);
-        }
-#if defined(linux)
-        if ((num == 1) && !ar && current->list->isItemFile(itm))
-        {
-            new FXMenuCommand(menu, _("Packages &Query "), minipackageicon, current, FilePanel::ID_PKG_QUERY);
         }
 #endif
-
-        // Build scripts menu
-        new FXMenuSeparator(menu);
-        FXString scriptpath = xf_scriptpath();
-        FXMenuPane* scriptsmenu = new FXMenuPane(this);
-        new FXMenuCascade(menu, _("Scripts"), minirunicon, scriptsmenu);
-        readScriptDir(this, scriptsmenu, scriptpath);
+        if (!ar)
+        {
+            new FXMenuCommand(menu, _("&Add to Archive..."), miniarchaddicon, current, FilePanel::ID_ADD_TO_ARCH);
+        }
+        FXMenuPane* toolsmenu = new FileContextMenuPane(this, menu);
+        ownedPanes.push_back(toolsmenu);
+        new FXMenuCascade(menu, _("T&ools"), minicompareicon, toolsmenu);
+        if (!ar)
+        {
+            new FXMenuCommand(toolsmenu, num == 1 ? _("Com&pare...") : _("Com&pare"), minicompareicon, current,
+                              FilePanel::ID_COMPARE);
+        }
+        if (num > 1)
+        {
+            new FXMenuCommand(toolsmenu, _("Compare &Sizes"), minicharticon, current, FilePanel::ID_DIR_USAGE);
+        }
+#if defined(linux)
+        if ((num == 1) && !ar && isfile)
+        {
+            new FXMenuCommand(toolsmenu, _("Packages &Query "), minipackageicon, current, FilePanel::ID_PKG_QUERY);
+        }
+#endif
+        FXMenuPane* scriptsmenu = new FileContextMenuPane(this, toolsmenu);
+        ownedPanes.push_back(scriptsmenu);
+        new FXMenuCascade(toolsmenu, _("Scripts"), minirunicon, scriptsmenu);
+        readScriptDir(this, scriptsmenu, xf_scriptpath());
         new FXMenuSeparator(scriptsmenu);
         new FXMenuCommand(scriptsmenu, _("&Go to Script Folder"), minigotodiricon, this, FilePanel::ID_GO_SCRIPTDIR);
 
-        new FXMenuSeparator(menu);
-        new FXMenuCommand(menu, _("&Copy"), minicopyicon, current, FilePanel::ID_COPY_CLIPBOARD);
-        new FXMenuCommand(menu, _("C&ut"), minicuticon, current, FilePanel::ID_CUT_CLIPBOARD);
-        new FXMenuCommand(menu, _("&Paste"), minipasteicon, current, FilePanel::ID_PASTE_CLIPBOARD);
-        new FXMenuCommand(menu, _("Copy &Path"), minicopyicon, current, FilePanel::ID_COPYNAME_CLIPBOARD);
-        new FXMenuCommand(menu, _("Re&name"), minirenameicon, current, FilePanel::ID_CONTEXT_RENAME);
-        new FXMenuCommand(menu, _("&Bulk Rename..."), minirenameicon, current, FilePanel::ID_CONTEXT_BULK_RENAME);
-        new FXMenuSeparator(menu);
-        new FXMenuCommand(menu, _("Copy &to..."), minicopyicon, current, FilePanel::ID_FILE_COPYTO);
-        new FXMenuCommand(menu, _("&Move to..."), minimoveicon, current, FilePanel::ID_FILE_MOVETO);
-        new FXMenuCommand(menu, _("Link to..."), minilinktoicon, current, FilePanel::ID_FILE_SYMLINK);
-        FXMenuCommand* copyOther = new FXMenuCommand(menu, _("Copy to Other Pane..."), minicopyicon, current, ID_FILE_COPY);
-        FXMenuCommand* moveOther = new FXMenuCommand(menu, _("Move to Other Pane..."), minimoveicon, current, ID_FILE_CUT);
-        if (!current->next->shown()) { copyOther->disable(); moveOther->disable(); }
-        new FXMenuCommand(menu, _("Link in Other Pane..."), minilinktoicon, current, ID_LINK_OTHER_PANE);
+        // Remove
         new FXMenuSeparator(menu);
         new FXMenuCommand(menu, _("M&ove to Trash"), minideleteicon, current, FilePanel::ID_FILE_TRASH);
-        new FXMenuCommand(menu, _("Restore &From Trash"), minirestoreicon, current, FilePanel::ID_FILE_RESTORE);
+        if (current->list->isInTrash())
+        {
+            new FXMenuCommand(menu, _("Restore &From Trash"), minirestoreicon, current, FilePanel::ID_FILE_RESTORE);
+        }
         new FXMenuCommand(menu, _("&Delete"), minideletepermicon, current, FilePanel::ID_FILE_DELETE);
-        new FXMenuSeparator(menu);
-        new FXMenuCommand(menu, _("Compare &Sizes"), minicharticon, current, FilePanel::ID_DIR_USAGE);
+
+        // Extensions, pane options and properties (Custom Actions adds its own separator)
+        if (explorer && explorer->getCustomActions())
+        {
+            customMenu = explorer->getCustomActions()->appendContextMenu(menu, this);
+        }
+        else
+        {
+            new FXMenuSeparator(menu);
+        }
+        new FXMenuCascade(menu, _("Pane&l"), NULL, submenu);
         new FXMenuCommand(menu, _("P&roperties"), miniattribicon, current, FilePanel::ID_PROPERTIES);
     }
-    CustomActionMenu* customMenu = NULL;
-    XFileExplorer* explorer = dynamic_cast<XFileExplorer*>(mainWindow);
-    if (explorer && explorer->getCustomActions())
+    if (!customMenu && explorer && explorer->getCustomActions())
     {
         customMenu = explorer->getCustomActions()->appendContextMenu(menu, this);
     }
     xf_windowcolors(menu);
+    improveFileMenuContrast(menu);
+    for (FXMenuPane* pane : ownedPanes) improveFileMenuContrast(pane);
     menu->create();
 
     // Reset flags
@@ -7044,6 +7169,10 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
     menu->popup(NULL, x, y);
     getApp()->runModalWhileShown(menu);
     delete menu;
+    for (FXMenuPane* pane : ownedPanes)
+    {
+        delete pane;
+    }
     delete customMenu;
 
     return 1;

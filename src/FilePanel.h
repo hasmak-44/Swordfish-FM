@@ -83,6 +83,7 @@ protected:
     FXuint single_click = SINGLE_CLICK_NONE;
     FXuint nbCols = 0;
     FXbool fromPaste = false;
+    FXString placeTargetDir;      // One-shot target folder for Copy to / Move to Home or Desktop
     FXbool ctrl = false;                                  // Flag to select the right click control menu
     FXbool shiftf10 = false;                              // Flag indicating that Shift-F10 was pressed
     FXbool isactive = false;
@@ -135,6 +136,10 @@ public:
         ID_FILE_CUT,
         ID_FILE_COPYTO,
         ID_FILE_MOVETO,
+        ID_FILE_COPY_HOME,
+        ID_FILE_COPY_DESKTOP,
+        ID_FILE_MOVE_HOME,
+        ID_FILE_MOVE_DESKTOP,
         ID_FILE_RENAME,
         ID_CONTEXT_RENAME,
         ID_CONTEXT_BULK_RENAME,
@@ -176,6 +181,8 @@ public:
         ID_PANE_HISTORY_LAST = ID_PANE_HISTORY_FIRST + 63,
         ID_NEW_TAB,
         ID_OPEN_NEW_TAB,
+        ID_COPY_OTHER_PANE,
+        ID_MOVE_OTHER_PANE,
         ID_LINK_OTHER_PANE,
         ID_REMOVE_ALL_TABS,
         ID_CLOSE_TAB,
@@ -299,6 +306,7 @@ public:
     long onCmdCompare(FXObject*, FXSelector, void*);
     long onCmdProperties(FXObject*, FXSelector, void*);
     long onCmdFileMan(FXObject*, FXSelector, void*);
+    long onCmdFileToPlace(FXObject*, FXSelector, void*);
     long onCmdContextRename(FXObject*, FXSelector, void*);
     long onUpdContextRename(FXObject*, FXSelector, void*);
     long bulkRename(FXObject*, const FXString&, const FXString&, int);

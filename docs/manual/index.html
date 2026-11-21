@@ -343,7 +343,7 @@
         <figcaption>Copy means “keep the original and make another.” Move means “put the item elsewhere”; after success it is no longer listed in the old folder.</figcaption>
       </figure>
       <figure>
-        <img src="images/context-menu.png" alt="Swordfish's file context menu opened on the selected Practice folder. It shows Copy Path and the grouped Copy, Cut, Paste, Rename, Copy to, Move to, Link to, and Other Pane actions." loading="lazy">
+        <img src="images/context-menu.png" alt="Swordfish's file context menu opened on the selected Practice folder, showing Copy, Copy to, Copy Path, Move to, Cut, Paste, Rename, and Link." loading="lazy">
         <figcaption>This example has the Practice folder selected and its context menu open. Menu contents vary with the selection.</figcaption>
       </figure>
       <ol class="steps">
@@ -358,7 +358,7 @@
         <li>Check that the destination field contains the practice folder's path.<span class="result"><strong>Result:</strong> you have verified where the copy will go.</span><span class="recover"><strong>Recover:</strong> do not continue if the destination path is not clear.</span></li>
         <li>Click <strong>Accept</strong> in the Copy dialog.<span class="result"><strong>Result:</strong> a copy appears in the destination; the source remains where it was.</span><span class="recover"><strong>Recover:</strong> if the copy went somewhere unexpected, search for its name and ask for help before removing anything.</span></li>
       </ol>
-      <p>You can also copy with <span class="menu">Edit → Copy</span> and <span class="menu">Edit → Paste</span>, or with the shortcuts in chapter 26. The context menu has a grouped set of Copy, Cut, Paste, and Copy Path actions, followed by Copy to…, Move to…, Link to…, and Copy/Move/Link in Other Pane. In a two-pane layout, an Other Pane action targets the opposite pane's active tab. Check both paths before confirming.</p>
+      <p>You can also copy with <span class="menu">Edit → Copy</span> and <span class="menu">Edit → Paste</span>, or with the shortcuts in chapter 26. The selected-item context menu groups destinations under <strong>Copy to</strong> and <strong>Move to</strong>: Other Pane, Home, Desktop, or Choose Folder…. <strong>Link</strong> contains Other Pane and Choose Folder…. An Other Pane action targets the opposite pane's active tab. Check both paths before confirming.</p>
       <div class="warning"><p><strong>Warning:</strong> copying onto an existing same-named file is not a harmless practice. Do not approve replacement unless you have checked which copy you want to keep.</p></div>
       <div class="practice"><p><strong>Harmless practice:</strong> use the numbered copy instructions above with one disposable practice file. Verify that the source remains and one copy appears in the destination.</p></div>
     </section>
@@ -434,12 +434,12 @@
           <li>Read the right pane's address bar to check the destination location.</li>
           <li>Click one disposable file in the left pane once.</li>
           <li>Right-click the selected file.</li>
-          <li>Choose <strong>Copy to Other Pane…</strong>.</li>
+          <li>Choose <span class="menu">Copy to → Other Pane</span>.</li>
           <li>If a Copy dialog appears, check that its destination is the right pane's active tab.</li>
           <li>If the destination is correct and a dialog is open, choose <strong>Accept</strong>.</li>
           <li>Look in the right pane for the copied file.</li>
         </ol>
-        If the Copy dialog names any other destination, choose Cancel. Use Move to Other Pane only after you are confident with the destination; moving removes the source after a successful operation.
+        If the Copy dialog names any other destination, choose Cancel. Use <span class="menu">Move to → Other Pane</span> only after you are confident with the destination; moving removes the source after a successful operation.
       </div>
     </section>
 
@@ -553,7 +553,7 @@
         <li>You may select the other panel and choose different columns for it.</li>
         <li>Click <strong>OK</strong> to apply the choices immediately. No restart is needed for column changes. <strong>Cancel</strong> discards your changes.</li>
       </ol>
-      <p>These are the same choices used by the heading menu and heading dragging, not a separate set of defaults. They are remembered when you reopen Swordfish. The panel menu's Name/Size/Type/Extension/Date choices sort the list; they do not show or hide columns. Previews can take time and may not be supported for every format; an empty preview does not mean the file is empty.</p>
+      <p>These are the same choices used by the heading menu and heading dragging, not a separate set of defaults. They are remembered when you reopen Swordfish. Right-click blank space and open <strong>Sort</strong>, or use <span class="menu">Panel → Sort</span> from an item's context menu, to choose the sort field and options. Sorting does not show or hide columns. Previews can take time and may not be supported for every format; an empty preview does not mean the file is empty.</p>
       <div class="warning"><p><strong>Warning:</strong> revealing hidden items is safe, but changing or deleting hidden configuration files may disrupt applications or your desktop.</p></div>
     </section>
 
@@ -623,7 +623,7 @@
       <p>A <strong>symbolic link</strong> (symlink) is a pointer to another path. It looks like an item in a folder but usually does not contain a second copy of the target's data. If the target is moved or removed, the link may stop working. A copy is a separate file with its own data.</p>
       <ol class="steps">
         <li>Right-click a disposable practice file.<span class="result"><strong>Result:</strong> its context menu appears.</span><span class="recover"><strong>Recover:</strong> click outside the menu if the wrong file was selected.</span></li>
-        <li>Choose <strong>Symlink to…</strong> from the context menu.<span class="result"><strong>Result:</strong> a destination dialog appears; no link exists until you confirm.</span><span class="recover"><strong>Recover:</strong> choose Cancel if you meant to make a copy rather than a pointer.</span></li>
+        <li>Choose <span class="menu">Link → Choose Folder…</span> from the context menu.<span class="result"><strong>Result:</strong> a destination dialog appears; no link exists until you confirm.</span><span class="recover"><strong>Recover:</strong> choose Cancel if you meant to make a copy rather than a pointer.</span></li>
         <li>Move the pointer over the small folder/browse button next to the destination field.<span class="result"><strong>Result:</strong> its tooltip identifies it as <strong>Select Destination…</strong>.</span><span class="recover"><strong>Recover:</strong> cancel if the tooltip does not match.</span></li>
         <li>Click the folder/browse button.<span class="result"><strong>Result:</strong> a file-and-folder chooser opens.</span><span class="recover"><strong>Recover:</strong> close it if you do not recognize the current location.</span></li>
         <li>Navigate the chooser to the <code>Swordfish-Practice</code> folder.<span class="result"><strong>Result:</strong> the practice folder is visible.</span><span class="recover"><strong>Recover:</strong> do not select a location outside the practice area.</span></li>
@@ -706,7 +706,7 @@
       <h2>25. Menus and buttons reference</h2>
       <p>To open a menu, click its name on the top menu bar. A <strong>context menu</strong> is a smaller menu that appears after you right-click a file, folder, device, or blank space. Menu entries may be grey (disabled) if they cannot apply to the current selection. The following reference uses the application's English labels; translations and a few operating-system-dependent items may differ.</p>
       <figure>
-        <img src="images/context-menu.png" alt="Swordfish's file context menu opened on the selected Practice folder, showing Copy Path and grouped file-operation choices, including commands for the Other Pane." loading="lazy">
+        <img src="images/context-menu.png" alt="Swordfish's file context menu opened on the selected Practice folder, showing Copy Path and destination submenus for Copy to, Move to, and Link." loading="lazy">
         <figcaption>The Practice folder is selected in this example. Check your own selection before choosing an action.</figcaption>
       </figure>
       <table>
@@ -756,7 +756,7 @@
         <li>Tool buttons can include <strong>Execute Command</strong>, <strong>Launch Terminal</strong>, <strong>Search Files and Folders…</strong>, <strong>Mount</strong>, <strong>Unmount</strong>, and <strong>Connect to Server…</strong>.</li>
         <li>Panel buttons can switch panel layouts, choose <strong>Icons</strong>, <strong>Thumbnails</strong>, or <strong>Details</strong>, and adjust zoom.</li>
       </ul>
-      <p>Right-clicking a selected file can show a grouped set of <strong>Copy</strong>, <strong>Cut</strong>, <strong>Paste</strong>, and <strong>Copy Path</strong> actions, followed by <strong>Rename</strong>, <strong>Bulk Rename…</strong>, <strong>Copy to…</strong>, <strong>Move to…</strong>, <strong>Link to…</strong>, <strong>Copy to Other Pane…</strong>, <strong>Move to Other Pane…</strong>, and <strong>Link in Other Pane…</strong>. <strong>Copy Path</strong> copies the selected item's full path as text; it does not copy file contents or just the short name. “Other Pane” actions use the opposite pane's active tab as destination. Check the selection and destination path before confirming.</p>
+      <p>Right-clicking a selected file can show <strong>Copy</strong>, <strong>Copy to</strong>, <strong>Copy Path</strong>, <strong>Move to</strong>, <strong>Cut</strong>, <strong>Paste</strong>, <strong>Rename</strong>, <strong>Bulk Rename…</strong>, and <strong>Link</strong>. The Copy to and Move to submenus offer Other Pane, Home, Desktop, and Choose Folder…; Link offers Other Pane and Choose Folder…. <strong>Copy Path</strong> copies the selected item's full path as text; it does not copy file contents or just the short name. “Other Pane” actions use the opposite pane's active tab as destination. Check the selection and destination path before confirming.</p>
       <p>On removable devices, <strong>Mount</strong> makes a filesystem available, <strong>Unmount</strong> disconnects it while leaving it attached, and <strong>Eject (Safely Remove)</strong> prepares supported hardware for unplugging. A busy message means stop and resolve use before trying again.</p>
     </section>
 

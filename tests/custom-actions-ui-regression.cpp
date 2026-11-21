@@ -13,10 +13,12 @@
 #include "DirHistBox.h"
 #include "FileDialog.h"
 #include "icons.h"
+#include "Theme.h"
 #include <cassert>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
+#include <set>
 #include <string>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -529,6 +531,119 @@ public:
             menus[i]->hide(); return 1;
         }
         assert(false); return 0;
+    }
+};
+
+class SortContextMenuAutomation : public FXObject
+{
+    FXApp& app;
+    FilePanel* panel;
+    bool selected;
+    FXuint choice;
+    bool sizeChecked;
+    int reverseChecked;
+    bool otherPaneEnabled;
+
+    static FXMenuCascade* cascade(FXWindow* parent, const char* text)
+    {
+        for (FXWindow* child = parent->getFirst(); child; child = child->getNext())
+        {
+            FXMenuCascade* item = dynamic_cast<FXMenuCascade*>(child);
+            if (!item) { continue; }
+            FXString label = item->getText(); label.substitute("&", "");
+            if (label == text) { return item; }
+        }
+        return NULL;
+    }
+
+public:
+    bool done = false;
+    SortContextMenuAutomation(FXApp& application, FilePanel* p, bool hasSelection, FXuint command,
+                              bool size, int reverse, bool otherPane = true) :
+        app(application), panel(p), selected(hasSelection), choice(command), sizeChecked(size),
+        reverseChecked(reverse), otherPaneEnabled(otherPane) {}
+
+    long handle(FXObject*, FXSelector, void*)
+    {
+        FXMenuPane* root = NULL;
+        for (FXMenuPane* menu : widgets<FXMenuPane>(app.getRootWindow()))
+        {
+            if (menu->shown() && menu->getOwner() == panel) { root = menu; break; }
+        }
+        assert(root);
+        FXWindow* parent = root;
+        FXMenuCascade* panelMenu = NULL;
+        if (selected)
+        {
+            panelMenu = cascade(root, "Panel"); assert(panelMenu);
+            for (const char* name : {"Copy to", "Move to", "Link"})
+            {
+                FXMenuCascade* operation = cascade(root, name); assert(operation);
+                FXMenuCommand* other = NULL;
+                for (FXWindow* child = operation->getMenu()->getFirst(); child; child = child->getNext())
+                {
+                    FXMenuCommand* command = dynamic_cast<FXMenuCommand*>(child);
+                    if (command && command->getText() == "Other Pane") other = command;
+                }
+                assert(other && other->getTarget());
+                other->getTarget()->handle(other, FXSEL(SEL_UPDATE, other->getSelector()), NULL);
+                assert(other->isEnabled() == otherPaneEnabled);
+            }
+            parent = panelMenu->getMenu();
+        }
+        FXMenuCascade* sort = cascade(parent, "Sort"); assert(sort);
+        assert(cascade(parent, "Folder Sizes"));
+        std::set<FXuint> remaining = {
+            FileList::ID_COL_NAME, FileList::ID_COL_SIZE, FileList::ID_COL_TYPE, FileList::ID_COL_EXT,
+            FileList::ID_COL_DATE, FileList::ID_COL_USER, FileList::ID_COL_GROUP, FileList::ID_COL_PERMS,
+            FileList::ID_COL_LINK, FileList::ID_COL_DELDATE, FileList::ID_SORT_CASE,
+            FileList::ID_DIRS_FIRST, FileList::ID_SORT_REVERSE
+        };
+        for (FXWindow* child = parent->getFirst(); child; child = child->getNext())
+        {
+            if (child->getTarget() == panel->getList())
+                assert(!remaining.count(FXSELID(child->getSelector())));
+        }
+        FXWindow* wanted = NULL;
+        FXMenuRadio* size = NULL;
+        FXMenuCheck* reverse = NULL;
+        for (FXWindow* child = sort->getMenu()->getFirst(); child; child = child->getNext())
+        {
+            if (child->getTarget() != panel->getList()) { continue; }
+            FXMenuCaption* caption = dynamic_cast<FXMenuCaption*>(child);
+            assert(caption);
+            if (themeContrast(caption->getTextColor(), caption->getBackColor()) >= 3.0)
+            {
+                assert(themeContrast(caption->getShadowColor(), caption->getBackColor()) >= 3.0);
+                assert(themeContrast(caption->getHiliteColor(), caption->getBackColor()) >= 3.0);
+            }
+            FXuint id = FXSELID(child->getSelector());
+            assert(remaining.erase(id) == 1);
+            if (id == choice) { wanted = child; }
+            if (id == FileList::ID_COL_SIZE) { size = dynamic_cast<FXMenuRadio*>(child); }
+            if (id == FileList::ID_SORT_REVERSE) { reverse = dynamic_cast<FXMenuCheck*>(child); }
+        }
+        assert(remaining.empty() && wanted && size && reverse);
+        size->getTarget()->handle(size, FXSEL(SEL_UPDATE, size->getSelector()), NULL);
+        reverse->getTarget()->handle(reverse, FXSEL(SEL_UPDATE, reverse->getSelector()), NULL);
+        assert(size->getCheck() == sizeChecked);
+        if (reverseChecked >= 0) { assert(reverse->getCheck() == reverseChecked); }
+        if (panelMenu)
+        {
+            panelMenu->onCmdPost(NULL, 0, NULL);
+            sort->onCmdPost(NULL, 0, NULL);
+            FXPopup* panelPane = panelMenu->getMenu();
+            FXPopup* sortPane = sort->getMenu();
+            assert(panelPane->shown() && sortPane->shown());
+            assert(panelPane->getX() + panelPane->getWidth() <= root->getX());
+            assert(sortPane->getX() + sortPane->getWidth() <= panelPane->getX());
+            sortPane->popdown();
+            panelPane->popdown();
+        }
+        root->hide();
+        wanted->getTarget()->handle(wanted, FXSEL(SEL_COMMAND, wanted->getSelector()), NULL);
+        done = true;
+        return 1;
     }
 };
 
@@ -1346,6 +1461,88 @@ int main(int argc, char** argv)
     left->onCmdPopupMenu(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_POPUP_MENU), &menuKey);
     assert(left->getNumSelectedItems() == 2 && window->getCurrentPanel() == left);
     puts("PASS: actual file-panel popup preserves multi-selection when activating an inactive pane");
+
+    left->getList()->handle(NULL, FXSEL(SEL_COMMAND, FileList::ID_COL_NAME), NULL);
+    left->getList()->killSelection();
+    SortContextMenuAutomation sortBackground(app, left, false, FileList::ID_COL_SIZE, false, -1);
+    app.addTimeout(&sortBackground, 1, 30);
+    left->onCmdPopupMenu(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_POPUP_MENU), &menuKey);
+    assert(sortBackground.done);
+    assert(left->getList()->getSortFunc() == FileList::ascendingSize ||
+           left->getList()->getSortFunc() == FileList::ascendingSizeMix);
+    select(left);
+    FXString edge = "xdotool mousemove " + FXStringVal(app.getRootWindow()->getWidth() - 2) + " 100";
+    assert(system(edge.text()) == 0);
+    SortContextMenuAutomation sortPanel(app, left, true, FileList::ID_SORT_REVERSE, true, 0);
+    app.addTimeout(&sortPanel, 1, 30);
+    left->onCmdPopupMenu(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_POPUP_MENU), &menuKey);
+    assert(sortPanel.done);
+    assert(left->getList()->getSortFunc() == FileList::descendingSize ||
+           left->getList()->getSortFunc() == FileList::descendingSizeMix);
+    left->getList()->killSelection();
+    SortContextMenuAutomation sortChecked(app, left, false, FileList::ID_COL_NAME, true, 1);
+    app.addTimeout(&sortChecked, 1, 30);
+    left->onCmdPopupMenu(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_POPUP_MENU), &menuKey);
+    assert(sortChecked.done);
+
+    window->handle(NULL, FXSEL(SEL_COMMAND, XFileExplorer::ID_SHOW_ONE_PANEL), NULL);
+    pump(app, 100);
+    assert(!right->shown());
+    left->setActive(); select(left);
+    SortContextMenuAutomation onePane(app, left, true, FileList::ID_COL_NAME, false, 0, false);
+    app.addTimeout(&onePane, 1, 30);
+    left->onCmdPopupMenu(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_POPUP_MENU), &menuKey);
+    assert(onePane.done);
+    window->handle(NULL, FXSEL(SEL_COMMAND, XFileExplorer::ID_SHOW_FOLDERS_TWO_PANELS), NULL);
+    pump(app, 100);
+    assert(right->shown());
+    left->setActive();
+
+    {
+        FileList* list = left->getList();
+        auto selectOne = [list](const FXString& name)
+        {
+            list->killSelection();
+            for (int i = 0; i < list->getNumItems(); ++i)
+            {
+                if (list->getItemFilename(i) == name)
+                {
+                    list->setCurrentItem(i);
+                    list->selectItem(i);
+                    return;
+                }
+            }
+            assert(false);
+        };
+        const FXuint askBefore = app.reg().readUnsignedEntry("OPTIONS", "ask_before_copy", true);
+        app.reg().writeUnsignedEntry("OPTIONS", "ask_before_copy", false);
+        const FXString desktop = homedir + "/Desktop";
+        assert(!xf_existfile(desktop));
+        selectOne("other");
+        DismissDialog missingDesktop(app, "Error", "OK");
+        app.addTimeout(&missingDesktop, 1, 30);
+        left->onCmdFileToPlace(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_FILE_COPY_DESKTOP), NULL);
+        assert(!xf_existfile(desktop) && xf_isdirectory(fixture + "/other"));
+
+        const FXString copyName = "one 'quoted'.txt";
+        selectOne(copyName);
+        left->onCmdFileToPlace(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_FILE_COPY_HOME), NULL);
+        assert(xf_existfile(homedir + "/" + copyName));
+        assert(read(homedir + "/" + copyName) == read(fixture + "/" + copyName));
+        assert(unlink((homedir + "/" + copyName).text()) == 0);
+
+        assert(mkdir(desktop.text(), 0700) == 0);
+        const FXString moveName = "two $HOME.txt";
+        selectOne(moveName);
+        left->onCmdFileToPlace(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_FILE_MOVE_DESKTOP), NULL);
+        assert(!xf_existfile(fixture + "/" + moveName) && xf_existfile(desktop + "/" + moveName));
+        assert(rename((desktop + "/" + moveName).text(), (fixture + "/" + moveName).text()) == 0);
+        assert(rmdir(desktop.text()) == 0);
+        left->onCmdRefresh(NULL, 0, NULL);
+        app.reg().writeUnsignedEntry("OPTIONS", "ask_before_copy", askBefore);
+    }
+    select(left);
+    puts("PASS: grouped sort, edge cascades, other-pane availability and place destinations");
 
     {
         FXMenuPane menu(window);
