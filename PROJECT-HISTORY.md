@@ -1,6 +1,6 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 21 November 2026, through the portable .deb staging fix
+Last updated: 21 November 2026, through the portable .deb publication
 (section 3.117).
 Latest release: `swordfish-0.0.3` (stable).
 Previous stable release: `swordfish-0.0.2`.
@@ -3849,8 +3849,22 @@ was rebuilt from the verified official 0.0.3 portable tarball as
 `swordfish-portable_0.0.3-2_amd64.deb` (SHA-256
 `6c253a87ea849e33783bccb24656bcac3247110429110416a7eb07ebc2872cec`).
 The desktop-entry source, accidentally excluded from the earlier local commit
-by the `*.desktop` ignore rule, is now included. The user chose to test this
-revised package before publication; do not publish or push it until approved.
+by the `*.desktop` ignore rule, is now included.
+
+The user tested revision 2 and approved publication. The exact tested .deb was
+added to the existing `swordfish-0.0.3` release, along with
+`Swordfish-Portable-deb-0.0.3-2-source.tar.gz` and a separate
+`Swordfish-0.0.3-deb-SHA256SUMS`. The packaging source rebuilds to identical
+control scripts and payload files. The published downloads were retrieved and
+their checksums verified; the .deb is byte-identical to the tested file.
+Existing release archives, the original checksum file and the tag were not
+replaced. The release notes identify the installer as a concept and warn that
+removal deletes the portable folder and settings. The packaging commits remain
+local; their source is available in the new release asset.
+
+The temporary port-8765 server was stopped and its forwarding set to private.
+The local test package is retained in `/tmp/swordfish-deb-publish.RT3YVb/`;
+the published release is its durable copy.
 
 ## 4. The archive-command / false idle-timeout bug
 
