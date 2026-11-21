@@ -4147,8 +4147,12 @@ and check the version and Debian install, reinstall and removal per target.
 The first beta build succeeded for amd64, i386 and arm64, including those
 checks, but armhf failed to verify a download certificate under x86 QEMU; a
 retry failed the same way. An ARM64 runner with ARM32 emulation is being
-tried without disabling TLS verification. The original source-archive step
-also included stale generated autotools files. The release workflow now
+tried without disabling TLS verification, but it failed in the same way.
+Diagnostics showed curl using the certificate directory while the Debian
+certificate bundle was present and readable. The builder now explicitly
+uses that bundle for its verified downloads; the result remains to be tested.
+The original source-archive step also included stale generated autotools
+files. The release workflow now
 regenerates them from the tagged source before archiving; a locally regenerated
 archive configured and built successfully, reporting 0.0.4-beta1.
 

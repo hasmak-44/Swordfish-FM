@@ -97,20 +97,6 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: ./portable/build-portable.sh "build/Swordfish-Portable-$ARCH"
 
-      - name: Diagnose ARM certificate failure
-        if: failure() && matrix.arch == 'armhf'
-        run: |
-          image=swordfish-portable-builder:debian-buster-slim-armhf
-          for user in 0 "$(id -u):$(id -g)"; do
-            echo "Testing certificate trust as $user"
-            if docker run --rm --platform linux/arm/v7 --user "$user" "$image" \
-              sh -c 'date -u; ls -l /etc/ssl/certs/ca-certificates.crt; curl -vI https://github.com'; then
-              echo "Certificate check succeeded as $user"
-            else
-              echo "Certificate check failed as $user"
-            fi
-          done
-
       - name: Package release files
         env:
           ARCH: ${{ matrix.arch }}

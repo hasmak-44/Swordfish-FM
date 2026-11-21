@@ -45,7 +45,7 @@ esac
 
 linuxdeploy_appimage=/tmp/linuxdeploy-$linuxdeploy_arch.AppImage
 linuxdeploy_dir=/tmp/linuxdeploy
-curl --fail --location --retry 3 \
+curl --fail --location --retry 3 --cacert /etc/ssl/certs/ca-certificates.crt \
     --output "$linuxdeploy_appimage" \
     "https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-$linuxdeploy_arch.AppImage"
 chmod 755 "$linuxdeploy_appimage"
@@ -60,7 +60,7 @@ linuxdeploy="$linuxdeploy_dir/squashfs-root/AppRun"
 # Distribution LibRaw packages on older bases predate CR3 and recent cameras.
 libraw_version=0.21.5
 libraw_tarball=/tmp/LibRaw-$libraw_version.tar.gz
-curl --fail --location --retry 3 \
+curl --fail --location --retry 3 --cacert /etc/ssl/certs/ca-certificates.crt \
     --output "$libraw_tarball" \
     "https://www.libraw.org/data/LibRaw-$libraw_version.tar.gz"
 printf '%s  %s\n' \
