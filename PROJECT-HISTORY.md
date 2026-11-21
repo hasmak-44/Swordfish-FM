@@ -4112,6 +4112,17 @@ download archives, nested user data and session history were preserved.
 Named temporary apt-index and autotools metadata caches were also removed;
 the test archive's checksum was rechecked after cleanup.
 
+A verified follow-up pass confirmed nothing was listening on port 8765 and the
+port was no longer forwarded. It cleared the regenerable Go, pip and npm caches
+and the remaining Docker build cache, which freed a further 72 MiB on the
+workspace disk; 2.3 GB was then free. It also removed about 1.2 GB of scratch
+from the `/tmp` test build: the exported Debian build root, source snapshot
+and smoke-test extraction. The downloaded archive and checksum, built bundle,
+test `.deb` and logs remain in `/tmp/swordfish-test-20261121-dbbadcb`. The
+active Copilot package cache was kept. Most of the space in use on the
+workspace disk lies outside this repository (about 0.5 GB) and the user's
+home folder (about 3 GB).
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
