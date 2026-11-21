@@ -33,6 +33,7 @@
 typedef std::map<FXString, int> progsmap;
 
 class CustomActionsUI;
+class TransferManager;
 
 // Custom MenuPane class that can detect if a menu is open
 class MenuPane : public FXMenuPane
@@ -105,6 +106,7 @@ protected:
     FXToolBar* addresstoolbar = NULL;
     FXToolBar* tabtoolbar = NULL;
     CustomActionsUI* customactions = NULL;
+    TransferManager* transfers = NULL;
     DirPanel* dirpanel = NULL;
     FilePanel* lpanel = NULL;
     FilePanel* rpanel = NULL;

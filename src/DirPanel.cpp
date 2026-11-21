@@ -32,6 +32,7 @@
 #include "xfeutils.h"
 #include "startupnotification.h"
 #include "File.h"
+#include "Transfer.h"
 #include "DirList.h"
 #include "Places.h"
 #include "Properties.h"
@@ -3793,12 +3794,13 @@ long DirPanel::onCmdPaste(FXObject*, FXSelector sel, void*)
     FXuchar* data;
     FXuint len;
     int beg, end, pos;
-    FXString chaine, url, param;
+    FXString url;
     int num = 0;
     FXbool from_kde = false;
 
     // Target directory
-    FXString targetdir = ((XFileExplorer*)mainWindow)->getCurrentPanel()->getDirectory();
+    TransferSelection selection;
+    selection.directory = ((XFileExplorer*)mainWindow)->getCurrentPanel()->getDirectory();
 
     // If source is xfelistType (Gnome, XFCE, or Xfe app)
     if (getDNDData(FROM_CLIPBOARD, xfelistType, data, len))
@@ -3843,8 +3845,7 @@ long DirPanel::onCmdPaste(FXObject*, FXSelector sel, void*)
                 // and use default clipboard type
                 else
                 {
-                    // Update the param string
-                    param += FXURL::decode(FXURL::fileFromURL(url)) + "\n";
+                    selection.sources.push_back(FXURL::decode(FXURL::fileFromURL(url)));
 
                     // Add one more because the first line "copy" or "cut" was not present
                     num += 2;
@@ -3853,14 +3854,10 @@ long DirPanel::onCmdPaste(FXObject*, FXSelector sel, void*)
             // Process other items
             else
             {
-                // Update the param string
-                param += FXURL::decode(FXURL::fileFromURL(url)) + "\n";
+                selection.sources.push_back(FXURL::decode(FXURL::fileFromURL(url)));
                 num++;
             }
         }
-
-        // Construct the final param string passed to the file management routine
-        param = targetdir + "\n" + FXStringVal(num - 1) + "\n" + param;
 
         // Copy or cut operation depending on the clipboard type
         switch (clipboard_type)
@@ -3870,12 +3867,12 @@ long DirPanel::onCmdPaste(FXObject*, FXSelector sel, void*)
             break;
 
         case CUT_CLIPBOARD:
-            clipboard.clear();
             sel = FXSEL(SEL_COMMAND, DirPanel::ID_DIR_CUT);
             break;
         }
         fromPaste = true;
-        this->handle(this, sel, (void*)param.text());
+        long result = handle(this, sel, &selection);
+        if (result && clipboard_type == CUT_CLIPBOARD) clipboard.clear();
 
         // Free data pointer
         FXFREE(&data);
@@ -3936,13 +3933,9 @@ long DirPanel::onCmdPaste(FXObject*, FXSelector sel, void*)
                 url.erase(pos);
             }
 
-            // Update the param string
-            param += FXURL::decode(FXURL::fileFromURL(url)) + "\n";
+            selection.sources.push_back(FXURL::decode(FXURL::fileFromURL(url)));
             num++;
         }
-
-        // Construct the final param string passed to the file management routine
-        param = targetdir + "\n" + FXStringVal(num) + "\n" + param;
 
         // Copy or cut operation depending on the clipboard type
         switch (clipboard_type)
@@ -3952,12 +3945,12 @@ long DirPanel::onCmdPaste(FXObject*, FXSelector sel, void*)
             break;
 
         case CUT_CLIPBOARD:
-            clipboard.clear();
             sel = FXSEL(SEL_COMMAND, DirPanel::ID_DIR_CUT);
             break;
         }
         fromPaste = true;
-        handle(this, sel, (void*)param.text());
+        long result = handle(this, sel, &selection);
+        if (result && clipboard_type == CUT_CLIPBOARD) clipboard.clear();
 
         FXFREE(&data);
         return 1;
@@ -3988,18 +3981,14 @@ long DirPanel::onCmdPaste(FXObject*, FXSelector sel, void*)
                 filepath.erase(pos);
             }
 
-            // Update the param string
-            param += filepath + "\n";
+            selection.sources.push_back(filepath);
             num++;
         }
-
-        // Construct the final param string passed to the file management routine
-        param = targetdir + "\n" + FXStringVal(num) + "\n" + param;
 
         // Copy
         sel = FXSEL(SEL_COMMAND, DirPanel::ID_DIR_COPY);
         fromPaste = true;
-        handle(this, sel, (void*)param.text());
+        handle(this, sel, &selection);
 
         FXFREE(&data);
         return 1;
@@ -4022,6 +4011,7 @@ long DirPanel::onCmdDirMan(FXObject* sender, FXSelector sel, void* ptr)
 {
     int num;
     FXString src, targetdir, target, name, source;
+    std::vector<FXString> sourcePaths;
 
     // Confirmation dialog?
     FXbool ask_before_copy = getApp()->reg().readUnsignedEntry("OPTIONS", "ask_before_copy", true);
@@ -4037,18 +4027,18 @@ long DirPanel::onCmdDirMan(FXObject* sender, FXSelector sel, void* ptr)
         // Reset the flag
         fromPaste = false;
 
-        // Get the parameters
-        FXString str = (char*)ptr;
-        targetdir = str.section('\n', 0);
-        num = FXUIntVal(str.section('\n', 1));
-        src = str.after('\n', 2);
-        source = src.section('\n', 0);
+        const TransferSelection* selection = static_cast<const TransferSelection*>(ptr);
+        if (!selection) return 0;
+        targetdir = selection->directory;
+        sourcePaths = selection->sources;
+        num = sourcePaths.size();
 
         // If no item, return
         if (num <= 0)
         {
             return 0;
         }
+        source = sourcePaths.front();
     }
     // Obtain the parameters from the dir panel (only one source)
     else
@@ -4068,9 +4058,20 @@ long DirPanel::onCmdDirMan(FXObject* sender, FXSelector sel, void* ptr)
 
         // Source directory
         source = dirlist->getItemPathname((TreeItem*)item);
+        sourcePaths.push_back(source);
 
         // Target directory
         targetdir = FXPath::directory(source);
+    }
+
+    for (const FXString& path : sourcePaths)
+    {
+        if (path.empty())
+        {
+            MessageBox::warning(this, BOX_OK, _("Warning"), _("The clipboard contains an invalid file path."));
+            return 0;
+        }
+        src += path + "\n";
     }
 
     // Go to target directory
@@ -4316,6 +4317,13 @@ long DirPanel::onCmdDirMan(FXObject* sender, FXSelector sel, void* ptr)
     {
         MessageBox::error(this, BOX_OK, _("Error"), _("%s is not a folder"), targetdir.text());
         return 0;
+    }
+
+    if ((command == "copy" || command == "move") && xf_hasTransferStarter())
+    {
+        std::vector<TransferItem> items;
+        for (const FXString& path : sourcePaths) items.push_back(TransferItem(path, target));
+        return xf_startTransfer(this, command == "copy" ? COPY : MOVE, items) ? 1 : 0;
     }
 
     // Current and next panel

@@ -29,6 +29,7 @@ src/SearchPanel.cpp
 src/SearchWindow.cpp
 src/TabButtons.cpp
 src/TextWindow.cpp
+src/Transfer.cpp
 src/WriteWindow.cpp
 src/XFileExplorer.cpp
 src/XFileArchive.cpp

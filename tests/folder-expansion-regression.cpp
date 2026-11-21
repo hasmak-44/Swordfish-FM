@@ -14,6 +14,7 @@
 #include "FileDict.h"
 #include "icons.h"
 #include <X11/Xlib.h>
+#include <glib.h>
 #include <cassert>
 #include <chrono>
 #include <cmath>
@@ -56,6 +57,7 @@ static FXString simulatedMount;
 static bool simulateStillMounted;
 static FXString simulatedGvfsDirectory;
 static FXString simulatedMountTable;
+static FXString simulatedBlockNodes;
 static FXString failedUnlink;
 static FXString simulatedMtpPath;
 static FXString simulatedMtpRoot;
@@ -164,6 +166,9 @@ extern "C" int stat(const char* path, struct stat* info) noexcept
     static Stat realStat = reinterpret_cast<Stat>(dlsym(RTLD_NEXT, "stat"));
     checkBusy(path);
     if (measuredChild(path)) { ++stats; usleep(1000); }
+    if (!simulatedBlockNodes.empty() &&
+        (std::strncmp(path, "/dev/test-", 10) == 0 || std::strcmp(path, "/dev/sdb1") == 0))
+        return realStat((simulatedBlockNodes + PATHSEPSTRING + FXPath::name(path)).text(), info);
     if (!simulatedMtpPath.empty() && simulatedMtpPath == path) return realStat(simulatedMtpRoot.text(), info);
     if (!simulatedAfcPath.empty() && simulatedAfcPath == path) return realStat(simulatedAfcRoot.text(), info);
     return realStat(path, info);
@@ -228,6 +233,7 @@ public:
 struct SidebarPaint
 {
     FXString text;
+    std::vector<FXString> lines;
     FXColor textColor = 0;
     FXint textX = 0, textY = 0;
     const FXIcon* icon = NULL;
@@ -252,6 +258,7 @@ public:
     void drawText(FXint x, FXint y, const FXString& text) override
     {
         paint.text = text; paint.textColor = foreground; paint.textX = x; paint.textY = y;
+        paint.lines.push_back(text);
     }
     void drawText(FXint x, FXint y, const FXchar* text, FXuint length) override
     {
@@ -370,12 +377,161 @@ static void checkSidebarDeviceRendering(SidebarTree* tree)
     tree->setSelBackColor(oldSelBack); tree->setSelTextColor(oldSelText);
 }
 
+static void checkSidebarWrapping(FXApp& app)
+{
+    FXMainWindow* window = new FXMainWindow(&app, "Sidebar wrapping", NULL, NULL,
+                                             DECOR_ALL, 0, 0, 145, 260);
+    SidebarTree* tree = new SidebarTree(window, NULL, 0, LAYOUT_FILL_X | LAYOUT_FILL_Y);
+    SidebarItem* root = new SidebarItem("Places", minifoldericon, SidebarItem::GROUP);
+    tree->appendItem(NULL, root);
+    const FXString name = "Portable backup volume with a very long descriptive name";
+    SidebarItem* device = new SidebarItem(name, miniremovabledeviceicon, SidebarItem::DEVICE, "/dev/test");
+    device->deviceAction = SidebarItem::UNMOUNT_DEVICE;
+    device->canEject = true;
+    tree->appendItem(root, device);
+    const FXString unicode = "International-\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9"
+                             "\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9-long-folder-name";
+    SidebarItem* folder = new SidebarItem(unicode, minifoldericon, SidebarItem::DIRECTORY, "/tmp/test");
+    tree->appendItem(root, folder);
+    const FXString punctuatedNames[] = {"alpha-bravo-charlie", "alpha_bravo_charlie", "alpha/bravo/charlie"};
+    const FXString separators[] = {"-", "_", "/"};
+    SidebarItem* punctuated[3];
+    for (FXint i = 0; i < 3; ++i)
+    {
+        punctuated[i] = new SidebarItem(punctuatedNames[i], minifoldericon, SidebarItem::DIRECTORY, "/tmp/test");
+        tree->appendItem(root, punctuated[i]);
+    }
+    tree->expandTree(root);
+    window->create();
+    window->show();
+    window->layout();
+    tree->layout();
+
+    const FXint narrowHeight = device->getHeight(tree);
+    assert(narrowHeight > tree->getFont()->getFontHeight() + 4);
+    SidebarPaint paint = recordSidebarPaint(*device, tree);
+    assert(paint.lines.size() > 1 && paint.lines.front().length() >= 5);
+    FXString joined;
+    for (const FXString& line : paint.lines) joined += line;
+    assert(joined == name);
+    device->setSelected(true);
+    assert(device->getHeight(tree) == narrowHeight);
+    assert(recordSidebarPaint(*device, tree).filled);
+
+    paint = recordSidebarPaint(*folder, tree);
+    assert(paint.lines.size() > 1);
+    joined.clear();
+    for (const FXString& line : paint.lines)
+    {
+        assert(g_utf8_validate(line.text(), line.length(), NULL));
+        joined += line;
+    }
+    assert(joined == unicode);
+    for (FXint i = 0; i < 3; ++i)
+    {
+        paint = recordSidebarPaint(*punctuated[i], tree);
+        assert(paint.lines.size() > 1 && paint.lines.front().right(1) == separators[i]);
+        joined.clear();
+        for (const FXString& line : paint.lines) joined += line;
+        assert(joined == punctuatedNames[i]);
+    }
+
+    FXint first = -1, last = -1;
+    for (FXint y = 0; y < tree->getHeight(); ++y)
+        if (tree->getItemAt(5, y) == device)
+        {
+            if (first < 0) first = y;
+            last = y;
+        }
+    assert(first >= 0 && last - first + 1 == narrowHeight);
+    assert(tree->deviceButtonAt(tree->deviceButtonLeft() + 12, last - 6) == device);
+    assert(tree->deviceActionAt(tree->deviceButtonLeft(false) + 12, last - 6) == SidebarItem::UNMOUNT_DEVICE);
+    assert(tree->deviceActionAt(tree->deviceButtonLeft(false) + 12, last) == SidebarItem::NO_ACTION);
+    assert(tree->deviceActionAt(tree->deviceButtonLeft(false) + 12, first + 1) == SidebarItem::NO_ACTION);
+    FXbool lowerLineClickable = false;
+    for (FXint px = 0; px < tree->deviceButtonLeft(false); ++px)
+        lowerLineClickable |= tree->hitItem(device, px, last - 32) == 2;
+    assert(lowerLineClickable);
+
+    window->resize(100, 400);
+    window->layout();
+    tree->layout();
+    paint = recordSidebarPaint(*device, tree);
+    if (paint.lines.size() <= 1 || paint.lines.size() > 14 || paint.lines.front().length() < 5)
+        fprintf(stderr, "100px sidebar: viewport %d, wrap %d, indent %d, %zu lines, first '%s' (%dpx), icon x %d text x %d\n",
+                tree->getViewportWidth(), tree->getWrapWidth(), tree->getIndent(), paint.lines.size(),
+                paint.lines.empty() ? "" : paint.lines.front().text(),
+                tree->getFont()->getTextWidth("Porta", 5), paint.iconX, paint.textX);
+    assert(paint.lines.size() > 1 && paint.lines.size() <= 14 && paint.lines.front().length() >= 5);
+    joined.clear();
+    for (const FXString& line : paint.lines) joined += line;
+    assert(joined == name && !tree->horizontalScrollBar()->shown());
+    first = last = -1;
+    for (FXint y = 0; y < tree->getHeight(); ++y)
+        if (tree->getItemAt(5, y) == device)
+        {
+            if (first < 0) first = y;
+            last = y;
+        }
+    assert(first >= 0 && last >= 0);
+    assert(tree->deviceActionAt(tree->deviceButtonLeft(false) + 12, last - 6) == SidebarItem::UNMOUNT_DEVICE);
+    lowerLineClickable = false;
+    for (FXint px = 0; px < tree->getWidth(); ++px)
+        lowerLineClickable |= tree->hitItem(device, px, last - 32) == 2;
+    assert(lowerLineClickable);
+    window->resize(145, 260);
+    window->layout();
+    tree->layout();
+
+    tree->setBackColor(FXRGB(255, 255, 255));
+    tree->setTextColor(FXRGB(0, 0, 0));
+    tree->setSelBackColor(FXRGB(0, 0, 0));
+    tree->setSelTextColor(FXRGB(255, 255, 255));
+    const FXString unmountedName = "Portable backup volume with a very long descriptive name";
+    SidebarItem* unmounted = new SidebarItem(unmountedName + " (unmounted)", miniremovabledeviceicon,
+                                              SidebarItem::DEVICE, "/dev/other");
+    unmounted->deviceAction = SidebarItem::MOUNT_DEVICE;
+    tree->appendItem(root, unmounted);
+    SidebarItem* shortUnmounted = new SidebarItem("Phone (unmounted)", miniremovabledeviceicon,
+                                                   SidebarItem::DEVICE, "/dev/phone");
+    shortUnmounted->deviceAction = SidebarItem::MOUNT_DEVICE;
+    tree->appendItem(root, shortUnmounted);
+    tree->layout();
+    paint = recordSidebarPaint(*unmounted, tree);
+    joined.clear();
+    for (const FXString& line : paint.lines) joined += line;
+    assert(joined == unmountedName);
+    const FXint textHeight = FXMAX(unmounted->FXTreeItem::getHeight(tree),
+                                    4 + static_cast<FXint>(paint.lines.size()) * tree->getFont()->getFontHeight());
+    assert(unmounted->getHeight(tree) == textHeight + 30);
+    assert(!tree->horizontalScrollBar()->shown());
+    tree->setPosition(0, -10);
+    assert(tree->getYPosition() < 0);
+    last = -1;
+    for (FXint y = 0; y < tree->getHeight(); ++y)
+        if (tree->getItemAt(5, y) == device) last = y;
+    assert(last >= 0);
+    assert(tree->deviceActionAt(tree->deviceButtonLeft(false) + 12, last - 6) == SidebarItem::UNMOUNT_DEVICE);
+
+    window->resize(420, 160);
+    window->layout();
+    tree->layout();
+    assert(device->getHeight(tree) < narrowHeight);
+    first = -1;
+    for (FXint y = 0; y < tree->getHeight(); ++y)
+        if (tree->getItemAt(5, y) == folder) { first = y; break; }
+    assert(first >= 0);
+    delete window;
+}
+
 extern "C" DIR* opendir(const char* path)
 {
     checkRemote(path);
     typedef DIR* (*OpenDirectory)(const char*);
     static OpenDirectory realOpen = reinterpret_cast<OpenDirectory>(dlsym(RTLD_NEXT, "opendir"));
     assert(realOpen);
+    if (!simulatedBlockNodes.empty() && std::strcmp(path, "/dev") == 0)
+        return realOpen(simulatedBlockNodes.text());
     FXString gvfsRoot = "/run/user/" + FXStringVal(getuid()) + "/gvfs";
     if (!simulatedGvfsDirectory.empty() && gvfsRoot == path)
         return realOpen(simulatedGvfsDirectory.text());
@@ -847,7 +1003,18 @@ int main(int argc, char** argv)
     shell->show();
     checkSidebarDeviceRendering(sidebar);
     puts("PASS: unmounted device text follows light, dark and selected theme colors with readable contrast");
+    checkSidebarWrapping(app);
+    puts("PASS: sidebar labels wrap and remain selectable on resize, including UTF-8 and device actions");
     simulatedMountTable = fixture + "/mount-table-regression";
+    simulatedBlockNodes = fixture + "/device-nodes";
+    assert(mkdir(simulatedBlockNodes.text(), 0700) == 0);
+    const char* blockNodeNames[] = {"sdb1", "test-internal1", "test-usb", "test-usb1",
+                                    "test-usb2", "test-blank1", "test-swap1"};
+    for (const char* node : blockNodeNames)
+    {
+        std::ofstream output((simulatedBlockNodes + PATHSEPSTRING + node).text());
+        assert(output);
+    }
     auto mountTable = [&](bool attached)
     {
         std::ofstream output(simulatedMountTable.text());
@@ -947,6 +1114,33 @@ int main(int argc, char** argv)
     assert(deviceModel->getItemPathname("USB data") == "/dev/test-usb1");
     assert(deviceModel->findItem("test-blank1") == -1 && deviceModel->findItem("Swap") == -1);
     assert(xf_hotplugdevice("/dev/test-usb1") && !xf_hotplugdevice("/dev/test-internal1"));
+    setenv("SWORDFISH_TEST_LSBLK_FAIL", "1", 1);
+    deviceModel->invalidate();
+    deviceModel->onMountsRefresh(NULL, 0, NULL);
+    assert(deviceModel->getItemPathname("USB data") == "/dev/test-usb1");
+    mountTable(true);
+    deviceModel->onMountsRefresh(NULL, 0, NULL);
+    assert(deviceModel->getItemPathname("USB") == "/run/media/test/USB");
+    for (FXint i = 0; i < deviceModel->getNumItems(); ++i)
+        assert(deviceModel->getItemPathname(deviceModel->getItemText(i)) != "/dev/sdb1");
+    mountTable(false);
+    unsetenv("SWORDFISH_TEST_LSBLK_FAIL");
+    deviceModel->onMountsRefresh(NULL, 0, NULL);
+    // udev can remove device nodes after the kernel snapshot changed, while lsblk is stale.
+    assert(unlink((simulatedBlockNodes + "/sdb1").text()) == 0);
+    assert(unlink((simulatedBlockNodes + "/test-usb1").text()) == 0);
+    deviceModel->onMountsRefresh(NULL, 0, NULL);
+    assert(deviceModel->findItem("USB") == -1 && deviceModel->findItem("USB data") == -1);
+    assert(deviceModel->getItemPathname("Internal data") == "/dev/test-internal1");
+    // Reconnected nodes become available again even when sysfs is unchanged.
+    {
+        std::ofstream sdb((simulatedBlockNodes + "/sdb1").text());
+        std::ofstream usb((simulatedBlockNodes + "/test-usb1").text());
+        assert(sdb && usb);
+    }
+    deviceModel->onMountsRefresh(NULL, 0, NULL);
+    assert(deviceModel->getItemPathname("USB") == "/dev/sdb1");
+    assert(deviceModel->getItemPathname("USB data") == "/dev/test-usb1");
     unsetenv("SWORDFISH_TEST_VOLUMES");
     deviceModel->invalidate();
     deviceModel->onMountsRefresh(NULL, 0, NULL);

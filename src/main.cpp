@@ -24,6 +24,7 @@
 #include "MessageBox.h"
 #include "FilePanel.h"
 #include "XFileExplorer.h"
+#include "Transfer.h"
 
 // Add FOX hacks
 #include "foxhacks.cpp"
@@ -108,7 +109,7 @@ static void snmonitor(SnMonitorEvent* event, void* user_data)
         t = time(NULL);
         startup_end = t + STARTUP_TIMEOUT;
 
-        xf_setwaitcursor(mainWindow->getApp(), BEGIN_CURSOR);
+        if (mainWindow) xf_setwaitcursor(mainWindow->getApp(), BEGIN_CURSOR);
 
         /* For debugging purpose
          *
@@ -145,13 +146,13 @@ static void snmonitor(SnMonitorEvent* event, void* user_data)
 
     case SN_MONITOR_EVENT_COMPLETED:
 
-        xf_setwaitcursor(mainWindow->getApp(), END_CURSOR);
+        if (mainWindow) xf_setwaitcursor(mainWindow->getApp(), END_CURSOR);
 
         break;
 
     case SN_MONITOR_EVENT_CANCELED:
 
-        xf_setwaitcursor(mainWindow->getApp(), END_CURSOR);
+        if (mainWindow) xf_setwaitcursor(mainWindow->getApp(), END_CURSOR);
 
         break;
     }
@@ -188,7 +189,7 @@ bool FXApp::runOneEvent(bool blocking)
         t = time(NULL);
         if ((startup_end != 0) && (startup_end - t < 0))
         {
-            xf_setwaitcursor(mainWindow->getApp(), END_CURSOR);
+            if (mainWindow) xf_setwaitcursor(mainWindow->getApp(), END_CURSOR);
             startup_end = 0;
         }
 
@@ -379,7 +380,8 @@ static int portableRestartChannel()
 
 int main(int argc, char* argv[])
 {
-    int restartChannel = portableRestartChannel();
+    FXbool transferWorker = argc == 2 && strcmp(argv[1], "--internal-transfer-worker") == 0;
+    int restartChannel = transferWorker ? -1 : portableRestartChannel();
     const char* title = "SwordFish";
     const char* appname = "xfe";
     const char* vdrname = "SwordFish";
@@ -424,6 +426,8 @@ int main(int argc, char* argv[])
     bind_textdomain_codeset(PACKAGE, "utf-8");
     textdomain(PACKAGE);
 #endif
+
+    if (transferWorker) return xf_runTransferWorker(3, 4, argv[0]);
 
 #if defined(__FreeBSD__)
     FXuint pkg_format;

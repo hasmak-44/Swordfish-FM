@@ -3,6 +3,8 @@
 
 
 #include <fx.h>
+#include <map>
+#include <vector>
 #include "DialogBox.h"
 #include "OverwriteBox.h"
 #include "MessageBox.h"
@@ -54,6 +56,22 @@ private:
     FXdouble vecCopyspeed[NMAX_COPY_SPEED];
     FXuint numcopyspeed = 0;
     FXlong lastUiUpdate = 0;
+    FXbool independent = false;
+    FXbool paused = false;
+    FXbool skipped = false;
+    FXbool warned = false;
+    FXbool finished = false;
+    pid_t activeChild = -1;
+    FXButton* pauseButton = NULL;
+    void (*changeCallback)(void*, const FXString&) = NULL;
+    void* changeData = NULL;
+    std::map<FXString, FXulong> sourceSizes;
+
+    void initialize(FXWindow*, const FXuint, const FXuint);
+    void notifyChange(const FXString&);
+    void setPathLabel(FXLabel*, const FXString&);
+    void setInfoLabel(FXLabel*, const FXString&);
+    FXbool runHostCopy(const FXString&, FXString&);
 
 protected:
 
@@ -97,6 +115,8 @@ protected:
     FXLabel* downlabel = NULL;
     FXLabel* datalabel = NULL;
     FXLabel* timelabel = NULL;
+    FXLabel* statusLabel = NULL;
+    FXString activityStatus;
     FXString datatext;
     FXString timetext;
     FXProgressBar* progressbar = NULL;
@@ -115,15 +135,36 @@ public:
     FXbool uiUpdateDue(void);
 
     File(FXWindow* owner, FXString title, const FXuint operation, const FXuint num = 1);
+    File(FXApp* app, FXString title, const FXuint operation, const FXuint num = 1);
 
     enum
     {
         ID_CANCEL_BUTTON=DialogBox::ID_LAST,
+        ID_PAUSE_BUTTON,
         ID_PROGRESSBAR,
         ID_SOURCESIZE,
         ID_COPYSPEED,
+        ID_COMPLETE,
         ID_LAST
     };
+
+    void startIndependent();
+    void setIndependentStatus(const FXString&);
+    void setIndependentPaths(const FXString&, const FXString&);
+    void beginTransfer();
+    void finishIndependent(FXbool errors);
+    void processProgressEvents();
+    void setChangeCallback(void (*callback)(void*, const FXString&), void* data)
+    {
+        changeCallback = callback;
+        changeData = data;
+    }
+    FXbool hasSkipped() const { return skipped; }
+    FXbool hasWarnings() const { return warned; }
+    void rememberSourceSize(const FXString& path, FXulong size)
+    {
+        if (independent) sourceSizes[path] = size;
+    }
 
 
     FXbool isCancelled()
@@ -160,6 +201,7 @@ public:
     int remove(const FXString&);
 
     FXString sourcesize(const FXString, FXulong*, const FXbool url = false);
+    FXString sourcesize(const std::vector<FXString>&, FXulong*);
 
     int chmod(char*, char*, mode_t, const FXbool, const FXbool dironly = false, const FXbool fileonly = false);
     int chown(char*, char*, uid_t, gid_t, const FXbool, const FXbool dironly = false, const FXbool fileonly = false);
@@ -173,7 +215,10 @@ public:
 
 #endif
     long onCmdCancel(FXObject*, FXSelector, void*);
+    long onDialogCancel(FXObject*, FXSelector, void*);
+    long onCmdPause(FXObject*, FXSelector, void*);
     long onTimeout(FXObject*, FXSelector, void*);
+    long onComplete(FXObject*, FXSelector, void*);
     long onSourceSizeRefresh(FXObject*, FXSelector, void*);
     long onCopySpeed(FXObject*, FXSelector, void*);
 };

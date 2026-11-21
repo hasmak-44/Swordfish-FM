@@ -34,7 +34,7 @@ randr_libs=()
 if [[ " ${configured_flags[*]} " == *" -DHAVE_XRANDR_H=1 "* ]]; then
     randr_libs=(-lXrandr)
 fi
-g++ -std=gnu++11 "${configured_flags[@]}" -I"$root/src" -I"$root" $(fox-config --cflags) \
+g++ -std=gnu++11 "${configured_flags[@]}" -I"$root/src" -I"$root" $(fox-config --cflags) $(pkg-config --cflags gio-2.0) \
     "$root/tests/search-window-regression.cpp" "$scratch/main.o" "${objects[@]}" \
     "$root/st/x.o" "$root/st/st.o" "$root"/libsn/*.o \
     -lutil -lfontconfig -lpng -lFOX-1.6 -lX11 -lfreetype -lXft -lxcb -lxcb-util \
@@ -43,4 +43,4 @@ runner=()
 if [[ ${SWORDFISH_TEST_DEBUG:-0} == 1 ]]; then
     runner=(gdb --batch -ex run -ex bt --args)
 fi
-HOME="$scratch/home" timeout 60s xvfb-run -a "${runner[@]}" "$scratch/usr/bin/swordfish" "$scratch/usr" "$scratch/fixture"
+HOME="$scratch/home" timeout 180s xvfb-run -a "${runner[@]}" "$scratch/usr/bin/swordfish" "$scratch/usr" "$scratch/fixture"

@@ -58,6 +58,7 @@ swordfish_SOURCES = ../st/x.c \
 			  Preferences.cpp \
               Theme.cpp \
               ThemeEditor.cpp \
+              Transfer.cpp \
 			  SystemIcons.cpp \
               SystemIntegration.cpp \
               Properties.cpp \
@@ -343,6 +344,7 @@ EXTRA_DIST =  ../libsn/sn-common.h	\
 			  TabButtons.h \
 			  TextLabel.h \
 			  TextWindow.h \
+              Transfer.h \
 			  WriteWindow.h \
 			  XFileExplorer.h \
 			  XFileArchive.h \

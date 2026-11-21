@@ -16,6 +16,7 @@
 #include "startupnotification.h"
 #include "icons.h"
 #include "File.h"
+#include "Transfer.h"
 #include "FileDict.h"
 #include "FileDialog.h"
 #include "FileList.h"
@@ -3818,6 +3819,7 @@ long SearchPanel::onCmdFileMan(FXObject* sender, FXSelector sel, void*)
 {
     int num;
     FXString src, targetdir, target, name, source;
+    std::vector<FXString> sourcePaths;
 
     // Confirmation dialog?
     FXbool ask_before_copy = getApp()->reg().readUnsignedEntry("OPTIONS", "ask_before_copy", true);
@@ -3836,12 +3838,14 @@ long SearchPanel::onCmdFileMan(FXObject* sender, FXSelector sel, void*)
     {
         if (list->isItemSelected(u))
         {
-            src += list->getItemFullPathname(u) + "\n";
+            FXString path = list->getItemFullPathname(u);
+            sourcePaths.push_back(path);
+            src += path + "\n";
         }
     }
 
     // Name and directory of the first source file
-    source = src.section('\n', 0);
+    source = sourcePaths.front();
     name = FXPath::name(source);
     FXString dir = FXPath::directory(source);
 
@@ -4105,6 +4109,13 @@ x:
     {
         MessageBox::error(this, BOX_OK, _("Error"), _("%s is not a folder"), targetdir.text());
         return 0;
+    }
+
+    if ((command == "copy" || command == "move") && xf_hasTransferStarter())
+    {
+        std::vector<TransferItem> items;
+        for (const FXString& path : sourcePaths) items.push_back(TransferItem(path, target));
+        return xf_startTransfer(this, command == "copy" ? COPY : MOVE, items) ? 1 : 0;
     }
 
     FXString hsourcesize;

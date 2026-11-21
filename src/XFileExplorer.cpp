@@ -46,6 +46,7 @@
 #include "SearchWindow.h"
 #include "XFileExplorer.h"
 #include "CustomActionsUI.h"
+#include "Transfer.h"
 
 
 // Number of toolbars
@@ -2101,6 +2102,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     progs["<audioplayer>"] = AUDIOPLAYER;
     progs["<videoplayer>"] = VIDEOPLAYER;
     progs["<archiver>"] = ARCHIVER;
+    transfers = xf_createTransferManager(this);
 }
 
 
@@ -3987,6 +3989,7 @@ long XFileExplorer::onThemeRequest(FXObject*, FXSelector, void* pointer)
 // Destructor
 XFileExplorer::~XFileExplorer()
 {
+    xf_destroyTransferManager(transfers);
     delete customactions;
     delete menubar;
     delete addresstoolbar;

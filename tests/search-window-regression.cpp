@@ -2,10 +2,17 @@
 #include <fx.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
+#include <X11/Xproto.h>
+#include <X11/Xutil.h>
 #include <cassert>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <fcntl.h>
+#include <glib.h>
+#include <limits.h>
+#include <sys/file.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include "icons.h"
@@ -19,6 +26,7 @@
 #include "Preferences.h"
 #include "TabButtons.h"
 #include "File.h"
+#include "Transfer.h"
 #include <fxkeys.h>
 #include <dlfcn.h>
 #include <fstream>
@@ -29,13 +37,16 @@
 extern FXMainWindow* mainWindow;
 extern FXString execpath, homedir, xdgdatahome, xdgconfighome;
 extern FXString clipboard;
+extern "C" int swordfish_main(int, char**);
 
 static FXString crossDeviceSource;
 static int crossDeviceRenames;
 
 extern "C" int rename(const char* source, const char* destination) noexcept
 {
-    if (!crossDeviceSource.empty() && FXString(source).left(crossDeviceSource.length()) == crossDeviceSource)
+    const char* forcedSource = getenv("SWORDFISH_TEST_CROSS_DEVICE");
+    if ((!crossDeviceSource.empty() && FXString(source).left(crossDeviceSource.length()) == crossDeviceSource) ||
+        (forcedSource && strcmp(source, forcedSource) == 0))
     {
         ++crossDeviceRenames;
         errno = EXDEV;
@@ -44,6 +55,60 @@ extern "C" int rename(const char* source, const char* destination) noexcept
     typedef int (*Rename)(const char*, const char*);
     static Rename realRename = reinterpret_cast<Rename>(dlsym(RTLD_NEXT, "rename"));
     return realRename(source, destination);
+}
+
+extern "C" ssize_t read(int fd, void* buffer, size_t count)
+{
+    typedef ssize_t (*Read)(int, void*, size_t);
+    static Read realRead = reinterpret_cast<Read>(dlsym(RTLD_NEXT, "read"));
+    const char* slow = getenv("SWORDFISH_TEST_SLOW_FILE");
+    if (slow && count >= 65536)
+    {
+        char link[64], path[PATH_MAX];
+        snprintf(link, sizeof(link), "/proc/self/fd/%d", fd);
+        ssize_t length = readlink(link, path, sizeof(path) - 1);
+        if (length >= 0)
+        {
+            path[length] = '\0';
+            if (strcmp(path, slow) == 0) usleep(250000);
+        }
+    }
+    return realRead(fd, buffer, count);
+}
+
+extern "C" int lstat(const char* path, struct stat* info) noexcept
+{
+    const char* slow = getenv("SWORDFISH_TEST_SLOW_STAT");
+    if (slow && strncmp(path, slow, strlen(slow)) == 0 && path[strlen(slow)] == '/')
+    {
+        const char* marker = getenv("SWORDFISH_TEST_STAT_MARKER");
+        if (marker)
+        {
+            int fd = open(marker, O_CREAT | O_WRONLY, 0600);
+            if (fd >= 0) close(fd);
+        }
+        usleep(40000);
+    }
+    typedef int (*Lstat)(const char*, struct stat*);
+    static Lstat realLstat = reinterpret_cast<Lstat>(dlsym(RTLD_NEXT, "lstat"));
+    return realLstat(path, info);
+}
+
+extern "C" int rmdir(const char* path) noexcept
+{
+    const char* late = getenv("SWORDFISH_TEST_LATE_SOURCE");
+    if (late && strcmp(path, late) == 0)
+    {
+        int directory = open(path, O_RDONLY | O_DIRECTORY);
+        assert(directory >= 0);
+        int file = openat(directory, "added-after-scan.txt", O_WRONLY | O_CREAT | O_EXCL, 0600);
+        assert(file >= 0 && write(file, "late", 4) == 4);
+        assert(close(file) == 0 && close(directory) == 0);
+        unsetenv("SWORDFISH_TEST_LATE_SOURCE");
+    }
+    typedef int (*Rmdir)(const char*);
+    static Rmdir realRmdir = reinterpret_cast<Rmdir>(dlsym(RTLD_NEXT, "rmdir"));
+    return realRmdir(path);
 }
 
 static int corruptVerifiedCopies;
@@ -843,9 +908,956 @@ static void checkFileConflicts(FXApp& app, FXWindow* owner, const FXString& fixt
     puts("PASS: rename and link commands honor numbered conflict destinations; the existing overwrite-confirmation preference is preserved");
 }
 
+static void pumpTransferEvents(FXApp& app, FXTime duration)
+{
+    FXTime until = FXThread::time() + duration;
+    while (FXThread::time() < until)
+    {
+        app.runOneEvent(false);
+        usleep(1000);
+    }
+}
+
+static Window findTransferWindowUnder(Display* display, Window parent, const char* title, int depth)
+{
+    char* name = NULL;
+    XWindowAttributes attributes;
+    if (XFetchName(display, parent, &name) && name)
+    {
+        bool matches = strcmp(name, title) == 0;
+        XFree(name);
+        if (matches && XGetWindowAttributes(display, parent, &attributes) && attributes.map_state == IsViewable)
+            return parent;
+    }
+    if (!depth) return 0;
+    Window root, actualParent, *children = NULL, found = 0;
+    unsigned int count = 0;
+    if (XQueryTree(display, parent, &root, &actualParent, &children, &count))
+    {
+        for (unsigned int i = 0; i < count && !found; ++i)
+            found = findTransferWindowUnder(display, children[i], title, depth - 1);
+        if (children) XFree(children);
+    }
+    return found;
+}
+
+static XErrorHandler previousTransferXError = NULL;
+
+static int handleTransferXError(Display* display, XErrorEvent* error)
+{
+    if (error->error_code == BadWindow &&
+        (error->request_code == X_GetProperty || error->request_code == X_QueryTree ||
+         error->request_code == X_GetWindowAttributes))
+        return 0;
+    if (previousTransferXError) return previousTransferXError(display, error);
+    fprintf(stderr, "Unexpected X error %d during transfer window lookup\n", error->error_code);
+    std::abort();
+}
+
+static Window findTransferWindow(Display* display, Window root, const char* title)
+{
+    XSync(display, False);
+    previousTransferXError = XSetErrorHandler(handleTransferXError);
+    XGrabServer(display);
+    Window found = findTransferWindowUnder(display, root, title, 2);
+    XUngrabServer(display);
+    XSync(display, False);
+    XSetErrorHandler(previousTransferXError);
+    return found;
+}
+
+static Window waitTransferWindow(FXApp& app, const char* title, bool visible, FXTime timeout)
+{
+    Display* display = static_cast<Display*>(app.getDisplay());
+    FXTime until = FXThread::time() + timeout;
+    Window window = 0;
+    while (FXThread::time() < until)
+    {
+        window = findTransferWindow(display, DefaultRootWindow(display), title);
+        if ((window != 0) == visible) return window;
+        app.runOneEvent(false);
+        usleep(1000);
+    }
+    if ((window != 0) != visible)
+        fprintf(stderr, "Timed out waiting for window '%s' to become %s\n", title, visible ? "visible" : "hidden");
+    assert((window != 0) == visible);
+    return window;
+}
+
+static void clickTransferWindow(FXApp& app, Window window, FXint x, FXint y)
+{
+    typedef int (*FakeButton)(Display*, unsigned int, Bool, unsigned long);
+    static void* library = dlopen("libXtst.so.6", RTLD_NOW | RTLD_LOCAL);
+    assert(library);
+    static FakeButton fakeButton = reinterpret_cast<FakeButton>(dlsym(library, "XTestFakeButtonEvent"));
+    assert(fakeButton);
+    Display* display = static_cast<Display*>(app.getDisplay());
+    XRaiseWindow(display, window);
+    XSetInputFocus(display, window, RevertToPointerRoot, CurrentTime);
+    XWarpPointer(display, None, window, 0, 0, 0, 0, x, y);
+    XSync(display, False);
+    assert(fakeButton(display, 1, True, CurrentTime));
+    XFlush(display);
+    usleep(300000);
+    assert(fakeButton(display, 1, False, CurrentTime));
+    XSync(display, False);
+}
+
+static void captureTransferWindow(Window window, const char* name)
+{
+    const char* directory = getenv("SWORDFISH_TEST_TRANSFER_SCREENSHOTS");
+    if (!directory) return;
+    Display* display = XOpenDisplay(NULL);
+    assert(display);
+    if (window != DefaultRootWindow(display)) XRaiseWindow(display, window);
+    XSync(display, False);
+    XCloseDisplay(display);
+    FXString id, path = FXString(directory) + "/" + name + ".png";
+    id.format("0x%lx", window);
+    pid_t child = fork();
+    assert(child >= 0);
+    if (child == 0)
+    {
+        execlp("import", "import", "-window", id.text(), path.text(), static_cast<char*>(NULL));
+        std::_Exit(127);
+    }
+    int status;
+    assert(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+static void captureAlternateTransferWidth(FXApp& app, Window window, const char* name,
+                                          bool restore = true, FXint width = 0)
+{
+    if (!getenv("SWORDFISH_TEST_TRANSFER_SCREENSHOTS")) return;
+    Display* display = static_cast<Display*>(app.getDisplay());
+    XWindowAttributes geometry;
+    assert(XGetWindowAttributes(display, window, &geometry));
+    XResizeWindow(display, window, width ? width : geometry.width < 400 ? 500 : 320, geometry.height);
+    XSync(display, False);
+    pumpTransferEvents(app, 400000000LL);
+    captureTransferWindow(window, name);
+    if (restore)
+    {
+        XResizeWindow(display, window, geometry.width, geometry.height);
+        XSync(display, False);
+        pumpTransferEvents(app, 350000000LL);
+    }
+}
+
+static void acknowledgeTransferFailure(FXApp& app, const char* title, const char* progressTitle,
+                                       const char* screenshot = NULL)
+{
+    Display* display = static_cast<Display*>(app.getDisplay());
+    XWindowAttributes geometry;
+    Window error = waitTransferWindow(app, title, true, 8000000000LL);
+    if (screenshot)
+    {
+        captureTransferWindow(error, screenshot);
+        FXString alternate = FXString(screenshot) + "-narrow";
+        captureAlternateTransferWidth(app, error, alternate.text(), true, 320);
+    }
+    assert(XGetWindowAttributes(display, error, &geometry));
+    clickTransferWindow(app, error, geometry.width / 2, geometry.height - 18);
+    waitTransferWindow(app, title, false, 3000000000LL);
+    pumpTransferEvents(app, 250000000LL);
+    Window progress = waitTransferWindow(app, progressTitle, true, 3000000000LL);
+    assert(XGetWindowAttributes(display, progress, &geometry));
+    clickTransferWindow(app, progress, geometry.width / 2, geometry.height - 32);
+    waitTransferWindow(app, progressTitle, false, 3000000000LL);
+}
+
+static off_t transferFileSize(const FXString& path)
+{
+    struct stat info;
+    return stat(path.text(), &info) == 0 ? info.st_size : -1;
+}
+
+static FXint transferItemIndex(FileList* list, const FXString& name)
+{
+    for (FXint i = 0; i < list->getNumItems(); ++i)
+        if (list->getItemFilename(i) == name) return i;
+    return -1;
+}
+
+static void makeSlowTransferFile(const FXString& path, off_t size)
+{
+    int fd = open(path.text(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
+    assert(fd >= 0);
+    assert(ftruncate(fd, size) == 0);
+    assert(close(fd) == 0);
+}
+
+static void waitTransferSize(FXApp& app, const FXString& path, off_t size, FXTime timeout)
+{
+    FXTime until = FXThread::time() + timeout;
+    while (transferFileSize(path) != size && FXThread::time() < until)
+    {
+        app.runOneEvent(false);
+        usleep(1000);
+    }
+    assert(transferFileSize(path) == size);
+}
+
+static char transferProcessState(pid_t pid)
+{
+    FXString path;
+    path.format("/proc/%ld/stat", static_cast<long>(pid));
+    std::ifstream status(path.text());
+    long number;
+    std::string command;
+    char state = 0;
+    status >> number >> command >> state;
+    return state;
+}
+
+static int lockTransferPath(const FXString& path)
+{
+    FXString directory;
+    directory.format("/tmp/swordfish-transfer-%lu", static_cast<unsigned long>(getuid()));
+    assert(mkdir(directory.text(), 0700) == 0 || errno == EEXIST);
+    FXString canonical = xf_realpath(FXPath::absolute(path));
+    gchar* digest = g_compute_checksum_for_string(G_CHECKSUM_SHA256, canonical.text(), canonical.length());
+    FXString lock = directory + "/" + digest;
+    g_free(digest);
+    int fd = open(lock.text(), O_CREAT | O_RDWR, 0600);
+    assert(fd >= 0 && flock(fd, LOCK_EX | LOCK_NB) == 0);
+    return fd;
+}
+
+class WaitingTransferProbe : public File
+{
+public:
+    explicit WaitingTransferProbe(FXApp* app) : File(app, "Queued transfer regression", COPY) {}
+    FXString sourceText() const { return uplabel->getText(); }
+    FXString dataText() const { return datalabel->getText(); }
+    FXString timeText() const { return timelabel->getText(); }
+};
+
+class MovingTransferProbe : public File
+{
+public:
+    explicit MovingTransferProbe(FXApp* app) : File(app, "Move folder regression", MOVE) {}
+    int moveDirectory(const FXString& source, const FXString& target)
+    {
+        struct stat info;
+        assert(lstat(source.text(), &info) == 0);
+        return copydir(source, target, "0 bytes", 0, xf_getcurrenttime(), info, NULL, true, true);
+    }
+};
+
+class UnexpectedTransferStop : public FXObject
+{
+    FXApp& app;
+public:
+    explicit UnexpectedTransferStop(FXApp& application) : app(application) { app.addTimeout(this, 1, 10); }
+    ~UnexpectedTransferStop() { app.removeTimeout(this, 1); }
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        MessageBox* dialog = dynamic_cast<MessageBox*>(app.getModalWindow());
+        assert(!dialog || dialog->getTitle() != "Transfer stopped");
+        app.addTimeout(this, 1, 10);
+        return 1;
+    }
+};
+
+static void checkIndependentTransfers(FXApp& app, XFileExplorer* explorer, const FXString& prefix,
+                                      const FXString& fixture)
+{
+    UnexpectedTransferStop unexpectedStop(app);
+    {
+        WaitingTransferProbe waiting(&app);
+        waiting.create();
+        waiting.setIndependentPaths("/queued-source", "/queued-target");
+        waiting.startIndependent();
+        pumpTransferEvents(app, 700000000LL);
+        assert(waiting.sourceText().find("/queued-source") >= 0);
+        FXulong scanned = 0;
+        waiting.sourcesize(std::vector<FXString>{fixture + "/data/match.txt"}, &scanned);
+        assert(scanned > 0 && waiting.sourceText().find("/queued-source") >= 0);
+        assert(waiting.dataText().find("Computing the size") >= 0);
+        waiting.setTotalSourceSize(1024);
+        waiting.onSourceSizeRefresh(NULL, 0, NULL);
+        assert(waiting.sourceText().find("/queued-source") >= 0);
+        assert(waiting.dataText().find("Computing the size") >= 0);
+        waiting.beginTransfer();
+        assert(waiting.dataText().find("Copied data:") >= 0 && waiting.dataText().find("/") >= 0);
+        waiting.onCmdPause(NULL, 0, NULL);
+        for (int tick = 0; tick < 25; ++tick) waiting.onCopySpeed(NULL, 0, NULL);
+        assert(waiting.timeText().find("--") >= 0 && waiting.dataText().find("/s") < 0);
+        waiting.onCmdPause(NULL, 0, NULL);
+        waiting.hide();
+    }
+    {
+        FXString sourceFolder = fixture + "/late-source-folder";
+        FXString targetFolder = fixture + "/late-target-folder";
+        assert(mkdir(sourceFolder.text(), 0700) == 0);
+        writeConflictFile(sourceFolder + "/original.txt", "original");
+        MovingTransferProbe moving(&app);
+        moving.create();
+        moving.setIndependentPaths(sourceFolder, targetFolder);
+        moving.startIndependent();
+        setenv("SWORDFISH_TEST_LATE_SOURCE", sourceFolder.text(), 1);
+        assert(moving.moveDirectory(sourceFolder, targetFolder) == true);
+        assert(moving.hasSkipped() && readConflictFile(sourceFolder + "/added-after-scan.txt") == "late");
+        assert(readConflictFile(targetFolder + "/original.txt") == "original");
+        moving.hide();
+    }
+    puts("PASS: items added after a moving folder was scanned remain at the source and are reported as skipped");
+
+    if (getenv("SWORDFISH_TEST_LIGHT_PROGRESS"))
+    {
+        app.reg().writeColorEntry("SETTINGS", "basecolor", FXRGB(230, 232, 235));
+        app.reg().writeColorEntry("SETTINGS", "bordercolor", FXRGB(120, 120, 120));
+        app.reg().writeColorEntry("SETTINGS", "backcolor", FXRGB(248, 248, 248));
+        app.reg().writeColorEntry("SETTINGS", "forecolor", FXRGB(20, 20, 20));
+        app.reg().writeColorEntry("SETTINGS", "selbackcolor", FXRGB(55, 100, 160));
+        app.reg().writeColorEntry("SETTINGS", "selforecolor", FXRGB(255, 255, 255));
+    }
+    const FXString source = fixture + "/transfer source";
+    const FXString target = fixture + "/transfer target";
+    const FXString inactive = fixture + "/inactive target";
+    assert(mkdir(source.text(), 0700) == 0);
+    assert(mkdir(target.text(), 0700) == 0);
+    assert(mkdir(inactive.text(), 0700) == 0);
+    writeConflictFile(source + "/m-middle.txt", "middle");
+    writeConflictFile(target + "/a-first.txt", "first");
+    writeConflictFile(target + "/z-last.txt", "last");
+    const FXString slow = source + "/slow.bin";
+    const off_t slowSize = 24 * 1024 * 1024;
+    makeSlowTransferFile(slow, slowSize);
+
+    FilePanel* left = explorer->getLeftPanel();
+    FilePanel* right = explorer->getRightPanel();
+    TabButtons::State leftState = left->getTabButtons()->saveState();
+    TabButtons::State rightState = right->getTabButtons()->saveState();
+    FileList* leftList = left->getList();
+    FileList* rightList = right->getList();
+    IconListSortFunc leftSort = leftList->getSortFunc();
+    IconListSortFunc rightSort = rightList->getSortFunc();
+    left->setDirectory(target);
+    right->setDirectory(target);
+    leftList->setSortFunc(FileList::ascending);
+    rightList->setSortFunc(FileList::descending);
+    leftList->scan(true);
+    rightList->scan(true);
+
+    setenv("SWORDFISH_TEST_SLOW_FILE", slow.text(), 1);
+    std::vector<TransferItem> items;
+    items.push_back(TransferItem(source + "/m-middle.txt", target));
+    items.push_back(TransferItem(slow, target));
+    FXTime started = FXThread::time();
+    assert(xf_startTransfer(explorer, COPY, items));
+    assert(FXThread::time() - started < 3000000000LL);
+    Window progress = waitTransferWindow(app, "Copy Files", true, 3000000000LL);
+    Display* display = static_cast<Display*>(app.getDisplay());
+    Window transient = None;
+    assert(!XGetTransientForHint(display, progress, &transient) || transient == None);
+    FXTime refreshDeadline = FXThread::time() + 3000000000LL;
+    while ((transferItemIndex(leftList, "m-middle.txt") < 0 ||
+            transferItemIndex(rightList, "m-middle.txt") < 0) && FXThread::time() < refreshDeadline)
+    {
+        app.runOneEvent(false);
+        usleep(1000);
+    }
+    assert(transferFileSize(target + "/slow.bin") < slowSize);
+    assert(transferItemIndex(leftList, "a-first.txt") < transferItemIndex(leftList, "m-middle.txt"));
+    assert(transferItemIndex(leftList, "m-middle.txt") < transferItemIndex(leftList, "z-last.txt"));
+    assert(transferItemIndex(rightList, "z-last.txt") < transferItemIndex(rightList, "m-middle.txt"));
+    assert(transferItemIndex(rightList, "m-middle.txt") < transferItemIndex(rightList, "a-first.txt"));
+
+    FXTime writeDeadline = FXThread::time() + 3000000000LL;
+    while (transferFileSize(target + "/slow.bin") <= 0 && FXThread::time() < writeDeadline)
+        pumpTransferEvents(app, 10000000LL);
+    assert(transferFileSize(target + "/slow.bin") > 0);
+    XWindowAttributes geometry;
+    assert(XGetWindowAttributes(display, progress, &geometry));
+    captureTransferWindow(progress, "copy-running");
+    XResizeWindow(display, progress, 320, geometry.height);
+    XSync(display, False);
+    pumpTransferEvents(app, 600000000LL);
+    assert(XGetWindowAttributes(display, progress, &geometry));
+    captureTransferWindow(progress, "copy-narrow");
+    clickTransferWindow(app, progress, geometry.width / 2 - 45, geometry.height - 32);
+    pumpTransferEvents(app, 600000000LL);
+    off_t pausedSize = transferFileSize(target + "/slow.bin");
+    pumpTransferEvents(app, 800000000LL);
+    captureTransferWindow(progress, "copy-paused");
+    captureAlternateTransferWidth(app, progress, "copy-paused-wide");
+    if (pausedSize >= slowSize || transferFileSize(target + "/slow.bin") != pausedSize)
+        fprintf(stderr, "Pause did not stop copying: window %dx%d, sizes %lld and %lld of %lld\n",
+                geometry.width, geometry.height, (long long)pausedSize,
+                (long long)transferFileSize(target + "/slow.bin"), (long long)slowSize);
+    assert(pausedSize < slowSize && transferFileSize(target + "/slow.bin") == pausedSize);
+    clickTransferWindow(app, progress, geometry.width / 2 - 45, geometry.height - 32);
+    waitTransferSize(app, target + "/slow.bin", slowSize, 12000000000LL);
+    FXTime completion = FXThread::time();
+    pumpTransferEvents(app, 400000000LL);
+    captureTransferWindow(progress, "copy-complete");
+    captureAlternateTransferWidth(app, progress, "copy-complete-wide");
+    while (FXThread::time() < completion + 2400000000LL) pumpTransferEvents(app, 10000000LL);
+    assert(findTransferWindow(display, DefaultRootWindow(display), "Copy Files"));
+    waitTransferWindow(app, "Copy Files", false, 3000000000LL);
+    assert(FXThread::time() - completion >= 2700000000LL &&
+           FXThread::time() - completion < 4500000000LL);
+    unsetenv("SWORDFISH_TEST_SLOW_FILE");
+    puts("PASS: independent copies refresh both panes in their existing sort order while running; pause/resume works and completion stays visible for three seconds");
+
+    const FXString unusual = source + "/quote' percent% and\nnewline.txt";
+    writeConflictFile(unusual, "unusual filename");
+    TabButtons* tabs = right->getTabButtons();
+    FXuint previousTab = tabs->getCurrentTab();
+    tabs->addTab(inactive);
+    FXuint inactiveTab = tabs->getCurrentTab();
+    tabs->setCurrentTab(previousTab);
+    FXString uris = FXURL::encode(xf_filetouri(unusual)) + "\r\n";
+    assert(xf_startDroppedTransfer(explorer, COPY, uris, inactive, false));
+    waitTransferWindow(app, "Copy Files", true, 3000000000LL);
+    waitTransferSize(app, inactive + "/" + FXPath::name(unusual), 16, 5000000000LL);
+    tabs->setCurrentTab(inactiveTab);
+    assert(transferItemIndex(rightList, FXPath::name(unusual)) >= 0);
+    waitTransferWindow(app, "Copy Files", false, 5000000000LL);
+    puts("PASS: URI drops preserve newline, quote and percent in filenames and refresh an inactive destination tab when activated");
+
+    const FXString moveSource = source + "/cross-device.txt";
+    writeConflictFile(moveSource, "move safely");
+    setenv("SWORDFISH_TEST_CROSS_DEVICE", moveSource.text(), 1);
+    assert(xf_startTransfer(explorer, MOVE, {TransferItem(moveSource, target)}));
+    FXTime moveDeadline = FXThread::time() + 5000000000LL;
+    while ((FXStat::exists(moveSource) || transferFileSize(target + "/cross-device.txt") != 11) &&
+           FXThread::time() < moveDeadline)
+        pumpTransferEvents(app, 10000000LL);
+    assert(!FXStat::exists(moveSource));
+    assert(readConflictFile(target + "/cross-device.txt") == "move safely");
+    FXTime moveCompletion = FXThread::time();
+    Window moveProgress = waitTransferWindow(app, "Move Files", true, 3000000000LL);
+    pumpTransferEvents(app, 400000000LL);
+    captureTransferWindow(moveProgress, "move-complete");
+    captureAlternateTransferWidth(app, moveProgress, "move-complete-narrow");
+    while (FXThread::time() < moveCompletion + 2400000000LL) pumpTransferEvents(app, 10000000LL);
+    assert(findTransferWindow(display, DefaultRootWindow(display), "Move Files"));
+    waitTransferWindow(app, "Move Files", false, 3000000000LL);
+    assert(FXThread::time() - moveCompletion >= 2700000000LL &&
+           FXThread::time() - moveCompletion < 4500000000LL);
+    unsetenv("SWORDFISH_TEST_CROSS_DEVICE");
+    puts("PASS: cross-device moves copy before removing the source and show completion for three seconds");
+
+    const FXString hardLinkA = source + "/hard-link-a.txt";
+    const FXString hardLinkB = source + "/hard-link-b.txt";
+    writeConflictFile(hardLinkA, "linked");
+    assert(link(hardLinkA.text(), hardLinkB.text()) == 0);
+    assert(xf_startTransfer(explorer, MOVE, {TransferItem(hardLinkA, target), TransferItem(hardLinkB, target)}));
+    waitTransferWindow(app, "Move Files", true, 3000000000LL);
+    waitTransferSize(app, target + "/hard-link-a.txt", 6, 5000000000LL);
+    waitTransferSize(app, target + "/hard-link-b.txt", 6, 5000000000LL);
+    waitTransferWindow(app, "Move Files", false, 5000000000LL);
+    struct stat movedA, movedB;
+    assert(!FXStat::exists(hardLinkA) && !FXStat::exists(hardLinkB));
+    assert(stat((target + "/hard-link-a.txt").text(), &movedA) == 0 &&
+           stat((target + "/hard-link-b.txt").text(), &movedB) == 0 &&
+           movedA.st_dev == movedB.st_dev && movedA.st_ino == movedB.st_ino);
+    const FXString crossLinkA = source + "/cross-link-a.txt";
+    const FXString crossLinkB = source + "/cross-link-b.txt";
+    writeConflictFile(crossLinkA, "linked");
+    assert(link(crossLinkA.text(), crossLinkB.text()) == 0);
+    setenv("SWORDFISH_TEST_CROSS_DEVICE", crossLinkA.text(), 1);
+    assert(xf_startTransfer(explorer, MOVE, {TransferItem(crossLinkA, target), TransferItem(crossLinkB, target)}));
+    waitTransferWindow(app, "Move Files", true, 3000000000LL);
+    waitTransferSize(app, target + "/cross-link-a.txt", 6, 5000000000LL);
+    waitTransferSize(app, target + "/cross-link-b.txt", 6, 5000000000LL);
+    waitTransferWindow(app, "Move Files", false, 5000000000LL);
+    assert(!FXStat::exists(crossLinkA) && !FXStat::exists(crossLinkB));
+    unsetenv("SWORDFISH_TEST_CROSS_DEVICE");
+    puts("PASS: selected hard links move together without treating the first rename as an external change");
+
+    const FXString changingMove = source + "/changing-during-move.bin";
+    const off_t changingSize = 8 * 1024 * 1024;
+    makeSlowTransferFile(changingMove, changingSize);
+    setenv("SWORDFISH_TEST_SLOW_FILE", changingMove.text(), 1);
+    setenv("SWORDFISH_TEST_CROSS_DEVICE", changingMove.text(), 1);
+    assert(xf_startTransfer(explorer, MOVE, {TransferItem(changingMove, target)}));
+    waitTransferWindow(app, "Move Files", true, 3000000000LL);
+    FXTime changingDeadline = FXThread::time() + 5000000000LL;
+    while (transferFileSize(target + "/changing-during-move.bin") <= 0 && FXThread::time() < changingDeadline)
+        pumpTransferEvents(app, 10000000LL);
+    assert(transferFileSize(target + "/changing-during-move.bin") > 0);
+    int changingFd = open(changingMove.text(), O_WRONLY | O_APPEND);
+    assert(changingFd >= 0 && write(changingFd, "new", 3) == 3 && close(changingFd) == 0);
+    acknowledgeTransferFailure(app, "Move source changed", "Move Files", "move-source-modified");
+    assert(transferFileSize(changingMove) == changingSize + 3);
+    assert(transferFileSize(target + "/changing-during-move.bin") >= changingSize);
+    unsetenv("SWORDFISH_TEST_SLOW_FILE");
+    unsetenv("SWORDFISH_TEST_CROSS_DEVICE");
+    puts("PASS: a cross-device move preserves and reports a source modified during copying");
+
+    const FXString modifiedLinkA = source + "/modified-link-a.txt";
+    const FXString modifiedLinkB = source + "/modified-link-b.txt";
+    const FXString interveningMove = source + "/intervening-move.bin";
+    writeConflictFile(modifiedLinkA, "linked");
+    assert(chmod(modifiedLinkA.text(), 0644) == 0);
+    assert(link(modifiedLinkA.text(), modifiedLinkB.text()) == 0);
+    makeSlowTransferFile(interveningMove, changingSize);
+    setenv("SWORDFISH_TEST_SLOW_FILE", interveningMove.text(), 1);
+    setenv("SWORDFISH_TEST_CROSS_DEVICE", interveningMove.text(), 1);
+    assert(xf_startTransfer(explorer, MOVE, {TransferItem(modifiedLinkA, target),
+                                             TransferItem(interveningMove, target),
+                                             TransferItem(modifiedLinkB, target)}));
+    waitTransferWindow(app, "Move Files", true, 3000000000LL);
+    FXTime interveningDeadline = FXThread::time() + 5000000000LL;
+    while (transferFileSize(target + "/intervening-move.bin") <= 0 && FXThread::time() < interveningDeadline)
+        pumpTransferEvents(app, 10000000LL);
+    assert(transferFileSize(target + "/intervening-move.bin") > 0);
+    assert(chmod(modifiedLinkB.text(), 0600) == 0);
+    acknowledgeTransferFailure(app, "Transfer source changed", "Move Files");
+    struct stat modifiedLinkInfo;
+    assert(stat(modifiedLinkB.text(), &modifiedLinkInfo) == 0 && (modifiedLinkInfo.st_mode & 0777) == 0600);
+    assert(readConflictFile(modifiedLinkB) == "linked" &&
+           !FXStat::exists(target + "/modified-link-b.txt"));
+    unsetenv("SWORDFISH_TEST_SLOW_FILE");
+    unsetenv("SWORDFISH_TEST_CROSS_DEVICE");
+    puts("PASS: moving one hard link does not hide later metadata changes to another selected link");
+
+    const FXString blockedParent = fixture + "/locked parent";
+    const FXString blockedTarget = blockedParent + "/nested";
+    assert(mkdir(blockedParent.text(), 0700) == 0);
+    assert(mkdir(blockedTarget.text(), 0700) == 0);
+    writeConflictFile(source + "/blocked.txt", "blocked");
+    writeConflictFile(source + "/unrelated.txt", "unrelated");
+    int lock = lockTransferPath(blockedParent);
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(source + "/blocked.txt", blockedTarget)}));
+    progress = waitTransferWindow(app, "Copy Files", true, 3000000000LL);
+    pumpTransferEvents(app, 400000000LL);
+    captureTransferWindow(progress, "copy-waiting");
+    captureAlternateTransferWidth(app, progress, "copy-waiting-narrow");
+    assert(!FXStat::exists(blockedTarget + "/blocked.txt"));
+    writeConflictFile(blockedTarget + "/created-while-waiting.txt", "unrelated");
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(source + "/unrelated.txt", target)}));
+    waitTransferSize(app, target + "/unrelated.txt", 9, 5000000000LL);
+    assert(!FXStat::exists(blockedTarget + "/blocked.txt"));
+    assert(flock(lock, LOCK_UN) == 0 && close(lock) == 0);
+    waitTransferSize(app, blockedTarget + "/blocked.txt", 7, 5000000000LL);
+    waitTransferWindow(app, "Copy Files", false, 5000000000LL);
+    puts("PASS: transfers wait for locked ancestor folders while unrelated destinations continue");
+
+    const FXString changedTarget = fixture + "/changed destination";
+    assert(mkdir(changedTarget.text(), 0700) == 0);
+    writeConflictFile(source + "/destination-change.txt", "safe");
+    lock = lockTransferPath(changedTarget);
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(source + "/destination-change.txt", changedTarget)}));
+    waitTransferWindow(app, "Copy Files", true, 3000000000LL);
+    pumpTransferEvents(app, 300000000LL);
+    assert(rename(changedTarget.text(), (changedTarget + "-moved").text()) == 0);
+    assert(mkdir(changedTarget.text(), 0700) == 0);
+    assert(flock(lock, LOCK_UN) == 0 && close(lock) == 0);
+    acknowledgeTransferFailure(app, "Transfer destination changed", "Copy Files", "destination-replaced");
+    assert(!FXStat::exists(changedTarget + "/destination-change.txt") &&
+           !FXStat::exists(changedTarget + "-moved/destination-change.txt") &&
+           FXStat::isFile(source + "/destination-change.txt"));
+
+    const FXString recreatedTarget = fixture + "/recreated destination";
+    assert(mkdir(recreatedTarget.text(), 0700) == 0);
+    writeConflictFile(source + "/destination-recreated.txt", "safe");
+    lock = lockTransferPath(recreatedTarget);
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(source + "/destination-recreated.txt", recreatedTarget)}));
+    waitTransferWindow(app, "Copy Files", true, 3000000000LL);
+    pumpTransferEvents(app, 300000000LL);
+    assert(rmdir(recreatedTarget.text()) == 0 && mkdir(recreatedTarget.text(), 0700) == 0);
+    assert(flock(lock, LOCK_UN) == 0 && close(lock) == 0);
+    acknowledgeTransferFailure(app, "Transfer destination changed", "Copy Files");
+    assert(!FXStat::exists(recreatedTarget + "/destination-recreated.txt") &&
+           FXStat::isFile(source + "/destination-recreated.txt"));
+
+    const FXString linkTargetA = fixture + "/link target A";
+    const FXString linkTargetB = fixture + "/link target B";
+    const FXString targetLink = fixture + "/target link";
+    assert(mkdir(linkTargetA.text(), 0700) == 0 && mkdir(linkTargetB.text(), 0700) == 0);
+    assert(symlink(linkTargetA.text(), targetLink.text()) == 0);
+    const FXString linkSource = source + "/link-destination-change.txt";
+    writeConflictFile(linkSource, "preserve link source");
+    lock = lockTransferPath(linkTargetA);
+    assert(xf_startTransfer(explorer, MOVE, {TransferItem(linkSource, targetLink)}));
+    waitTransferWindow(app, "Move Files", true, 3000000000LL);
+    pumpTransferEvents(app, 300000000LL);
+    assert(unlink(targetLink.text()) == 0 && symlink(linkTargetB.text(), targetLink.text()) == 0);
+    assert(flock(lock, LOCK_UN) == 0 && close(lock) == 0);
+    acknowledgeTransferFailure(app, "Transfer destination changed", "Move Files");
+    assert(readConflictFile(linkSource) == "preserve link source" &&
+           !FXStat::exists(linkTargetA + "/link-destination-change.txt") &&
+           !FXStat::exists(linkTargetB + "/link-destination-change.txt"));
+    puts("PASS: queued transfers reject replaced destination directories and retargeted symlinks");
+
+    const FXString changedSource = source + "/source-change.txt";
+    writeConflictFile(changedSource, "original source");
+    lock = lockTransferPath(target);
+    assert(xf_startTransfer(explorer, MOVE, {TransferItem(changedSource, target)}));
+    waitTransferWindow(app, "Move Files", true, 3000000000LL);
+    pumpTransferEvents(app, 300000000LL);
+    assert(rename(changedSource.text(), (changedSource + ".saved").text()) == 0);
+    writeConflictFile(changedSource, "replacement source");
+    assert(flock(lock, LOCK_UN) == 0 && close(lock) == 0);
+    acknowledgeTransferFailure(app, "Transfer source changed", "Move Files", "source-replaced");
+    assert(readConflictFile(changedSource) == "replacement source" &&
+           readConflictFile(changedSource + ".saved") == "original source" &&
+           !FXStat::exists(target + "/source-change.txt"));
+
+    const FXString recreatedSource = source + "/source-recreated.txt";
+    writeConflictFile(recreatedSource, "original source");
+    lock = lockTransferPath(target);
+    assert(xf_startTransfer(explorer, MOVE, {TransferItem(recreatedSource, target)}));
+    waitTransferWindow(app, "Move Files", true, 3000000000LL);
+    pumpTransferEvents(app, 300000000LL);
+    assert(unlink(recreatedSource.text()) == 0);
+    usleep(20000);
+    writeConflictFile(recreatedSource, "replacement source");
+    assert(flock(lock, LOCK_UN) == 0 && close(lock) == 0);
+    acknowledgeTransferFailure(app, "Transfer source changed", "Move Files");
+    assert(readConflictFile(recreatedSource) == "replacement source" &&
+           !FXStat::exists(target + "/source-recreated.txt"));
+    puts("PASS: a queued move refuses a replaced source without deleting either file");
+
+    const FXString firstMove = source + "/first-slow-move.bin";
+    const FXString laterMove = source + "/later-move.txt";
+    makeSlowTransferFile(firstMove, 8 * 1024 * 1024);
+    writeConflictFile(laterMove, "original later source");
+    setenv("SWORDFISH_TEST_SLOW_FILE", firstMove.text(), 1);
+    setenv("SWORDFISH_TEST_CROSS_DEVICE", firstMove.text(), 1);
+    assert(xf_startTransfer(explorer, MOVE,
+                            {TransferItem(firstMove, target), TransferItem(laterMove, target)}));
+    waitTransferWindow(app, "Move Files", true, 3000000000LL);
+    FXTime firstMoveDeadline = FXThread::time() + 5000000000LL;
+    while (transferFileSize(target + "/first-slow-move.bin") <= 0 && FXThread::time() < firstMoveDeadline)
+        pumpTransferEvents(app, 10000000LL);
+    assert(transferFileSize(target + "/first-slow-move.bin") > 0);
+    assert(rename(laterMove.text(), (laterMove + ".saved").text()) == 0);
+    writeConflictFile(laterMove, "replacement later source");
+    acknowledgeTransferFailure(app, "Transfer source changed", "Move Files");
+    assert(!FXStat::exists(firstMove) && transferFileSize(target + "/first-slow-move.bin") == 8 * 1024 * 1024);
+    assert(readConflictFile(laterMove) == "replacement later source" &&
+           readConflictFile(laterMove + ".saved") == "original later source" &&
+           !FXStat::exists(target + "/later-move.txt"));
+    unsetenv("SWORDFISH_TEST_SLOW_FILE");
+    unsetenv("SWORDFISH_TEST_CROSS_DEVICE");
+    puts("PASS: moves recheck later source identities after earlier items finish");
+
+    const FXString selfMove = source + "/self-move.txt";
+    writeConflictFile(selfMove, "unchanged");
+    assert(xf_startTransfer(explorer, MOVE, {TransferItem(selfMove, source)}));
+    acknowledgeTransferFailure(app, "Error", "Move Files");
+    assert(readConflictFile(selfMove) == "unchanged");
+    const FXString selfFolder = source + "/self-folder";
+    assert(mkdir(selfFolder.text(), 0700) == 0 && mkdir((selfFolder + "/child").text(), 0700) == 0);
+    writeConflictFile(selfFolder + "/file.txt", "unchanged");
+    assert(xf_startTransfer(explorer, MOVE, {TransferItem(selfFolder, selfFolder + "/child")}));
+    acknowledgeTransferFailure(app, "Error", "Move Files");
+    assert(readConflictFile(selfFolder + "/file.txt") == "unchanged" &&
+           !FXStat::exists(selfFolder + "/child/self-folder"));
+    puts("PASS: moving onto the source or into its own child is refused without data loss");
+
+    const FXString detachedSource = source + "/parent-closed.bin";
+    const off_t detachedSize = 8 * 1024 * 1024;
+    makeSlowTransferFile(detachedSource, detachedSize);
+    setenv("SWORDFISH_TEST_SLOW_FILE", detachedSource.text(), 1);
+    fflush(stdout);
+    pid_t parent = fork();
+    assert(parent >= 0);
+    if (parent == 0)
+    {
+        execl(execpath.text(), execpath.text(), "--test-transfer-parent-close", prefix.text(),
+              detachedSource.text(), target.text(), static_cast<char*>(NULL));
+        std::_Exit(127);
+    }
+    int parentStatus = 0;
+    assert(waitpid(parent, &parentStatus, 0) == parent);
+    assert(WIFEXITED(parentStatus) && WEXITSTATUS(parentStatus) == 0);
+    waitTransferSize(app, target + "/parent-closed.bin", detachedSize, 8000000000LL);
+    assert(FXStat::isFile(detachedSource));
+    waitTransferWindow(app, "Copy Files", false, 5000000000LL);
+    unsetenv("SWORDFISH_TEST_SLOW_FILE");
+    puts("PASS: a transfer continues after its Swordfish parent process exits");
+
+    const FXString cancelSource = source + "/cancel.bin";
+    makeSlowTransferFile(cancelSource, slowSize);
+    setenv("SWORDFISH_TEST_SLOW_FILE", cancelSource.text(), 1);
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(cancelSource, target)}));
+    progress = waitTransferWindow(app, "Copy Files", true, 3000000000LL);
+    writeDeadline = FXThread::time() + 3000000000LL;
+    while (transferFileSize(target + "/cancel.bin") <= 0 && FXThread::time() < writeDeadline)
+        pumpTransferEvents(app, 10000000LL);
+    assert(transferFileSize(target + "/cancel.bin") > 0);
+    assert(XGetWindowAttributes(display, progress, &geometry));
+    clickTransferWindow(app, progress, geometry.width / 2 + 45, geometry.height - 32);
+    pumpTransferEvents(app, 400000000LL);
+    captureTransferWindow(progress, "copy-cancelled");
+    captureAlternateTransferWidth(app, progress, "copy-cancelled-narrow");
+    waitTransferWindow(app, "Copy Files", false, 5000000000LL);
+    assert(FXStat::isFile(cancelSource) && transferFileSize(target + "/cancel.bin") < slowSize);
+    unsetenv("SWORDFISH_TEST_SLOW_FILE");
+    puts("PASS: cancelling an independent copy stops it without deleting the source");
+
+    const FXString flatSource = source + "/many-flat-files";
+    const FXString statMarker = fixture + "/stat-started";
+    assert(mkdir(flatSource.text(), 0700) == 0);
+    for (FXint i = 0; i < 100; ++i)
+        writeConflictFile(flatSource + "/" + FXStringVal(i), "file");
+    setenv("SWORDFISH_TEST_SLOW_STAT", flatSource.text(), 1);
+    setenv("SWORDFISH_TEST_STAT_MARKER", statMarker.text(), 1);
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(flatSource, target)}));
+    progress = waitTransferWindow(app, "Copy Files", true, 3000000000LL);
+    FXTime scanDeadline = FXThread::time() + 3000000000LL;
+    while (!FXStat::isFile(statMarker) && FXThread::time() < scanDeadline)
+        pumpTransferEvents(app, 10000000LL);
+    assert(FXStat::isFile(statMarker));
+    captureTransferWindow(progress, "copy-preparing");
+    captureAlternateTransferWidth(app, progress, "copy-preparing-narrow", false);
+    assert(XGetWindowAttributes(display, progress, &geometry));
+    started = FXThread::time();
+    clickTransferWindow(app, progress, geometry.width / 2 + 45, geometry.height - 32);
+    pumpTransferEvents(app, 300000000LL);
+    captureTransferWindow(progress, "copy-scan-cancelled");
+    waitTransferWindow(app, "Copy Files", false, 5000000000LL);
+    assert(FXThread::time() - started < 4500000000LL);
+    assert(FXStat::isDirectory(flatSource) && !FXStat::exists(target + "/many-flat-files"));
+    unsetenv("SWORDFISH_TEST_SLOW_STAT");
+    unsetenv("SWORDFISH_TEST_STAT_MARKER");
+    puts("PASS: cancellation remains responsive while scanning a large flat source folder");
+
+    writeConflictFile(source + "/conflict.txt", "incoming");
+    writeConflictFile(target + "/conflict.txt", "existing");
+    app.reg().writeUnsignedEntry("OPTIONS", "confirm_overwrite", true);
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(source + "/conflict.txt", target)}));
+    Window conflict = waitTransferWindow(app, "Name already exists", true, 3000000000LL);
+    assert(XGetWindowAttributes(display, conflict, &geometry));
+    captureTransferWindow(conflict, "copy-conflict");
+    clickTransferWindow(app, conflict, geometry.width * 3 / 8, geometry.height - 32);
+    waitTransferWindow(app, "Name already exists", false, 3000000000LL);
+    progress = waitTransferWindow(app, "Copy Files", true, 3000000000LL);
+    pumpTransferEvents(app, 300000000LL);
+    captureTransferWindow(progress, "copy-skipped");
+    captureAlternateTransferWidth(app, progress, "copy-skipped-narrow");
+    waitTransferWindow(app, "Copy Files", false, 5000000000LL);
+    assert(readConflictFile(target + "/conflict.txt") == "existing");
+    assert(readConflictFile(source + "/conflict.txt") == "incoming");
+    puts("PASS: skipping an independent transfer conflict preserves both files");
+
+    const FXString gioTools = fixture + "/gio tools";
+    const FXString gioTarget = fixture + "/mtp:host=test";
+    const FXString gioMarker = fixture + "/gio.pid";
+    assert(mkdir(gioTools.text(), 0700) == 0);
+    assert(mkdir(gioTarget.text(), 0700) == 0);
+    const FXString gioScript = gioTools + "/gio";
+    writeConflictFile(gioScript,
+        "#!/bin/sh\n"
+        "[ \"$1\" = copy ] || exit 64\n"
+        "case \"$SWORDFISH_TEST_GIO_MODE\" in\n"
+        "  success) /bin/cp \"$2\" \"$3\" || exit $?; echo 'Copy diagnostic'; exit 0 ;;\n"
+        "  failure) exit 42 ;;\n"
+        "  slow) echo \"$$\" > \"$SWORDFISH_TEST_GIO_MARKER\"; trap '' TERM; /bin/sleep 15; "
+        "/bin/cp \"$2\" \"$3\" ;;\n"
+        "  noisy) echo \"$$\" > \"$SWORDFISH_TEST_GIO_MARKER\"; trap '' TERM; exec /usr/bin/yes diagnostic ;;\n"
+        "  orphan) /bin/sh -c 'trap \"\" TERM; echo \"$$\" > \"$SWORDFISH_TEST_GIO_MARKER\"; "
+        "/bin/sleep 15; /bin/cp \"$1\" \"$2\"' sh \"$2\" \"$3\" & wait ;;\n"
+        "  *) exit 65 ;;\n"
+        "esac\n");
+    assert(chmod(gioScript.text(), 0700) == 0);
+    const char* previousHostPath = getenv("SWORDFISH_HOST_PATH");
+    const bool hadHostPath = previousHostPath != NULL;
+    const FXString savedHostPath = hadHostPath ? previousHostPath : "";
+    const FXString testHostPath = gioTools + ":/usr/bin:/bin";
+    setenv("SWORDFISH_HOST_PATH", testHostPath.text(), 1);
+    setenv("SWORDFISH_TEST_GIO_MARKER", gioMarker.text(), 1);
+    setenv("SWORDFISH_TEST_GIO_MODE", "success", 1);
+    writeConflictFile(source + "/gio-success.txt", "gio success");
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(source + "/gio-success.txt", gioTarget)}));
+    waitTransferSize(app, gioTarget + "/gio-success.txt", 11, 5000000000LL);
+    waitTransferWindow(app, "Copy Files", false, 5000000000LL);
+    assert(readConflictFile(gioTarget + "/gio-success.txt") == "gio success");
+
+    setenv("SWORDFISH_TEST_GIO_MODE", "slow", 1);
+    writeConflictFile(source + "/gio-cancel.txt", "do not remove");
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(source + "/gio-cancel.txt", gioTarget)}));
+    progress = waitTransferWindow(app, "Copy Files", true, 3000000000LL);
+    FXTime gioDeadline = FXThread::time() + 3000000000LL;
+    while (transferFileSize(gioMarker) <= 0 && FXThread::time() < gioDeadline)
+        pumpTransferEvents(app, 10000000LL);
+    std::ifstream gioPidFile(gioMarker.text());
+    long gioPid = -1;
+    gioPidFile >> gioPid;
+    assert(gioPid > 0);
+    assert(XGetWindowAttributes(display, progress, &geometry));
+    clickTransferWindow(app, progress, geometry.width / 2 - 45, geometry.height - 32);
+    gioDeadline = FXThread::time() + 3000000000LL;
+    while (transferProcessState(gioPid) != 'T' && FXThread::time() < gioDeadline)
+        pumpTransferEvents(app, 10000000LL);
+    assert(transferProcessState(gioPid) == 'T');
+    clickTransferWindow(app, progress, geometry.width / 2 - 45, geometry.height - 32);
+    gioDeadline = FXThread::time() + 3000000000LL;
+    while (transferProcessState(gioPid) == 'T' && FXThread::time() < gioDeadline)
+        pumpTransferEvents(app, 10000000LL);
+    assert(transferProcessState(gioPid) != 'T' && transferProcessState(gioPid) != 0);
+    clickTransferWindow(app, progress, geometry.width / 2 + 45, geometry.height - 32);
+    pumpTransferEvents(app, 250000000LL);
+    captureTransferWindow(progress, "copy-cancelling");
+    captureAlternateTransferWidth(app, progress, "copy-cancelling-narrow");
+    waitTransferWindow(app, "Copy Files", false, 6000000000LL);
+    assert(transferProcessState(gioPid) == 0);
+    assert(FXStat::isFile(source + "/gio-cancel.txt") && !FXStat::exists(gioTarget + "/gio-cancel.txt"));
+    puts("PASS: GIO copy uses exit status and pauses, resumes, and cancels its process group safely");
+
+    assert(unlink(gioMarker.text()) == 0);
+    writeConflictFile(source + "/gio-paused-cancel.txt", "do not remove");
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(source + "/gio-paused-cancel.txt", gioTarget)}));
+    progress = waitTransferWindow(app, "Copy Files", true, 3000000000LL);
+    gioDeadline = FXThread::time() + 3000000000LL;
+    while (transferFileSize(gioMarker) <= 0 && FXThread::time() < gioDeadline)
+        pumpTransferEvents(app, 10000000LL);
+    std::ifstream pausedPidFile(gioMarker.text());
+    long pausedPid = -1;
+    pausedPidFile >> pausedPid;
+    assert(pausedPid > 0);
+    assert(XGetWindowAttributes(display, progress, &geometry));
+    clickTransferWindow(app, progress, geometry.width / 2 - 45, geometry.height - 32);
+    gioDeadline = FXThread::time() + 3000000000LL;
+    while (transferProcessState(pausedPid) != 'T' && FXThread::time() < gioDeadline)
+        pumpTransferEvents(app, 10000000LL);
+    assert(transferProcessState(pausedPid) == 'T');
+    clickTransferWindow(app, progress, geometry.width / 2 + 45, geometry.height - 32);
+    waitTransferWindow(app, "Copy Files", false, 6000000000LL);
+    assert(transferProcessState(pausedPid) == 0);
+    assert(FXStat::isFile(source + "/gio-paused-cancel.txt") &&
+           !FXStat::exists(gioTarget + "/gio-paused-cancel.txt"));
+    puts("PASS: cancelling a paused GIO copy resumes and stops its whole process group");
+
+    assert(unlink(gioMarker.text()) == 0);
+    setenv("SWORDFISH_TEST_GIO_MODE", "noisy", 1);
+    writeConflictFile(source + "/gio-noisy-cancel.txt", "do not remove");
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(source + "/gio-noisy-cancel.txt", gioTarget)}));
+    progress = waitTransferWindow(app, "Copy Files", true, 3000000000LL);
+    gioDeadline = FXThread::time() + 3000000000LL;
+    while (transferFileSize(gioMarker) <= 0 && FXThread::time() < gioDeadline)
+        pumpTransferEvents(app, 10000000LL);
+    std::ifstream noisyPidFile(gioMarker.text());
+    long noisyPid = -1;
+    noisyPidFile >> noisyPid;
+    assert(noisyPid > 0);
+    assert(XGetWindowAttributes(display, progress, &geometry));
+    clickTransferWindow(app, progress, geometry.width / 2 + 45, geometry.height - 32);
+    waitTransferWindow(app, "Copy Files", false, 6000000000LL);
+    assert(transferProcessState(noisyPid) == 0 &&
+           FXStat::isFile(source + "/gio-noisy-cancel.txt") &&
+           !FXStat::exists(gioTarget + "/gio-noisy-cancel.txt"));
+    puts("PASS: cancelling remains responsive when a GIO command emits continuous output");
+
+    assert(unlink(gioMarker.text()) == 0);
+    setenv("SWORDFISH_TEST_GIO_MODE", "orphan", 1);
+    writeConflictFile(source + "/gio-orphan.txt", "do not remove");
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(source + "/gio-orphan.txt", gioTarget)}));
+    progress = waitTransferWindow(app, "Copy Files", true, 3000000000LL);
+    gioDeadline = FXThread::time() + 3000000000LL;
+    while (transferFileSize(gioMarker) <= 0 && FXThread::time() < gioDeadline)
+        pumpTransferEvents(app, 10000000LL);
+    std::ifstream orphanPidFile(gioMarker.text());
+    long orphanPid = -1;
+    orphanPidFile >> orphanPid;
+    assert(orphanPid > 0);
+    assert(XGetWindowAttributes(display, progress, &geometry));
+    clickTransferWindow(app, progress, geometry.width / 2 + 45, geometry.height - 32);
+    waitTransferWindow(app, "Copy Files", false, 6000000000LL);
+    const char orphanState = transferProcessState(orphanPid);
+    assert(orphanState == 0 || orphanState == 'Z');
+    assert(FXStat::isFile(source + "/gio-orphan.txt") && !FXStat::exists(gioTarget + "/gio-orphan.txt"));
+    puts("PASS: cancelling GIO also stops descendants if the process-group leader exits first");
+
+    setenv("SWORDFISH_TEST_GIO_MODE", "failure", 1);
+    writeConflictFile(source + "/gio-failure.txt", "preserve");
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(source + "/gio-failure.txt", gioTarget)}));
+    Window gioError = waitTransferWindow(app, "Error", true, 3000000000LL);
+    assert(XGetWindowAttributes(display, gioError, &geometry));
+    captureTransferWindow(gioError, "gio-error-dialog");
+    clickTransferWindow(app, gioError, geometry.width * 3 / 4, geometry.height - 18);
+    waitTransferWindow(app, "Error", false, 3000000000LL);
+    pumpTransferEvents(app, 3500000000LL);
+    progress = waitTransferWindow(app, "Copy Files", true, 1000000000LL);
+    assert(XGetWindowAttributes(display, progress, &geometry));
+    clickTransferWindow(app, progress, geometry.width / 2, geometry.height - 32);
+    waitTransferWindow(app, "Copy Files", false, 3000000000LL);
+    assert(FXStat::isFile(source + "/gio-failure.txt") && !FXStat::exists(gioTarget + "/gio-failure.txt"));
+    if (hadHostPath) setenv("SWORDFISH_HOST_PATH", savedHostPath.text(), 1);
+    else unsetenv("SWORDFISH_HOST_PATH");
+    unsetenv("SWORDFISH_TEST_GIO_MARKER");
+    unsetenv("SWORDFISH_TEST_GIO_MODE");
+    puts("PASS: a GIO failure without diagnostic output remains visible and preserves the source");
+
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(source + "/missing.txt", target)}));
+    Window error = waitTransferWindow(app, "Error", true, 3000000000LL);
+    assert(XGetWindowAttributes(display, error, &geometry));
+    clickTransferWindow(app, error, geometry.width / 2, geometry.height - 18);
+    waitTransferWindow(app, "Error", false, 3000000000LL);
+    pumpTransferEvents(app, 3500000000LL);
+    progress = waitTransferWindow(app, "Copy Files", true, 1000000000LL);
+    captureTransferWindow(progress, "copy-error");
+    captureAlternateTransferWidth(app, progress, "copy-error-narrow");
+    assert(XGetWindowAttributes(display, progress, &geometry));
+    clickTransferWindow(app, progress, geometry.width / 2, geometry.height - 32);
+    waitTransferWindow(app, "Copy Files", false, 3000000000LL);
+    puts("PASS: failed independent transfers remain visible until explicitly closed");
+
+    const FXString burst = source + "/many-notifications";
+    assert(mkdir(burst.text(), 0700) == 0);
+    for (FXint i = 0; i < 800; ++i)
+        writeConflictFile(burst + "/item-" + FXStringVal(i), "data");
+    assert(xf_startTransfer(explorer, COPY, {TransferItem(burst, target)}));
+    waitTransferWindow(app, "Copy Files", true, 3000000000LL);
+    FXTime burstDeadline = FXThread::time() + 15000000000LL;
+    while (findTransferWindow(display, DefaultRootWindow(display), "Copy Files") &&
+           FXThread::time() < burstDeadline)
+        usleep(10000);
+    assert(!findTransferWindow(display, DefaultRootWindow(display), "Copy Files"));
+    assert(readConflictFile(target + "/many-notifications/item-799") == "data");
+    {
+        ErrorResponder unexpected(app);
+        unexpected.start();
+        pumpTransferEvents(app, 1000000000LL);
+        assert(unexpected.shown == 0);
+    }
+    puts("PASS: a busy transfer reports completion correctly even while the parent is not processing events");
+
+    left->getTabButtons()->restoreState(leftState);
+    right->getTabButtons()->restoreState(rightState);
+    leftList->setSortFunc(leftSort);
+    rightList->setSortFunc(rightSort);
+    leftList->scan(true);
+    rightList->scan(true);
+}
+
+static int runTransferParentClose(char** argv)
+{
+    FXString prefix = argv[2], source = argv[3], target = argv[4];
+    XFApp app("SwordfishParentExitTest", "SwordfishParentExitTest");
+    int appArgc = 1;
+    char* appArgv[] = {argv[0], NULL};
+    app.init(appArgc, appArgv);
+    homedir = FXSystem::getHomeDirectory();
+    xdgconfighome = homedir + "/config";
+    xdgdatahome = homedir + "/data";
+    execpath = prefix + "/bin/swordfish";
+    FXuint status;
+    if (!loadAppIcons(&app, &status)) return 1;
+    vector_FXString paths;
+    paths.push_back(FXPath::directory(source));
+    XFileExplorer* explorer = new XFileExplorer(&app, paths, -1);
+    mainWindow = explorer;
+    app.create();
+    explorer->show();
+    std::_Exit(xf_startTransfer(explorer, COPY, {TransferItem(source, target)}) ? 0 : 1);
+}
+
 int main(int argc, char** argv)
 {
+    if (argc == 2 && FXString(argv[1]) == "--internal-transfer-worker")
+        return swordfish_main(argc, argv);
+    if (argc == 5 && FXString(argv[1]) == "--test-transfer-parent-close")
+        return runTransferParentClose(argv);
     assert(argc == 3);
+    setvbuf(stdout, NULL, _IONBF, 0);
     FXString prefix = argv[1], fixture = argv[2];
     XFApp app("SwordfishSearchTest", "SwordfishSearchTest");
     app.init(argc, argv);
@@ -958,6 +1970,7 @@ int main(int argc, char** argv)
     FilePanel* panel = explorer->getCurrentPanel();
     FileList* files = panel->getList();
     checkColumns(files);
+    checkIndependentTransfers(app, explorer, prefix, fixture);
     {
         FileList* results = findList(search->results());
         std::vector<FXuint> original = results->getColumnLayout();
@@ -1094,7 +2107,15 @@ int main(int argc, char** argv)
     files->setCurrentItem(sourceIndex);
     files->selectItem(sourceIndex);
     panel->onCmdFileMan(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_FILE_COPY), NULL);
+    FXTime copyDeadline = FXThread::time() + 5000000000LL;
+    while ((!FXStat::isFile(target + "/other.txt") ||
+            readConflictFile(target + "/other.txt") != "other\n") && FXThread::time() < copyDeadline)
+    {
+        app.runOneEvent(false);
+        usleep(1000);
+    }
     assert(FXStat::isFile(target + "/other.txt"));
+    assert(readConflictFile(target + "/other.txt") == "other\n");
     assert(unlink((target + "/other.txt").text()) == 0);
     files->selectItem(sourceIndex);
     panel->onCmdOtherPane(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_LINK_OTHER_PANE), NULL);
@@ -1102,6 +2123,13 @@ int main(int argc, char** argv)
     assert(unlink((target + "/other.txt").text()) == 0);
     files->selectItem(sourceIndex);
     panel->onCmdFileMan(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_FILE_CUT), NULL);
+    FXTime moveDeadline = FXThread::time() + 5000000000LL;
+    while ((!FXStat::isFile(target + "/other.txt") || FXStat::exists(data + "/other.txt")) &&
+           FXThread::time() < moveDeadline)
+    {
+        app.runOneEvent(false);
+        usleep(1000);
+    }
     assert(FXStat::isFile(target + "/other.txt") && !FXStat::exists(data + "/other.txt"));
     puts("PASS: Copy Path is plain full-path text and other-pane transfers use its active tab");
     PreferencesBox* preferences = new PreferencesBox(explorer);

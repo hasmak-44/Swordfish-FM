@@ -4,7 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <cmath>
@@ -75,6 +77,175 @@ static FXColor mutedDeviceText(FXColor foreground, FXColor background)
     return foreground;
 }
 
+static FXint sidebarIconWidth(const SidebarItem& item)
+{
+    const FXIcon* open = item.getOpenIcon();
+    const FXIcon* closed = item.getClosedIcon();
+    return FXMAX(open ? open->getWidth() : 0, closed ? closed->getWidth() : 0);
+}
+
+static FXint sidebarIconHeight(const SidebarItem& item)
+{
+    const FXIcon* open = item.getOpenIcon();
+    const FXIcon* closed = item.getClosedIcon();
+    return FXMAX(open ? open->getHeight() : 0, closed ? closed->getHeight() : 0);
+}
+
+static FXbool sidebarStackIcon(const SidebarItem& item, const FXTreeList* list)
+{
+    const FXint width = static_cast<const SidebarTree*>(list)->getWrapWidth();
+    return width >= 64 && width < 120 && sidebarIconWidth(item) > 0;
+}
+
+static const FXint SIDEBAR_DEVICE_BUTTON_HEIGHT = 24;
+static const FXint SIDEBAR_DEVICE_BUTTON_GAP = 6;
+static const FXint SIDEBAR_MIN_DEVICE_LABEL_WIDTH = 64;
+
+static std::vector<FXString> sidebarLines(const FXString& text, FXFont* font, FXint width)
+{
+    std::vector<FXString> lines;
+    if (text.empty()) return lines;
+    if (font->getTextWidth(text.text(), text.length()) <= width && text.find('\n') < 0)
+    {
+        lines.push_back(text);
+        return lines;
+    }
+
+    FXint start = 0;
+    while (start < text.length())
+    {
+        FXint end = start, breakAt = -1;
+        while (end < text.length() && text[end] != '\n')
+        {
+            FXint next = text.inc(end);
+            if (next <= end || next > text.length()) next = end + 1;
+            if (font->getTextWidth(text.text() + start, next - start) > width && end > start) break;
+            if (text[end] == ' ' || text[end] == '\t' || text[end] == '-' ||
+                text[end] == '_' || text[end] == '/') breakAt = next;
+            end = next;
+        }
+        FXint next = end;
+        if (end < text.length() && text[end] == '\n') ++next;
+        else if (end < text.length() && breakAt > start) end = next = breakAt;
+        lines.push_back(text.mid(start, end - start));
+        start = next;
+    }
+    if (text[text.length() - 1] == '\n') lines.push_back("");
+    return lines;
+}
+
+static FXString sidebarLayoutText(const SidebarItem& item, const FXTreeList* list)
+{
+    FXString text = item.getText();
+    const FXString suffix = _(" (unmounted)");
+    if (item.isEnabled() &&
+        ((item.kind == SidebarItem::DEVICE && item.deviceAction == SidebarItem::MOUNT_DEVICE) || item.muted) &&
+        text.length() > suffix.length() && text.right(suffix.length()) == suffix &&
+        mutedDeviceText(list->getTextColor(), list->getBackColor()) != list->getTextColor() &&
+        mutedDeviceText(list->getSelTextColor(), list->getSelBackColor()) != list->getSelTextColor())
+        text.trunc(text.length() - suffix.length());
+    return text;
+}
+
+FXint SidebarItem::textWidth(const FXTreeList* list) const
+{
+    const SidebarTree* tree = static_cast<const SidebarTree*>(list);
+    const FXint viewport = tree->getWrapWidth();
+    if (viewport < 64) return 0x7fffffff;
+    FXint right = viewport - 4;
+    if (!separateDeviceButtons(list))
+    {
+        if (deviceAction != NO_ACTION) right = viewport - 54;
+        else if (canEject) right = viewport - 30;
+    }
+    const FXint icon = sidebarIconWidth(*this);
+    return FXMAX(1, right - x - 4 - (icon && !sidebarStackIcon(*this, list) ? icon + 4 : 0));
+}
+
+FXbool SidebarItem::separateDeviceButtons(const FXTreeList* list) const
+{
+    const FXint viewport = static_cast<const SidebarTree*>(list)->getWrapWidth();
+    if (viewport < 64 || (deviceAction == NO_ACTION && !canEject)) return false;
+    const FXint icon = sidebarIconWidth(*this);
+    const FXint reserved = deviceAction != NO_ACTION ? 50 : 26;
+    return viewport - 8 - x - (icon ? icon + 4 : 0) - reserved < SIDEBAR_MIN_DEVICE_LABEL_WIDTH;
+}
+
+FXbool SidebarItem::deviceButtonsContainY(const FXTreeList* list, FXint winY) const
+{
+    if (!separateDeviceButtons(list)) return true;
+    const SidebarTree* tree = static_cast<const SidebarTree*>(list);
+    const FXint localY = winY - y - tree->getYPosition();
+    return localY >= getHeight(list) - SIDEBAR_DEVICE_BUTTON_HEIGHT - SIDEBAR_DEVICE_BUTTON_GAP &&
+           localY < getHeight(list) - SIDEBAR_DEVICE_BUTTON_GAP;
+}
+
+const std::vector<FXString>& SidebarItem::wrappedLines(const FXTreeList* list) const
+{
+    FXFont* font = list->getFont();
+    const FXint width = textWidth(list);
+    const FXint fontHeight = font->getFontHeight();
+    const FXString text = sidebarLayoutText(*this, list);
+    const FXint fullWidth = font->getTextWidth(text.text(), text.length());
+    if (width != cachedWidth || font != cachedFont || fontHeight != cachedFontHeight ||
+        fullWidth != cachedTextWidth || text != cachedText)
+    {
+        cachedWidth = width;
+        cachedFont = font;
+        cachedFontHeight = fontHeight;
+        cachedTextWidth = fullWidth;
+        cachedText = text;
+        cachedLines = sidebarLines(text, font, width);
+    }
+    return cachedLines;
+}
+
+FXint SidebarItem::getWidth(const FXTreeList* list) const
+{
+    const std::vector<FXString>& lines = wrappedLines(list);
+    if (lines.size() <= 1 && cachedText == label && !sidebarStackIcon(*this, list))
+        return FXTreeItem::getWidth(list);
+    FXint width = 0;
+    for (const FXString& line : lines)
+        width = FXMAX(width, list->getFont()->getTextWidth(line.text(), line.length()));
+    const FXint icon = sidebarIconWidth(*this);
+    if (sidebarStackIcon(*this, list)) return 8 + FXMAX(width, icon);
+    return 8 + width + (icon ? icon + 4 : 0);
+}
+
+FXint SidebarItem::getHeight(const FXTreeList* list) const
+{
+    const std::vector<FXString>& lines = wrappedLines(list);
+    FXint height = FXTreeItem::getHeight(list);
+    if (sidebarStackIcon(*this, list))
+        height = FXMAX(height, sidebarIconHeight(*this) + 6 +
+                              static_cast<FXint>(lines.size()) * list->getFont()->getFontHeight());
+    else if (lines.size() > 1)
+        height = FXMAX(height, 4 + static_cast<FXint>(lines.size()) * list->getFont()->getFontHeight());
+    return height + (separateDeviceButtons(list) ? SIDEBAR_DEVICE_BUTTON_HEIGHT + SIDEBAR_DEVICE_BUTTON_GAP : 0);
+}
+
+static FXString sidebarDisplayText(const SidebarItem& item, const FXTreeList* list, FXColor& foreground)
+{
+    foreground = item.isSelected() ? list->getSelTextColor() : list->getTextColor();
+    FXString text = item.getText();
+    if (((item.kind == SidebarItem::DEVICE && item.deviceAction == SidebarItem::MOUNT_DEVICE) || item.muted) &&
+        item.isEnabled())
+    {
+        const FXColor background = item.isSelected() ? list->getSelBackColor() : list->getBackColor();
+        const FXColor muted = mutedDeviceText(foreground, background);
+        const FXString suffix = _(" (unmounted)");
+        if (muted != foreground && text.length() > suffix.length() && text.right(suffix.length()) == suffix)
+            text.trunc(text.length() - suffix.length());
+        foreground = muted;
+    }
+    else if (!item.isEnabled())
+    {
+        foreground = makeShadowColor(list->getBackColor());
+    }
+    return text;
+}
+
 static void drawUnmountedDevice(const SidebarItem& item, const FXTreeList* list, FXDC& dc,
                                FXint x, FXint y, FXint h)
 {
@@ -113,27 +284,91 @@ static void drawUnmountedDevice(const SidebarItem& item, const FXTreeList* list,
 
 void SidebarItem::draw(const FXTreeList* list, FXDC& dc, FXint x, FXint y, FXint w, FXint h) const
 {
-    if (((kind == DEVICE && deviceAction == MOUNT_DEVICE) || muted) && isEnabled())
-        drawUnmountedDevice(*this, list, dc, x, y, h);
+    FXColor foreground;
+    const FXString text = sidebarDisplayText(*this, list, foreground);
+    const std::vector<FXString> lines = sidebarLines(text, list->getFont(), textWidth(list));
+    const FXint contentHeight = h -
+                                (separateDeviceButtons(list) ?
+                                 SIDEBAR_DEVICE_BUTTON_HEIGHT + SIDEBAR_DEVICE_BUTTON_GAP : 0);
+    const FXbool stacked = sidebarStackIcon(*this, list);
+    if (lines.size() <= 1 && !stacked)
+    {
+        if (((kind == DEVICE && deviceAction == MOUNT_DEVICE) || muted) && isEnabled())
+            drawUnmountedDevice(*this, list, dc, x, y, contentHeight);
+        else
+            FXTreeItem::draw(list, dc, x, y, w, contentHeight);
+    }
     else
-        FXTreeItem::draw(list, dc, x, y, w, h);
+    {
+        FXint labelX = x + 2;
+        FXIcon* icon = isOpened() ? getOpenIcon() : getClosedIcon();
+        if (icon)
+        {
+            dc.drawIcon(icon, labelX, stacked ? y + 2 : y + (contentHeight - icon->getHeight()) / 2);
+            if (!stacked) labelX += icon->getWidth() + 4;
+        }
+        FXFont* font = list->getFont();
+        FXint widest = 0;
+        for (const FXString& line : lines)
+            widest = FXMAX(widest, font->getTextWidth(line.text(), line.length()));
+        const FXint textHeight = 4 + static_cast<FXint>(lines.size()) * font->getFontHeight();
+        const FXint labelY = stacked ? y + sidebarIconHeight(*this) + 2 : y + (contentHeight - textHeight) / 2;
+        if (isSelected())
+        {
+            dc.setForeground(list->getSelBackColor());
+            dc.fillRectangle(labelX, labelY, widest + 4, textHeight);
+        }
+        if (hasFocus()) dc.drawFocusRectangle(labelX + 1, labelY + 1, widest + 2, textHeight - 2);
+        dc.setForeground(foreground);
+        for (size_t i = 0; i < lines.size(); ++i)
+            dc.drawText(labelX + 2, labelY + 2 + font->getFontAscent() +
+                        static_cast<FXint>(i) * font->getFontHeight(), lines[i]);
+    }
     if (deviceAction != NO_ACTION || canEject)
     {
         const SidebarTree* tree = static_cast<const SidebarTree*>(list);
+        const FXint buttonY = separateDeviceButtons(list) ? y + contentHeight : y;
+        const FXint buttonHeight = separateDeviceButtons(list) ? SIDEBAR_DEVICE_BUTTON_HEIGHT : h;
         for (int button = 0; button < 2; ++button)
         {
             if (button == 0 ? deviceAction == NO_ACTION : !canEject) continue;
             FXint left = tree->deviceButtonLeft(button == 1);
             dc.setForeground(isSelected() ? list->getSelBackColor() : list->getBackColor());
-            dc.fillRectangle(left, y, 24, h);
+            dc.fillRectangle(left, buttonY, 24, buttonHeight);
             const FXColor background = isSelected() ? list->getSelBackColor() : list->getBackColor();
             const DeviceSymbol symbol = button == 1 ? DEVICE_SYMBOL_EJECT :
                                         deviceAction == MOUNT_DEVICE ? DEVICE_SYMBOL_MOUNT : DEVICE_SYMBOL_UNMOUNT;
-            const FXint size = FXMIN(16, h - 4);
-            drawDeviceSymbol(dc, list->getApp(), symbol, left + (24 - size) / 2, y + (h - size) / 2, size,
+            const FXint size = FXMIN(16, buttonHeight - 4);
+            drawDeviceSymbol(dc, list->getApp(), symbol, left + (24 - size) / 2,
+                             buttonY + (buttonHeight - size) / 2, size,
                              background);
         }
     }
+}
+
+FXint SidebarItem::hitItem(const FXTreeList* list, FXint px, FXint py) const
+{
+    FXColor foreground;
+    const FXString text = sidebarDisplayText(*this, list, foreground);
+    const std::vector<FXString> lines = sidebarLines(text, list->getFont(), textWidth(list));
+    const FXint height = getHeight(list) -
+                         (separateDeviceButtons(list) ?
+                          SIDEBAR_DEVICE_BUTTON_HEIGHT + SIDEBAR_DEVICE_BUTTON_GAP : 0);
+    const FXbool stacked = sidebarStackIcon(*this, list);
+    if (!stacked && !separateDeviceButtons(list) && lines.size() <= 1 && height == FXTreeItem::getHeight(list))
+        return FXTreeItem::hitItem(list, px, py);
+    const FXint iconWidth = sidebarIconWidth(*this);
+    const FXint iconHeight = sidebarIconHeight(*this);
+    const FXint iconTop = stacked ? 2 : (height - iconHeight) / 2;
+    if (px >= 2 && px < 2 + iconWidth && py >= iconTop && py < iconTop + iconHeight) return 1;
+    FXint widest = 0;
+    for (const FXString& line : lines)
+        widest = FXMAX(widest, list->getFont()->getTextWidth(line.text(), line.length()));
+    const FXint textHeight = 4 + static_cast<FXint>(lines.size()) * list->getFont()->getFontHeight();
+    const FXint left = 2 + (iconWidth && !stacked ? iconWidth + 4 : 0);
+    const FXint top = stacked ? iconHeight + 2 : (height - textHeight) / 2;
+    return !lines.empty() && px >= left && px < left + widest + 4 &&
+           py >= top && py < top + textHeight ? 2 : 0;
 }
 
 FXint SidebarTree::deviceButtonLeft(FXbool eject) const
@@ -150,7 +385,7 @@ SidebarItem* SidebarTree::deviceButtonAt(FXint x, FXint y) const
 SidebarItem::DeviceAction SidebarTree::deviceActionAt(FXint x, FXint y) const
 {
     SidebarItem* item = static_cast<SidebarItem*>(getItemAt(x, y));
-    if (!item) return SidebarItem::NO_ACTION;
+    if (!item || !item->deviceButtonsContainY(this, y)) return SidebarItem::NO_ACTION;
     if (item->canEject && x >= deviceButtonLeft() && x < deviceButtonLeft() + 24)
         return SidebarItem::EJECT_DEVICE;
     if (x >= deviceButtonLeft(false) && x < deviceButtonLeft(false) + 24)
@@ -200,6 +435,23 @@ SidebarTree::SidebarTree(FXComposite* parent, FXObject* target, FXSelector selec
 FXint SidebarTree::getContentHeight()
 {
     return FXTreeList::getContentHeight() + clearance;
+}
+
+void SidebarTree::layout()
+{
+    if (layoutWidth != width)
+    {
+        layoutWidth = width;
+        wrapWidth = width;
+        FXTreeList::recalc();
+    }
+    for (int pass = 0; pass < 3; ++pass)
+    {
+        FXTreeList::layout();
+        if (wrapWidth == viewport_w) break;
+        wrapWidth = viewport_w;
+        FXTreeList::recalc();
+    }
 }
 
 void SidebarTree::setClearance(FXint value)
@@ -1027,7 +1279,8 @@ FXString MountsList::gvfsMounts()
 
 FXString MountsList::blockDevices()
 {
-    return directoryNames("/sys/class/block");
+    return directoryNames("/sys/class/block") + "\n" + directoryNames("/dev") +
+           "\n" + directoryNames("/dev/mapper");
 }
 
 
@@ -1055,11 +1308,14 @@ void MountsList::scan()
     mountedRemotes.clear();
 
     struct mntent* mnt;
+    std::set<FXString> mountedDevices;
     FILE* mtab = setmntent(MTAB_PATH, "r");
     if (mtab)
     {
         while ((mnt = getmntent(mtab)))
         {
+            if (strncmp(mnt->mnt_fsname, "/dev/", 5) == 0)
+                mountedDevices.insert(xf_realpath(mnt->mnt_fsname));
             // Filter out some file systems
             if (!xf_keepmount(mnt->mnt_dir, mnt->mnt_fsname))
             {
@@ -1094,17 +1350,24 @@ void MountsList::scan()
     // Their path is the device node; activating them mounts them.
     vector_FXString volumes;
     if (xf_unmountedvolumes(volumes))
+        previousVolumes = volumes;
+    else
+        volumes = previousVolumes;
+    for (FXuint i = 0; i < volumes.size(); i++)
     {
-        for (FXuint i = 0; i < volumes.size(); i++)
+        FXString device = volumes[i].section('\t', 0);
+        if (mountedDevices.find(xf_realpath(device)) != mountedDevices.end()) continue;
+        struct stat info;
+        if (stat(device.text(), &info) < 0)
         {
-            FXString device = volumes[i].section('\t', 0);
-            FXString label = volumes[i].section('\t', 1);
-            const char* previousLabel = knownDevices.find(device.text());
-            if (volumes[i].section('\t', 3).empty() && !previousLabel) continue;
-            if (label.empty() && previousLabel) label = previousLabel;
-            addMount(label.empty() ? FXPath::name(device) : label, device, miniremovabledeviceicon);
+            if (errno == ENOENT) continue;
+            appLog(APP_LOG_ERRORS, "device-node-inspection-failed", device + ": " + strerror(errno));
         }
-
+        FXString label = volumes[i].section('\t', 1);
+        const char* previousLabel = knownDevices.find(device.text());
+        if (volumes[i].section('\t', 3).empty() && !previousLabel) continue;
+        if (label.empty() && previousLabel) label = previousLabel;
+        addMount(label.empty() ? FXPath::name(device) : label, device, miniremovabledeviceicon);
     }
 
     // GVFS mount points

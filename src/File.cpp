@@ -5,10 +5,12 @@
 #include "i18n.h"
 
 #include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
+#include <sys/wait.h>
 #include <utime.h>
 #if defined(linux)
 #include <sys/statfs.h>
-#include <sys/wait.h>
 #endif
 
 // For Sun compatibility
@@ -35,6 +37,8 @@
 #include "CommandWindow.h"
 #include "File.h"
 #include "TabButtons.h"
+#include "Transfer.h"
+#include "InputDialog.h"
 
 
 // Delay before the progress bar should be shown (ms)
@@ -53,19 +57,92 @@
 // Global variables
 extern FXMainWindow* mainWindow;
 
+namespace
+{
+TransferStarter transferStarter = NULL;
+}
+
+void xf_setTransferStarter(TransferStarter starter)
+{
+    transferStarter = starter;
+}
+
+FXbool xf_hasTransferStarter()
+{
+    return transferStarter != NULL;
+}
+
+FXbool xf_startTransfer(FXWindow* owner, FXuint operation, const std::vector<TransferItem>& items)
+{
+    return transferStarter && transferStarter(owner, operation, items);
+}
+
+FXbool xf_startDroppedTransfer(FXWindow* owner, FXuint operation, const FXString& uris,
+                               const FXString& directory, FXbool confirm)
+{
+    std::vector<FXString> sources;
+    for (FXint start = 0; start < uris.length();)
+    {
+        FXint end = uris.find('\n', start);
+        if (end < 0) end = uris.length();
+        FXString uri = uris.mid(start, end - start);
+        if (uri.right(1) == "\r") uri.trunc(uri.length() - 1);
+        if (!uri.empty() && uri[0] != '#')
+        {
+            FXString path = FXURL::decode(FXURL::fileFromURL(uri));
+            if (path.empty())
+            {
+                MessageBox::error(owner, BOX_OK, _("Error"), _("The drop contains an invalid file URL."));
+                return false;
+            }
+            sources.push_back(path);
+        }
+        start = end + 1;
+    }
+    if (sources.empty())
+    {
+        MessageBox::error(owner, BOX_OK, _("Error"), _("The drop contains no files."));
+        return false;
+    }
+    FXString target = directory;
+    if (confirm)
+    {
+        FXString title = operation == COPY ? _("Copy") : _("Move");
+        FXString message;
+        if (sources.size() == 1)
+            message = title + sources.front();
+        else
+            message.format(operation == COPY ? _("Copy %s files/folders from: %s") :
+                                               _("Move %s files/folders from: %s"),
+                           FXStringVal(sources.size()).text(), FXPath::directory(sources.front()).text());
+        InputDialog dialog(owner, target, message, title, _("To:"), operation == COPY ? bigcopyicon : bigmoveicon);
+        dialog.CursorEnd();
+        if (!dialog.execute()) return false;
+        target = dialog.getText();
+        if (target.empty())
+        {
+            MessageBox::warning(owner, BOX_OK, _("Warning"), _("File name is empty, operation cancelled"));
+            return false;
+        }
+        target = xf_filepath(target);
+    }
+    std::vector<TransferItem> items;
+    for (const FXString& source : sources) items.push_back(TransferItem(source, target));
+    return xf_startTransfer(owner, operation, items);
+}
+
 
 // Compute source size recursively (same algorithm as pathsize() function)
-FXulong computeSourceSize(File* f, FXApp* app, char* path, FXuint* nbfiles, FXuint* nbsubdirs,
+FXulong computeSourceSize(File* f, FXApp* app, const FXString& path, FXuint* nbfiles, FXuint* nbsubdirs,
                           FXulong* totalsize, FXButton* cancelButton, FXbool* cancelled)
 {
     struct stat statbuf;
     struct dirent* dirp;
-    char* ptr;
     DIR* dp;
     FXulong dsize;
     int ret;
 
-    ret = xf_lstat(path, &statbuf);
+    ret = xf_lstat(path.text(), &statbuf);
     if (ret < 0)
     {
         return 0;
@@ -75,18 +152,13 @@ FXulong computeSourceSize(File* f, FXApp* app, char* path, FXuint* nbfiles, FXui
     (*totalsize) += dsize;
     (*nbfiles)++;
 
-    // Not a directory
-    if (!S_ISDIR(statbuf.st_mode))
-    {
-        return dsize;
-    }
-
     // Give cancel button an opportunity to be clicked and repaint, a few times per second
     if (f->uiUpdateDue())
     {
+        f->setTotalSourceSize(*totalsize);
         if (cancelButton)
         {
-            app->runModalWhileEvents(cancelButton);
+            f->processProgressEvents();
         }
         if (app != NULL)
         {
@@ -99,17 +171,16 @@ FXulong computeSourceSize(File* f, FXApp* app, char* path, FXuint* nbfiles, FXui
         return 0;
     }
 
+    // Not a directory
+    if (!S_ISDIR(statbuf.st_mode))
+    {
+        return dsize;
+    }
+
     // Directory
     (*nbsubdirs)++;
 
-    ptr = (char*)path + strlen(path);
-    if (ptr[-1] != '/')
-    {
-        *ptr++ = '/';
-        *ptr = '\0';
-    }
-
-    if ((dp = opendir(path)) == NULL)
+    if ((dp = opendir(path.text())) == NULL)
     {
         return 0;
     }
@@ -120,20 +191,21 @@ FXulong computeSourceSize(File* f, FXApp* app, char* path, FXuint* nbfiles, FXui
         {
             continue;
         }
-        xf_strlcpy(ptr, dirp->d_name, strlen(dirp->d_name) + 1);
-
         // Recursive call
-        dsize += computeSourceSize(f, app, path, nbfiles, nbsubdirs, totalsize, cancelButton, cancelled);
+        FXString child = path;
+        if (child.right(1) != PATHSEPSTRING) child += PATHSEPSTRING;
+        child += dirp->d_name;
+        dsize += computeSourceSize(f, app, child, nbfiles, nbsubdirs, totalsize, cancelButton, cancelled);
+        if (*cancelled) break;
     }
-
-    ptr[-1] = '\0'; // ??
 
     if (closedir(dp) < 0)
     {
-        fprintf(stderr, _("Error: Can't close folder %s\n"), path);
+        fprintf(stderr, _("Error: Can't close folder %s\n"), path.text());
     }
 
     f->setTotalSourceSize(*totalsize);
+    f->rememberSourceSize(path, dsize);
 
     return dsize;
 }
@@ -143,23 +215,95 @@ FXulong computeSourceSize(File* f, FXApp* app, char* path, FXuint* nbfiles, FXui
 FXDEFMAP(File) FileMap[] =
 {
     FXMAPFUNC(SEL_COMMAND, File::ID_CANCEL_BUTTON, File::onCmdCancel),
+    FXMAPFUNC(SEL_COMMAND, DialogBox::ID_CANCEL, File::onDialogCancel),
+    FXMAPFUNC(SEL_COMMAND, File::ID_PAUSE_BUTTON, File::onCmdPause),
     FXMAPFUNC(SEL_TIMEOUT, File::ID_PROGRESSBAR, File::onTimeout),
     FXMAPFUNC(SEL_TIMEOUT, File::ID_SOURCESIZE, File::onSourceSizeRefresh),
     FXMAPFUNC(SEL_TIMEOUT, File::ID_COPYSPEED, File::onCopySpeed),
+    FXMAPFUNC(SEL_TIMEOUT, File::ID_COMPLETE, File::onComplete),
 };
 
 
 // Object implementation
 FXIMPLEMENT(File, DialogBox, FileMap, ARRAYNUMBER(FileMap))
 
+class TransferPathLabel : public FXLabel
+{
+private:
+    FXString value;
+
+    void fit()
+    {
+        if (!id()) return;
+        FXString shown = value;
+        shown.substitute('\n', ' ');
+        shown.substitute('\r', ' ');
+        FXint available = FXMAX(0, getWidth() - getPadLeft() - getPadRight());
+        FXFont* font = getFont();
+        if (font->getTextWidth(shown) > available)
+        {
+            FXint count = shown.count(), low = 0, high = count;
+            while (low < high)
+            {
+                FXint keep = (low + high + 1) / 2;
+                FXint left = (keep + 1) / 2, right = keep / 2;
+                FXString candidate = shown.left(shown.offset(left)) + "..." +
+                                     shown.right(shown.length() - shown.offset(count - right));
+                if (font->getTextWidth(candidate) <= available) low = keep;
+                else high = keep - 1;
+            }
+            FXint left = (low + 1) / 2, right = low / 2;
+            shown = shown.left(shown.offset(left)) + "..." +
+                    shown.right(shown.length() - shown.offset(count - right));
+        }
+        FXLabel::setText(shown);
+    }
+
+public:
+    TransferPathLabel(FXComposite* parent, const FXString& text) :
+        FXLabel(parent, text, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X), value(text) {}
+
+    virtual FXint getDefaultWidth() { return 1; }
+    virtual void position(FXint x, FXint y, FXint width, FXint height)
+    {
+        FXLabel::position(x, y, width, height);
+        fit();
+    }
+    virtual void resize(FXint width, FXint height)
+    {
+        FXLabel::resize(width, height);
+        fit();
+    }
+    void setValue(const FXString& text)
+    {
+        value = text;
+        setTipText(text);
+        fit();
+    }
+};
+
 
 // Construct object
 File::File(FXWindow* owner, FXString title, const FXuint operation, const FXuint num) :
 DialogBox(owner, title, DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE)
 {
+    initialize(owner, operation, num);
+}
+
+
+File::File(FXApp* app, FXString title, const FXuint operation, const FXuint num) :
+DialogBox(app, title, DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE | DECOR_CLOSE), independent(true)
+{
+    initialize(this, operation, num);
+}
+
+
+void File::initialize(FXWindow* owner, const FXuint operation, const FXuint num)
+{
     // Progress window
+    FXint buttonPadding = independent ? 12 : PROGRESSDIALOG_WIDTH;
     FXPacker* buttons = new FXPacker(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 10, 10,
-                                     PROGRESSDIALOG_WIDTH, PROGRESSDIALOG_WIDTH, 5, 5);
+                                     buttonPadding, buttonPadding, 5, 5);
     FXVerticalFrame* contents = new FXVerticalFrame(this, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
     // Cancel Button
@@ -167,7 +311,14 @@ DialogBox(owner, title, DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE)
     if (operation != MOUNT && operation != UNMOUNT)
 #endif
     {
-        cancelButton = new FXButton(buttons, _("&Cancel"), NULL, this, File::ID_CANCEL_BUTTON, FRAME_GROOVE |
+        FXComposite* buttonParent = buttons;
+        if (independent)
+        {
+            buttonParent = new FXHorizontalFrame(buttons, LAYOUT_CENTER_X | PACK_UNIFORM_WIDTH);
+            pauseButton = new FXButton(buttonParent, _("&Pause"), NULL, this, File::ID_PAUSE_BUTTON,
+                                       FRAME_GROOVE, 0, 0, 0, 0, 20, 20);
+        }
+        cancelButton = new FXButton(buttonParent, _("&Cancel"), NULL, this, File::ID_CANCEL_BUTTON, FRAME_GROOVE |
                                     LAYOUT_CENTER_X, 0, 0, 0, 0, 20, 20);
         cancelButton->setFocus();
         cancelButton->addHotKey(KEY_Escape);        
@@ -215,22 +366,32 @@ DialogBox(owner, title, DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE)
     copysuffix = getApp()->reg().readStringEntry("OPTIONS", "copysuffix", DEFAULT_COPY_SUFFIX);
     copysuffix_pos = getApp()->reg().readUnsignedEntry("OPTIONS", "copysuffix_pos", 0);
 
+    if (independent)
+    {
+        activityStatus = _("Preparing...");
+        statusLabel = new FXLabel(contents, activityStatus, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    }
+
     // Progress dialog depends on the file operation
     switch (operation)
     {
     case COPY:
         // Labels and progress bar
-        uplabel = new FXLabel(contents, _("Source:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
-        downlabel = new FXLabel(contents, _("Target:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        uplabel = independent ? new TransferPathLabel(contents, _("Source:")) :
+                               new FXLabel(contents, _("Source:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        downlabel = independent ? new TransferPathLabel(contents, _("Target:")) :
+                                 new FXLabel(contents, _("Target:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
         progressbar = new FXProgressBar(contents, NULL, 0, LAYOUT_FILL_X | TEXTFIELD_NORMAL | PROGRESSBAR_PERCENTAGE,
                                         0, 0, 0, 0, 0, 0, 0, 0); // 0 top and bottom pads
         progressbar->setBarColor(fgcolor);
         progressbar->setTextColor(textcolor);
         progressbar->setTextAltColor(textaltcolor);
         datatext = _("Copied data:");
-        datalabel = new FXLabel(contents, datatext, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        datalabel = independent ? new TransferPathLabel(contents, datatext) :
+                                  new FXLabel(contents, datatext, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
         timetext = _("Remaining time:");
-        timelabel = new FXLabel(contents, timetext, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        timelabel = independent ? new TransferPathLabel(contents, timetext) :
+                                  new FXLabel(contents, timetext, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
 
         // Timer on
         getApp()->addTimeout(this, File::ID_PROGRESSBAR, SHOW_PROGRESSBAR_DELAY);
@@ -238,17 +399,21 @@ DialogBox(owner, title, DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE)
 
     case MOVE:
         // Labels and progress bar
-        uplabel = new FXLabel(contents, _("Source:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
-        downlabel = new FXLabel(contents, _("Target:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        uplabel = independent ? new TransferPathLabel(contents, _("Source:")) :
+                               new FXLabel(contents, _("Source:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        downlabel = independent ? new TransferPathLabel(contents, _("Target:")) :
+                                 new FXLabel(contents, _("Target:"), NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
         progressbar = new FXProgressBar(contents, NULL, 0, LAYOUT_FILL_X | TEXTFIELD_NORMAL | PROGRESSBAR_PERCENTAGE,
                                         0, 0, 0, 0, 0, 0, 0, 0); // 0 top and bottom pads
         progressbar->setBarColor(fgcolor);
         progressbar->setTextColor(textcolor);
         progressbar->setTextAltColor(textaltcolor);
         datatext = _("Moved data:");
-        datalabel = new FXLabel(contents, datatext, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        datalabel = independent ? new TransferPathLabel(contents, datatext) :
+                                  new FXLabel(contents, datatext, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
         timetext = _("Remaining time:");
-        timelabel = new FXLabel(contents, timetext, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+        timelabel = independent ? new TransferPathLabel(contents, timetext) :
+                                  new FXLabel(contents, timetext, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
 
         // Timer on
         getApp()->addTimeout(this, File::ID_PROGRESSBAR, SHOW_PROGRESSBAR_DELAY);
@@ -345,7 +510,7 @@ DialogBox(owner, title, DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE)
     totalsourcesize = 0;
 
     // Refresh source size label
-    if (op == COPY || op == MOVE)
+    if (!independent && (op == COPY || op == MOVE))
     {
         getApp()->addTimeout(this, File::ID_SOURCESIZE, SOURCESIZE_REFRESH_DELAY);
     }
@@ -361,6 +526,7 @@ File::~File()
     }
     getApp()->removeTimeout(this, File::ID_PROGRESSBAR);
     getApp()->removeTimeout(this, File::ID_COPYSPEED);
+    getApp()->removeTimeout(this, File::ID_COMPLETE);
 
     delete progressbar;
     delete mbox;
@@ -371,6 +537,262 @@ File::~File()
 void File::create()
 {
     DialogBox::create();
+}
+
+
+void File::startIndependent()
+{
+    getApp()->removeTimeout(this, File::ID_PROGRESSBAR);
+    const char* const statuses[] =
+    {
+        N_("Preparing..."), N_("Waiting for another transfer..."), N_("Copying..."), N_("Moving..."),
+        N_("Paused"), N_("Cancelling..."),
+        N_("Copy complete"), N_("Move complete"), N_("Copy cancelled"), N_("Move cancelled"),
+        N_("Copy finished with skipped items"), N_("Move finished with skipped items"),
+        N_("Copy finished with errors"), N_("Move finished with errors")
+    };
+    FXint statusWidth = 0;
+    for (const char* status : statuses)
+    {
+        statusLabel->setText(_(status));
+        statusWidth = FXMAX(statusWidth, statusLabel->getDefaultWidth());
+    }
+    statusLabel->setText(_("Preparing..."));
+    statusLabel->setLayoutHints(statusLabel->getLayoutHints() | LAYOUT_FIX_WIDTH);
+    statusLabel->setWidth(statusWidth);
+    setInfoLabel(datalabel, datatext + " " + xf_humansize("0"));
+    setInfoLabel(timelabel, timetext + " --");
+    FXint width = FXMIN(FXMAX(1, getRoot()->getWidth() - 20), FXMAX(500, getDefaultWidth() + 40));
+    FXint height = FXMIN(FXMAX(1, getRoot()->getHeight() - 40), FXMAX(240, getDefaultHeight() + 20));
+    resize(width, height);
+    show(PLACEMENT_SCREEN);
+    getApp()->forceRefresh();
+    getApp()->repaint();
+    getApp()->flush();
+}
+
+
+void File::beginTransfer()
+{
+    getApp()->removeTimeout(this, File::ID_SOURCESIZE);
+    if (datalabel)
+        setInfoLabel(datalabel, datatext + " " + xf_humansize("0") + " / " +
+                                xf_humansize(FXStringVal(totalsourcesize).text()));
+    setIndependentStatus(op == COPY ? _("Copying...") : _("Moving..."));
+}
+
+
+void File::setIndependentStatus(const FXString& text)
+{
+    FXbool changed = activityStatus != text;
+    activityStatus = text;
+    if (changed && statusLabel && !paused && !cancelled && !finished)
+    {
+        statusLabel->setText(text);
+        getApp()->repaint();
+    }
+}
+
+
+void File::setIndependentPaths(const FXString& source, const FXString& target)
+{
+    setPathLabel(uplabel, _("Source: ") + source);
+    setPathLabel(downlabel, _("Target: ") + target);
+}
+
+
+void File::finishIndependent(FXbool errors)
+{
+    getApp()->removeTimeout(this, File::ID_SOURCESIZE);
+    getApp()->removeTimeout(this, File::ID_COPYSPEED);
+    finished = true;
+    paused = false;
+    FXString text;
+    if (cancelled)
+        text = op == COPY ? _("Copy cancelled") : _("Move cancelled");
+    else if (errors || warned)
+        text = op == COPY ? _("Copy finished with errors") : _("Move finished with errors");
+    else if (skipped)
+        text = op == COPY ? _("Copy finished with skipped items") : _("Move finished with skipped items");
+    else
+    {
+        text = op == COPY ? _("Copy complete") : _("Move complete");
+        if (progressbar) progressbar->setProgress(100);
+        if (datalabel)
+            setInfoLabel(datalabel, datatext + " " + xf_humansize(FXStringVal(totaldataread).text()) +
+                                     " / " + xf_humansize(FXStringVal(totalsourcesize).text()));
+        if (timelabel) setInfoLabel(timelabel, timetext + " " + xf_secondstotimestring(0));
+    }
+    if (cancelled || errors || warned || skipped)
+    {
+        if (datalabel)
+            setInfoLabel(datalabel, datatext + " " + xf_humansize(FXStringVal(totaldataread).text()));
+        if (timelabel) setInfoLabel(timelabel, timetext + " --");
+    }
+    if (statusLabel) statusLabel->setText(text);
+    if (pauseButton) pauseButton->hide();
+    if (cancelButton)
+    {
+        cancelButton->setText(_("&Close"));
+        cancelButton->enable();
+    }
+    if (!errors && !warned) getApp()->addTimeout(this, File::ID_COMPLETE, 3000);
+    getApp()->runModalWhileShown(this);
+}
+
+
+void File::processProgressEvents()
+{
+    if (!cancelButton) return;
+    FXWindow* modal = independent ? static_cast<FXWindow*>(this) : cancelButton;
+    getApp()->runModalWhileEvents(modal);
+    if (independent) getApp()->repaint();
+    while (independent && paused && !cancelled) getApp()->runOneEvent(true);
+}
+
+
+void File::notifyChange(const FXString& pathname)
+{
+    if (changeCallback) changeCallback(changeData, pathname);
+}
+
+void File::setPathLabel(FXLabel* label, const FXString& text)
+{
+    if (independent) static_cast<TransferPathLabel*>(label)->setValue(text);
+    else label->setText(xf_truncline(text, MAX_MESSAGE_LENGTH));
+}
+
+void File::setInfoLabel(FXLabel* label, const FXString& text)
+{
+    if (independent) static_cast<TransferPathLabel*>(label)->setValue(text);
+    else label->setText(text);
+}
+
+FXbool File::runHostCopy(const FXString& command, FXString& output)
+{
+    output.clear();
+    int channel[2];
+    if (pipe(channel) != 0)
+    {
+        output = strerror(errno);
+        return false;
+    }
+    FXString hostCommand = "exec " + xf_hostcommand(command);
+    pid_t child = fork();
+    if (child == 0)
+    {
+        ::close(channel[0]);
+        if (setpgid(0, 0) != 0 || dup2(channel[1], STDOUT_FILENO) < 0 ||
+            dup2(channel[1], STDERR_FILENO) < 0)
+            _exit(126);
+        ::close(channel[1]);
+        execl("/bin/sh", "sh", "-c", hostCommand.text(), static_cast<char*>(NULL));
+        _exit(127);
+    }
+    int failure = errno;
+    ::close(channel[1]);
+    if (child < 0)
+    {
+        ::close(channel[0]);
+        output = strerror(failure);
+        return false;
+    }
+    setpgid(child, child);
+    int flags = fcntl(channel[0], F_GETFL);
+    if (flags < 0 || fcntl(channel[0], F_SETFL, flags | O_NONBLOCK) != 0)
+    {
+        failure = errno;
+        kill(-child, SIGKILL);
+        while (waitpid(child, NULL, 0) < 0 && errno == EINTR) {}
+        ::close(channel[0]);
+        output = strerror(failure);
+        return false;
+    }
+    activeChild = child;
+    int status = 0;
+    FXbool exited = false;
+    FXbool truncated = false;
+    FXbool readFailed = false;
+    FXlong cancelTime = 0;
+    auto readOutput = [&]()
+    {
+        char buffer[4096];
+        ssize_t count = 0;
+        size_t drained = 0;
+        while (drained < 256 * 1024 && (count = ::read(channel[0], buffer, sizeof(buffer))) > 0)
+        {
+            drained += static_cast<size_t>(count);
+            FXint remaining = 65536 - output.length();
+            if (remaining > 0)
+                output += FXString(buffer, FXMIN(count, static_cast<ssize_t>(remaining)));
+            if (count > remaining) truncated = true;
+        }
+        if (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR && !readFailed)
+        {
+            output += FXString("\n") + strerror(errno);
+            readFailed = true;
+            kill(-child, SIGKILL);
+        }
+    };
+    while (!exited)
+    {
+        readOutput();
+        // Keep the group leader's PID reserved until any cancelled descendants are stopped.
+        siginfo_t childInfo = {};
+        int result = waitid(P_PID, child, &childInfo, WEXITED | WNOHANG | WNOWAIT);
+        if (result == 0 && childInfo.si_pid == child)
+        {
+            if (cancelled && kill(-child, SIGKILL) != 0 && errno != ESRCH)
+                appLog(APP_LOG_ERRORS, "transfer-cancel-failed", strerror(errno));
+            pid_t reaped;
+            do
+            {
+                reaped = waitpid(child, &status, 0);
+            } while (reaped < 0 && errno == EINTR);
+            if (reaped < 0)
+            {
+                output += FXString("\n") + strerror(errno);
+                status = -1;
+            }
+            exited = true;
+        }
+        else if (result < 0 && errno != EINTR)
+        {
+            output += FXString("\n") + strerror(errno);
+            status = -1;
+            exited = true;
+        }
+        if (!exited)
+        {
+            processProgressEvents();
+            if (cancelled)
+            {
+                struct timespec now;
+                clock_gettime(CLOCK_MONOTONIC, &now);
+                FXlong time = static_cast<FXlong>(now.tv_sec) * 1000 + now.tv_nsec / 1000000;
+                if (!cancelTime) cancelTime = time;
+                else if (time - cancelTime >= 1000) kill(-child, SIGKILL);
+            }
+            struct pollfd descriptor = {channel[0], POLLIN, 0};
+            if (poll(&descriptor, 1, 50) < 0 && errno != EINTR && !readFailed)
+            {
+                output += FXString("\n") + strerror(errno);
+                readFailed = true;
+                kill(-child, SIGKILL);
+            }
+        }
+    }
+    readOutput();
+    activeChild = -1;
+    ::close(channel[0]);
+    output.trim();
+    if (truncated) output += _("\n[Command output truncated]");
+    if (!readFailed && status >= 0 && WIFEXITED(status) && WEXITSTATUS(status) == 0) return true;
+    if (status >= 0 && WIFEXITED(status))
+        output += FXString("\n") + _("Command exited with status ") + FXStringVal(WEXITSTATUS(status));
+    else if (status >= 0 && WIFSIGNALED(status))
+        output += FXString("\n") + _("Command terminated by signal ") + FXStringVal(WTERMSIG(status));
+    return false;
 }
 
 
@@ -393,6 +815,7 @@ FXbool File::uiUpdateDue(void)
 // Force timeout for progress dialog (used before opening confirmation or error dialogs)
 void File::forceTimeout(void)
 {
+    if (independent) return;
     getApp()->removeTimeout(this, File::ID_PROGRESSBAR);
     hide();
     getApp()->forceRefresh();
@@ -403,7 +826,7 @@ void File::forceTimeout(void)
 // Restart timeout for progress dialog  (used after closing confirmation or error dialogs)
 void File::restartTimeout(void)
 {
-    getApp()->addTimeout(this, File::ID_PROGRESSBAR, SHOW_PROGRESSBAR_DELAY);
+    if (!independent) getApp()->addTimeout(this, File::ID_PROGRESSBAR, SHOW_PROGRESSBAR_DELAY);
 }
 
 
@@ -441,6 +864,11 @@ FXlong File::fullwrite(int fd, const FXuchar* ptr, FXlong len)
                 continue;
             }
 #endif
+            return -1;
+        }
+        if (nwritten == 0)
+        {
+            errno = EIO;
             return -1;
         }
         ntotalwritten += nwritten;
@@ -552,6 +980,7 @@ int File::resolveConflict(const FXString& source, FXString& destination, FXbool 
     {
         cancelled = true;
     }
+    if (answer == OVWBOX_CLICKED_SKIP) skipped = true;
     return answer;
 }
 
@@ -591,11 +1020,11 @@ int File::md5file(const FXString& path, FXString& digest, int& errcode)
         {
             if (cancelButton)
             {
-                getApp()->runModalWhileEvents(cancelButton);
+                processProgressEvents();
             }
             if (uplabel)
             {
-                uplabel->setText(xf_truncline(_("Verifying: ") + path, MAX_MESSAGE_LENGTH));
+                setPathLabel(uplabel, _("Verifying: ") + path);
             }
             getApp()->repaint();
         }
@@ -608,6 +1037,20 @@ int File::md5file(const FXString& path, FXString& digest, int& errcode)
     ::close(fd);
     digest = g_checksum_get_string(sum.get());
     return true;
+}
+
+
+static FXuint showFileError(MessageBox* box, FXbool independent, const FXString& text)
+{
+    box->setText(text);
+    if (independent)
+    {
+        // The worker creates this reusable dialog before its error text is known.
+        FXint width = FXMIN(box->getDefaultWidth(), FXMAX(1, box->getRoot()->getWidth() - 20));
+        FXint height = FXMIN(box->getDefaultHeight(), FXMAX(1, box->getRoot()->getHeight() - 40));
+        box->resize(width, height);
+    }
+    return box->execute(PLACEMENT_OWNER);
 }
 
 
@@ -653,13 +1096,14 @@ int File::verifycopy(const FXString& source, const FXString& target, const FXStr
     }
 
     appLog(APP_LOG_ERRORS, "copy-verification-failed", source + " -> " + target + ": " + str);
+    warned = true;
     if (srcdigest != dstdigest && !dstdigest.empty())
     {
         ::unlink(target.text());
+        notifyChange(target);
     }
     forceTimeout();
-    mbox->setText(str);
-    FXuint answer = mbox->execute(PLACEMENT_OWNER);
+    FXuint answer = showFileError(mbox, independent, str);
     restartTimeout();
     if (answer == BOX_CLICKED_CANCEL)
     {
@@ -712,10 +1156,11 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                 // Force timeout checking for progress dialog
                 checkProgressBarTimeout();
 
-                // Update read data size
+                FXulong mtpSize = 0;
                 if (xf_lstat(source.text(), &info) == 0)
                 {
-                    totaldataread += (FXulong)info.st_size;
+                    mtpSize = (FXulong)info.st_size;
+                    if (!independent) totaldataread += mtpSize;
                 }
 
                 // Start copy speed timeout if not already done
@@ -730,23 +1175,26 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                     int pct = (sourcesize == 0 ? 0 : (100.0 * totaldataread) / sourcesize);
                     progressbar->setProgress(pct);
                 }
+                if (independent && datalabel && !numcopyspeed)
+                    setInfoLabel(datalabel, datatext + " " +
+                                 xf_humansize(FXStringVal(totaldataread).text()) + " / " + hsourcesize);
 
                 // Give cancel button an opportunity to be clicked
                 if (cancelButton)
                 {
-                    getApp()->runModalWhileEvents(cancelButton);
+                    processProgressEvents();
                 }
 
                 // Set labels for progress dialog
                 FXString label = _("Source: ") + source;
                 if (uplabel)
                 {
-                    uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                    setPathLabel(uplabel, label);
                 }
                 label = _("Target: ") + target;
                 if (downlabel)
                 {
-                    downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                    setPathLabel(downlabel, label);
                 }
                 getApp()->repaint();
 
@@ -759,17 +1207,31 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                 }
 
                 // Copy using gio command (regular copy does not work on MTP mounts)
+                notifyChange(destfile);
                 FXString cmd = "gio copy " + xf_quote(source) + " " + xf_quote(destfile);
-                FXString ret = xf_getcommandoutput(cmd);
+                FXString ret;
+                FXbool copied;
+                if (independent)
+                    copied = runHostCopy(cmd, ret);
+                else
+                {
+                    ret = xf_getcommandoutput(cmd);
+                    copied = ret.empty();
+                }
+                notifyChange(destfile);
 
                 // An error has occurred
-                if (ret != "")
+                if (cancelled)
+                {
+                    ::close(src);
+                    return false;
+                }
+                if (!copied)
                 {
                     forceTimeout();
                     FXString str;
                     str.format(_("Can't copy file %s: %s"), target.text(), ret.text());
-                    mbox->setText(str);
-                    FXuint answer = mbox->execute(PLACEMENT_OWNER);
+                    FXuint answer = showFileError(mbox, independent, str);
                     if (answer == BOX_CLICKED_CANCEL)
                     {
                         cancelled = true;
@@ -784,6 +1246,13 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                 }
                 else
                 {
+                    if (independent)
+                    {
+                        totaldataread += mtpSize;
+                        if (progressbar)
+                            progressbar->setProgress(sourcesize == 0 ? 0 :
+                                                     FXMIN(100.0, (100.0 * totaldataread) / sourcesize));
+                    }
                     ok = verify ? verifycopy(source, destfile, "") : true;
                 }
             }
@@ -800,6 +1269,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                 // Copy file block by block
                 if ((dst = ::open(destfile.text(), O_WRONLY | O_CREAT | O_TRUNC, info.st_mode)) >= 0)
                 {
+                    notifyChange(destfile);
                     int error = false;
                     std::unique_ptr<GChecksum, decltype(&g_checksum_free)> srcsum(
                         verify ? g_checksum_new(G_CHECKSUM_MD5) : NULL, g_checksum_free);
@@ -823,14 +1293,14 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                             {
                                 str.format(_("Can't copy file %s"), target.text());
                             }
-                            mbox->setText(str);
-                            FXuint answer = mbox->execute(PLACEMENT_OWNER);
+                            FXuint answer = showFileError(mbox, independent, str);
 
                             restartTimeout();
                             if (answer == BOX_CLICKED_CANCEL)
                             {
                                 ::close(dst);
                                 ::close(src);
+                                notifyChange(destfile);
                                 cancelled = true;
 
                                 return false;
@@ -838,6 +1308,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                             else
                             {
                                 error = true; // An error has occurred
+                                break;
                             }
                         }
                         if (nread == 0)
@@ -852,7 +1323,8 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
 
                         // Set percentage value for progress dialog
                         totaldataread += nread;
-                        if (uiUpdateDue())
+                        FXbool update = uiUpdateDue();
+                        if (update)
                         {
                             if (progressbar)
                             {
@@ -860,23 +1332,26 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                                 int pct = (sourcesize == 0 ? 0 : (100.0 * totaldataread) / sourcesize);
                                 progressbar->setProgress(pct);
                             }
+                            if (independent && datalabel && !numcopyspeed)
+                                setInfoLabel(datalabel, datatext + " " +
+                                             xf_humansize(FXStringVal(totaldataread).text()) + " / " + hsourcesize);
 
                             // Give cancel button an opportunity to be clicked
                             if (cancelButton)
                             {
-                                getApp()->runModalWhileEvents(cancelButton);
+                                processProgressEvents();
                             }
 
                             // Set labels for progress dialog
                             FXString label = _("Source: ") + source;
                             if (uplabel)
                             {
-                                uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                                setPathLabel(uplabel, label);
                             }
                             label = _("Target: ") + target;
                             if (downlabel)
                             {
-                                downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                                setPathLabel(downlabel, label);
                             }
                             getApp()->repaint();
                         }
@@ -886,6 +1361,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                         {
                             ::close(dst);
                             ::close(src);
+                            notifyChange(destfile);
 
                             return false;
                         }
@@ -905,14 +1381,14 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                             {
                                 str.format(_("Can't copy file %s"), target.text());
                             }
-                            mbox->setText(str);
-                            FXuint answer = mbox->execute(PLACEMENT_OWNER);
+                            FXuint answer = showFileError(mbox, independent, str);
 
                             restartTimeout();
                             if (answer == BOX_CLICKED_CANCEL)
                             {
                                 ::close(dst);
                                 ::close(src);
+                                notifyChange(destfile);
                                 cancelled = true;
                                 
                                 return false;
@@ -920,8 +1396,10 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                             else
                             {
                                 error = true; // An error has occurred
+                                break;
                             }
                         }
+                        if (update) notifyChange(destfile);
 
                     }
 
@@ -940,11 +1418,11 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                         int errcode = errno;
                         ::close(dst);
                         ::close(src);
+                        notifyChange(destfile);
                         forceTimeout();
                         FXString str;
                         str.format(_("Can't copy file %s: %s"), target.text(), strerror(errcode));
-                        mbox->setText(str);
-                        FXuint answer = mbox->execute(PLACEMENT_OWNER);
+                        FXuint answer = showFileError(mbox, independent, str);
                         restartTimeout();
                         if (answer == BOX_CLICKED_CANCEL)
                         {
@@ -954,6 +1432,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                         return -2;
                     }
                     ::close(dst);
+                    notifyChange(destfile);
 
                     FXbool verifyfailed = false;
                     if (ok == true && srcsum)
@@ -977,6 +1456,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                         int errcode = errno;
                         if (warn && rc)
                         {
+                            warned = true;
                             forceTimeout();
 
                             FXString str;
@@ -989,8 +1469,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                             {
                                 str.format(_("Can't preserve date when copying file %s"), target.text());
                             }
-                            mbox->setText(str);
-                            FXuint answer = mbox->execute(PLACEMENT_OWNER);
+                            FXuint answer = showFileError(mbox, independent, str);
 
                             restartTimeout();
                             if (answer == BOX_CLICKED_CANCEL)
@@ -1035,8 +1514,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
         {
             str.format(_("Can't copy file %s"), target.text());
         }
-        mbox->setText(str);
-        FXuint answer = mbox->execute(PLACEMENT_OWNER);
+        FXuint answer = showFileError(mbox, independent, str);
 
         restartTimeout();
         if (answer == BOX_CLICKED_CANCEL)
@@ -1080,10 +1558,12 @@ int File::copydir(const FXString& source, const FXString& target, const FXString
     }
 
     // Try make directory, if none exists yet
-    if ((::mkdir(destfile.text(), parentinfo.st_mode | S_IWUSR) != 0) && (errno != EEXIST))
+    int made = ::mkdir(destfile.text(), parentinfo.st_mode | S_IWUSR);
+    if (made != 0 && errno != EEXIST)
     {
         return false;
     }
+    if (made == 0) notifyChange(destfile);
 
     // Can we stat it
     if ((xf_lstat(destfile.text(), &linfo) != 0) || !S_ISDIR(linfo.st_mode))
@@ -1137,6 +1617,7 @@ int File::copydir(const FXString& source, const FXString& target, const FXString
                 // Or a permission problem occured
                 else
                 {
+                    warned = true;
                     FXString str;
                     if (xf_isdirectory(oldchild))
                     {
@@ -1149,8 +1630,7 @@ int File::copydir(const FXString& source, const FXString& target, const FXString
                                            _("Can't copy file %s : Permission denied"), oldchild.text());
                     }
                     forceTimeout();
-                    mbox->setText(str);
-                    FXuint answer = mbox->execute(PLACEMENT_OWNER);
+                    FXuint answer = showFileError(mbox, independent, str);
 
                     restartTimeout();
                     if (answer == BOX_CLICKED_CANCEL)
@@ -1179,6 +1659,7 @@ int File::copydir(const FXString& source, const FXString& target, const FXString
             int errcode = errno;
             if (warn && rc)
             {
+                warned = true;
                 forceTimeout();
                 FXString str;
                 if (errcode)
@@ -1189,8 +1670,7 @@ int File::copydir(const FXString& source, const FXString& target, const FXString
                 {
                     str.format(_("Can't preserve date when copying folder %s"), target.text());
                 }
-                mbox->setText(str);
-                FXuint answer = mbox->execute(PLACEMENT_OWNER);
+                FXuint answer = showFileError(mbox, independent, str);
 
                 restartTimeout();
                 if (answer == BOX_CLICKED_CANCEL)
@@ -1207,9 +1687,14 @@ int File::copydir(const FXString& source, const FXString& target, const FXString
         // Skipped children remain at the source. Never recursively delete a merged source folder.
         if (::rmdir(source.text()) == 0)
         {
+            notifyChange(source);
             xf_cleanuptrashinfo(source);
         }
-        else if (errno != ENOTEMPTY && errno != EEXIST)
+        else if (errno == ENOTEMPTY || errno == EEXIST)
+        {
+            if (independent) skipped = true;
+        }
+        else
         {
             int errcode = errno;
             forceTimeout();
@@ -1270,20 +1755,26 @@ int File::copyrec(const FXString& source, const FXString& target, const FXString
     // Source is fifo: make a new one
     if (S_ISFIFO(linfo1.st_mode))
     {
-        return mkfifo(destination.text(), linfo1.st_mode) == 0;
+        if (mkfifo(destination.text(), linfo1.st_mode) != 0) return false;
+        notifyChange(destination);
+        return true;
     }
 
     // Source is device: make a new one
     if (S_ISBLK(linfo1.st_mode) || S_ISCHR(linfo1.st_mode) || S_ISSOCK(linfo1.st_mode))
     {
-        return mknod(destination.text(), linfo1.st_mode, linfo1.st_rdev) == 0;
+        if (mknod(destination.text(), linfo1.st_mode, linfo1.st_rdev) != 0) return false;
+        notifyChange(destination);
+        return true;
     }
 
     // Source is symbolic link: make a new one
     if (S_ISLNK(linfo1.st_mode))
     {
         FXString lnkfile = xf_readlink(source);
-        return ::symlink(lnkfile.text(), destination.text()) == 0;
+        if (::symlink(lnkfile.text(), destination.text()) != 0) return false;
+        notifyChange(destination);
+        return true;
     }
 
     // This shouldn't happen
@@ -1384,20 +1875,20 @@ int File::remove(const FXString& file)
                     // Give cancel button an opportunity to be clicked
                     if (cancelButton)
                     {
-                        getApp()->runModalWhileEvents(cancelButton);
+                        processProgressEvents();
                     }
 
                     // Set labels for progress dialog
                     FXString label = _("Delete folder: ") + file;
                     if (uplabel)
                     {
-                        uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                        setPathLabel(uplabel, label);
                     }
                     dirname = FXPath::directory(FXPath::absolute(file));
                     label = _("From: ") + dirname;
                     if (downlabel)
                     {
-                        downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                        setPathLabel(downlabel, label);
                     }
                     getApp()->repaint();
                 }
@@ -1443,8 +1934,7 @@ int File::remove(const FXString& file)
                 {
                     str.format(_("Can't delete folder %s"), file.text());
                 }
-                mbox->setText(str);
-                FXuint answer = mbox->execute(PLACEMENT_OWNER);
+                FXuint answer = showFileError(mbox, independent, str);
 
                 restartTimeout();
                 if (answer == BOX_CLICKED_CANCEL)
@@ -1457,6 +1947,7 @@ int File::remove(const FXString& file)
             }
             else
             {
+                notifyChange(file);
                 xf_cleanuptrashinfo(file);
                 return true;
             }
@@ -1474,20 +1965,20 @@ int File::remove(const FXString& file)
                     // Give cancel button an opportunity to be clicked
                     if (cancelButton)
                     {
-                        getApp()->runModalWhileEvents(cancelButton);
+                        processProgressEvents();
                     }
 
                     // Set labels for progress dialog
                     FXString label = _("Delete:") + file;
                     if (uplabel)
                     {
-                        uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                        setPathLabel(uplabel, label);
                     }
                     dirname = FXPath::directory(FXPath::absolute(file));
                     label = _("From: ") + dirname;
                     if (downlabel)
                     {
-                        downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+                        setPathLabel(downlabel, label);
                     }
                     getApp()->repaint();
                 }
@@ -1512,8 +2003,7 @@ int File::remove(const FXString& file)
                 {
                     str.format(_("Can't delete file %s"), file.text());
                 }
-                mbox->setText(str);
-                FXuint answer = mbox->execute(PLACEMENT_OWNER);
+                FXuint answer = showFileError(mbox, independent, str);
 
                 restartTimeout();
                 if (answer == BOX_CLICKED_CANCEL)
@@ -1526,6 +2016,7 @@ int File::remove(const FXString& file)
             }
             else
             {
+                notifyChange(file);
                 xf_cleanuptrashinfo(file);
                 return true;
             }
@@ -1679,19 +2170,19 @@ int File::fmove(const FXString& source, const FXString& target, const FXString& 
         // Give cancel button an opportunity to be clicked
         if (cancelButton)
         {
-            getApp()->runModalWhileEvents(cancelButton);
+            processProgressEvents();
         }
 
         // Set labels for progress dialog
         FXString label = _("Source: ") + source;
         if (uplabel)
         {
-            uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+            setPathLabel(uplabel, label);
         }
         label = _("Target: ") + target;
         if (downlabel)
         {
-            downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+            setPathLabel(downlabel, label);
         }
         getApp()->repaint();
     }
@@ -1728,10 +2219,27 @@ int File::fmove(const FXString& source, const FXString& target, const FXString& 
             // (Move to Trash) so a same-drive rename stays instant for large folders
             if (sourcesize != 0)
             {
-                FXuint nbfiles = 0, nbsubfolders = 0;
-                FXulong totalsize = 0;
-                xf_strlcpy(buf, source.text(), source.length() + 1);
-                srcsize = xf_pathsize(buf, &nbfiles, &nbsubfolders, &totalsize);
+                std::map<FXString, FXulong>::const_iterator cached = sourceSizes.find(source);
+                if (independent && cached != sourceSizes.end())
+                {
+                    srcsize = cached->second;
+                }
+                else if (independent)
+                {
+                    FXuint nbfiles = 0, nbsubfolders = 0;
+                    FXulong total = 0, previous = totalsourcesize;
+                    srcsize = computeSourceSize(this, getApp(), source, &nbfiles, &nbsubfolders,
+                                                &total, cancelButton, &cancelled);
+                    totalsourcesize = previous;
+                    if (cancelled) return false;
+                }
+                else
+                {
+                    FXuint nbfiles = 0, nbsubfolders = 0;
+                    FXulong totalsize = 0;
+                    xf_strlcpy(buf, source.text(), source.length() + 1);
+                    srcsize = xf_pathsize(buf, &nbfiles, &nbsubfolders, &totalsize);
+                }
                 totaldataread += srcsize;
             }
         }
@@ -1742,49 +2250,52 @@ int File::fmove(const FXString& source, const FXString& target, const FXString& 
         }
     }
 
-    if (progressbar)
-    {
-        // Percentage
-        int pct = (sourcesize == 0 ? 0 : (100.0 * totaldataread) / sourcesize);
-        progressbar->setProgress((int)pct);
-
-        char size[64];
-
-        // Move speed
-        double movespeed = totaldataread / (double)(xf_getcurrenttime() - tstart);
-        snprintf(size, sizeof(size), "%f", movespeed);
-        FXString hspeed = xf_humansize(size);
-
-        // Remaining time in seconds
-        FXuint remtime = (FXuint)((sourcesize - totaldataread) / movespeed);
-        FXString hremtime = xf_secondstotimestring(remtime);
-
-        // Total data moved
-        FXString hsize;
-
-#if __WORDSIZE == 64
-        snprintf(size, sizeof(size), "%ld", totaldataread);
-#else
-        snprintf(size, sizeof(size), "%lld", totaldataread);
-#endif
-        hsize = xf_humansize(size);
-
-        snprintf(size, sizeof(size), "%s %s / %s (%s/s)", datatext.text(), hsize.text(), hsourcesize.text(),
-                 hspeed.text());
-        datalabel->setText(size);
-        snprintf(size, sizeof(size), "%s %s", timetext.text(), hremtime.text());
-        timelabel->setText(size);
-    }
-
     // Rename file using the standard C function
     // This should only work for files that are on the same file system
     if (::rename(source.text(), targetfile.text()) == 0)
     {
+        if (progressbar)
+        {
+            // Percentage
+            int pct = (sourcesize == 0 ? 0 : FXMIN(100.0, (100.0 * totaldataread) / sourcesize));
+            progressbar->setProgress((int)pct);
+
+            char size[64];
+
+            // Move speed
+            FXulong elapsed = xf_getcurrenttime() - tstart;
+            double movespeed = elapsed ? totaldataread / (double)elapsed : 0;
+            snprintf(size, sizeof(size), "%f", movespeed);
+            FXString hspeed = xf_humansize(size);
+
+            // Remaining time in seconds
+            FXulong remaining = sourcesize > (FXulong)totaldataread ? sourcesize - totaldataread : 0;
+            FXuint remtime = movespeed > 0 ? (FXuint)(remaining / movespeed) : 0;
+            FXString hremtime = xf_secondstotimestring(remtime);
+
+            // Total data moved
+            FXString hsize;
+#if __WORDSIZE == 64
+            snprintf(size, sizeof(size), "%ld", totaldataread);
+#else
+            snprintf(size, sizeof(size), "%lld", totaldataread);
+#endif
+            hsize = xf_humansize(size);
+
+            snprintf(size, sizeof(size), "%s %s / %s (%s/s)", datatext.text(), hsize.text(), hsourcesize.text(),
+                     hspeed.text());
+            setInfoLabel(datalabel, size);
+            snprintf(size, sizeof(size), "%s %s", timetext.text(), hremtime.text());
+            setInfoLabel(timelabel, size);
+        }
+        notifyChange(source);
+        notifyChange(targetfile);
         xf_cleanuptrashinfo(source);
         return true;
     }
 
     int errcode = errno;
+    totaldataread -= srcsize;
     if (errcode != EXDEV)
     {
         forceTimeout();
@@ -1794,8 +2305,6 @@ int File::fmove(const FXString& source, const FXString& target, const FXString& 
     }
 
     // If files are on different file systems, use the copy/delete scheme and preserve the original date
-    totaldataread -= srcsize; // Avoid counting data twice
-
     if (S_ISDIR(srcinfo.st_mode))
     {
         return copydir(source, targetfile, hsourcesize, sourcesize, tstart, srcinfo, NULL, true, true);
@@ -1805,6 +2314,25 @@ int File::fmove(const FXString& source, const FXString& target, const FXString& 
     // Success
     if (ret == true)
     {
+        if (independent)
+        {
+            struct stat current;
+            if (xf_lstat(source.text(), &current) != 0 ||
+                srcinfo.st_dev != current.st_dev || srcinfo.st_ino != current.st_ino ||
+                srcinfo.st_mode != current.st_mode || srcinfo.st_uid != current.st_uid ||
+                srcinfo.st_gid != current.st_gid || srcinfo.st_size != current.st_size ||
+                srcinfo.st_mtim.tv_sec != current.st_mtim.tv_sec ||
+                srcinfo.st_mtim.tv_nsec != current.st_mtim.tv_nsec ||
+                srcinfo.st_ctim.tv_sec != current.st_ctim.tv_sec ||
+                srcinfo.st_ctim.tv_nsec != current.st_ctim.tv_nsec)
+            {
+                forceTimeout();
+                MessageBox::error(this, BOX_OK, _("Move source changed"),
+                                  _("Source changed while moving.\nThe source was not removed.\n"
+                                    "Check the progress window."));
+                return -1;
+            }
+        }
         return remove(source.text()) == true;
     }
     // Error during copy
@@ -1937,14 +2465,14 @@ int File::chmod(char* path, char* file, mode_t mode, FXbool rec, const FXbool di
         // Give cancel button an opportunity to be clicked
         if (cancelButton)
         {
-            getApp()->runModalWhileEvents(cancelButton);
+            processProgressEvents();
         }
 
         // Set labels for progress dialog
         FXString label = _("Changing permissions...");
-        uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+        setPathLabel(uplabel, label);
         label = _("File: ") + FXString(path);
-        downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+        setPathLabel(downlabel, label);
         getApp()->repaint();
 
         // If cancel button was clicked, return
@@ -1965,14 +2493,14 @@ int File::chmod(char* path, char* file, mode_t mode, FXbool rec, const FXbool di
             // Give cancel button an opportunity to be clicked
             if (cancelButton)
             {
-                getApp()->runModalWhileEvents(cancelButton);
+                processProgressEvents();
             }
 
             // Set labels for progress dialog
             FXString label = _("Changing permissions...");
-            uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+            setPathLabel(uplabel, label);
             label = _("Folder: ") + FXString(path);
-            downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+            setPathLabel(downlabel, label);
             getApp()->repaint();
 
             // If cancel button was clicked, return
@@ -2029,14 +2557,14 @@ int File::rchmod(char* path, char* file, mode_t mode, const FXbool dironly, cons
         // Give cancel button an opportunity to be clicked
         if (cancelButton)
         {
-            getApp()->runModalWhileEvents(cancelButton);
+            processProgressEvents();
         }
 
         // Set labels for progress dialog
         FXString label = _("Changing permissions...");
-        uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+        setPathLabel(uplabel, label);
         label = _("File: ") + FXString(path);
-        downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+        setPathLabel(downlabel, label);
         getApp()->repaint();
 
         // If cancel button was clicked, return
@@ -2132,14 +2660,14 @@ int File::chown(char* path, char* file, uid_t uid, gid_t gid, const FXbool rec,
         // Give cancel button an opportunity to be clicked
         if (cancelButton)
         {
-            getApp()->runModalWhileEvents(cancelButton);
+            processProgressEvents();
         }
 
         // Set labels for progress dialog
         FXString label = _("Changing owner...");
-        uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+        setPathLabel(uplabel, label);
         label = _("File: ") + FXString(path);
-        downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+        setPathLabel(downlabel, label);
         getApp()->repaint();
 
         // If cancel button was clicked, return
@@ -2163,14 +2691,14 @@ int File::chown(char* path, char* file, uid_t uid, gid_t gid, const FXbool rec,
             // Give cancel button an opportunity to be clicked
             if (cancelButton)
             {
-                getApp()->runModalWhileEvents(cancelButton);
+                processProgressEvents();
             }
 
             // Set labels for progress dialog
             FXString label = _("Changing owner...");
-            uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+            setPathLabel(uplabel, label);
             label = _("Folder: ") + FXString(path);
-            downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+            setPathLabel(downlabel, label);
             getApp()->repaint();
 
             // If cancel button was clicked, return
@@ -2221,14 +2749,14 @@ int File::rchown(char* path, char* file, uid_t uid, gid_t gid, const FXbool diro
         // Give cancel button an opportunity to be clicked
         if (cancelButton)
         {
-            getApp()->runModalWhileEvents(cancelButton);
+            processProgressEvents();
         }
 
         // Set labels for progress dialog
         FXString label = _("Changing owner...");
-        uplabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+        setPathLabel(uplabel, label);
         label = _("File: ") + FXString(path);
-        downlabel->setText(xf_truncline(label, MAX_MESSAGE_LENGTH));
+        setPathLabel(downlabel, label);
         getApp()->repaint();
 
         // If cancel button was clicked, return
@@ -2373,6 +2901,24 @@ int File::archive(const FXString name, const FXString cmd)
 // Compute data size and show progress dialog
 FXString File::sourcesize(const FXString src, FXulong* totalsize, const FXbool url)
 {
+    std::vector<FXString> paths;
+    for (FXint start = 0; start < src.length();)
+    {
+        FXint end = src.find('\n', start);
+        if (end < 0) end = src.length();
+        FXString path = src.mid(start, end - start);
+        if (url && path.right(1) == "\r") path.trunc(path.length() - 1);
+        if (!path.empty()) paths.push_back(url ? FXURL::decode(FXURL::fileFromURL(path)) : path);
+        start = end + 1;
+    }
+    return sourcesize(paths, totalsize);
+}
+
+
+FXString File::sourcesize(const std::vector<FXString>& paths, FXulong* totalsize)
+{
+    if (independent) getApp()->addTimeout(this, File::ID_SOURCESIZE, SOURCESIZE_REFRESH_DELAY);
+
     // Set label
     FXString msg;
 
@@ -2388,55 +2934,24 @@ FXString File::sourcesize(const FXString src, FXulong* totalsize, const FXbool u
     {
         msg = "";
     }
-    uplabel->setText(msg);
+    if (independent) setInfoLabel(datalabel, msg);
+    else setPathLabel(uplabel, msg);
 
     // Compute data size
     *totalsize = 0;
-    char buf[MAXPATHLEN];
-
-    for (int i = 0; ; i++)
+    sourceSizes.clear();
+    for (const FXString& path : paths)
     {
         // Force timeout checking for progress dialog
         checkProgressBarTimeout();
 
-        FXString src_i;
-
-        if (url)
-        {
-            char* token;
-            (i == 0 ? token = strtok((char*)src.text(), "\r\n") : token = strtok(NULL, "\r\n"));
-
-            if (token == NULL)
-            {
-                break;
-            }
-
-            src_i = FXURL::decode(FXURL::fileFromURL(token));
-        }
-        else
-        {
-            char* token;
-
-            (i == 0 ? token = strtok((char*)src.text(), "\n") : token = strtok(NULL, "\n"));
-
-            if (token == NULL)
-            {
-                break;
-            }
-
-            src_i = FXString(token);
-        }
-
         FXuint nbfiles = 0, nbsubfolders = 0;
-        FXulong size_i = 0;
-
-        xf_strlcpy(buf, src_i.text(), src_i.length() + 1);
-        computeSourceSize(this, getApp(), buf, &nbfiles, &nbsubfolders, &size_i, cancelButton, &cancelled);
+        computeSourceSize(this, getApp(), path, &nbfiles, &nbsubfolders, totalsize, cancelButton, &cancelled);
 
         // Give cancel button an opportunity to be clicked
         if (cancelButton)
         {
-            getApp()->runModalWhileEvents(cancelButton);
+            processProgressEvents();
         }
 
         // If cancel button was clicked, return
@@ -2444,10 +2959,9 @@ FXString File::sourcesize(const FXString src, FXulong* totalsize, const FXbool u
         {
             return "";
         }
-
-        *totalsize += size_i;
     }
-
+    setTotalSourceSize(*totalsize);
+    char buf[64];
 #if __WORDSIZE == 64
     snprintf(buf, sizeof(buf), "%lu", *totalsize);
 #else
@@ -2701,7 +3215,69 @@ int File::pkgUninstall(const FXString name, const FXString cmd)
 // Handle cancel button in progress bar dialog
 long File::onCmdCancel(FXObject*, FXSelector, void*)
 {
+    if (independent && finished)
+    {
+        getApp()->stopModal(this, true);
+        hide();
+        return 1;
+    }
+    if (activeChild > 0)
+    {
+        if (paused) kill(-activeChild, SIGCONT);
+        if (kill(-activeChild, SIGTERM) != 0 && errno != ESRCH)
+            appLog(APP_LOG_ERRORS, "transfer-cancel-failed", strerror(errno));
+    }
     cancelled = true;
+    paused = false;
+    if (independent)
+    {
+        if (statusLabel) statusLabel->setText(_("Cancelling..."));
+        if (pauseButton) pauseButton->disable();
+        if (cancelButton) cancelButton->disable();
+    }
+    return 1;
+}
+
+long File::onDialogCancel(FXObject* sender, FXSelector selector, void* data)
+{
+    if (independent) return onCmdCancel(sender, selector, data);
+    return DialogBox::onCmdCancel(sender, selector, data);
+}
+
+
+long File::onCmdPause(FXObject*, FXSelector, void*)
+{
+    if (!independent || cancelled || finished) return 1;
+    FXbool next = !paused;
+    if (activeChild > 0 && kill(-activeChild, next ? SIGSTOP : SIGCONT) != 0 && errno != ESRCH)
+    {
+        int failure = errno;
+        appLog(APP_LOG_ERRORS, "transfer-pause-failed", strerror(failure));
+        MessageBox::error(this, BOX_OK, _("Error"), _("Unable to pause or resume the transfer: %s"),
+                          strerror(failure));
+        return 1;
+    }
+    paused = next;
+    pauseButton->setText(paused ? _("R&esume") : _("&Pause"));
+    if (statusLabel)
+        statusLabel->setText(paused ? _("Paused") : activityStatus);
+    if (paused)
+    {
+        numcopyspeed = 0;
+        prevTotaldataread = totaldataread;
+        if (datalabel && !copyspeedHsourcesize.empty())
+            setInfoLabel(datalabel, datatext + " " + xf_humansize(FXStringVal(totaldataread).text()) +
+                                     " / " + copyspeedHsourcesize);
+        if (timelabel) setInfoLabel(timelabel, timetext + " --");
+    }
+    return 1;
+}
+
+
+long File::onComplete(FXObject*, FXSelector, void*)
+{
+    getApp()->stopModal(this, true);
+    hide();
     return 1;
 }
 
@@ -2744,7 +3320,8 @@ long File::onSourceSizeRefresh(FXObject*, FXSelector, void*)
     }
 
     // Update label text
-    uplabel->setText(msg + srcsize);
+    if (independent) setInfoLabel(datalabel, msg + srcsize);
+    else uplabel->setText(msg + srcsize);
 
     // Restart timeout
     getApp()->addTimeout(this, File::ID_SOURCESIZE, SOURCESIZE_REFRESH_DELAY);
@@ -2756,6 +3333,12 @@ long File::onSourceSizeRefresh(FXObject*, FXSelector, void*)
 // Refresh copy speed
 long File::onCopySpeed(FXObject*, FXSelector, void*)
 {
+    if (independent && paused)
+    {
+        prevTotaldataread = totaldataread;
+        getApp()->addTimeout(this, File::ID_COPYSPEED, COPYSPEED_DELAY);
+        return 1;
+    }
     // Copy speed
     char size[64];
     double copyspeed = (totaldataread - prevTotaldataread) / (double)(COPYSPEED_DELAY / 1000.0);
@@ -2780,8 +3363,10 @@ long File::onCopySpeed(FXObject*, FXSelector, void*)
     FXString hspeed = xf_humansize(size);
 
     // Remaining time in seconds
-    FXuint remtime = (FXuint)((copyspeedSourcesize - totaldataread) / avgcopyspeed);
-    FXString hremtime = xf_secondstotimestring(remtime);
+    FXulong remaining = copyspeedSourcesize > (FXulong)totaldataread ?
+                        copyspeedSourcesize - totaldataread : 0;
+    FXuint remtime = avgcopyspeed > 0 ? (FXuint)(remaining / avgcopyspeed) : 0;
+    FXString hremtime = remaining && avgcopyspeed <= 0 ? "--" : xf_secondstotimestring(remtime);
 
     // Total data copied
     FXString hsize;
@@ -2796,13 +3381,13 @@ long File::onCopySpeed(FXObject*, FXSelector, void*)
              copyspeedHsourcesize.text(), hspeed.text());    
     if (datalabel)
     {
-        datalabel->setText(size);
+        setInfoLabel(datalabel, size);
     }
     
     snprintf(size, sizeof(size), "%s %s", timetext.text(), hremtime.text());
     if (timelabel)
     {
-        timelabel->setText(size);
+        setInfoLabel(timelabel, size);
     }
 
     // Restart timeout   

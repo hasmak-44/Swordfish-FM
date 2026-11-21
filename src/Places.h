@@ -7,6 +7,7 @@
 #include "BackgroundImage.h"
 #include <map>
 #include <set>
+#include <vector>
 
 class SidebarItem : public FXTreeItem
 {
@@ -24,9 +25,23 @@ public:
     // Dimmed but still clickable, e.g. a network entry not confirmed by the latest search
     FXbool muted = false;
     virtual void draw(const FXTreeList* list, FXDC& dc, FXint x, FXint y, FXint w, FXint h) const;
+    virtual FXint getWidth(const FXTreeList* list) const;
+    virtual FXint getHeight(const FXTreeList* list) const;
+    virtual FXint hitItem(const FXTreeList* list, FXint x, FXint y) const;
+    FXbool deviceButtonsContainY(const FXTreeList* list, FXint y) const;
     SidebarItem(const FXString& text, FXIcon* icon, Kind type, const FXString& location = "",
                 const FXString& name = "") :
         FXTreeItem(text, icon, icon), kind(type), path(location), key(name) {}
+private:
+    FXint textWidth(const FXTreeList* list) const;
+    FXbool separateDeviceButtons(const FXTreeList* list) const;
+    const std::vector<FXString>& wrappedLines(const FXTreeList* list) const;
+    mutable FXint cachedWidth = -1;
+    mutable FXint cachedFontHeight = -1;
+    mutable FXint cachedTextWidth = -1;
+    mutable const FXFont* cachedFont = NULL;
+    mutable FXString cachedText;
+    mutable std::vector<FXString> cachedLines;
 };
 
 struct SidebarDeviceRequest
@@ -41,6 +56,8 @@ class SidebarTree : public FXTreeList, public BackgroundImageOwner
 protected:
     SidebarTree() {}
     FXint clearance = 0;
+    FXint wrapWidth = 0;
+    FXint layoutWidth = 0;
     FXDragType tabType = 0;
     FXDragType uriType = 0;
     FXbool remoteBusy = false;
@@ -50,6 +67,8 @@ protected:
 public:
     SidebarTree(FXComposite* parent, FXObject* target, FXSelector selector, FXuint opts);
     virtual FXint getContentHeight();
+    virtual void layout();
+    FXint getWrapWidth() const { return wrapWidth; }
     void setClearance(FXint value);
     long onExpandItem(FXObject*, FXSelector, void*);
     long onCollapseItem(FXObject*, FXSelector, void*);
@@ -146,6 +165,7 @@ protected:
     FXulong hash_prev = 0;
     FXString gvfsmounts_prev = "";
     FXString blocks_prev = "";
+    vector_FXString previousVolumes;
     FXStringDict knownDevices;            // Block devices seen mounted on /media in this session
     std::map<FXString, FXString> knownRemotes;
     std::set<FXString> mountedRemotes;

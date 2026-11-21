@@ -15,6 +15,7 @@
 #include "icons.h"
 #include "xfeutils.h"
 #include "File.h"
+#include "Transfer.h"
 #include "FileDict.h"
 #include "InputDialog.h"
 #include "MessageBox.h"
@@ -750,6 +751,18 @@ long DirList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
         if (pos == buf.length() - 1)
         {
             num = num - 1;
+        }
+
+        if ((dropaction == DRAG_COPY || dropaction == DRAG_MOVE) && xf_hasTransferStarter())
+        {
+            FXbool confirm = (!confirm_dnd || ctrlshiftkey) && ask_before_copy && showdialog;
+            FXbool started = xf_startDroppedTransfer(this, dropaction == DRAG_COPY ? COPY : MOVE,
+                                                     buf, dropdirectory, confirm);
+            // The worker removes moved sources only after copying; the drag source must not delete them.
+            dropFinished(started ? DRAG_COPY : DRAG_REJECT);
+            FXFREE(&data);
+            if (item) item->setSelected(FALSE);
+            return started ? 1 : 0;
         }
 
         // File object

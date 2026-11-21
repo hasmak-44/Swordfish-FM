@@ -32,6 +32,7 @@
 #include "icons.h"
 #include "xfeutils.h"
 #include "File.h"
+#include "Transfer.h"
 #include "FileDict.h"
 #include "IconList.h"
 #include "MessageBox.h"
@@ -1705,6 +1706,11 @@ long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
     // This is done before displaying the popup menu to fix a drag and drop problem
     // with Konqueror and Dolphin file managers
     FXbool dnd = !xdsdrop && getDNDData(FROM_DRAGNDROP, urilistType, data, len);
+    if (dnd)
+    {
+        FXRESIZE(&data, FXuchar, len + 1);
+        data[len] = '\0';
+    }
     std::vector<FXString> rightDropPaths;
     if (rightdnd && dnd)
     {
@@ -1840,6 +1846,17 @@ long FileList::onDNDDrop(FXObject* sender, FXSelector sel, void* ptr)
         if (pos == buf.length() - 1)
         {
             num = num - 1;
+        }
+
+        if ((dropaction == DRAG_COPY || dropaction == DRAG_MOVE) && xf_hasTransferStarter())
+        {
+            FXbool confirm = (!confirm_dnd || ctrlshiftkey) && ask_before_copy && showdialog;
+            FXbool started = xf_startDroppedTransfer(this, dropaction == DRAG_COPY ? COPY : MOVE,
+                                                     buf, dropdirectory, confirm);
+            // The worker removes moved sources only after copying; the drag source must not delete them.
+            dropFinished(started ? DRAG_COPY : DRAG_REJECT);
+            FXFREE(&data);
+            return started ? 1 : 0;
         }
 
         // File object

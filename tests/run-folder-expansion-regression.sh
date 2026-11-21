@@ -39,7 +39,7 @@ randr_libs=()
 if [[ " ${configured_flags[*]} " == *" -DHAVE_XRANDR_H=1 "* ]]; then
     randr_libs=(-lXrandr)
 fi
-g++ -std=gnu++11 -Wall -I"$root/src" -I"$root" $(fox-config --cflags) \
+g++ -std=gnu++11 -Wall -I"$root/src" -I"$root" $(fox-config --cflags) $(pkg-config --cflags gio-2.0) \
     "$root/tests/folder-expansion-regression.cpp" "$scratch/main.o" "${objects[@]}" \
     "$root/st/x.o" "$root/st/st.o" "$root"/libsn/*.o \
     -lutil -lfontconfig -lpng -lFOX-1.6 -lX11 -lfreetype -lXft -lxcb -lxcb-util \
