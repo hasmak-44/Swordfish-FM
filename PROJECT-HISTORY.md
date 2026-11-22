@@ -4156,6 +4156,34 @@ files. The release workflow now
 regenerates them from the tagged source before archiving; a locally regenerated
 archive configured and built successfully, reporting 0.0.4-beta1.
 
+### 3.128. Swordfish 0.0.4 beta 1 release (22 November 2026)
+
+With the user's permission, the unpublished beta tag was moved to the
+corrected source. Explicitly selecting Debian's CA bundle resolved the
+armhf download failure without disabling TLS or checksum verification.
+All four architecture jobs then built portable ZIPs, tarballs and Debian
+packages and passed their version and package install/reinstall/removal
+checks; armhf ran under QEMU. The tagged application source matches the
+previously tested `dbbadcb` code, with the cancelled-file cleanup omitted.
+
+The regenerated source archive configured and built locally; the native
+search/transfer regression passed 51 checks and the folder/device regression
+passed 61. The final amd64 binary matched the executable smoke-tested with
+a visible Xvfb window. Physical i386, armhf and arm64 desktop testing, real
+phones and external drag interoperability remain outstanding.
+
+GitHub renamed `~` in Debian asset filenames to `.` on upload. Before
+publication, the draft checksum manifest was corrected to match the actual
+asset names, re-downloaded and checked against all 13 server asset digests.
+All 14 uploaded asset digests matched their locally downloaded copies. The
+workflow was updated afterward to normalize package names before computing
+checksums for future releases.
+
+The 0.0.4 beta 1 prerelease was published with all 14 assets; 0.0.3 remains
+the latest stable release. Its notes warn that Cancel can leave an incomplete
+destination file and that removing the portable Debian package deletes its
+installed folder and settings.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

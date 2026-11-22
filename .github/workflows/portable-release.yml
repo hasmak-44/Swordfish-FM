@@ -188,6 +188,17 @@ jobs:
               exit 1
             fi
           done
+          # GitHub replaces '~' in asset names; checksum the names it will serve.
+          for file in "$out"/swordfish-portable_*.deb; do
+            normalized=${file//\~/.}
+            if [[ "$file" != "$normalized" ]]; then
+              if [[ -e "$normalized" ]]; then
+                printf 'Conflicting package name: %s\n' "$normalized" >&2
+                exit 1
+              fi
+              mv -- "$file" "$normalized"
+            fi
+          done
           source_dir="Swordfish-FM-$RELEASE_VERSION"
           mkdir -p "build/source/$source_dir"
           git archive HEAD | tar -x -C "build/source/$source_dir"
