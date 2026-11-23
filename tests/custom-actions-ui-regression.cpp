@@ -1957,6 +1957,46 @@ static void checkToolbarOverflow(FXApp& app, XFileExplorer* window, const FXStri
                 }
             }
         }
+        window->position(20, 20, 620, 600); settle(); check();
+        for (unsigned placement = 0; placement < 4; ++placement)
+        {
+            mouseClick(overflow, 1); settle();
+            FXPopup* parent = overflow->getMenu();
+            FXMenuCascade* group = NULL;
+            for (FXWindow* item = parent->getFirst(); item; item = item->getNext())
+                if (FXMenuCascade* cascade = dynamic_cast<FXMenuCascade*>(item)) group = cascade;
+            assert(group && parent->shown());
+            FXPopup* child = group->getMenu();
+            const FXint right = app.getRootWindow()->getWidth();
+            FXint x = placement == 0 ? 0 : right - parent->getWidth();
+            if (placement >= 2) x -= child->getDefaultWidth() - (placement == 3 ? 1 : 0);
+            parent->move(x, parent->getY());
+            mouseHover(group);
+            assert(child->shown());
+            const bool opensLeft = placement == 1 || placement == 3;
+            printf("Cascade placement %u: parent [%d,%d], child [%d,%d]\n", placement,
+                   parent->getX(), parent->getX() + parent->getWidth(),
+                   child->getX(), child->getX() + child->getWidth());
+            if (opensLeft) assert(child->getX() + child->getWidth() <= parent->getX());
+            else assert(child->getX() >= parent->getX() + parent->getWidth() - parent->getBorderWidth());
+            assert(child->getX() >= 0 && child->getX() + child->getWidth() <= right);
+            if (placement < 2)
+            {
+                FXMenuCascade* nested = dynamic_cast<FXMenuCascade*>(child->getFirst());
+                assert(nested);
+                mouseHover(nested);
+                FXPopup* grandchild = nested->getMenu();
+                assert(grandchild->shown());
+                if (opensLeft) assert(grandchild->getX() + grandchild->getWidth() <= child->getX());
+                else assert(grandchild->getX() >= child->getX() + child->getWidth() - child->getBorderWidth());
+                assert(grandchild->getX() >= 0 && grandchild->getX() + grandchild->getWidth() <= right);
+                captureWindow(app.getRootWindow(), (FXString(color ? "dark" : "light") +
+                              (opensLeft ? "-edge-right-nested" : "-edge-left-nested")).text());
+            }
+            overflow->handle(NULL, FXSEL(SEL_COMMAND, FXMenuButton::ID_UNPOST), NULL);
+            assert(!parent->shown() && !child->shown());
+        }
+        puts("PASS: nested overflow menus open outward at both screen edges and flip one pixel beyond the exact-fit boundary");
         app.reg().writeUnsignedEntry("SETTINGS", "customtoolbarstyle", 1);
         rebuild();
         window->position(20, 20, 1240, 730); settle(); check();

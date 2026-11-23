@@ -4344,6 +4344,46 @@ Custom Actions-suite pass is claimed. The manual describes the layout.
 This is local work, not part of the published beta; packaged portable and
 real-machine checks remain outstanding.
 
+**Follow-up findings and deferred independent audit:** the user requests a full
+independent audit and design review by a specialist AI model of every screen,
+window, box and dialog, but only once all functions are stable. Do not start
+that full audit now. Inventory all UI surfaces and states at that point, and
+review alignment, sizing, spacing, contrast, typography, icons, action
+placement, narrow layouts and menu positioning. Earlier focused screenshot
+passes are not a substitute for this full audit.
+
+The subsequent review of `build/Image 1.png` identified unreadable sidebar
+headings, oversized buttons in that screenshot, poor selected-file icon
+legibility, and inconsistent bottom-row alignment: File Name and File Filter
+have different field widths and left/right edges, and the filter's right edge
+does not align with the action row. These observations remain follow-up items;
+the shared footer fix is not a claim that every control's layout is correct.
+
+The nested Custom Actions overflow submenu positioning report was addressed
+separately below; it does not bring forward the deferred full UI audit.
+
+### 3.135. Overflow submenus choose an available side (local work)
+
+The shared popup override previously clamped a right-opening submenu to the
+screen boundary, covering its parent. Parent-owned menu panes now choose a
+side before clamping: open right when there is room, otherwise fully left
+when that side fits. Deeper cascades continue left after their parent has
+opened left, while space permits. Non-menu popups, vertical positioning,
+grabbing and focus behavior are unchanged. If neither side fits, the existing
+screen-clamping fallback remains.
+
+The focused overflow regression reproduced the parent overlap before the fix.
+It now covers both screen edges, deeper nesting, an exact right-side fit and
+a one-pixel shortage, in light and dark themes. It passes with and without
+Fluxbox, including real nested action clicks in both active panes, menu
+dismissal, and the pinned Configure button opening the editor. The focused
+Scripts regression also passes. Light/dark screenshots of both edge cascades
+were inspected for on-screen placement and no parent-body overlap.
+
+Validated in an isolated clean native build. No full GUI-suite pass, packaged
+portable check or real-machine check is claimed. The specialist audit and the
+file-chooser alignment/contrast findings above remain deferred.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.

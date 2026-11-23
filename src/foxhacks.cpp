@@ -1435,6 +1435,19 @@ void FXPopup::popup(FXWindow* grabto, FXint x, FXint y, FXint w, FXint h)
     {
         h = getDefaultHeight();
     }
+    FXMenuPane* parent = dynamic_cast<FXMenuPane*>(getOwner());
+    if (parent && parent->shown() && dynamic_cast<FXMenuPane*>(this))
+    {
+        FXint left = parent->getX() - w;
+        FXint right = parent->getX() + parent->getWidth();
+        FXPopup* ancestor = dynamic_cast<FXPopup*>(parent->getOwner());
+        FXbool preferLeft = ancestor && ancestor->shown() &&
+                            right <= ancestor->getX() + ancestor->getBorderWidth();
+        // Continue an outward-opening cascade; flip sides before falling back to screen clamping.
+        if (preferLeft && left >= rx) x = left;
+        else if (right + w <= rx + rw) x = right;
+        else if (left >= rx) x = left;
+    }
     if (x + w > rx + rw)
     {
         x = rx + rw - w;
