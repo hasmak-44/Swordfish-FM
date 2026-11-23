@@ -50,6 +50,7 @@ public:
 
     MenuPane(FXComposite* p) : FXMenuPane(p) {}
 
+    virtual void popup(FXWindow*, FXint, FXint, FXint = 0, FXint = 0);
     long onMap(FXObject*, FXSelector, void*);
     long onUnmap(FXObject*, FXSelector, void*);
 

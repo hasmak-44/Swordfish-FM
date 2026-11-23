@@ -46,6 +46,7 @@ FXbool themeColorParse(const FXString&, FXColor&);
 FXColor themeBlend(FXColor, FXColor, double);
 double themeContrast(FXColor, FXColor);
 double themeLuminance(FXColor);
+void themeImproveMenuContrast(FXMenuPane*);
 FXString themeWidgetArea(FXWindow*, const FXString& = "main");
 void applyThemeWidgets(FXWindow*, const Theme&, std::vector<FXFont*>&);
 

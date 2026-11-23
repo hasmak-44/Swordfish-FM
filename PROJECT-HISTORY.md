@@ -1,8 +1,9 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 21 November 2026, through extension planning, multi-architecture
-build support and the downloaded amd64 test build (section 3.126).
-Latest release: `swordfish-0.0.3` (stable).
+Last updated: 23 November 2026, through the 0.0.4 beta 1 release and
+subsequent user feedback and local Scripts fix (sections 3.128-3.130).
+Latest prerelease: `swordfish-0.0.4-beta1`.
+Latest stable release: `swordfish-0.0.3`.
 Previous stable release: `swordfish-0.0.2`.
 
 **Purpose:** preserve enough history, decisions, architecture and operational
@@ -29,6 +30,9 @@ Historical implementation details below do not override the current code.
    - [Stable release](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.3)
    - The previous stable release, `swordfish-0.0.2` (application commit
      `30a9a315476a9cf358560b5beba27f6c00a3fac7`), remains published.
+   - The newer [0.0.4 beta 1 prerelease](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.4-beta1)
+     is not the latest stable release; its four-architecture builds and
+     limitations are recorded in section 3.128.
 4. Treat published releases as locked. Do not move their tags, replace their
    assets, or present local test builds as a new stable release.
 5. The **Network discovery section is intentionally hidden**, not accidentally
@@ -38,15 +42,15 @@ Historical implementation details below do not override the current code.
    provides the fast mounted-share loader.
 7. User-confirmed fixes include the portable search warning, child-window
    icons, missing-archivemount guidance and the icon-startup fix (section 3.40).
-   The subsequent Custom Action, device and custom-toolbar changes have local
-   automated tests but still need the user's real-machine testing.
+   Distinguish those confirmations from later changes and the user's new
+   reports and local work in sections 3.129-3.130.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.118-3.126. Older beta and RC notes are
+9. For the latest state, read sections 3.118-3.130. Older beta and RC notes are
    historical context, not the current local development status.
 
-This guide is a documentation addition after the frozen RC4 application commit.
-It is not part of the already-published RC4 source archive.
+This guide was originally added after the frozen RC4 application commit and is
+not part of the already-published RC4 source archive. It has since been updated.
 
 ## 2. Project identity and working principles
 
@@ -4184,6 +4188,45 @@ the latest stable release. Its notes warn that Cancel can leave an incomplete
 destination file and that removing the portable Debian package deletes its
 installed folder and settings.
 
+### 3.129. Beta feedback (23 November 2026)
+
+The user reported the following in [the beta feedback file](build/0.0.4-b1.txt);
+these are reports and requests; the Scripts work is recorded in section 3.130:
+
+- Scripts are present but greyed out, although they run from
+  Custom Actions or a terminal. Once fixed, add a script context-menu action.
+- Custom Action appearance conditions do not work as expected; check all of
+  them. The toolbar needs an overflow button while keeping Configure visible.
+- Multiple instances, including a root window, produce a settings-save
+  conflict. The user identifies a regression between the 16 and 19 November
+  portable test builds.
+- Fixed-colour windows and dialogs open undersized and have inconsistent button
+  placement. Startup takes over five seconds.
+- Unrelated applications place their caches and settings under portable-data.
+  Auto-sizing the Name column exceeds the width needed for the name.
+
+### 3.130. Scripts menu (23 November 2026)
+
+The user clarified that a script may accept one file, one folder, multiple
+selections or no selection, and requested its context action under Tools.
+The main Scripts menu now rebuilds before sizing, targets the active pane and
+passes the selected paths. The file-pane context menu offers Tools → Scripts
+for both selected items and blank space. Search scripts receive full result
+paths, and an unavailable working folder produces an error without executing
+the script elsewhere. Script submenus are cleaned up when rebuilt or closed;
+low-contrast selected text in these menus is corrected without changing
+already-readable theme colours.
+
+A clean native build staged in `/tmp` and focused Xvfb tests verified actual
+menu clicks, both panes, nested scripts, file/folder/mixed or empty selections,
+special-character paths, menu refresh, search results and working-folder
+errors. The staged theme workflow regression also passed. Light/dark and
+normal/narrow screenshots were independently reviewed; a highlighted-text
+contrast problem found in that review was corrected.
+This is local work, not part of the published beta; portable and real-machine
+testing remain outstanding. The broader Custom Actions GUI regression reaches
+an existing tree-collapse assertion that also fails without the Scripts test.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -4212,7 +4255,7 @@ intentionally does not rely on that pump for this sequence.
 
 Do not "fix" a recurrence by merely hiding errors or increasing the timeout.
 
-## 5. RC4 freeze and current implementation boundary
+## 5. RC4 freeze and implementation boundary at the time
 
 After Test5 acceptance the user asked to lock/release before another stage,
 and to hide discovery only if working remote access would be preserved.
@@ -4461,7 +4504,11 @@ prereleases and must not be assumed to select RC4.
 
 ## 9. Unfinished work and agreements not to mistake for completed features
 
-### 9.0 Current position (26 October 2026)
+The following retains historical handoff notes and discussions; dates and
+superseding sections matter. See sections 3.128-3.130 for the latest release
+and feedback rather than assuming these notes describe the current worktree.
+
+### 9.0 Historical position (26 October 2026)
 
 - **Superseded by sections 3.40-3.42:** 0.0.3 beta 1 is published; its
   startup fix is committed locally as `a62bc2e`, tested by the user and
@@ -4740,7 +4787,7 @@ application suite without renewed requirements.
 
 ## 10. Release and continuity discipline
 
-At the end of this session, unrelated staged files still existed, including
+At the end of an earlier session, unrelated staged files still existed, including
 editor/customization files, source ZIPs, generated autotools files and
 translation changes. Some paths had both staged and unstaged edits.
 That is not permission to commit, delete or reset them.
@@ -4759,17 +4806,20 @@ For another release:
 10. Record user acceptance separately from local automated tests.
 11. Update this guide when decisions, limitations or the stable baseline change.
 
-The local GPG signing key was unavailable. Per-command signing overrides were
-used rather than changing global configuration. GitHub email privacy rejected
+During that earlier release, the local GPG signing key was unavailable.
+Per-command signing overrides were used rather than changing global
+configuration. GitHub email privacy rejected
 new private-address commits; metadata-only amendments required explicit approval.
 Do not amend published commits/tags as an automatic workaround.
 
 ### Durable starting point
 
-0.0.2 remains the frozen stable fallback; 0.0.3 beta 2 is the latest published
-test release. Sections 3.70-3.104 record the current implementation state.
-Groups 2 through 5 are committed locally; none is pushed or released. Generated
+0.0.3 is the latest stable release; 0.0.4 beta 1 is the latest published
+prerelease. Its release and known limitations are recorded in section 3.128;
+the user's subsequent reports and local Scripts fix are in sections
+3.129-3.130. The cancellation cleanup was deferred and is not included in the
+beta (section 3.127). Generated
 autotools files may remain modified after local builds and must not be included
-in feature commits. Start from the current branch and worktree, not from an old
-experimental ZIP, obsolete roadmap or incomplete chat summary. Do not publish
-local work without the user's permission.
+in feature commits. Inspect the current branch and worktree rather than relying
+on an old experimental ZIP, roadmap or handoff. Do not publish local work
+without the user's permission.

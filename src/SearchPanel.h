@@ -2,6 +2,7 @@
 #define SEARCHPANEL_H
 
 #include <map>
+#include <vector>
 
 #include "InputDialog.h"
 #include "ArchInputDialog.h"
@@ -122,7 +123,7 @@ public:
     virtual ~SearchPanel();
     void execFile(FXString, FXbool explicitAction = false);
     void runInTerminal(FXString);
-    int readScriptDir(FXMenuPane*, FXString);
+    int readScriptDir(FXMenuPane*, FXString, std::vector<FXMenuPane*>&);
     long appendItem(FXString&);
 
     long onClipboardGained(FXObject*, FXSelector, void*);

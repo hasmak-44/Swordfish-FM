@@ -6710,23 +6710,6 @@ static FXString cascadeLabel(const FXString& translated)
 }
 
 
-static void improveFileMenuContrast(FXMenuPane* menu)
-{
-    for (FXWindow* child = menu->getFirst(); child; child = child->getNext())
-    {
-        FXMenuCaption* caption = dynamic_cast<FXMenuCaption*>(child);
-        if (!caption) continue;
-        const FXbool dimShadow = themeContrast(caption->getShadowColor(), caption->getBackColor()) < 3.0;
-        const FXbool dimHilite = themeContrast(caption->getHiliteColor(), caption->getBackColor()) < 3.0;
-        if (!dimShadow && !dimHilite) continue;
-        FXColor muted = themeBlend(caption->getBackColor(), caption->getTextColor(), 0.65);
-        if (themeContrast(muted, caption->getBackColor()) < 3.0) muted = caption->getTextColor();
-        if (dimShadow) caption->setShadowColor(muted);
-        if (dimHilite) caption->setHiliteColor(muted);
-    }
-}
-
-
 static FXMenuPane* appendFileSortMenu(FXWindow* owner, FXMenuPane* parent, FileList* list)
 {
     FXMenuPane* menu = new FileContextMenuPane(owner, parent);
@@ -6879,6 +6862,16 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
     int num, itm;
     num = current->list->getNumSelectedItems(&itm);
 
+    auto appendScriptsMenu = [&](FXMenuPane* toolsmenu)
+    {
+        FXMenuPane* scriptsmenu = new FileContextMenuPane(this, toolsmenu);
+        ownedPanes.push_back(scriptsmenu);
+        new FXMenuCascade(toolsmenu, _("Scripts"), minirunicon, scriptsmenu);
+        readScriptDir(this, scriptsmenu, xf_scriptpath(), ownedPanes);
+        new FXMenuSeparator(scriptsmenu);
+        new FXMenuCommand(scriptsmenu, _("&Go to Script Folder"), minigotodiricon, this, FilePanel::ID_GO_SCRIPTDIR);
+    };
+
     // Find if both selected items have the same file type
     // This is used to enable / disable compare menu item
     if (num == 2)
@@ -6930,6 +6923,10 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuSeparator(menu);
         ownedPanes.push_back(appendFileSortMenu(this, menu, current->list));
         FileList::appendFolderSizeMenu(this, menu, current->list);
+        FXMenuPane* toolsmenu = new FileContextMenuPane(this, menu);
+        ownedPanes.push_back(toolsmenu);
+        new FXMenuCascade(menu, _("T&ools"), minicompareicon, toolsmenu);
+        appendScriptsMenu(toolsmenu);
     }
     // Non empty selection
     else
@@ -7134,12 +7131,7 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
             new FXMenuCommand(toolsmenu, _("Packages &Query "), minipackageicon, current, FilePanel::ID_PKG_QUERY);
         }
 #endif
-        FXMenuPane* scriptsmenu = new FileContextMenuPane(this, toolsmenu);
-        ownedPanes.push_back(scriptsmenu);
-        new FXMenuCascade(toolsmenu, _("Scripts"), minirunicon, scriptsmenu);
-        readScriptDir(this, scriptsmenu, xf_scriptpath());
-        new FXMenuSeparator(scriptsmenu);
-        new FXMenuCommand(scriptsmenu, _("&Go to Script Folder"), minigotodiricon, this, FilePanel::ID_GO_SCRIPTDIR);
+        appendScriptsMenu(toolsmenu);
 
         // Remove
         new FXMenuSeparator(menu);
@@ -7167,8 +7159,7 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         customMenu = explorer->getCustomActions()->appendContextMenu(menu, this);
     }
     xf_windowcolors(menu);
-    improveFileMenuContrast(menu);
-    for (FXMenuPane* pane : ownedPanes) improveFileMenuContrast(pane);
+    themeImproveMenuContrast(menu);
     menu->create();
 
     // Reset flags
@@ -7178,9 +7169,9 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
     menu->popup(NULL, x, y);
     getApp()->runModalWhileShown(menu);
     delete menu;
-    for (FXMenuPane* pane : ownedPanes)
+    for (auto pane = ownedPanes.rbegin(); pane != ownedPanes.rend(); ++pane)
     {
-        delete pane;
+        delete *pane;
     }
     delete customMenu;
 
@@ -7190,7 +7181,8 @@ long FilePanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
 
 // Read all executable file names that are located into the script directory
 // Sort entries alphabetically, directories first
-int FilePanel::readScriptDir(FXWindow* owner, FXMenuPane* scriptsmenu, FXString dir)
+int FilePanel::readScriptDir(FXWindow* owner, FXMenuPane* scriptsmenu, FXString dir,
+                             std::vector<FXMenuPane*>& ownedPanes)
 {
     DIR* dp;
     struct dirent** namelist;
@@ -7228,9 +7220,10 @@ int FilePanel::readScriptDir(FXWindow* owner, FXMenuPane* scriptsmenu, FXString 
                 {
                     if (!xf_isemptydir(pathname))
                     {
-                        FXMenuPane* submenu = new FXMenuPane(owner);
+                        FXMenuPane* submenu = new FileContextMenuPane(owner, scriptsmenu);
+                        ownedPanes.push_back(submenu);
                         new FXMenuCascade(scriptsmenu, namelist[k]->d_name, NULL, submenu);
-                        readScriptDir(this, submenu, pathname);
+                        readScriptDir(owner, submenu, pathname, ownedPanes);
                     }
                 }
             }
@@ -7253,8 +7246,10 @@ int FilePanel::readScriptDir(FXWindow* owner, FXMenuPane* scriptsmenu, FXString 
             FXString pathname = dir + namelist[k]->d_name;
             if (!xf_isdirectory(pathname) && xf_isreadexecutable(pathname))
             {
-                new FXMenuCommand(scriptsmenu, namelist[k]->d_name + FXString("\t\t") + pathname, miniexecicon, this,
-                                  FilePanel::ID_RUN_SCRIPT);
+                FXMenuCommand* command = new FXMenuCommand(
+                    scriptsmenu, namelist[k]->d_name + FXString("\t\t") + pathname, miniexecicon, this,
+                    FilePanel::ID_RUN_SCRIPT);
+                command->setHelpText(pathname);
             }
             free(namelist[k]);
         }
@@ -8357,7 +8352,7 @@ long FilePanel::onCmdRunScript(FXObject* sender, FXSelector sel, void*)
     current->list->setFocus();
     for (int u = 0; u < current->list->getNumItems(); u++)
     {
-        if (current->list->isItemSelected(u))
+        if (current->list->isItemSelected(u) && current->list->getItemFilename(u) != "..")
         {
             pathname = current->list->getItemPathname(u);
 
@@ -8384,6 +8379,8 @@ long FilePanel::onCmdRunScript(FXObject* sender, FXSelector sel, void*)
             MessageBox::error(this, BOX_OK, _("Error"), _("Can't enter folder %s"),
                               current->list->getDirectory().text());
         }
+        getApp()->endWaitCursor();
+        return 1;
     }
 
     // Execute command
@@ -10012,18 +10009,8 @@ long FilePanel::onUpdAddToArch(FXObject* sender, FXSelector, void*)
 // Update scripts menu item
 long FilePanel::onUpdRunScript(FXObject* sender, FXSelector, void*)
 {
-    // Menu item is disabled when nothing or ".." is selected
-    int num, item;
-
-    num = current->list->getNumSelectedItems(&item);
-    if (num == 0)
-    {
-        sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_DISABLE), NULL);
-    }
-    else
-    {
-        sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
-    }
+    // Scripts can be run with no selected files.
+    sender->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_ENABLE), NULL);
     return 1;
 }
 

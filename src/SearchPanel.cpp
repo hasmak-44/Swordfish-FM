@@ -31,6 +31,7 @@
 #include "Execution.h"
 #include "XFileExplorer.h"
 #include "SearchPanel.h"
+#include "Theme.h"
 
 
 // Global Variables
@@ -2514,6 +2515,7 @@ long SearchPanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
 
     // Popup menu pane
     FXMenuPane* menu = new FXMenuPane(this);
+    std::vector<FXMenuPane*> ownedPanes;
     int x, y;
     FXuint state;
     getRoot()->getCursorPosition(x, y, state);
@@ -2556,6 +2558,7 @@ long SearchPanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
     {
         // Submenu items
         FXMenuPane* submenu = new FXMenuPane(this);
+        ownedPanes.push_back(submenu);
         new FXMenuCheck(submenu, _("Thum&bnails"), list, FileList::ID_TOGGLE_THUMBNAILS);
         new FXMenuSeparator(submenu);
         new FXMenuRadio(submenu, _("B&ig Icons"), list, IconList::ID_SHOW_BIG_ICONS);
@@ -2661,8 +2664,9 @@ long SearchPanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuSeparator(menu);
         FXString scriptpath = xf_scriptpath();
         FXMenuPane* scriptsmenu = new FXMenuPane(this);
+        ownedPanes.push_back(scriptsmenu);
         new FXMenuCascade(menu, _("Scripts"), minirunicon, scriptsmenu);
-        readScriptDir(scriptsmenu, scriptpath);
+        readScriptDir(scriptsmenu, scriptpath, ownedPanes);
         new FXMenuSeparator(scriptsmenu);
         new FXMenuCommand(scriptsmenu, _("&Go to Script Folder"), minigotodiricon, this, SearchPanel::ID_GO_SCRIPTDIR);
 
@@ -2685,9 +2689,15 @@ long SearchPanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
         new FXMenuCommand(menu, _("P&roperties"), miniattribicon, this, SearchPanel::ID_PROPERTIES);
     }
     xf_windowcolors(menu);
+    themeImproveMenuContrast(menu);
     menu->create();
     menu->popup(NULL, x, y);
     getApp()->runModalWhileShown(menu);
+    delete menu;
+    for (auto pane = ownedPanes.rbegin(); pane != ownedPanes.rend(); ++pane)
+    {
+        delete *pane;
+    }
     list->setAllowRefresh(true);
 
     return 1;
@@ -2696,7 +2706,7 @@ long SearchPanel::onCmdPopupMenu(FXObject* sender, FXSelector sel, void* ptr)
 
 // Read all executable file names that are located into the script directory
 // Sort entries alphabetically
-int SearchPanel::readScriptDir(FXMenuPane* scriptsmenu, FXString dir)
+int SearchPanel::readScriptDir(FXMenuPane* scriptsmenu, FXString dir, std::vector<FXMenuPane*>& ownedPanes)
 {
     DIR* dp;
     struct dirent** namelist;
@@ -2734,15 +2744,18 @@ int SearchPanel::readScriptDir(FXMenuPane* scriptsmenu, FXString dir)
                     if (!xf_isemptydir(pathname))
                     {
                         FXMenuPane* submenu = new FXMenuPane(this);
+                        ownedPanes.push_back(submenu);
                         new FXMenuCascade(scriptsmenu, namelist[k]->d_name, NULL, submenu);
-                        readScriptDir(submenu, pathname);
+                        readScriptDir(submenu, pathname, ownedPanes);
                     }
                 }
                 // Add only executable files to the list
                 else if (xf_isreadexecutable(pathname))
                 {
-                    new FXMenuCommand(scriptsmenu, namelist[k]->d_name + FXString("\t\t") + pathname,
-                                      miniexecicon, this, SearchPanel::ID_RUN_SCRIPT);
+                    FXMenuCommand* command = new FXMenuCommand(
+                        scriptsmenu, namelist[k]->d_name + FXString("\t\t") + pathname,
+                        miniexecicon, this, SearchPanel::ID_RUN_SCRIPT);
+                    command->setHelpText(pathname);
                 }
             }
             free(namelist[k]);
@@ -4603,7 +4616,7 @@ long SearchPanel::onCmdRunScript(FXObject* sender, FXSelector sel, void*)
     {
         if (list->isItemSelected(u))
         {
-            pathname = list->getItemPathname(u);
+            pathname = list->getItemFullPathname(u);
 
             // List of selected items
             itemslist += xf_quote(pathname) + " ";
@@ -4628,6 +4641,8 @@ long SearchPanel::onCmdRunScript(FXObject* sender, FXSelector sel, void*)
             MessageBox::error(this, BOX_OK, _("Error"), _("Can't enter folder %s"),
                               list->getDirectory().text());
         }
+        getApp()->endWaitCursor();
+        return 1;
     }
 
     // Execute command

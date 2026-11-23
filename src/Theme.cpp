@@ -424,6 +424,40 @@ double themeContrast(FXColor foreground, FXColor background)
     return (FXMAX(a, b) + 0.05) / (FXMIN(a, b) + 0.05);
 }
 
+void themeImproveMenuContrast(FXMenuPane* menu)
+{
+    for (FXWindow* child = menu->getFirst(); child; child = child->getNext())
+    {
+        FXMenuCaption* caption = dynamic_cast<FXMenuCaption*>(child);
+        if (!caption) continue;
+        const FXColor selected = caption->getSelBackColor();
+        if (themeContrast(caption->getSelTextColor(), selected) < 4.5)
+        {
+            FXColor text = caption->getTextColor();
+            if (themeContrast(text, selected) < 4.5)
+            {
+                const FXColor black = FXRGB(0, 0, 0), white = FXRGB(255, 255, 255);
+                text = themeContrast(black, selected) >= themeContrast(white, selected) ? black : white;
+            }
+            caption->setSelTextColor(text);
+        }
+        const FXbool dimShadow = themeContrast(caption->getShadowColor(), caption->getBackColor()) < 3.0;
+        const FXbool dimHilite = themeContrast(caption->getHiliteColor(), caption->getBackColor()) < 3.0;
+        if (dimShadow || dimHilite)
+        {
+            FXColor muted = themeBlend(caption->getBackColor(), caption->getTextColor(), 0.65);
+            if (themeContrast(muted, caption->getBackColor()) < 3.0) muted = caption->getTextColor();
+            if (dimShadow) caption->setShadowColor(muted);
+            if (dimHilite) caption->setHiliteColor(muted);
+        }
+        if (FXMenuCascade* cascade = dynamic_cast<FXMenuCascade*>(child))
+        {
+            FXMenuPane* submenu = dynamic_cast<FXMenuPane*>(cascade->getMenu());
+            if (submenu && submenu != menu) themeImproveMenuContrast(submenu);
+        }
+    }
+}
+
 FXString themeWidgetArea(FXWindow* window, const FXString& parent)
 {
     FXString name = window->getClassName();

@@ -45,6 +45,7 @@
 #include "DirHistBox.h"
 #include "SearchWindow.h"
 #include "XFileExplorer.h"
+#include "Theme.h"
 #include "CustomActionsUI.h"
 #include "Transfer.h"
 
@@ -299,12 +300,25 @@ FXIMPLEMENT(MenuPane, FXMenuPane,
             ARRAYNUMBER(MenuPaneMap))
 
 
-long MenuPane::onMap(FXObject*, FXSelector, void*)
-{   
-    // Menu is open
-    open = true;
+static void deleteScriptSubmenus(FXMenuPane* menu)
+{
+    for (FXWindow* child = menu->getFirst(); child; child = child->getNext())
+    {
+        FXMenuCascade* cascade = dynamic_cast<FXMenuCascade*>(child);
+        if (!cascade) continue;
+        FXMenuPane* submenu = dynamic_cast<FXMenuPane*>(cascade->getMenu());
+        if (!submenu) continue;
+        deleteScriptSubmenus(submenu);
+        cascade->setMenu(NULL);
+        delete submenu;
+    }
+}
 
+
+void MenuPane::popup(FXWindow* grabto, FXint x, FXint y, FXint w, FXint h)
+{
     // Delete menu items
+    deleteScriptSubmenus(this);
     while (this->getFirst())
     {
         delete this->getFirst();
@@ -320,8 +334,16 @@ long MenuPane::onMap(FXObject*, FXSelector, void*)
 
     // Add script menu items
     FXString scriptpath = xf_scriptpath();
-    ((XFileExplorer*)mainWindow)->readScriptDir(((XFileExplorer*)mainWindow), this, scriptpath);        
-    
+    ((XFileExplorer*)mainWindow)->readScriptDir(((XFileExplorer*)mainWindow), this, scriptpath);
+    xf_windowcolors(this);
+    themeImproveMenuContrast(this);
+    FXMenuPane::popup(grabto, x, y, w, h);
+}
+
+long MenuPane::onMap(FXObject*, FXSelector, void*)
+{
+    // Menu is open
+    open = true;
     return FXMenuPane::onMap(this, 0, nullptr);
 }
 
@@ -7006,9 +7028,11 @@ int XFileExplorer::readScriptDir(FXWindow* owner, FXMenuPane* scriptsmenu, FXStr
             FXString pathname = dir + namelist[k]->d_name;
             if (!xf_isdirectory(pathname) && xf_isreadexecutable(pathname))
             {
-                FXMenuCommand* mc = new FXMenuCommand(scriptsmenu, namelist[k]->d_name + FXString("\t\t") + pathname, miniexecicon, this,
-                                  FilePanel::ID_RUN_SCRIPT);
-                mc->create();
+                FXMenuCommand* command = new FXMenuCommand(
+                    scriptsmenu, namelist[k]->d_name + FXString("\t\t") + pathname, miniexecicon, getCurrentPanel(),
+                    FilePanel::ID_RUN_SCRIPT);
+                command->setHelpText(pathname);
+                command->create();
             }
             free(namelist[k]);
         }

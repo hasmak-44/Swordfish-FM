@@ -10,10 +10,13 @@
 #include "FileList.h"
 #include "CommandWindow.h"
 #include "Preferences.h"
+#include "SearchWindow.h"
+#include "SearchPanel.h"
 #include "DirHistBox.h"
 #include "FileDialog.h"
 #include "icons.h"
 #include "Theme.h"
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <fstream>
@@ -56,6 +59,15 @@ static void mouseClick(FXWindow* window, int button, int x = 2, int y = 2)
     command = button == 1 ? "xdotool mousedown 1; sleep 0.3; xdotool mouseup 1" :
                             "xdotool click " + FXStringVal(button);
     assert(system(command.text()) == 0);
+}
+
+static void mouseHover(FXWindow* window)
+{
+    window->getApp()->flush(true);
+    FXString command = "xdotool mousemove --window " + FXStringVal((FXulong)window->id()) +
+                       " " + FXStringVal(window->getWidth() / 2) + " " + FXStringVal(window->getHeight() / 2);
+    assert(system(command.text()) == 0);
+    pump(*window->getApp(), 600);
 }
 
 // Copy and move run in an independent worker process
@@ -1041,6 +1053,491 @@ static void captureWindow(FXWindow* window, const char* name)
     assert(system(command.text()) == 0);
 }
 
+static void captureScriptScreen(FXApp& app, const FXString& name)
+{
+    const char* directory = getenv("SWORDFISH_TEST_SCRIPT_SCREENSHOTS");
+    assert(directory);
+    app.repaint();
+    app.flush(true);
+    FXString command = "import -window root " + xf_quote(FXString(directory) + "/" + name + ".png");
+    assert(system(command.text()) == 0);
+}
+
+static FXMenuCascade* scriptCascade(FXWindow* menu, const FXString& name)
+{
+    for (FXWindow* child = menu->getFirst(); child; child = child->getNext())
+    {
+        FXMenuCascade* cascade = dynamic_cast<FXMenuCascade*>(child);
+        if (!cascade) continue;
+        FXString text = cascade->getText();
+        text.substitute("&", "");
+        if (text == name) return cascade;
+    }
+    return NULL;
+}
+
+static FXMenuCommand* scriptCommand(FXWindow* menu, const FXString& path)
+{
+    for (FXWindow* child = menu->getFirst(); child; child = child->getNext())
+    {
+        FXMenuCommand* command = dynamic_cast<FXMenuCommand*>(child);
+        if (command && command->getHelpText() == path) return command;
+    }
+    return NULL;
+}
+
+static void checkScriptMenuContrast(FXApp& app, FXMenuCaption* caption)
+{
+    const FXColor background = caption->getSelBackColor();
+    assert(themeContrast(caption->getSelTextColor(), background) >= 4.5);
+    const FXColor themed = Theme::current(&app).colorFor("menus", "selection_foreground");
+    if (themeContrast(themed, background) >= 4.5) assert(caption->getSelTextColor() == themed);
+}
+
+static void selectScriptInputs(FilePanel* panel, const std::vector<FXString>& names)
+{
+    FileList* list = panel->getList();
+    list->killSelection();
+    FXuint selected = 0;
+    for (FXint i = 0; i < list->getNumItems(); ++i)
+    {
+        if (std::find(names.begin(), names.end(), list->getItemFilename(i)) != names.end())
+        {
+            list->selectItem(i);
+            ++selected;
+        }
+    }
+    assert(selected == names.size());
+}
+
+class ScriptContextAutomation : public FXObject
+{
+    FXApp& app;
+    FilePanel* panel;
+    FXString path;
+    bool run;
+    FXString screenshot;
+    FXString group;
+public:
+    bool handled = false;
+    ScriptContextAutomation(FXApp& application, FilePanel* p, const FXString& script, bool execute,
+                            const FXString& image = FXString::null, const FXString& folder = FXString::null) :
+        app(application), panel(p), path(script), run(execute), screenshot(image), group(folder) {}
+
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        FXMenuPane* root = NULL;
+        for (FXMenuPane* menu : widgets<FXMenuPane>(app.getRootWindow()))
+        {
+            if (menu->shown() && menu->getOwner() == panel) { root = menu; break; }
+        }
+        assert(root);
+        FXMenuCascade* tools = scriptCascade(root, "Tools"); assert(tools);
+        checkScriptMenuContrast(app, tools);
+        mouseHover(tools);
+        assert(tools->getMenu()->shown());
+        FXMenuCascade* scripts = scriptCascade(tools->getMenu(), "Scripts"); assert(scripts);
+        checkScriptMenuContrast(app, scripts);
+        mouseHover(scripts);
+        assert(scripts->getMenu()->shown());
+        FXPopup* scriptMenu = scripts->getMenu();
+        if (!group.empty())
+        {
+            FXMenuCascade* nested = scriptCascade(scriptMenu, group); assert(nested);
+            checkScriptMenuContrast(app, nested);
+            mouseHover(nested);
+            assert(nested->getMenu()->shown());
+            scriptMenu = nested->getMenu();
+        }
+        FXMenuCommand* command = scriptCommand(scriptMenu, path);
+        assert(command && command->getTarget() == panel);
+        checkScriptMenuContrast(app, command);
+        command->getTarget()->handle(command, FXSEL(SEL_UPDATE, command->getSelector()), NULL);
+        assert(command->isEnabled());
+        if (!screenshot.empty())
+        {
+            mouseHover(command);
+            captureScriptScreen(app, screenshot);
+        }
+        if (run)
+        {
+            mouseClick(command, 1, command->getWidth() / 2, command->getHeight() / 2);
+            pump(app, 200);
+            assert(!root->shown());
+        }
+        else
+        {
+            scripts->getMenu()->popdown();
+            tools->getMenu()->popdown();
+            root->popdown();
+        }
+        handled = true;
+        return 1;
+    }
+};
+
+class ScriptSearchWindow : public SearchWindow
+{
+public:
+    explicit ScriptSearchWindow(FXApp* app) : SearchWindow(app, "Script search regression", 0, 0, 640, 480) {}
+    SearchPanel* results() { return searchpanel; }
+};
+
+class ScriptSearchAutomation : public FXObject
+{
+    FXApp& app;
+    SearchPanel* panel;
+    FXString path;
+public:
+    bool handled = false;
+    ScriptSearchAutomation(FXApp& application, SearchPanel* p, const FXString& script) :
+        app(application), panel(p), path(script) {}
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        FXMenuPane* root = NULL;
+        for (FXMenuPane* menu : widgets<FXMenuPane>(app.getRootWindow()))
+            if (menu->shown() && menu->getOwner() == panel) { root = menu; break; }
+        assert(root);
+        FXMenuCascade* scripts = scriptCascade(root, "Scripts"); assert(scripts);
+        assert(themeContrast(scripts->getSelTextColor(), scripts->getSelBackColor()) >= 4.5);
+        mouseHover(scripts);
+        assert(scripts->getMenu()->shown());
+        FXMenuCommand* command = scriptCommand(scripts->getMenu(), path);
+        assert(command && command->getTarget() == panel);
+        assert(themeContrast(command->getSelTextColor(), command->getSelBackColor()) >= 4.5);
+        mouseClick(command, 1, command->getWidth() / 2, command->getHeight() / 2);
+        pump(app, 200);
+        assert(!root->shown());
+        handled = true;
+        return 1;
+    }
+};
+
+class ScriptDirectoryFailure : public FXObject
+{
+    FXApp& app;
+    FXString directory;
+public:
+    bool handled = false;
+    ScriptDirectoryFailure(FXApp& application, const FXString& path) : app(application), directory(path) {}
+    long handle(FXObject*, FXSelector, void*) override
+    {
+        FXTopWindow* window = dialog(app, "Error"); assert(window);
+        bool found = false;
+        for (FXLabel* label : widgets<FXLabel>(window))
+            if (label->getText().contains(directory)) found = true;
+        assert(found);
+        click(window, "OK");
+        handled = true;
+        return 1;
+    }
+};
+
+static void checkScriptMenus(FXApp& app, XFileExplorer* window)
+{
+    FilePanel* left = window->getLeftPanel();
+    FilePanel* right = window->getRightPanel();
+    FilePanel* originalPanel = window->getCurrentPanel();
+    const FXString originalLeft = left->getDirectory(), originalRight = right->getDirectory();
+    const char* portableValue = getenv("SWORDFISH_PORTABLE_DATA");
+    const bool hadPortableValue = portableValue != NULL;
+    const FXString originalPortable = portableValue ? portableValue : "";
+    const char* outputValue = getenv("SWORDFISH_TEST_SCRIPT_OUTPUT");
+    const bool hadOutputValue = outputValue != NULL;
+    const FXString originalOutput = outputValue ? outputValue : "";
+    const FXString root = homedir + "/script-menu-regression";
+    const FXString profile = root + "/portable data";
+    const FXString scriptDirectory = profile + "/scripts";
+    const FXString leftDirectory = root + "/left folder", rightDirectory = root + "/right folder";
+    const FXString folderName = "folder 'quoted'", fileName = "file '$HOME'.txt";
+    const FXString scriptPath = scriptDirectory + "/A long script for selected files and folders '$HOME'.sh";
+    const FXString nestedPath = scriptDirectory + "/Nested/record.sh";
+    const FXString output = root + "/result";
+    assert(xf_mkpath((leftDirectory + "/" + folderName).text(), 0700) == 0);
+    assert(xf_mkpath(rightDirectory.text(), 0700) == 0);
+    assert(xf_mkpath((scriptDirectory + "/Nested").text(), 0700) == 0);
+    { std::ofstream file((leftDirectory + "/" + fileName).text()); file << "file"; }
+    { std::ofstream file((rightDirectory + "/right.txt").text()); file << "file"; }
+    const FXString searchFile = leftDirectory + "/" + folderName + "/nested file.txt";
+    { std::ofstream file(searchFile.text()); file << "file"; }
+    {
+        std::ofstream script(scriptPath.text());
+        script << "#!/bin/sh\n"
+                  "printf '%s\\0' \"$(pwd -P)\" \"$@\" > \"$SWORDFISH_TEST_SCRIPT_OUTPUT.tmp\"\n"
+                  "mv -- \"$SWORDFISH_TEST_SCRIPT_OUTPUT.tmp\" \"$SWORDFISH_TEST_SCRIPT_OUTPUT\"\n";
+        assert(script.good());
+    }
+    assert(chmod(scriptPath.text(), 0700) == 0 && FXFile::copy(scriptPath, nestedPath));
+    assert(chmod(nestedPath.text(), 0700) == 0);
+    assert(setenv("SWORDFISH_PORTABLE_DATA", profile.text(), 1) == 0);
+    assert(setenv("SWORDFISH_TEST_SCRIPT_OUTPUT", output.text(), 1) == 0);
+
+    left->setDirectory(leftDirectory); left->updatePath();
+    right->setDirectory(rightDirectory); right->updatePath();
+    pump(app, 300);
+    MenuPane* scriptsMenu = NULL;
+    for (MenuPane* menu : widgets<MenuPane>(app.getRootWindow()))
+        if (menu->getOwner() == window) { assert(!scriptsMenu); scriptsMenu = menu; }
+    assert(scriptsMenu);
+    auto nestedMenuCount = [&](FXWindow* owner)
+    {
+        int count = 0;
+        for (FXMenuPane* menu : widgets<FXMenuPane>(app.getRootWindow()))
+            if (menu->getOwner() == owner && scriptCommand(menu, nestedPath)) ++count;
+        return count;
+    };
+
+    auto verifyOutput = [&](const FXString& directory, const std::vector<FXString>& paths)
+    {
+        assert(waitFor(app, [&]() { return access(output.text(), F_OK) == 0; }));
+        const std::string contents = read(output);
+        std::vector<std::string> values;
+        size_t start = 0;
+        while (start < contents.size())
+        {
+            size_t end = contents.find('\0', start);
+            assert(end != std::string::npos);
+            values.push_back(contents.substr(start, end - start));
+            start = end + 1;
+        }
+        assert(!values.empty() && values[0] == directory.text());
+        std::multiset<std::string> actual(values.begin() + 1, values.end()), expected;
+        for (const FXString& path : paths) expected.insert(path.text());
+        assert(actual == expected && unlink(output.text()) == 0);
+    };
+
+    auto runMainMenu = [&](FilePanel* panel, const std::vector<FXString>& names, bool nested, bool clickMenu = false)
+    {
+        panel->setActive();
+        selectScriptInputs(panel, names);
+        if (clickMenu)
+        {
+            FXMenuTitle* title = NULL;
+            for (FXMenuTitle* item : widgets<FXMenuTitle>(window))
+                if (item->getMenu() == scriptsMenu) title = item;
+            assert(title);
+            mouseClick(title, 1, title->getWidth() / 2, title->getHeight() / 2);
+        }
+        else
+        {
+            scriptsMenu->popup(NULL, 30, 30);
+        }
+        pump(app, 150);
+        assert(scriptsMenu->shown());
+        FXWindow* parent = scriptsMenu;
+        if (nested)
+        {
+            FXMenuCascade* group = scriptCascade(parent, "Nested"); assert(group);
+            parent = group->getMenu();
+            if (clickMenu)
+            {
+                mouseHover(group);
+                assert(group->getMenu()->shown());
+            }
+        }
+        FXMenuCommand* command = scriptCommand(parent, nested ? nestedPath : scriptPath);
+        assert(command && command->getTarget() == panel);
+        checkScriptMenuContrast(app, command);
+        command->getTarget()->handle(command, FXSEL(SEL_UPDATE, command->getSelector()), NULL);
+        assert(command->isEnabled());
+        if (clickMenu)
+        {
+            assert(command->getY() + command->getHeight() <= parent->getHeight());
+            mouseClick(command, 1, command->getWidth() / 2, command->getHeight() / 2);
+            pump(app, 250);
+            assert(!scriptsMenu->shown());
+        }
+        else
+        {
+            scriptsMenu->popdown();
+            command->getTarget()->handle(command, FXSEL(SEL_COMMAND, command->getSelector()), NULL);
+        }
+    };
+
+    runMainMenu(left, {}, false, true);
+    verifyOutput(leftDirectory, {});
+    runMainMenu(left, {fileName}, false);
+    verifyOutput(leftDirectory, {leftDirectory + "/" + fileName});
+    runMainMenu(left, {folderName}, true, true);
+    verifyOutput(leftDirectory, {leftDirectory + "/" + folderName});
+    runMainMenu(left, {"..", fileName, folderName}, false);
+    verifyOutput(leftDirectory, {leftDirectory + "/" + fileName, leftDirectory + "/" + folderName});
+    runMainMenu(right, {"right.txt"}, false, true);
+    verifyOutput(rightDirectory, {rightDirectory + "/right.txt"});
+    assert(chmod(scriptPath.text(), 0600) == 0);
+    scriptsMenu->popup(NULL, 30, 30); pump(app, 100);
+    assert(!scriptCommand(scriptsMenu, scriptPath));
+    scriptsMenu->popdown();
+    assert(chmod(scriptPath.text(), 0700) == 0);
+    scriptsMenu->popup(NULL, 30, 30); pump(app, 100);
+    assert(scriptCommand(scriptsMenu, scriptPath));
+    assert(nestedMenuCount(window) == 1);
+    scriptsMenu->popdown();
+    puts("PASS: main Scripts menu uses the active pane, its current folder, and exact selected file/folder arguments");
+
+    auto runContextMenu = [&](FilePanel* panel, const std::vector<FXString>& names,
+                              bool execute = true, const FXString& image = FXString::null, bool nested = false)
+    {
+        panel->setActive();
+        selectScriptInputs(panel, names);
+        ScriptContextAutomation automation(app, panel, nested ? nestedPath : scriptPath, execute, image,
+                                           nested ? FXString("Nested") : FXString::null);
+        app.addTimeout(&automation, 1, 30);
+        FXEvent event = {}; event.code = KEY_Menu;
+        panel->onCmdPopupMenu(NULL, FXSEL(SEL_COMMAND, FilePanel::ID_POPUP_MENU), &event);
+        assert(automation.handled);
+    };
+    runContextMenu(left, {});
+    verifyOutput(leftDirectory, {});
+    runContextMenu(left, {fileName, folderName});
+    verifyOutput(leftDirectory, {leftDirectory + "/" + fileName, leftDirectory + "/" + folderName});
+    runContextMenu(left, {fileName}, true, FXString::null, true);
+    verifyOutput(leftDirectory, {leftDirectory + "/" + fileName});
+    assert(nestedMenuCount(left) == 0);
+
+    auto rightClickContext = [&](FilePanel* panel, const FXString& name)
+    {
+        panel->setActive();
+        selectScriptInputs(panel, name.empty() ? std::vector<FXString>() : std::vector<FXString>{name});
+        FileList* list = panel->getList();
+        FXint item = -1;
+        if (!name.empty())
+        {
+            for (FXint i = 0; i < list->getNumItems(); ++i)
+                if (list->getItemFilename(i) == name) item = i;
+            assert(item >= 0);
+        }
+        FXint clickX = -1, clickY = -1;
+        for (FXint y = 32; y < list->getHeight() - 8 && clickX < 0; y += 4)
+            for (FXint x = 8; x < list->getWidth(); x += 8)
+                if (list->getItemAt(x, y) == item &&
+                    (item < 0 || list->hitItem(item, x, y)))
+                {
+                    clickX = x;
+                    clickY = y;
+                    break;
+                }
+        assert(clickX >= 0);
+        ScriptContextAutomation automation(app, panel, scriptPath, true);
+        app.addTimeout(&automation, 1, 250);
+        mouseClick(list, 3, clickX, clickY);
+        pump(app, 300);
+        assert(automation.handled);
+    };
+    rightClickContext(left, FXString::null);
+    verifyOutput(leftDirectory, {});
+    rightClickContext(right, "right.txt");
+    verifyOutput(rightDirectory, {rightDirectory + "/right.txt"});
+    puts("PASS: Tools > Scripts works from background and selected-item context menus");
+
+    if (getenv("SWORDFISH_TEST_SCRIPT_SCREENSHOTS"))
+    {
+        const Theme original = Theme::current(&app);
+        const FXint oldX = window->getX(), oldY = window->getY();
+        const FXint oldWidth = window->getWidth(), oldHeight = window->getHeight();
+        const Theme light("Clearlooks", "", FXRGB(237, 236, 235), FXRGB(125, 125, 125), FXRGB(255, 255, 255),
+                          FXRGB(0, 0, 0), FXRGB(139, 175, 220), FXRGB(255, 255, 255), FXRGB(255, 255, 255),
+                          FXRGB(0, 0, 0), FXRGB(238, 238, 238), FXRGB(121, 153, 192), FXRGB(255, 0, 0),
+                          FXRGB(149, 178, 215));
+        const Theme dark("Dark", "", FXRGB(52, 52, 52), FXRGB(105, 105, 105), FXRGB(36, 36, 36),
+                         FXRGB(215, 215, 215), FXRGB(49, 86, 124), FXRGB(255, 255, 255), FXRGB(36, 36, 36),
+                         FXRGB(215, 215, 215), FXRGB(69, 69, 69), FXRGB(49, 86, 124), FXRGB(255, 0, 0),
+                         FXRGB(72, 72, 72));
+        for (int color = 0; color < 2; ++color)
+        {
+            const Theme& theme = color ? dark : light;
+            theme.writeActive(app.reg());
+            window->applyTheme(theme);
+            for (int narrow = 0; narrow < 2; ++narrow)
+            {
+                const FXint width = narrow ? 620 : 1000, height = narrow ? 600 : 730;
+                window->position(narrow ? app.getRootWindow()->getWidth() - width - 10 : 30, 30, width, height);
+                pump(app, 300);
+                FilePanel* panel = narrow ? right : left;
+                FileList* list = panel->getList();
+                FXint x, y;
+                list->translateCoordinatesTo(x, y, app.getRootWindow(), list->getWidth() - 15, 150);
+                FXString move = "xdotool mousemove " + FXStringVal(x) + " " + FXStringVal(y);
+                assert(system(move.text()) == 0);
+                pump(app, 100);
+                FXString prefix = FXString(color ? "dark" : "light") + (narrow ? "-narrow-" : "-default-");
+                runContextMenu(panel, {}, false, prefix + "background");
+                assert(system(move.text()) == 0);
+                pump(app, 100);
+                runContextMenu(panel, {narrow ? FXString("right.txt") : fileName}, false, prefix + "selected");
+            }
+        }
+        original.writeActive(app.reg());
+        window->applyTheme(original);
+        window->position(oldX, oldY, oldWidth, oldHeight);
+        pump(app, 200);
+    }
+
+    ScriptSearchWindow search(&app);
+    search.create(); search.show(PLACEMENT_OWNER); pump(app, 200);
+    SearchPanel* results = search.results();
+    results->setSearchPath(leftDirectory);
+    FXString selected = searchFile;
+    assert(results->appendItem(selected));
+    std::vector<FileList*> lists = widgets<FileList>(results);
+    assert(lists.size() == 1);
+    FileList* list = lists[0];
+    list->killSelection();
+    FXbool found = false;
+    for (FXint i = 0; i < list->getNumItems(); ++i)
+    {
+        if (list->getItemFullPathname(i) == searchFile) { list->selectItem(i); found = true; break; }
+    }
+    assert(found);
+    ScriptSearchAutomation searchAutomation(app, results, scriptPath);
+    app.addTimeout(&searchAutomation, 1, 30);
+    FXEvent searchEvent = {}; searchEvent.state = SHIFTMASK; searchEvent.code = KEY_F10;
+    results->onCmdPopupMenu(NULL, FXSEL(SEL_COMMAND, SearchPanel::ID_POPUP_MENU), &searchEvent);
+    assert(searchAutomation.handled);
+    verifyOutput(leftDirectory, {searchFile});
+    assert(nestedMenuCount(results) == 0);
+    puts("PASS: scripts receive the full path of a nested search result");
+
+    FXMenuPane searchMenu(results);
+    FXMenuCommand searchCommand(&searchMenu, scriptPath, miniexecicon, results, SearchPanel::ID_RUN_SCRIPT);
+    searchCommand.setHelpText(scriptPath);
+    searchMenu.create();
+
+    const FXString unavailable = root + "/unavailable", renamed = root + "/renamed";
+    assert(xf_mkpath(unavailable.text(), 0700) == 0);
+    left->setDirectory(unavailable); left->updatePath(); left->setActive();
+    pump(app, 100);
+    scriptsMenu->popup(NULL, 30, 30);
+    pump(app, 100);
+    FXMenuCommand* fileCommand = scriptCommand(scriptsMenu, scriptPath);
+    assert(fileCommand);
+    scriptsMenu->popdown();
+    results->setSearchPath(unavailable);
+    const FXString initialDirectory = FXSystem::getCurrentDirectory();
+    assert(rename(unavailable.text(), renamed.text()) == 0);
+    ScriptDirectoryFailure fileFailure(app, unavailable);
+    app.addTimeout(&fileFailure, 1, 30);
+    fileCommand->getTarget()->handle(fileCommand, FXSEL(SEL_COMMAND, fileCommand->getSelector()), NULL);
+    assert(fileFailure.handled && FXSystem::getCurrentDirectory() == initialDirectory);
+    ScriptDirectoryFailure searchFailure(app, unavailable);
+    app.addTimeout(&searchFailure, 1, 30);
+    searchCommand.getTarget()->handle(&searchCommand, FXSEL(SEL_COMMAND, searchCommand.getSelector()), NULL);
+    assert(searchFailure.handled && FXSystem::getCurrentDirectory() == initialDirectory);
+    pump(app, 300);
+    assert(access(output.text(), F_OK) != 0);
+    assert(rename(renamed.text(), unavailable.text()) == 0);
+    puts("PASS: unavailable working folders show an error and never run scripts in another directory");
+
+    left->setDirectory(originalLeft); left->updatePath();
+    right->setDirectory(originalRight); right->updatePath();
+    originalPanel->setActive();
+    if (hadPortableValue) assert(setenv("SWORDFISH_PORTABLE_DATA", originalPortable.text(), 1) == 0);
+    else assert(unsetenv("SWORDFISH_PORTABLE_DATA") == 0);
+    if (hadOutputValue) assert(setenv("SWORDFISH_TEST_SCRIPT_OUTPUT", originalOutput.text(), 1) == 0);
+    else assert(unsetenv("SWORDFISH_TEST_SCRIPT_OUTPUT") == 0);
+    pump(app, 200);
+}
+
 static FXTreeItem* findTreeItem(FXTreeItem* item, const char* prefix)
 {
     for (; item; item = item->getNext())
@@ -1373,6 +1870,15 @@ int main(int argc, char** argv)
     XFileExplorer* window = new XFileExplorer(&app, paths, 3);
     mainWindow = window;
     app.create(); window->show(); pump(app, 1000);
+    checkScriptMenus(app, window);
+    window->raise();
+    window->setFocus();
+    pump(app, 200);
+    if (getenv("SWORDFISH_TEST_SCRIPTS_ONLY"))
+    {
+        std::fflush(stdout);
+        std::_Exit(0);
+    }
     {
         FXToolBar* general = NULL;
         FXButton* zoom = NULL;

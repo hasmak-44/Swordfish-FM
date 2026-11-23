@@ -119,7 +119,7 @@ public:
     void showActiveIcon(FXbool);
     void execFile(FXString, FXbool explicitAction = false);
     void runInTerminal(FXString);
-    int readScriptDir(FXWindow*, FXMenuPane*, FXString);
+    int readScriptDir(FXWindow*, FXMenuPane*, FXString, std::vector<FXMenuPane*>&);
     void createArchiveFromDrop(const FXString&, const std::vector<FXString>&);
     void extractArchiveFromDrop(const FXString&, const FXString&);
 
