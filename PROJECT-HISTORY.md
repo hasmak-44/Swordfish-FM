@@ -4384,6 +4384,31 @@ Validated in an isolated clean native build. No full GUI-suite pass, packaged
 portable check or real-machine check is claimed. The specialist audit and the
 file-chooser alignment/contrast findings above remain deferred.
 
+### 3.136. Downloaded amd64 test build of local commits (23 November 2026)
+
+The user requested a test build containing all local commits through
+`56999f1` (Scripts menu, portable settings sync, appearance conditions,
+toolbar overflow, host environment for launched applications, dialog sizing
+and submenu side selection). A `git archive` snapshot was built in
+`/tmp/swordfish-test-20261123-56999f1` with the unchanged
+`portable/build-portable.sh` for amd64 in the Debian 10 container (glibc 2.28).
+
+The archive is
+`Swordfish-Portable-0.0.4-beta1-test-20261123-56999f1-amd64.tar.gz`
+(87,450,928 bytes, SHA-256
+`ed17b0b9add08d19b0d0c713a34137f0e8d118f7e897f0e7c4ea6aabb6aabf55`).
+As in releases, `portable-data` was excluded. The bundle reported
+`0.0.4-beta1` and stayed running under Xvfb until the smoke timeout. It was
+served privately on port 8765, checksum-verified over HTTP, downloaded by the
+user, and the port was closed. No `.deb` was built, and full regression suites
+were not rerun on the bundle.
+
+The workspace volume (which also holds Docker data) dropped to 1.4 GB free
+during the build. Unused builder images, Docker build cache, the source
+snapshot and package caches were removed afterwards; builder images are
+rebuilt automatically by the portable build script when needed. The downloaded
+archive and its checksum remain under `/tmp` on the separate large volume.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
