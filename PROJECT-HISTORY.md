@@ -3560,11 +3560,17 @@ sequence.
 
 The user approved detecting external settings changes, blocking stale reads and
 writes, and offering restart, quit without saving, or continued use without
-saving. Another window saving the same profile counts as an external change.
-Portable settings saves use an atomic replacement or a no-replace fallback
-that preserves competing versions; unsupported primitives and I/O failures
-are reported instead of silently overwriting. Restart waits for the replacement
-window to be created and reports failures without closing the old window.
+saving. A later clarification established that Swordfish instances sharing a
+profile should synchronize shared preferences, while each window keeps its own
+browsing and layout state. Peer saves are now distinguished from external
+changes, serialized, and merged: unsaved local edits are retained during a save,
+and the last saved value wins for a preference changed in both instances.
+Immediately applied settings refresh in open peers; settings already marked
+restart-required keep that behavior. Portable settings saves use an atomic
+replacement or a no-replace fallback that preserves competing versions;
+unsupported primitives and I/O failures are reported instead of silently
+overwriting. Restart waits for the replacement window to be created and reports
+failures without closing the old window.
 Startup reports leftover settings versions after an interrupted save and no
 longer rewrites already-migrated bookmarks unnecessarily.
 

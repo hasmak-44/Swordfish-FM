@@ -1,4 +1,8 @@
 #!/usr/bin/python3
+import configparser
+import ctypes
+import fcntl
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -193,6 +197,51 @@ class PortableProfileTests(unittest.TestCase):
         self.assertEqual(process.wait(timeout=10), 0)
         self.main_windows.pop(process.pid, None)
 
+    def publish_peer_setting(self, config, section, key, value):
+        lock = os.open(config.with_name(config.name + ".lock"), os.O_RDONLY | os.O_CREAT, 0o444)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            settings = configparser.ConfigParser(interpolation=None)
+            settings.optionxform = str
+            with config.open() as stream:
+                settings.read_file(stream)
+            settings[section][key] = str(value)
+            with tempfile.NamedTemporaryFile(
+                    mode="w", encoding="utf-8", dir=config.parent, prefix="peer-settings-", delete=False) as stream:
+                settings.write(stream)
+                temporary = Path(stream.name)
+            os.replace(temporary, config)
+            digest = hashlib.sha256(config.read_bytes()).digest()
+
+            x11 = ctypes.CDLL("libX11.so.6")
+            x11.XOpenDisplay.restype = ctypes.c_void_p
+            x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+            x11.XInternAtom.restype = ctypes.c_ulong
+            x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+            x11.XDefaultRootWindow.restype = ctypes.c_ulong
+            x11.XChangeProperty.argtypes = [
+                ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong,
+                ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
+            x11.XFlush.argtypes = [ctypes.c_void_p]
+            x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+            display = x11.XOpenDisplay(None)
+            if not display:
+                raise AssertionError("Could not open the test X display")
+            try:
+                path_hash = hashlib.sha256(os.fsencode(config)).hexdigest().encode()
+                atom = x11.XInternAtom(display, b"_SWORDFISH_PORTABLE_SETTINGS_" + path_hash, 0)
+                string_type = x11.XInternAtom(display, b"STRING", 0)
+                payload = ctypes.create_string_buffer(digest)
+                x11.XChangeProperty(
+                    display, x11.XDefaultRootWindow(display), atom, string_type,
+                    8, 0, ctypes.cast(payload, ctypes.c_void_p), len(digest))
+                x11.XFlush(display)
+            finally:
+                x11.XCloseDisplay(display)
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+            os.close(lock)
+
     def replace_profile(self, source, destination):
         incoming = destination.with_name(destination.name + "-incoming")
         previous = destination.with_name(destination.name + "-previous")
@@ -340,7 +389,7 @@ class PortableProfileTests(unittest.TestCase):
         self.assertEqual(process.wait(timeout=10), 0)
         self.assertEqual(config.read_bytes(), copied)
 
-    def test_another_window_save_is_detected(self):
+    def test_another_window_save_synchronizes_without_conflict(self):
         bundle = self.bundle("shared")
         config = self.profile(bundle / "portable-data", "Shared", self.root / "shared-ran")
         first, first_window = self.start(bundle)
@@ -351,12 +400,33 @@ class PortableProfileTests(unittest.TestCase):
         self.assertFalse(self.windows("Portable settings changed", first.pid))
         self.assertFalse(self.windows("Portable settings changed", second.pid))
         self.normal_quit(first, first_window)
-        saved = config.read_bytes()
-        self.choose(second, "k")
+        time.sleep(1.2)
+        self.assertFalse(self.windows("Portable settings changed", second.pid))
         self.send(second_window, "ctrl+q")
-        self.choose(second, "q")
         self.assertEqual(second.wait(timeout=10), 0)
-        self.assertEqual(config.read_bytes(), saved)
+        self.assertTrue(config.exists())
+
+    def test_peer_preference_updates_merge_in_open_windows(self):
+        bundle = self.bundle("shared")
+        config = self.profile(bundle / "portable-data", "Shared", self.root / "shared-ran")
+        first, first_window = self.start(bundle)
+        second, second_window = self.start(bundle)
+        self.publish_peer_setting(config, "OPTIONS", "log_level", 1)
+        time.sleep(1.2)
+        self.assertFalse(self.windows("Portable settings changed", first.pid))
+        self.assertFalse(self.windows("Portable settings changed", second.pid))
+        self.publish_peer_setting(config, "OPTIONS", "log_level", 4)
+        time.sleep(1.2)
+        self.assertFalse(self.windows("Portable settings changed", first.pid))
+        self.assertFalse(self.windows("Portable settings changed", second.pid))
+        self.normal_quit(first, first_window)
+        time.sleep(1.2)
+        self.assertFalse(self.windows("Portable settings changed", second.pid))
+        self.normal_quit(second, second_window)
+        settings = configparser.ConfigParser(interpolation=None)
+        with config.open() as stream:
+            settings.read_file(stream)
+        self.assertEqual(settings.getint("OPTIONS", "log_level"), 4)
 
     def test_copy_while_editor_open_blocks_save(self):
         source = self.bundle("source")

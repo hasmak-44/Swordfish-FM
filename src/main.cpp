@@ -540,6 +540,7 @@ int main(int argc, char* argv[])
     // FXApp::init() may read the registry, so establish the snapshot first.
     xf_watchportablesettings(&application->reg());
     application->init(argc, argv);
+    xf_setportablesettingsdisplay(application->getDisplay());
 
     FXbool firstRun = true;
     FXString settingsError;

@@ -9,6 +9,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
@@ -61,6 +62,171 @@ FXRegistry* portableSettingsRegistry = NULL;
 FXString portableSettingsPath;
 FXString portableSettingsProblem;
 PortableSettingsSnapshot portableSettingsBaseline;
+FXSettings portableSettingsRegistryBaseline;
+Display* portableSettingsDisplay = NULL;
+Atom portableSettingsAtom = None;
+bool portableSettingsRegistryLoaded = false;
+bool portableSettingsSyncPending = false;
+
+const FXchar* settingsEntry(const FXSettings& settings, const FXchar* section, const FXchar* key)
+{
+    FXStringDict* entries = settings.find(section);
+    return entries ? entries->find(key) : NULL;
+}
+
+bool sameSettingsEntry(const FXSettings& a, const FXSettings& b, const FXchar* section, const FXchar* key)
+{
+    const FXchar* left = settingsEntry(a, section, key);
+    const FXchar* right = settingsEntry(b, section, key);
+    return left == right || (left && right && strcmp(left, right) == 0);
+}
+
+void mergePortableSettingsEntry(const FXSettings& incoming, FXSettings& local, FXSettings& baseline,
+                                const FXchar* section, const FXchar* key, bool localChangesWin, bool& changed)
+{
+    const FXchar* value = settingsEntry(incoming, section, key);
+    if (sameSettingsEntry(incoming, baseline, section, key)) return;
+    bool localChanged = !sameSettingsEntry(local, baseline, section, key);
+    if (!localChangesWin || !localChanged)
+    {
+        if (!sameSettingsEntry(local, incoming, section, key))
+        {
+            if (value) local.writeStringEntry(section, key, value);
+            else local.deleteEntry(section, key);
+            changed = true;
+        }
+    }
+    if (value) baseline.writeStringEntry(section, key, value);
+    else baseline.deleteEntry(section, key);
+}
+
+FXString portableSettingsPropertyName()
+{
+    GChecksum* checksum = g_checksum_new(G_CHECKSUM_SHA256);
+    g_checksum_update(checksum, reinterpret_cast<const guchar*>(portableSettingsPath.text()),
+                      portableSettingsPath.length());
+    FXString name = "_SWORDFISH_PORTABLE_SETTINGS_" + FXString(g_checksum_get_string(checksum));
+    g_checksum_free(checksum);
+    return name;
+}
+
+bool portableSettingsPropertyMatches(const PortableSettingsSnapshot& snapshot)
+{
+    if (!portableSettingsDisplay || portableSettingsAtom == None || !snapshot.exists) return false;
+    Atom type = None;
+    int format = 0;
+    unsigned long count = 0, remaining = 0;
+    unsigned char* value = NULL;
+    int result = XGetWindowProperty(portableSettingsDisplay, DefaultRootWindow(portableSettingsDisplay),
+                                    portableSettingsAtom, 0, snapshot.digest.size(), False, XA_STRING, &type,
+                                    &format, &count, &remaining, &value);
+    bool matches = result == Success && value && type == XA_STRING && format == 8 &&
+                   count == snapshot.digest.size() && remaining == 0 &&
+                   memcmp(value, snapshot.digest.data(), snapshot.digest.size()) == 0;
+    if (value) XFree(value);
+    return matches;
+}
+
+void publishPortableSettings(const PortableSettingsSnapshot& snapshot)
+{
+    if (!portableSettingsDisplay || portableSettingsAtom == None || !snapshot.exists) return;
+    XChangeProperty(portableSettingsDisplay, DefaultRootWindow(portableSettingsDisplay), portableSettingsAtom,
+                    XA_STRING, 8, PropModeReplace, snapshot.digest.data(), snapshot.digest.size());
+    XFlush(portableSettingsDisplay);
+}
+
+bool mergePortableSettings(FXSettings& incoming, bool localChangesWin)
+{
+    if (!portableSettingsRegistryLoaded || !portableSettingsRegistry) return false;
+    FXSettings& local = *portableSettingsRegistry;
+    bool changed = false;
+    bool modified = local.isModified();
+    FXSettings previousBaseline = portableSettingsRegistryBaseline;
+    for (FXint s = incoming.first(); s < incoming.size(); s = incoming.next(s))
+    {
+        const FXchar* section = incoming.key(s);
+        FXStringDict* values = incoming.data(s);
+        for (FXint e = values->first(); e < values->size(); e = values->next(e))
+        {
+            const FXchar* key = values->key(e);
+            mergePortableSettingsEntry(incoming, local, portableSettingsRegistryBaseline,
+                                       section, key, localChangesWin, changed);
+        }
+    }
+    for (FXint s = previousBaseline.first(); s < previousBaseline.size(); s = previousBaseline.next(s))
+    {
+        const FXchar* section = previousBaseline.key(s);
+        FXStringDict* values = previousBaseline.data(s);
+        for (FXint e = values->first(); e < values->size(); e = values->next(e))
+        {
+            const FXchar* key = values->key(e);
+            if (!settingsEntry(incoming, section, key))
+                mergePortableSettingsEntry(incoming, local, portableSettingsRegistryBaseline,
+                                           section, key, localChangesWin, changed);
+        }
+    }
+    portableSettingsRegistryBaseline.setModified(false);
+    local.setModified(modified);
+    return changed;
+}
+
+int openPortableSettingsLock(const FXString& pathname, FXString& error, bool exclusive)
+{
+    FXString lockpath = pathname + ".lock";
+    int fd = open(lockpath.text(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd < 0 && errno == ENOENT)
+    {
+        fd = open(lockpath.text(), O_RDONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0444);
+        if (fd >= 0)
+        {
+            if (fchmod(fd, 0444) != 0)
+            {
+                int failure = errno;
+                close(fd);
+                error = _("Cannot set permissions on the portable settings lock: ") + lockpath + ": " +
+                        strerror(failure);
+                return -1;
+            }
+        }
+        else if (errno == EEXIST)
+        {
+            fd = open(lockpath.text(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+        }
+    }
+    if (fd < 0)
+    {
+        error = _("Cannot open the portable settings lock: ") + lockpath + ": " + strerror(errno);
+        return -1;
+    }
+    struct stat info;
+    int failure = 0;
+    if (fstat(fd, &info) != 0) failure = errno;
+    else if (!S_ISREG(info.st_mode)) failure = EINVAL;
+    else if (flock(fd, exclusive ? LOCK_EX : LOCK_SH) != 0) failure = errno;
+    if (failure)
+    {
+        close(fd);
+        error = _("Cannot lock the portable settings file: ") + lockpath + ": " + strerror(failure);
+        return -1;
+    }
+    return fd;
+}
+
+class PortableSettingsFileLock
+{
+    int descriptor = -1;
+public:
+    bool acquire(const FXString& pathname, FXString& error, bool exclusive = true)
+    {
+        descriptor = openPortableSettingsLock(pathname, error, exclusive);
+        return descriptor >= 0;
+    }
+
+    ~PortableSettingsFileLock()
+    {
+        if (descriptor >= 0) close(descriptor);
+    }
+};
 
 bool sameSettingsStat(const struct stat& a, const struct stat& b, bool renamed = false)
 {
@@ -299,12 +465,18 @@ bool replacePortableSettingsWithoutExchange(const FXString& temporary, const FXS
         }
     }
 
+    PortableSettingsSnapshot currentSnapshot;
     FXString problem;
-    if (xf_portablesettingschanged(problem) || rename(target.text(), previous.text()) != 0)
+    bool unchanged = readSettingsSnapshot(target, currentSnapshot, problem) &&
+                     sameSettingsSnapshot(portableSettingsBaseline, currentSnapshot);
+    if (!unchanged || rename(target.text(), previous.text()) != 0)
     {
         if (portableSettingsProblem.empty())
-            portableSettingsConflict(_("Cannot preserve the previous portable settings: ") + target + ": " +
-                                     strerror(errno));
+            portableSettingsConflict(unchanged ?
+                                     _("Cannot preserve the previous portable settings: ") + target + ": " +
+                                     strerror(errno) :
+                                     (problem.empty() ?
+                                      _("The portable settings changed outside this window: ") + target : problem));
         discardSettingsTemp(candidate);
         discardSettingsTemp(temporary);
         discardSettingsDirectory(directory);
@@ -409,12 +581,6 @@ bool replacePortableSettings(const FXString& temporary, const FXString& target)
         discardSettingsTemp(temporary);
         return false;
     }
-    if (xf_portablesettingschanged(problem))
-    {
-        discardSettingsTemp(temporary);
-        return false;
-    }
-
     if (!portableSettingsBaseline.exists)
     {
         if (renameSettings(temporary, target, RENAME_NOREPLACE) != 0)
@@ -444,7 +610,11 @@ bool replacePortableSettings(const FXString& temporary, const FXString& target)
         {
             int failure = errno;
             if (unsupportedSettingsRename(failure))
-                return replacePortableSettingsWithoutExchange(temporary, target, written);
+            {
+                bool replaced = replacePortableSettingsWithoutExchange(temporary, target, written);
+                if (replaced) { publishPortableSettings(portableSettingsBaseline); }
+                return replaced;
+            }
             portableSettingsConflict(_("Cannot safely replace the portable settings file: ") + target + ": " +
                                      strerror(failure));
             discardSettingsTemp(temporary);
@@ -499,6 +669,7 @@ bool replacePortableSettings(const FXString& temporary, const FXString& target)
         discardSettingsTemp(temporary);
         if (!portableSettingsProblem.empty()) { return false; }
         portableSettingsBaseline = current;
+        publishPortableSettings(current);
         return true;
     }
 
@@ -511,7 +682,62 @@ bool replacePortableSettings(const FXString& temporary, const FXString& target)
     }
     if (!portableSettingsProblem.empty()) { return false; }
     portableSettingsBaseline = current;
+    publishPortableSettings(current);
     return true;
+}
+
+bool refreshPortableSettings(bool localChangesWin, bool lockHeld = false)
+{
+    if (!portableSettingsRegistry || !portableSettingsProblem.empty()) return !portableSettingsProblem.empty();
+    PortableSettingsFileLock settingsLock;
+    FXString error;
+    if (!lockHeld && !settingsLock.acquire(portableSettingsPath, error, false))
+    {
+        if (!xf_existfile(FXPath::directory(portableSettingsPath))) return false;
+        portableSettingsConflict(error);
+        return true;
+    }
+    PortableSettingsSnapshot current;
+    if (!readSettingsSnapshot(portableSettingsPath, current, error))
+    {
+        portableSettingsConflict(error);
+        return true;
+    }
+    if (sameSettingsSnapshot(portableSettingsBaseline, current)) return false;
+    if (!portableSettingsRegistryLoaded)
+    {
+        if (localChangesWin)
+        {
+            portableSettingsConflict(_("The portable settings changed outside this window: ") + portableSettingsPath);
+            return true;
+        }
+        portableSettingsBaseline = current;
+        return false;
+    }
+    if (!portableSettingsPropertyMatches(current))
+    {
+        portableSettingsConflict(_("The portable settings changed outside this window: ") + portableSettingsPath);
+        return true;
+    }
+
+    FXSettings incoming;
+    if (!incoming.parseFile(portableSettingsPath, true))
+    {
+        portableSettingsConflict(_("Cannot read the portable settings file: ") + portableSettingsPath);
+        return true;
+    }
+    PortableSettingsSnapshot afterRead;
+    if (!readSettingsSnapshot(portableSettingsPath, afterRead, error) ||
+        !sameSettingsSnapshot(current, afterRead))
+    {
+        portableSettingsConflict(error.empty() ?
+                                 _("The portable settings changed while being synchronized: ") + portableSettingsPath :
+                                 error);
+        return true;
+    }
+    if (mergePortableSettings(incoming, localChangesWin)) { portableSettingsSyncPending = true; }
+    portableSettingsBaseline = current;
+    return false;
 }
 }
 
@@ -529,6 +755,26 @@ void xf_watchportablesettings(FXRegistry* registry)
         portableSettingsConflict(error);
 }
 
+void xf_portablesettingsloaded(FXRegistry* registry)
+{
+    if (!registry || registry != portableSettingsRegistry) return;
+    portableSettingsRegistryBaseline = *registry;
+    portableSettingsRegistryBaseline.setModified(false);
+    portableSettingsRegistryLoaded = true;
+    FXString error;
+    if (!readSettingsSnapshot(portableSettingsPath, portableSettingsBaseline, error))
+        portableSettingsConflict(error);
+}
+
+void xf_setportablesettingsdisplay(void* nativeDisplay)
+{
+    if (!portableSettingsRegistry) return;
+    portableSettingsDisplay = static_cast<Display*>(nativeDisplay);
+    if (!portableSettingsDisplay) return;
+    FXString name = portableSettingsPropertyName();
+    portableSettingsAtom = XInternAtom(portableSettingsDisplay, name.text(), False);
+}
+
 FXbool xf_portablesettingswatching()
 {
     return portableSettingsRegistry != NULL;
@@ -537,24 +783,24 @@ FXbool xf_portablesettingswatching()
 FXbool xf_portablesettingschanged(FXString& problem)
 {
     if (!portableSettingsRegistry) { return false; }
-    if (portableSettingsProblem.empty())
-    {
-        PortableSettingsSnapshot current;
-        FXString error;
-        if (!readSettingsSnapshot(portableSettingsPath, current, error))
-            portableSettingsConflict(error);
-        else if (!sameSettingsSnapshot(portableSettingsBaseline, current))
-            portableSettingsConflict(_("The portable settings changed outside this window: ") + portableSettingsPath);
-    }
+    refreshPortableSettings(false, false);
     problem = portableSettingsProblem;
     return !problem.empty();
+}
+
+FXbool xf_portablesettingssynchronized()
+{
+    bool synchronized = portableSettingsSyncPending;
+    portableSettingsSyncPending = false;
+    return synchronized;
 }
 
 // Read registry
 bool FXRegistry::read()
 {
     FXString conflict;
-    if (this == portableSettingsRegistry && xf_portablesettingschanged(conflict)) { return false; }
+    if (this == portableSettingsRegistry && portableSettingsRegistryLoaded &&
+        xf_portablesettingschanged(conflict)) { return false; }
     FXString dirname;
     bool ok = false;
 
@@ -603,7 +849,9 @@ bool FXRegistry::read()
         ok = true;
     }
 
-    if (this == portableSettingsRegistry && xf_portablesettingschanged(conflict)) { return false; }
+    if (this == portableSettingsRegistry && portableSettingsRegistryLoaded &&
+        xf_portablesettingschanged(conflict)) { return false; }
+    if (this == portableSettingsRegistry) { xf_portablesettingsloaded(this); }
     return ok;
 }
 
@@ -639,12 +887,12 @@ bool FXRegistry::readFromDir(const FXString& dirname, bool mark)
 bool FXRegistry::write()
 {
     FXString conflict;
-    if (this == portableSettingsRegistry && xf_portablesettingschanged(conflict)) { return false; }
     FXString pathname, tempname;
 
     // Settings have not changed
     if (!isModified())
     {
+        if (this == portableSettingsRegistry && xf_portablesettingschanged(conflict)) { return false; }
         return true;
     }
 
@@ -677,6 +925,17 @@ bool FXRegistry::write()
         // Add application key
         pathname.append(PATHSEPSTRING + applicationkey + "rc");
 
+        PortableSettingsFileLock settingsLock;
+        if (this == portableSettingsRegistry)
+        {
+            if (!settingsLock.acquire(pathname, conflict))
+            {
+                portableSettingsConflict(conflict);
+                return false;
+            }
+            if (refreshPortableSettings(true, true)) { return false; }
+        }
+
         // Construct temp name
         tempname.format("%s_%d", pathname.text(), fxgetpid());
 
@@ -691,6 +950,12 @@ bool FXRegistry::write()
             }
 
             setModified(false);
+            if (this == portableSettingsRegistry)
+            {
+                portableSettingsRegistryBaseline = *this;
+                portableSettingsRegistryBaseline.setModified(false);
+                portableSettingsRegistryLoaded = true;
+            }
             return true;
         }
         if (this == portableSettingsRegistry)

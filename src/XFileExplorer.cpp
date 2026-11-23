@@ -4301,8 +4301,25 @@ long XFileExplorer::onQuit(FXObject*, FXSelector, void*)
 
 long XFileExplorer::onPortableSettingsCheck(FXObject*, FXSelector, void*)
 {
+    const FXuint oldFolderSizeMode = FileList::getFolderSizeMode(getApp());
+    const FXbool oldIconThumbnails = getApp()->reg().readUnsignedEntry("OPTIONS", "icon_thumbnails", true);
+    const FXint oldToolbarIconSize = xf_toolbariconsize(getApp(), "customtoolbariconsize");
+    const FXuint oldToolbarStyle = getApp()->reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 0);
     FXString problem;
     if (xf_portablesettingschanged(problem)) { return handlePortableSettingsConflict(problem); }
+    if (xf_portablesettingssynchronized())
+    {
+        appLogSetLevel(getApp()->reg().readUnsignedEntry("OPTIONS", "log_level", APP_LOG_LEVEL_NORMAL));
+        FXuint folderSizeMode = FXMIN(getApp()->reg().readUnsignedEntry("OPTIONS", "folder_size_mode", 3), 3);
+        if (folderSizeMode != oldFolderSizeMode) FileList::setFolderSizeMode(getApp(), folderSizeMode);
+        FXbool iconThumbnails = getApp()->reg().readUnsignedEntry("OPTIONS", "icon_thumbnails", true);
+        if (iconThumbnails != oldIconThumbnails) FileList::setIconThumbnails(getApp(), iconThumbnails);
+        FXint toolbarIconSize = xf_toolbariconsize(getApp(), "customtoolbariconsize");
+        FXuint toolbarStyle = getApp()->reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 0);
+        if (customactions && (toolbarIconSize != oldToolbarIconSize || toolbarStyle != oldToolbarStyle))
+            customactions->refreshToolbarIcons();
+        applyTheme(Theme::current(getApp()));
+    }
     getApp()->addTimeout(this, ID_PORTABLE_SETTINGS_CHECK, 1000);
     return 1;
 }
