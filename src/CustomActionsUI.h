@@ -62,7 +62,8 @@ class CustomActionMenu : public FXObject
 public:
     CustomActionMenu(CustomActionsUI*, bool, const CustomActionContext&);
     ~CustomActionMenu();
-    FXMenuPane* pane(FXWindow*);
+    FXMenuPane* pane(FXWindow*, FXuint opts = 0);
+    FXMenuCaption* append(FXMenuPane*, unsigned, bool filter);
     void fill(FXMenuPane*, const FXString&, bool filter);
     void appendEditor(FXMenuPane*);
     bool isShowing() const;

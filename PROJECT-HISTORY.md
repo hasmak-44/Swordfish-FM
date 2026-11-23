@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
 Last updated: 23 November 2026, through the 0.0.4 beta 1 release and
-subsequent user feedback and local Scripts fix (sections 3.128-3.130).
+subsequent user feedback and local fixes (sections 3.128-3.132).
 Latest prerelease: `swordfish-0.0.4-beta1`.
 Latest stable release: `swordfish-0.0.3`.
 Previous stable release: `swordfish-0.0.2`.
@@ -43,10 +43,10 @@ Historical implementation details below do not override the current code.
 7. User-confirmed fixes include the portable search warning, child-window
    icons, missing-archivemount guidance and the icon-startup fix (section 3.40).
    Distinguish those confirmations from later changes and the user's new
-   reports and local work in sections 3.129-3.130.
+   reports and local work in sections 3.129-3.132.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.118-3.130. Older beta and RC notes are
+9. For the latest state, read sections 3.118-3.132. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide was originally added after the frozen RC4 application commit and is
@@ -4265,6 +4265,33 @@ regression checks that pane geometry matches X11 and stays within its parent.
 All 16 corrected captures passed independent review. The intentional gutters
 remain, and no application repaint code was changed.
 
+### 3.132. Custom toolbar overflow (local work)
+
+The custom toolbar now reserves its far-right Settings/Configure button and
+places a `>>` overflow button immediately before it when the actions do not all
+fit. Excess actions and nested groups appear in their original order in the
+popup, with clean separator boundaries. Widening the window restores buttons
+and removes `>>` once everything fits. Applicability still follows the active
+pane, with inapplicable entries disabled rather than removed.
+
+A clean native build staged in `/tmp` and focused GUI regressions pass all nine
+display-style/icon-size combinations, the exact one-pixel fit threshold,
+shrinking and widening, Configure bounds, overflow order and real nested-action
+clicks in both panes. The same focused checks pass with Fluxbox, including opening
+the editor through the pinned Configure button. The existing 512-case appearance
+matrix also passes. Popup checks verify every displayed row is mapped, contiguous
+and within a shrink-wrapped menu; these checks caught missing first rows and
+unused popup space during implementation.
+
+All 14 normal/narrow, light/dark, long-label, selected/background and
+no-overflow screenshots pass independent review. Captures park the pointer
+outside the application to prevent hover popups from occluding it. The focused
+mode is `SWORDFISH_TEST_OVERFLOW_ONLY=1` on the existing Custom Actions GUI
+runner; the overflow checks also run in its default mode.
+
+This is local work, not part of the published beta. Portable and
+real-machine testing remain outstanding; no full GUI-suite pass is claimed.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -4543,7 +4570,7 @@ prereleases and must not be assumed to select RC4.
 ## 9. Unfinished work and agreements not to mistake for completed features
 
 The following retains historical handoff notes and discussions; dates and
-superseding sections matter. See sections 3.128-3.130 for the latest release
+superseding sections matter. See sections 3.128-3.132 for the latest release
 and feedback rather than assuming these notes describe the current worktree.
 
 ### 9.0 Historical position (26 October 2026)
@@ -4854,9 +4881,9 @@ Do not amend published commits/tags as an automatic workaround.
 
 0.0.3 is the latest stable release; 0.0.4 beta 1 is the latest published
 prerelease. Its release and known limitations are recorded in section 3.128;
-the user's subsequent reports and local Scripts/appearance fixes are in sections
-3.129-3.131. The cancellation cleanup was deferred and is not included in the
-beta (section 3.127). Generated
+the user's subsequent reports and local Scripts/appearance/overflow fixes are in
+sections 3.129-3.132. The cancellation cleanup was deferred and is not included
+in the beta (section 3.127). Generated
 autotools files may remain modified after local builds and must not be included
 in feature commits. Inspect the current branch and worktree rather than relying
 on an old experimental ZIP, roadmap or handoff. Do not publish local work

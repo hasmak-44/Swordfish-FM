@@ -28,6 +28,129 @@
 
 namespace
 {
+class CustomActionToolBar : public ThemeToolBar
+{
+    struct Entry
+    {
+        FXWindow* button;
+        FXWindow* menuItem;
+        bool separator;
+    };
+    std::vector<Entry> entries;
+    FXButton* configure = NULL;
+    FXMenuButton* overflow = NULL;
+
+    static FXint preferredWidth(FXWindow* widget)
+    {
+        return widget->getLayoutHints() & LAYOUT_FIX_WIDTH ? widget->getWidth() : widget->getDefaultWidth();
+    }
+
+    static FXint preferredHeight(FXWindow* widget)
+    {
+        return widget->getLayoutHints() & LAYOUT_FIX_HEIGHT ? widget->getHeight() : widget->getDefaultHeight();
+    }
+
+public:
+    CustomActionToolBar(FXComposite* parent) :
+        ThemeToolBar(parent, FRAME_NONE | LAYOUT_SIDE_TOP | LAYOUT_DOCK_NEXT | LAYOUT_FILL_X) {}
+
+    void reset()
+    {
+        entries.clear();
+        configure = NULL;
+        overflow = NULL;
+    }
+
+    void setControls(FXButton* editor, FXMenuButton* more)
+    {
+        configure = editor;
+        overflow = more;
+    }
+
+    void append(FXWindow* button, FXWindow* menuItem, bool separator = false)
+    {
+        entries.push_back({button, menuItem, separator});
+    }
+
+    FXint getDefaultWidth() override
+    {
+        return configure && overflow ?
+            getPadLeft() + getPadRight() + 2 * getBorderWidth() +
+            configure->getDefaultWidth() + overflow->getDefaultWidth() + getHSpacing() :
+            ThemeToolBar::getDefaultWidth();
+    }
+
+    FXint getDefaultHeight() override
+    {
+        FXint tallest = configure ? configure->getDefaultHeight() : 0;
+        if (overflow) tallest = FXMAX(tallest, overflow->getDefaultHeight());
+        for (const Entry& entry : entries) tallest = FXMAX(tallest, preferredHeight(entry.button));
+        return tallest + getPadTop() + getPadBottom() + 2 * getBorderWidth();
+    }
+
+    void layout() override
+    {
+        if (!configure || !overflow) { ThemeToolBar::layout(); return; }
+        const FXint left = getPadLeft() + getBorderWidth();
+        const FXint right = FXMAX(left, getWidth() - getPadRight() - getBorderWidth());
+        const FXint top = getPadTop() + getBorderWidth();
+        const FXint contentHeight = FXMAX(1, getHeight() - top - getPadBottom() - getBorderWidth());
+        const FXint spacing = getHSpacing();
+        const FXint configureWidth = FXMIN(configure->getDefaultWidth(), FXMAX(1, right - left));
+        const FXint configureX = FXMAX(left, right - configureWidth);
+        configure->show();
+        configure->position(configureX, top, configureWidth, contentHeight);
+
+        FXint total = left;
+        for (const Entry& entry : entries) total += preferredWidth(entry.button) + spacing;
+        const bool needsOverflow = total > configureX;
+        const FXint overflowWidth = FXMIN(overflow->getDefaultWidth(), FXMAX(1, configureX - left - spacing));
+        const FXint overflowX = FXMAX(left, configureX - spacing - overflowWidth);
+        const FXint limit = needsOverflow ? overflowX : configureX;
+        unsigned visible = 0;
+        FXint x = left;
+        while (visible < entries.size() && x + preferredWidth(entries[visible].button) + spacing <= limit)
+        {
+            x += preferredWidth(entries[visible].button) + spacing;
+            ++visible;
+        }
+        while (visible && entries[visible - 1].separator) --visible;
+        x = left;
+        bool haveOverflowItem = false;
+        bool menuChanged = false;
+        for (unsigned i = 0; i < entries.size(); ++i)
+        {
+            const Entry& entry = entries[i];
+            const FXbool wasShown = entry.menuItem->shown();
+            if (i < visible)
+            {
+                const FXint height = FXMIN(preferredHeight(entry.button), contentHeight);
+                entry.button->show();
+                entry.button->position(x, top + (contentHeight - height) / 2,
+                                       preferredWidth(entry.button), height);
+                x += preferredWidth(entry.button) + spacing;
+                entry.menuItem->hide();
+            }
+            else
+            {
+                entry.button->hide();
+                if (!entry.separator || haveOverflowItem) entry.menuItem->show();
+                else entry.menuItem->hide();
+                if (!entry.separator) haveOverflowItem = true;
+            }
+            if (wasShown != entry.menuItem->shown()) menuChanged = true;
+        }
+        if (menuChanged) overflow->getMenu()->recalc();
+        if (needsOverflow)
+        {
+            overflow->show();
+            overflow->position(overflowX, top, overflowWidth, contentHeight);
+        }
+        else overflow->hide();
+        flags &= ~FLAG_DIRTY;
+    }
+};
+
 enum { ENTRY_SAVE = FXDialogBox::ID_LAST, ENTRY_BROWSE, ENTRY_INSERT, ENTRY_COMMAND, ENTRY_ICON,
        ENTRY_DIRECTORY, ENTRY_LEGEND, ENTRY_TEST, ENTRY_SUGGEST };
 
@@ -1075,10 +1198,26 @@ bool CustomActionMenu::isShowing() const
     return false;
 }
 
-FXMenuPane* CustomActionMenu::pane(FXWindow* owner)
+FXMenuPane* CustomActionMenu::pane(FXWindow* owner, FXuint opts)
 {
-    FXMenuPane* p = new FXMenuPane(owner);
+    FXMenuPane* p = new FXMenuPane(owner, opts);
     panes.push_back(p); return p;
+}
+
+FXMenuCaption* CustomActionMenu::append(FXMenuPane* menu, unsigned n, bool filter)
+{
+    const CustomAction& action = actions->model.items[n];
+    FXString text = label(action.name) + "\t\t" + label(action.description);
+    if (action.kind == CustomAction::FOLDER)
+    {
+        FXMenuPane* sub = pane(menu);
+        fill(sub, action.id, filter);
+        FXMenuCascade* cascade = new FXMenuCascade(menu, text, actions->icon(n), sub);
+        cascade->setTarget(this);
+        cascade->setSelector(CustomActionsUI::ID_ACTION + n);
+        return cascade;
+    }
+    return new FXMenuCommand(menu, text, actions->icon(n), this, CustomActionsUI::ID_ACTION + n);
 }
 
 void CustomActionMenu::fill(FXMenuPane* menu, const FXString& parent, bool filter)
@@ -1094,15 +1233,7 @@ void CustomActionMenu::fill(FXMenuPane* menu, const FXString& parent, bool filte
         if (filter && !actions->model.visible(n, snapshot)) { continue; }
         if (separator) { new FXMenuSeparator(menu); separator = false; }
         haveEntry = true;
-        FXString text = label(a.name) + "\t\t" + label(a.description);
-        if (a.kind == CustomAction::FOLDER)
-        {
-            FXMenuPane* sub = pane(menu);
-            fill(sub, a.id, filter);
-            FXMenuCascade* cascade = new FXMenuCascade(menu, text, actions->icon(n), sub);
-            cascade->setTarget(this); cascade->setSelector(CustomActionsUI::ID_ACTION + n);
-        }
-        else { new FXMenuCommand(menu, text, actions->icon(n), this, CustomActionsUI::ID_ACTION + n); }
+        append(menu, n, filter);
     }
 }
 
@@ -1424,7 +1555,7 @@ CustomActionsUI::CustomActionsUI(XFileExplorer* window, FXDockSite* dock, FXMenu
         }
     }
     toolbarShown = owner->getApp()->reg().readUnsignedEntry("CUSTOM ACTIONS UI", "toolbar", 1) != 0;
-    toolbar = new ThemeToolBar(dock, FRAME_NONE | LAYOUT_SIDE_TOP | LAYOUT_DOCK_NEXT | LAYOUT_FILL_X);
+    toolbar = new CustomActionToolBar(dock);
     toolbar->setTarget(this);
     toolbar->setSelector(ID_TOOLBAR_MENU);
     mainPane = new FXMenuPane(owner);
@@ -1470,6 +1601,8 @@ FXIcon* CustomActionsUI::icon(unsigned n) const
 
 void CustomActionsUI::rebuild()
 {
+    CustomActionToolBar* actionToolbar = static_cast<CustomActionToolBar*>(toolbar);
+    actionToolbar->reset();
     while (toolbar->getFirst()) { delete toolbar->getFirst(); }
     delete toolbarMenu; toolbarMenu = NULL;
     while (mainPane->getFirst()) { delete mainPane->getFirst(); }
@@ -1510,10 +1643,17 @@ void CustomActionsUI::rebuild()
     mainMenu->fill(mainPane, "", false);
     mainMenu->appendEditor(mainPane);
     toolbarMenu = new CustomActionMenu(this, true, CustomActionContext());
+    FXMenuPane* overflowMenu = toolbarMenu->pane(owner, POPUP_SHRINKWRAP);
     std::vector<unsigned> nodes = model.toolbarItems();
     bool haveEntry = false, separator = false;
-    new FXButton(toolbar, _("\tEdit Custom Actions"), toolbarIcon(miniprefsicon, ""), this, ID_EDIT,
-                 BUTTON_TOOLBAR | LAYOUT_RIGHT);
+    FXButton* configure = new FXButton(toolbar, _("\tEdit Custom Actions"), toolbarIcon(miniprefsicon, ""),
+                                      this, ID_EDIT, BUTTON_TOOLBAR | LAYOUT_RIGHT);
+    FXMenuButton* overflow = new FXMenuButton(toolbar, ">>", NULL, overflowMenu,
+                                             MENUBUTTON_DOWN | MENUBUTTON_NOARROWS | BUTTON_TOOLBAR | LAYOUT_RIGHT);
+    overflow->setTipText(_("More Custom Actions"));
+    overflow->setTarget(this);
+    overflow->setSelector(ID_TOOLBAR_MENU);
+    actionToolbar->setControls(configure, overflow);
     for (unsigned i = 0; i < nodes.size(); ++i)
     {
         unsigned n = nodes[i];
@@ -1522,11 +1662,13 @@ void CustomActionsUI::rebuild()
         if (a.kind == CustomAction::FOLDER && !hasAction(model, a.id)) { continue; }
         if (separator)
         {
-            new FXFrame(toolbar, FRAME_SUNKEN | LAYOUT_CENTER_Y |
-                        LAYOUT_FIX_WIDTH | LAYOUT_FIX_HEIGHT, 0, 0, 2, toolbarIconSize + 6);
+            FXFrame* divider = new FXFrame(toolbar, FRAME_SUNKEN | LAYOUT_CENTER_Y |
+                                          LAYOUT_FIX_WIDTH | LAYOUT_FIX_HEIGHT, 0, 0, 2, toolbarIconSize + 6);
+            actionToolbar->append(divider, new FXMenuSeparator(overflowMenu), true);
             separator = false;
         }
         haveEntry = true;
+        FXMenuCaption* overflowItem = toolbarMenu->append(overflowMenu, n, false);
         FXString toolbarLabel = label(a.name);
         FXString text = (toolbarStyle == 1 ? FXString() : toolbarLabel) + "\t" + label(a.description);
         FXIcon* buttonIcon = toolbarStyle == 2 ? NULL : toolbarIcon(icon(n), icons[n] ? a.icon : FXString());
@@ -1538,14 +1680,17 @@ void CustomActionsUI::rebuild()
                                   MENUBUTTON_DOWN | BUTTON_TOOLBAR | ICON_BEFORE_TEXT);
             button->setTarget(toolbarMenu); button->setSelector(ID_ACTION + n);
             button->setTipText(toolbarLabel);
+            actionToolbar->append(button, overflowItem);
         }
         else
         {
             FXButton* button = new FXButton(toolbar, text, buttonIcon, toolbarMenu, ID_ACTION + n,
                                             BUTTON_TOOLBAR | ICON_BEFORE_TEXT);
             button->setTipText(toolbarLabel);
+            actionToolbar->append(button, overflowItem);
         }
     }
+    toolbar->recalc();
     if (toolbarShown) { toolbar->show(); } else { toolbar->hide(); }
     if (owner->id())
     {

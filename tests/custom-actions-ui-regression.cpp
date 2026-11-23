@@ -19,6 +19,7 @@
 #include "Theme.h"
 #include <algorithm>
 #include <cassert>
+#include <cerrno>
 #include <cstdio>
 #include <fstream>
 #include <functional>
@@ -1654,6 +1655,265 @@ public:
     }
 };
 
+static void checkToolbarOverflow(FXApp& app, XFileExplorer* window, const FXString& fixture)
+{
+    CustomActionsUI* actions = window->getCustomActions();
+    const std::vector<CustomAction> saved = actions->model.items;
+    const Theme originalTheme = Theme::current(&app);
+    const FXuint originalStyle = app.reg().readUnsignedEntry("SETTINGS", "customtoolbarstyle", 0);
+    const FXint originalSize = xf_toolbariconsize(&app, "customtoolbariconsize");
+    const FXint originalX = window->getX(), originalY = window->getY();
+    const FXint originalWidth = window->getWidth(), originalHeight = window->getHeight();
+    const FXString originalLeft = window->getLeftPanel()->getDirectory();
+    const FXString originalRight = window->getRightPanel()->getDirectory();
+    FilePanel* originalActive = window->getCurrentPanel();
+    actions->model.items.clear();
+    for (unsigned i = 0; i < 20; ++i)
+    {
+        FXString id = "overflow-" + FXStringVal(i), name = "Action " + FXStringVal(i + 1);
+        if (i == 3) name = "Action with a long descriptive label for checking overflow";
+        CustomAction action = node(id.text(), name.text(), CustomAction::ACTION);
+        action.background = true;
+        actions->model.items.push_back(action);
+        if (i == 4 || i == 12)
+            actions->model.items.push_back(node(("divider-" + FXStringVal(i)).text(), "Divider", CustomAction::SEPARATOR));
+    }
+    actions->model.items.push_back(node("overflow-group", "Grouped Actions", CustomAction::FOLDER));
+    actions->model.items.push_back(node("overflow-nested", "Nested", CustomAction::FOLDER, "overflow-group"));
+    CustomAction execute = node("overflow-execute", "Record active pane", CustomAction::ACTION, "overflow-nested");
+    execute.background = true;
+    execute.command = "printf '%%s' %p > " + xf_quote(fixture + "/overflow-result");
+    actions->model.items.push_back(execute);
+    actions->model.items.push_back(node("overflow-selected", "Selected file only", CustomAction::ACTION));
+    FXToolBar* bar = NULL;
+    FXButton* configure = NULL;
+    FXMenuButton* overflow = NULL;
+    auto rebuild = [&]()
+    {
+        actions->handle(NULL, FXSEL(SEL_CHORE, CustomActionsUI::ID_REBUILD), NULL);
+        for (FXToolBar* candidate : widgets<FXToolBar>(window))
+            for (FXButton* button : widgets<FXButton>(candidate))
+                if (button->getTipText() == "Edit Custom Actions") { bar = candidate; configure = button; }
+        assert(bar && configure);
+        for (FXMenuButton* button : widgets<FXMenuButton>(bar))
+            if (button->getTipText() == "More Custom Actions") overflow = button;
+        assert(overflow && overflow->getText() == ">>");
+    };
+    auto settle = [&]()
+    {
+        class Delay : public FXObject
+        {
+        public:
+            FXuint done = 0;
+            long handle(FXObject*, FXSelector, void*) override { done = 1; return 1; }
+        } delay;
+        app.addTimeout(&delay, 1, 20);
+        app.runUntil(delay.done);
+        app.flush(true);
+    };
+    auto check = [&]()
+    {
+        auto divider = [](FXWindow* child)
+        {
+            return !dynamic_cast<FXButton*>(child) && !dynamic_cast<FXMenuButton*>(child);
+        };
+        assert(configure->shown() && configure->isEnabled());
+        std::vector<unsigned> visible, hidden;
+        FXWindow* lastVisible = NULL;
+        bool pastVisible = false;
+        for (FXWindow* child = bar->getFirst(); child; child = child->getNext())
+        {
+            if (child == configure || child == overflow) continue;
+            if (child->shown())
+            {
+                assert(!pastVisible);
+                assert(child->getX() >= 0 && child->getX() + child->getWidth() <=
+                       (overflow->shown() ? overflow->getX() : configure->getX()));
+                if (!lastVisible) assert(!divider(child));
+                lastVisible = child;
+                if (!divider(child)) visible.push_back(child->getSelector() - CustomActionsUI::ID_ACTION);
+            }
+            else pastVisible = true;
+        }
+        assert(!lastVisible || !divider(lastVisible));
+        FXWindow* lastItem = NULL;
+        for (FXWindow* item = overflow->getMenu()->getFirst(); item; item = item->getNext())
+        {
+            if (!item->shown()) continue;
+            if (!lastItem) assert(!dynamic_cast<FXMenuSeparator*>(item));
+            lastItem = item;
+            if (dynamic_cast<FXMenuCaption*>(item)) hidden.push_back(item->getSelector() - CustomActionsUI::ID_ACTION);
+        }
+        assert(!lastItem || !dynamic_cast<FXMenuSeparator*>(lastItem));
+        assert(overflow->shown() == !hidden.empty());
+        std::vector<unsigned> expected;
+        for (unsigned index : actions->model.toolbarItems())
+            if (actions->model.items[index].kind != CustomAction::SEPARATOR) expected.push_back(index);
+        visible.insert(visible.end(), hidden.begin(), hidden.end());
+        assert(visible == expected);
+        for (FXWindow* control : {static_cast<FXWindow*>(configure), static_cast<FXWindow*>(overflow)})
+        {
+            if (!control->shown()) continue;
+            assert(control->getX() >= 0 && control->getX() + control->getWidth() <= bar->getWidth());
+            assert(control->getY() >= 0 && control->getY() + control->getHeight() <= bar->getHeight());
+            XWindowAttributes geometry;
+            assert(XGetWindowAttributes(static_cast<Display*>(app.getDisplay()), control->id(), &geometry));
+            assert(geometry.x == control->getX() && geometry.y == control->getY() &&
+                   geometry.width == control->getWidth() && geometry.height == control->getHeight());
+        }
+        if (overflow->shown()) assert(overflow->getX() + overflow->getWidth() < configure->getX());
+        assert(bar->getX() + bar->getWidth() <= bar->getParent()->getWidth());
+    };
+    auto resizeBar = [&](FXint width)
+    {
+        settle();
+        window->resize(window->getWidth() + width - bar->getWidth(), 650);
+        settle();
+        if (bar->getWidth() != width)
+            fprintf(stderr, "Requested toolbar width %d; actual %d, window %d, dock %d, x %d\n",
+                    width, bar->getWidth(), window->getWidth(), bar->getParent()->getWidth(), bar->getX());
+        assert(bar->getWidth() == width);
+        check();
+    };
+    auto capture = [&](const FXString& name)
+    {
+        if (!getenv("SWORDFISH_TEST_CUSTOM_ACTIONS_SCREENSHOTS")) return;
+        FXString park = "xdotool mousemove " + FXStringVal(app.getRootWindow()->getWidth() - 2) +
+                        " " + FXStringVal(app.getRootWindow()->getHeight() - 2);
+        assert(system(park.text()) == 0);
+        captureWindow(window, name.text());
+    };
+    rebuild();
+    for (unsigned style = 0; style < 3; ++style)
+        for (FXint size : {16, 24, 32})
+        {
+            app.reg().writeUnsignedEntry("SETTINGS", "customtoolbarstyle", style);
+            app.reg().writeIntEntry("SETTINGS", "customtoolbariconsize", size);
+            rebuild();
+            FXint required = bar->getPadLeft() + bar->getPadRight() + 2 * bar->getBorderWidth() +
+                             configure->getDefaultWidth();
+            for (FXWindow* child = bar->getFirst(); child; child = child->getNext())
+                if (child != configure && child != overflow)
+                    required += (child->getLayoutHints() & LAYOUT_FIX_WIDTH ? child->getWidth() :
+                                 child->getDefaultWidth()) + bar->getHSpacing();
+            resizeBar(160); assert(overflow->shown());
+            resizeBar(required); assert(!overflow->shown());
+            resizeBar(required - 1); assert(overflow->shown());
+            resizeBar(required + 1); assert(!overflow->shown());
+            resizeBar(520); assert(overflow->shown());
+        }
+    puts("PASS: all nine toolbar style/size combinations; exact fit threshold, shrinking/widening, pinned Configure, ordered overflow and separators");
+
+    app.reg().writeUnsignedEntry("SETTINGS", "customtoolbarstyle", 0);
+    app.reg().writeIntEntry("SETTINGS", "customtoolbariconsize", 32);
+    rebuild();
+    window->position(20, 20, 1000, 730);
+    settle();
+    const Theme themes[] = {
+        Theme("Clearlooks", "", FXRGB(237, 236, 235), FXRGB(125, 125, 125), FXRGB(255, 255, 255),
+              FXRGB(0, 0, 0), FXRGB(139, 175, 220), FXRGB(255, 255, 255), FXRGB(255, 255, 255),
+              FXRGB(0, 0, 0), FXRGB(238, 238, 238), FXRGB(121, 153, 192), FXRGB(255, 0, 0),
+              FXRGB(149, 178, 215)),
+        Theme("Dark", "", FXRGB(52, 52, 52), FXRGB(105, 105, 105), FXRGB(36, 36, 36),
+              FXRGB(215, 215, 215), FXRGB(49, 86, 124), FXRGB(255, 255, 255), FXRGB(36, 36, 36),
+              FXRGB(215, 215, 215), FXRGB(69, 69, 69), FXRGB(49, 86, 124), FXRGB(255, 0, 0),
+              FXRGB(72, 72, 72))
+    };
+    FXMenuCommand* selected = dynamic_cast<FXMenuCommand*>(overflow->getMenu()->getLast());
+    assert(selected && selected->getText() == "Selected file only");
+    FilePanel* left = window->getLeftPanel();
+    left->setDirectory(fixture); left->getList()->scan(true); left->setActive();
+    for (unsigned color = 0; color < 2; ++color)
+    {
+        themes[color].writeActive(app.reg());
+        window->applyTheme(themes[color]);
+        for (unsigned narrow = 0; narrow < 2; ++narrow)
+        {
+            window->position(20, 20, narrow ? 620 : 1000, narrow ? 600 : 730);
+            for (unsigned state = 0; state < 2; ++state)
+            {
+                selectScriptInputs(left, state ? std::vector<FXString>{"one 'quoted'.txt"} : std::vector<FXString>{});
+                selected->getTarget()->handle(selected, FXSEL(SEL_UPDATE, selected->getSelector()), NULL);
+                assert(selected->isEnabled() == (state != 0));
+                FXString name = FXString(color ? "dark" : "light") +
+                                (narrow ? "-narrow-" : "-default-") + (state ? "selected" : "background");
+                settle(); check();
+                capture(name);
+                if (narrow)
+                {
+                    mouseClick(overflow, 1); settle();
+                    assert(overflow->getMenu()->shown());
+                    FXPopup* popup = overflow->getMenu();
+                    FXint row = popup->getBorderWidth();
+                    for (FXWindow* item = popup->getFirst(); item; item = item->getNext())
+                    {
+                        if (!item->shown()) continue;
+                        XWindowAttributes geometry;
+                        assert(XGetWindowAttributes(static_cast<Display*>(app.getDisplay()), item->id(), &geometry));
+                        assert(geometry.map_state == IsViewable);
+                        assert(item->getY() == row && geometry.y == row);
+                        row += item->getHeight();
+                    }
+                    if (row + popup->getBorderWidth() != popup->getHeight())
+                        fprintf(stderr, "Overflow rows end at %d; popup height %d, default height %d\n",
+                                row, popup->getHeight(), popup->getDefaultHeight());
+                    assert(row + popup->getBorderWidth() == popup->getHeight());
+                    captureWindow(app.getRootWindow(), (name + "-popup").text());
+                    overflow->handle(NULL, FXSEL(SEL_COMMAND, FXMenuButton::ID_UNPOST), NULL);
+                }
+            }
+        }
+        app.reg().writeUnsignedEntry("SETTINGS", "customtoolbarstyle", 1);
+        rebuild();
+        window->position(20, 20, 1240, 730); settle(); check();
+        assert(!overflow->shown());
+        capture(color ? "dark-no-overflow" : "light-no-overflow");
+        app.reg().writeUnsignedEntry("SETTINGS", "customtoolbarstyle", 0);
+        rebuild();
+        selected = dynamic_cast<FXMenuCommand*>(overflow->getMenu()->getLast());
+    }
+    window->position(20, 20, 620, 600); settle(); check();
+    window->getRightPanel()->setDirectory(fixture + "/other");
+    window->getRightPanel()->getList()->scan(true);
+    for (FilePanel* panel : {left, window->getRightPanel()})
+    {
+        panel->setActive(); panel->getList()->killSelection(); panel->getList()->setFocus();
+        const FXString expected = panel->getDirectory();
+        assert(unlink((fixture + "/overflow-result").text()) == 0 || errno == ENOENT);
+        mouseClick(overflow, 1); settle();
+        FXMenuCascade* group = NULL;
+        for (FXWindow* item = overflow->getMenu()->getFirst(); item; item = item->getNext())
+            if (FXMenuCascade* cascade = dynamic_cast<FXMenuCascade*>(item)) group = cascade;
+        assert(group && group->shown());
+        mouseHover(group);
+        FXMenuCascade* nested = dynamic_cast<FXMenuCascade*>(group->getMenu()->getFirst());
+        assert(nested); mouseHover(nested);
+        FXMenuCommand* command = dynamic_cast<FXMenuCommand*>(nested->getMenu()->getFirst());
+        assert(command && command->shown()); mouseClick(command, 1);
+        const bool ran = waitFor(app, [&]() { return read(fixture + "/overflow-result") == expected.text(); });
+        if (!ran)
+            fprintf(stderr, "Overflow command expected pane '%s', observed '%s'; correct pane active: %d\n",
+                    expected.text(), read(fixture + "/overflow-result").c_str(), window->getCurrentPanel() == panel);
+        assert(ran);
+    }
+    DismissDialog cancelEditor(app, "Custom Actions", "Cancel");
+    app.addTimeout(&cancelEditor, 1, 800);
+    mouseClick(configure, 1); settle();
+    assert(!app.hasTimeout(&cancelEditor, 1));
+    assert(!dialog(app, "Custom Actions"));
+    puts("PASS: real overflow popup, disabled/selected states, nested action clicks in both active panes, and Configure opens the editor");
+    actions->model.items = saved;
+    app.reg().writeUnsignedEntry("SETTINGS", "customtoolbarstyle", originalStyle);
+    app.reg().writeIntEntry("SETTINGS", "customtoolbariconsize", originalSize);
+    originalTheme.writeActive(app.reg()); window->applyTheme(originalTheme);
+    rebuild();
+    window->position(originalX, originalY, originalWidth, originalHeight);
+    left->setDirectory(originalLeft); left->getList()->killSelection();
+    window->getRightPanel()->setDirectory(originalRight);
+    originalActive->setActive();
+    assert(unlink((fixture + "/overflow-result").text()) == 0);
+}
+
 static void checkAppearanceConditions(XFileExplorer* window, const FXString& fixture)
 {
     CustomActionsUI* actions = window->getCustomActions();
@@ -2046,6 +2306,13 @@ int main(int argc, char** argv)
     XFileExplorer* window = new XFileExplorer(&app, paths, 3);
     mainWindow = window;
     app.create(); window->show(); pump(app, 1000);
+    if (!getenv("SWORDFISH_TEST_APPEARANCE_ONLY") && !getenv("SWORDFISH_TEST_SCRIPTS_ONLY"))
+        checkToolbarOverflow(app, window, fixture);
+    if (getenv("SWORDFISH_TEST_OVERFLOW_ONLY"))
+    {
+        std::fflush(stdout);
+        std::_Exit(0);
+    }
     checkAppearanceConditions(window, fixture);
     if (getenv("SWORDFISH_TEST_APPEARANCE_ONLY"))
     {
