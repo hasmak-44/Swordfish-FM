@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
 Last updated: 23 November 2026, through the 0.0.4 beta 1 release and
-subsequent user feedback and local fixes (sections 3.128-3.132).
+subsequent user feedback and local fixes (sections 3.128-3.133).
 Latest prerelease: `swordfish-0.0.4-beta1`.
 Latest stable release: `swordfish-0.0.3`.
 Previous stable release: `swordfish-0.0.2`.
@@ -4292,6 +4292,22 @@ runner; the overflow checks also run in its default mode.
 This is local work, not part of the published beta. Portable and
 real-machine testing remain outstanding; no full GUI-suite pass is claimed.
 
+### 3.133. Keep launched applications out of portable profile (local work)
+
+The portable launcher now records the host cache and state directories as well
+as config and data. External commands launched through the shared command
+runner, command output windows, search windows, custom scripts, background
+commands, custom actions, and `swordfish-open` receive the host XDG directories
+and host library/module environment. Swordfish and its bundled companion
+programs retain the portable profile. The portable README documents this
+boundary.
+
+The portable-launcher regression covers host XDG capture, nested launches and
+`swordfish-open` restoration. A focused Custom Actions GUI regression exercises
+an external launch and verifies that a bundled helper still receives portable
+settings. This is local work, not part of the published beta; a packaged
+portable build has not been tested.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -4881,9 +4897,9 @@ Do not amend published commits/tags as an automatic workaround.
 
 0.0.3 is the latest stable release; 0.0.4 beta 1 is the latest published
 prerelease. Its release and known limitations are recorded in section 3.128;
-the user's subsequent reports and local Scripts/appearance/overflow fixes are in
-sections 3.129-3.132. The cancellation cleanup was deferred and is not included
-in the beta (section 3.127). Generated
+the user's subsequent reports and local Scripts/appearance/overflow/launch
+environment fixes are in sections 3.129-3.133. The cancellation cleanup was
+deferred and is not included in the beta (section 3.127). Generated
 autotools files may remain modified after local builds and must not be included
 in feature commits. Inspect the current branch and worktree rather than relying
 on an old experimental ZIP, roadmap or handoff. Do not publish local work

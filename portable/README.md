@@ -641,6 +641,10 @@ existing files. Release archives without a profile get these folders on launch.
   - `listing-diagnostic.log` records folder loading (Detailed and Debug levels
     only).
 
+Applications launched from Swordfish use the host's XDG configuration, data,
+cache, and state locations. Swordfish itself and its bundled tools continue to
+use the portable directories.
+
 Log entries include timestamps and process IDs. They record semantic actions
 and relevant paths, not raw keystrokes or mouse movement. Coverage will expand
 as more actions are instrumented.

@@ -2373,18 +2373,34 @@ FXString xf_terminalprogram(FXApp* app)
 FXString xf_hostcommand(const FXString& command)
 {
     FXString environment = "env";
-    const char* hostld = getenv("SWORDFISH_HOST_LD_LIBRARY_PATH");
-    if (hostld && !*hostld)
+    const char* portable_names[] = {
+        "SWORDFISH_PORTABLE", "SWORDFISH_PORTABLE_DATA", "SWORDFISH_PORTABLE_RESTART_FD",
+        "SWORDFISH_PREVIEW_PIXBUF_MODULEDIR", "SWORDFISH_PREVIEW_PIXBUF_MODULE_FILE",
+        "SWORDFISH_PREVIEW_DATA_DIRS", "SWORDFISH_HOST_PATH", "SWORDFISH_HOST_LD_LIBRARY_PATH",
+        "SWORDFISH_HOST_XDG_CONFIG_HOME", "SWORDFISH_HOST_XDG_DATA_HOME",
+        "SWORDFISH_HOST_XDG_CACHE_HOME", "SWORDFISH_HOST_XDG_STATE_HOME",
+        "SWORDFISH_HOST_XDG_CONFIG_DIRS", "SWORDFISH_HOST_XDG_DATA_DIRS",
+        "SWORDFISH_HOST_GIO_MODULE_DIR"
+    };
+    if (getenv("SWORDFISH_PORTABLE"))
     {
-        environment += " -u LD_LIBRARY_PATH";
-    }
-    const char* hostgio = getenv("SWORDFISH_HOST_GIO_MODULE_DIR");
-    if (hostgio && !*hostgio)
-    {
-        environment += " -u GIO_MODULE_DIR";
+        for (FXuint i = 0; i < sizeof(portable_names) / sizeof(portable_names[0]); i++)
+        {
+            environment += FXString(" -u ") + portable_names[i];
+        }
     }
     const char* names[] = {"PATH", "LD_LIBRARY_PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
-                          "XDG_CONFIG_DIRS", "XDG_DATA_DIRS", "GIO_MODULE_DIR"};
+                          "XDG_CACHE_HOME", "XDG_STATE_HOME", "XDG_CONFIG_DIRS",
+                          "XDG_DATA_DIRS", "GIO_MODULE_DIR"};
+    for (FXuint i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+    {
+        FXString host = FXString("SWORDFISH_HOST_") + names[i];
+        const char* value = getenv(host.text());
+        if (value && !*value)
+        {
+            environment += FXString(" -u ") + names[i];
+        }
+    }
     for (FXuint i = 0; i < sizeof(names) / sizeof(names[0]); i++)
     {
         FXString host = FXString("SWORDFISH_HOST_") + names[i];

@@ -2009,6 +2009,7 @@ long WriteWindow::onCmdPrint(FXObject*, FXSelector, void*)
 
     // Perform the print command
     command = "cat " + filename + " |" + printcommand + " &";
+    command = xf_hostcommand(command);
     int ret = system(command.text());
     if (ret < 0)
     {

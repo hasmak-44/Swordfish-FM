@@ -13,6 +13,7 @@
 #include "Preferences.h"
 #include "SearchWindow.h"
 #include "SearchPanel.h"
+#include "startupnotification.h"
 #include "DirHistBox.h"
 #include "FileDialog.h"
 #include "icons.h"
@@ -81,6 +82,81 @@ static bool waitFor(FXApp& app, const std::function<bool()>& done)
         pump(app, 50);
     }
     return done();
+}
+
+static void checkLaunchEnvironment(FXApp& app, const FXString& fixture)
+{
+    const FXString portable = fixture + "/portable-env";
+    const FXString host = fixture + "/host env";
+    setenv("SWORDFISH_PORTABLE", "1", 1);
+    setenv("SWORDFISH_PORTABLE_DATA", portable.text(), 1);
+    setenv("SWORDFISH_PREVIEW_PIXBUF_MODULEDIR", (portable + "/pixbuf").text(), 1);
+    setenv("SWORDFISH_HOST_PATH", "/usr/bin:/bin", 1);
+    setenv("SWORDFISH_HOST_LD_LIBRARY_PATH", "", 1);
+    setenv("SWORDFISH_HOST_GIO_MODULE_DIR", (host + "/gio-modules").text(), 1);
+    setenv("SWORDFISH_HOST_XDG_CONFIG_HOME", (host + "/config").text(), 1);
+    setenv("SWORDFISH_HOST_XDG_DATA_HOME", (host + "/data").text(), 1);
+    setenv("SWORDFISH_HOST_XDG_CACHE_HOME", (host + "/cache").text(), 1);
+    setenv("SWORDFISH_HOST_XDG_STATE_HOME", "", 1);
+    setenv("SWORDFISH_HOST_XDG_CONFIG_DIRS", (host + "/config dirs").text(), 1);
+    setenv("SWORDFISH_HOST_XDG_DATA_DIRS", (host + "/data dirs").text(), 1);
+    setenv("XDG_CONFIG_HOME", (portable + "/config").text(), 1);
+    setenv("XDG_DATA_HOME", (portable + "/data").text(), 1);
+    setenv("XDG_CACHE_HOME", (portable + "/cache").text(), 1);
+    setenv("XDG_STATE_HOME", (portable + "/state").text(), 1);
+    setenv("XDG_CONFIG_DIRS", "/portable/config-dirs", 1);
+    setenv("XDG_DATA_DIRS", "/portable/data-dirs", 1);
+    setenv("GIO_MODULE_DIR", "/portable/gio-modules", 1);
+    setenv("LD_LIBRARY_PATH", "/portable/libraries", 1);
+
+    const FXString report = fixture + "/external-launch-env.txt";
+    const FXString temporary = report + ".tmp";
+    FXString script = "printf '%s\\n' \"$XDG_CONFIG_HOME\" \"$XDG_DATA_HOME\" \"$XDG_CACHE_HOME\" "
+        "\"${XDG_STATE_HOME-unset}\" \"$XDG_CONFIG_DIRS\" \"$XDG_DATA_DIRS\" "
+        "\"${SWORDFISH_PORTABLE-unset}\" \"${SWORDFISH_PORTABLE_DATA-unset}\" "
+        "\"${SWORDFISH_PREVIEW_PIXBUF_MODULEDIR-unset}\" \"${LD_LIBRARY_PATH-unset}\" "
+        "\"$GIO_MODULE_DIR\" \"${SWORDFISH_HOST_XDG_CONFIG_HOME-unset}\" \"$PATH\" > " +
+        xf_quote(temporary) + " && mv " + xf_quote(temporary) + " " + xf_quote(report);
+    FXString command = "/bin/sh -c " + xf_quote(script);
+    FXString startDirectory = FXSystem::getCurrentDirectory();
+#ifdef STARTUP_NOTIFICATION
+    assert(runcmd(command, "/bin/sh", fixture, startDirectory, false, "") == 0);
+#else
+    assert(runcmd(command, fixture, startDirectory) == 0);
+#endif
+    assert(waitFor(app, [&]() { return access(report.text(), F_OK) == 0; }));
+    std::ifstream externalFile(report.text());
+    std::vector<std::string> external;
+    for (std::string line; std::getline(externalFile, line);) { external.push_back(line); }
+    assert(external.size() == 13);
+    assert(external[0] == (host + "/config").text() && external[1] == (host + "/data").text() &&
+           external[2] == (host + "/cache").text() && external[3] == "unset");
+    assert(external[4] == (host + "/config dirs").text() &&
+           external[5] == (host + "/data dirs").text());
+    for (unsigned i = 6; i <= 9; ++i) { assert(external[i] == "unset"); }
+    assert(external[10] == (host + "/gio-modules").text() &&
+           external[11] == "unset" && external[12] == "/usr/bin:/bin");
+
+    const FXString helper = fixture + "/swfw";
+    const FXString helperReport = fixture + "/bundled-launch-env.txt";
+    {
+        std::ofstream file(helper.text());
+        file << "#!/bin/sh\nprintf '%s\\n' \"$XDG_CONFIG_HOME\" \"$SWORDFISH_PORTABLE\" "
+                "\"$SWORDFISH_PORTABLE_DATA\" > " << xf_quote(helperReport).text() << "\n";
+    }
+    assert(chmod(helper.text(), 0700) == 0);
+#ifdef STARTUP_NOTIFICATION
+    assert(runcmd(xf_quote(helper), "swfw", fixture, startDirectory, false, "") == 0);
+#else
+    assert(runcmd(xf_quote(helper), fixture, startDirectory) == 0);
+#endif
+    assert(waitFor(app, [&]() { return access(helperReport.text(), F_OK) == 0; }));
+    std::ifstream helperFile(helperReport.text());
+    std::vector<std::string> bundled;
+    for (std::string line; std::getline(helperFile, line);) { bundled.push_back(line); }
+    assert(bundled.size() == 3 && bundled[0] == (portable + "/config").text() &&
+           bundled[1] == "1" && bundled[2] == portable.text());
+    puts("PASS: external launches receive host XDG settings and bundled Swordfish helpers retain portable settings");
 }
 
 static FXTopWindow* dialog(FXApp& app, const char* title)
@@ -2306,6 +2382,12 @@ int main(int argc, char** argv)
     XFileExplorer* window = new XFileExplorer(&app, paths, 3);
     mainWindow = window;
     app.create(); window->show(); pump(app, 1000);
+    if (getenv("SWORDFISH_TEST_ENVIRONMENT_ONLY"))
+    {
+        checkLaunchEnvironment(app, fixture);
+        std::fflush(stdout);
+        std::_Exit(0);
+    }
     if (!getenv("SWORDFISH_TEST_APPEARANCE_ONLY") && !getenv("SWORDFISH_TEST_SCRIPTS_ONLY"))
         checkToolbarOverflow(app, window, fixture);
     if (getenv("SWORDFISH_TEST_OVERFLOW_ONLY"))

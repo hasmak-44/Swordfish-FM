@@ -9,7 +9,8 @@ import unittest
 
 HOST_KEYS = (
     "PATH", "LD_LIBRARY_PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
-    "XDG_CONFIG_DIRS", "XDG_DATA_DIRS", "GIO_MODULE_DIR",
+    "XDG_CACHE_HOME", "XDG_STATE_HOME", "XDG_CONFIG_DIRS", "XDG_DATA_DIRS",
+    "GIO_MODULE_DIR",
 )
 
 USER_CONTENT_DIRS = (
@@ -29,8 +30,22 @@ class PortableLauncherTests(unittest.TestCase):
         shutil.copyfile(
             Path(__file__).resolve().parents[1] / "portable/AppRun", self.bundle / "AppRun")
         (self.bundle / "AppRun").chmod(0o755)
+        shutil.copyfile(
+            Path(__file__).resolve().parents[1] / "swordfish-open", binary / "swordfish-open")
+        (binary / "swordfish-open").chmod(0o755)
+        (binary / "xdg-open").write_text(
+            "#!/usr/bin/python3\nimport json, os, sys\n"
+            "keys = ['PATH', 'LD_LIBRARY_PATH', 'GIO_MODULE_DIR', 'XDG_CONFIG_HOME', "
+            "'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'XDG_CONFIG_DIRS', "
+            "'XDG_DATA_DIRS', 'SWORDFISH_PORTABLE', 'SWORDFISH_PORTABLE_DATA', "
+            "'SWORDFISH_HOST_XDG_CONFIG_HOME', 'SWORDFISH_HOST_XDG_CACHE_HOME', "
+            "'SWORDFISH_PREVIEW_PIXBUF_MODULEDIR']\n"
+            "print(json.dumps({'environment': {key: os.environ.get(key) for key in keys}, "
+            "'arguments': sys.argv[1:]}))\n")
+        (binary / "xdg-open").chmod(0o755)
         keys = ["SWORDFISH_HOST_" + key for key in HOST_KEYS]
-        keys += ["SWORDFISH_PORTABLE_DATA", "XDG_CONFIG_HOME", "GIO_MODULE_DIR", "GIO_USE_VFS"]
+        keys += ["SWORDFISH_PORTABLE_DATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME",
+                 "XDG_STATE_HOME", "GIO_MODULE_DIR", "GIO_USE_VFS"]
         (binary / "swordfish").write_text(
             "#!/usr/bin/python3\nimport json, os, sys\n"
             f"keys = {keys!r}\n"
@@ -47,6 +62,8 @@ class PortableLauncherTests(unittest.TestCase):
             "PATH": self.env["PATH"], "LD_LIBRARY_PATH": "",
             "XDG_CONFIG_HOME": self.env["HOME"] + "/.config",
             "XDG_DATA_HOME": self.env["HOME"] + "/.local/share",
+            "XDG_CACHE_HOME": self.env["HOME"] + "/.cache",
+            "XDG_STATE_HOME": self.env["HOME"] + "/.local/state",
             "XDG_CONFIG_DIRS": "/etc/xdg", "XDG_DATA_DIRS": "/usr/local/share:/usr/share",
             "GIO_MODULE_DIR": "",
         }
@@ -107,15 +124,60 @@ class PortableLauncherTests(unittest.TestCase):
         self.assertEqual(
             result["environment"]["XDG_CONFIG_HOME"], str(self.bundle / "portable-data/config"))
         self.assertEqual(
+            result["environment"]["XDG_CACHE_HOME"], str(self.bundle / "portable-data/cache"))
+        self.assertEqual(
+            result["environment"]["XDG_STATE_HOME"], str(self.bundle / "portable-data/state"))
+        self.assertEqual(
             result["environment"]["GIO_MODULE_DIR"], str(self.bundle / "usr/lib/swordfish/gio-modules"))
 
     def test_nested_launch_preserves_empty_host_library_and_gio_settings(self):
         env = dict(self.env)
-        for key, value in self.expected.items():
+        expected = dict(self.expected)
+        expected["XDG_CACHE_HOME"] = ""
+        expected["XDG_STATE_HOME"] = ""
+        for key, value in expected.items():
             env["SWORDFISH_HOST_" + key] = value
         env["LD_LIBRARY_PATH"] = str(self.root / "old bundle/usr/lib")
         env["GIO_MODULE_DIR"] = str(self.root / "old bundle/usr/lib/swordfish/gio-modules")
-        self.check_host(self.launch(env), self.expected)
+        self.check_host(self.launch(env), expected)
+
+    def test_swordfish_open_restores_host_xdg_and_removes_portable_markers(self):
+        expected = dict(self.expected)
+        expected.update({
+            "PATH": str(self.bundle / "usr/bin") + ":/usr/bin:/bin",
+            "XDG_CONFIG_HOME": str(self.root / "host config"),
+            "XDG_DATA_HOME": str(self.root / "host data"),
+            "XDG_CACHE_HOME": str(self.root / "host cache"),
+            "XDG_STATE_HOME": str(self.root / "home/.local/state"),
+            "XDG_CONFIG_DIRS": str(self.root / "host config dirs"),
+            "XDG_DATA_DIRS": str(self.root / "host data dirs"),
+        })
+        env = dict(self.env)
+        for key, value in expected.items():
+            env["SWORDFISH_HOST_" + key] = value
+        env["SWORDFISH_HOST_XDG_STATE_HOME"] = ""
+        env.update({
+            "SWORDFISH_PORTABLE": "1",
+            "SWORDFISH_PORTABLE_DATA": str(self.bundle / "portable-data"),
+            "SWORDFISH_PREVIEW_PIXBUF_MODULEDIR": str(self.bundle / "usr/lib/pixbuf"),
+            "XDG_CONFIG_HOME": str(self.bundle / "portable-data/config"),
+            "XDG_DATA_HOME": str(self.bundle / "portable-data/data"),
+            "XDG_CACHE_HOME": str(self.bundle / "portable-data/cache"),
+            "XDG_STATE_HOME": str(self.bundle / "portable-data/state"),
+            "GIO_MODULE_DIR": str(self.bundle / "usr/lib/gio-modules"),
+        })
+        result = subprocess.run(
+            [str(self.bundle / "usr/bin/swordfish-open"), "file with spaces"],
+            env=env, capture_output=True, text=True, check=True, timeout=10)
+        opened = json.loads(result.stdout)
+        for key in ("PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME",
+                    "XDG_STATE_HOME", "XDG_CONFIG_DIRS", "XDG_DATA_DIRS"):
+            self.assertEqual(opened["environment"][key], expected[key], key)
+        for key in ("LD_LIBRARY_PATH", "GIO_MODULE_DIR", "SWORDFISH_PORTABLE",
+                    "SWORDFISH_PORTABLE_DATA", "SWORDFISH_HOST_XDG_CONFIG_HOME",
+                    "SWORDFISH_HOST_XDG_CACHE_HOME", "SWORDFISH_PREVIEW_PIXBUF_MODULEDIR"):
+            self.assertIsNone(opened["environment"][key], key)
+        self.assertEqual(opened["arguments"], ["file with spaces"])
 
     def test_two_portable_launchers_preserve_host_environment(self):
         outer = self.root / "outer bundle"

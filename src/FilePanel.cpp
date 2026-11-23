@@ -8363,6 +8363,7 @@ long FilePanel::onCmdRunScript(FXObject* sender, FXSelector sel, void*)
 
     // Construct command line
     cmd = xf_quote(scriptpath) + itemslist + " &";
+    cmd = xf_hostcommand(cmd);
 
     // Go to the current directory
     int ret = chdir(current->list->getDirectory().text());

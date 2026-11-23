@@ -1595,6 +1595,8 @@ int XFileArchive::readArchive(void)
 // Execute a command and capture its output
 int XFileArchive::execCmd(FXString command)
 {
+    command = xf_hostcommand(command);
+
     // Initialize line fragment and status cursor
     linefrag = "";
     rotcur = "";

@@ -228,6 +228,8 @@ long CommandWindow::onCmdKeyPress(FXObject* sender, FXSelector sel, void* ptr)
 // Execute a command and capture its output
 int CommandWindow::execCmd(FXString command)
 {
+    command = xf_hostcommand(command);
+
     // Open pipes to communicate with child process
     if (pipe(pipes) == -1)
     {

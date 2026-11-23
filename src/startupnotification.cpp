@@ -39,12 +39,24 @@ struct LaunchFileCleanup
 
 static LaunchFileCleanup launchFileCleanup;
 
-static int launchCommand(const FXString& command
+static FXbool bundledProgram(const FXString& program)
+{
+    const FXString name = FXPath::name(xf_commandprogram(program));
+    return name == "swordfish" || name == "swordfish-open" || name == "swfw" ||
+           name == "xfw" || name == "swfi" || name == "swfp" || name == "swfa";
+}
+
+static int launchCommand(const FXString& command, const FXString& program
 #ifdef STARTUP_NOTIFICATION
                          , SnLauncherContext* context = NULL
 #endif
                          )
 {
+    FXString launch = command;
+    if (getenv("SWORDFISH_PORTABLE") && !bundledProgram(program))
+    {
+        launch = xf_hostcommand(command);
+    }
     char errorFile[] = "/tmp/swordfish-launch-XXXXXX";
     int fd = mkstemp(errorFile);
     if (fd < 0)
@@ -68,7 +80,7 @@ static int launchCommand(const FXString& command
             sn_launcher_context_setup_child_process(context);
         }
 #endif
-        execl("/bin/sh", "sh", "-c", command.text(), (char*)NULL);
+        execl("/bin/sh", "sh", "-c", launch.text(), (char*)NULL);
         perror("Cannot start command");
         _exit(127);
     }
@@ -272,7 +284,7 @@ int runcmd(FXString cmd, FXString cmdname, FXString dir, FXString startdir, FXbo
         timestamp = gettimestamp(xdisplay);
         sn_launcher_context_initiate(context, "SwordFish", cmd.text(), timestamp);
 
-        ret = launchCommand(cmd, context);
+        ret = launchCommand(cmd, cmdname, context);
         sn_launcher_context_unref(context);
         sn_display_unref(display);
         XCloseDisplay(xdisplay);
@@ -280,7 +292,7 @@ int runcmd(FXString cmd, FXString cmdname, FXString dir, FXString startdir, FXbo
     // Run command without startup notification
     else
     {
-        ret = launchCommand(cmd);
+        ret = launchCommand(cmd, cmdname);
     }
 
     int launchResult = ret;
@@ -327,7 +339,7 @@ int runcmd(FXString cmd, FXString dir, FXString startdir)
         return -1;
     }
 
-    int launchResult = launchCommand(cmd);
+    int launchResult = launchCommand(cmd, xf_commandprogram(cmd));
 
     // Go back to startup directory
     ret = chdir(startdir.text());

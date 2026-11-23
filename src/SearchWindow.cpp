@@ -959,6 +959,8 @@ long SearchWindow::onCmdStart(FXObject*, FXSelector, void*)
 // Execute the search command and capture its output
 int SearchWindow::execCmd(FXString command)
 {
+    command = xf_hostcommand(command);
+
     // Open pipes to communicate with child process
     if ((pipe(in) == -1) || (pipe(out) == -1))
     {

@@ -4625,6 +4625,7 @@ long SearchPanel::onCmdRunScript(FXObject* sender, FXSelector sel, void*)
 
     // Construct command line
     cmd = xf_quote(scriptpath) + itemslist + " &";
+    cmd = xf_hostcommand(cmd);
 
     // Go to the current directory
     int ret = chdir(list->getDirectory().text());

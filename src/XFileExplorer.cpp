@@ -5849,6 +5849,7 @@ long XFileExplorer::onCmdRun(FXObject*, FXSelector, void*)
             // Execute silently in background
             else
             {
+                command = xf_hostcommand(command);
                 command += " &";
                 ret = system(command.text());
                 if (ret < 0)
