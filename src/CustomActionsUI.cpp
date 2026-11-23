@@ -60,7 +60,7 @@ const char* parameterLegend = N_(
     "List parameters %F/%N/%D/%U/%W/%X must be separate, unquoted arguments.\n"
     "Single parameters may be unquoted, single-quoted or double-quoted.\n"
     "Filenames are quoted automatically. Empty extensions remain empty arguments.\n\n"
-    "With Folders enabled and no selection, file/name/URI/extension parameters\n"
+    "With Show without selection and Folders enabled, file/name/URI/extension parameters\n"
     "refer to the current folder. %d/%D still mean the current directory; %c remains 0.\n"
     "Without Folders, file parameters require selected files; %p and %d remain usable.\n\n"
     "Working directory accepts %p, %o, %d, %f, %a, %r and %%; it is one literal path,\n"
@@ -561,7 +561,7 @@ public:
             single = new FXCheckButton(counts, _("Single selection")); single->setCheck(a.single);
             multiple = new FXCheckButton(counts, _("Multiple selection")); multiple->setCheck(a.multiple);
             new FXLabel(conditions, _("Every selected file must match a pattern. Selection counts apply to selected items.\n"
-                                     "Folders also enables the current folder when nothing is selected:\n"
+                                     "With Show without selection and Folders checked,\n"
                                      "%f/%F/%n/%N/%u/%U then refer to that folder; %d/%D remain the current directory.\n"
                                      "Unrestricted range: * (no additional range restriction)."),
                         NULL, JUSTIFY_LEFT);

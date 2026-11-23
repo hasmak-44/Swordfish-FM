@@ -1290,7 +1290,7 @@ std::vector<unsigned> CustomActions::toolbarItems() const
 bool CustomActions::matches(const CustomAction& a, const CustomActionContext& ctx) const
 {
     if (!ctx.local || a.kind != CustomAction::ACTION || ctx.paths.size() != ctx.directories.size()) { return false; }
-    if (ctx.paths.empty()) { return a.background || a.folders; }
+    if (ctx.paths.empty()) { return a.background; }
     if ((ctx.paths.size() == 1 && !a.single) || (ctx.paths.size() > 1 && !a.multiple)) { return false; }
     for (unsigned i = 0; i < ctx.paths.size(); ++i)
     {

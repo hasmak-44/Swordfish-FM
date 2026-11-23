@@ -3,6 +3,7 @@
 #include <fxkeys.h>
 #include <FXPNGIcon.h>
 #include <FXJPGIcon.h>
+#include <X11/Xlib.h>
 #include "SystemIcons.h"
 #include "xfeutils.h"
 #include "CustomActionsUI.h"
@@ -1044,10 +1045,19 @@ static void captureWindow(FXWindow* window, const char* name)
 {
     const char* directory = getenv("SWORDFISH_TEST_CUSTOM_ACTIONS_SCREENSHOTS");
     if (!directory) { return; }
+    class CaptureDelay : public FXObject
+    {
+    public:
+        FXuint done = 0;
+        long handle(FXObject*, FXSelector, void*) override { done = 1; return 1; }
+    } delay;
     window->raise();
+    window->getApp()->flush(true);
+    // Run idle layout as well as events before taking the screenshot.
+    window->getApp()->addTimeout(&delay, 1, 400);
+    window->getApp()->runUntil(delay.done);
     window->getApp()->repaint();
     window->getApp()->flush(true);
-    pump(*window->getApp(), 400);
     FXString command;
     command.format("import -window 0x%lx '%s/%s.png'", (unsigned long)window->id(), directory, name);
     assert(system(command.text()) == 0);
@@ -1644,6 +1654,172 @@ public:
     }
 };
 
+static void checkAppearanceConditions(XFileExplorer* window, const FXString& fixture)
+{
+    CustomActionsUI* actions = window->getCustomActions();
+    assert(actions && actions->model.items.size() == 6);
+    const std::vector<CustomAction> saved = actions->model.items;
+    assert(xf_mkpath((fixture + "/appearance-folder").text(), 0700) == 0);
+    FXButton* toolbarAction = NULL;
+    FXMenuButton* toolbarFolder = NULL;
+    FXPopup* mainMenu = NULL;
+    for (FXToolBar* bar : widgets<FXToolBar>(window))
+    {
+        for (FXButton* button : widgets<FXButton>(bar))
+            if (button->getTipText() == "Background") toolbarAction = button;
+        for (FXMenuButton* button : widgets<FXMenuButton>(bar))
+            if (button->getTipText() == "Utilities") toolbarFolder = button;
+    }
+    for (FXMenuTitle* title : widgets<FXMenuTitle>(window))
+        if (title->getText() == "Custom Actions") mainMenu = title->getMenu();
+    assert(toolbarAction && toolbarFolder && mainMenu);
+    auto entry = [](FXPopup* menu, const FXString& name) -> FXMenuCaption*
+    {
+        for (FXWindow* child = menu->getFirst(); child; child = child->getNext())
+            if (FXMenuCaption* caption = dynamic_cast<FXMenuCaption*>(child))
+                if (caption->getText() == name) return caption;
+        return NULL;
+    };
+    FXMenuCaption* menuAction = entry(mainMenu, "Background");
+    FXMenuCaption* menuFolder = entry(mainMenu, "Utilities");
+    assert(menuAction && menuFolder);
+    struct Selection
+    {
+        std::vector<FXString> names;
+        bool hasFiles, hasFolders, patternsMatch;
+    };
+    const Selection selections[] = {
+        {{}, false, false, true},
+        {{"one 'quoted'.txt"}, true, false, true},
+        {{"one 'quoted'.txt", "two $HOME.txt"}, true, false, true},
+        {{"other"}, false, true, true},
+        {{"other", "appearance-folder"}, false, true, true},
+        {{"one 'quoted'.txt", "other"}, true, true, true},
+        {{"large.png"}, true, false, false},
+        {{"one 'quoted'.txt", "large.png"}, true, false, false}
+    };
+    for (FilePanel* panel : {window->getLeftPanel(), window->getRightPanel()})
+    {
+        panel->setDirectory(fixture);
+        panel->getList()->scan(true);
+        panel->setActive();
+        for (unsigned flags = 0; flags < 32; ++flags)
+        {
+            for (unsigned index : {2u, 4u})
+            {
+                CustomAction& action = actions->model.items[index];
+                action.files = flags & 1;
+                action.folders = flags & 2;
+                action.single = flags & 4;
+                action.multiple = flags & 8;
+                action.background = flags & 16;
+                action.patterns = "*.txt";
+            }
+            const CustomAction& action = actions->model.items[4];
+            for (const Selection& selection : selections)
+            {
+                selectScriptInputs(panel, selection.names);
+                assert(actions->context().paths.size() == selection.names.size());
+                const bool expected = selection.names.empty() ? action.background :
+                    (selection.names.size() == 1 ? action.single : action.multiple) &&
+                    (!selection.hasFiles || action.files) && (!selection.hasFolders || action.folders) &&
+                    selection.patternsMatch;
+                for (FXWindow* widget : {static_cast<FXWindow*>(toolbarAction),
+                                        static_cast<FXWindow*>(toolbarFolder),
+                                        static_cast<FXWindow*>(menuAction),
+                                        static_cast<FXWindow*>(menuFolder)})
+                {
+                    widget->getTarget()->handle(widget, FXSEL(SEL_UPDATE, widget->getSelector()), NULL);
+                    assert(widget->shown() && widget->isEnabled() == expected);
+                }
+                FXMenuPane context(window);
+                CustomActionMenu* presentation = actions->appendContextMenu(&context, panel);
+                FXMenuCascade* cascade = dynamic_cast<FXMenuCascade*>(context.getLast());
+                assert(cascade);
+                assert((entry(cascade->getMenu(), "Background") != NULL) == expected);
+                assert((entry(cascade->getMenu(), "Utilities") != NULL) == expected);
+                assert(entry(cascade->getMenu(), "Edit Custom Actions..."));
+                delete presentation;
+            }
+        }
+        panel->getList()->killSelection();
+    }
+    if (getenv("SWORDFISH_TEST_CUSTOM_ACTIONS_SCREENSHOTS"))
+    {
+        FXApp& app = *window->getApp();
+        const Theme original = Theme::current(&app);
+        const FXint oldX = window->getX(), oldY = window->getY();
+        const FXint oldWidth = window->getWidth(), oldHeight = window->getHeight();
+        const FXString oldLabel = toolbarAction->getText();
+        toolbarAction->setText("Folder-only action with a long descriptive name");
+        for (unsigned index : {2u, 4u})
+        {
+            CustomAction& action = actions->model.items[index];
+            action.files = false;
+            action.folders = true;
+            action.single = true;
+            action.multiple = false;
+            action.background = false;
+        }
+        const Theme themes[] = {
+            Theme("Clearlooks", "", FXRGB(237, 236, 235), FXRGB(125, 125, 125), FXRGB(255, 255, 255),
+                  FXRGB(0, 0, 0), FXRGB(139, 175, 220), FXRGB(255, 255, 255), FXRGB(255, 255, 255),
+                  FXRGB(0, 0, 0), FXRGB(238, 238, 238), FXRGB(121, 153, 192), FXRGB(255, 0, 0),
+                  FXRGB(149, 178, 215)),
+            Theme("Dark", "", FXRGB(52, 52, 52), FXRGB(105, 105, 105), FXRGB(36, 36, 36),
+                  FXRGB(215, 215, 215), FXRGB(49, 86, 124), FXRGB(255, 255, 255), FXRGB(36, 36, 36),
+                  FXRGB(215, 215, 215), FXRGB(69, 69, 69), FXRGB(49, 86, 124), FXRGB(255, 0, 0),
+                  FXRGB(72, 72, 72))
+        };
+        FilePanel* panel = window->getLeftPanel();
+        panel->setActive();
+        const char* states[] = {"no-selection", "single-file", "single-folder", "multiple-folders"};
+        const unsigned selectionIndexes[] = {0, 1, 3, 4};
+        for (unsigned color = 0; color < 2; ++color)
+        {
+            themes[color].writeActive(app.reg());
+            window->applyTheme(themes[color]);
+            for (unsigned narrow = 0; narrow < 2; ++narrow)
+            {
+                window->position(20, 20, narrow ? 620 : 1000, narrow ? 600 : 730);
+                for (unsigned state = 0; state < 4; ++state)
+                {
+                    selectScriptInputs(panel, selections[selectionIndexes[state]].names);
+                    for (FXWindow* widget : {static_cast<FXWindow*>(toolbarAction),
+                                            static_cast<FXWindow*>(toolbarFolder)})
+                        widget->getTarget()->handle(widget, FXSEL(SEL_UPDATE, widget->getSelector()), NULL);
+                    FXString name = FXString(color ? "dark" : "light") +
+                                    (narrow ? "-narrow-" : "-default-") + states[state];
+                    captureWindow(window, name.text());
+                    for (FXWindow* pane : {static_cast<FXWindow*>(window->getLeftPanel()),
+                                           static_cast<FXWindow*>(window->getRightPanel())})
+                    {
+                        XWindowAttributes geometry;
+                        assert(XGetWindowAttributes(static_cast<Display*>(app.getDisplay()), pane->id(), &geometry));
+                        if (geometry.x != pane->getX() || geometry.y != pane->getY() ||
+                            geometry.width != pane->getWidth() || geometry.height != pane->getHeight())
+                            fprintf(stderr, "%s: pane geometry differs: X11=%d,%d %dx%d FOX=%d,%d %dx%d\n",
+                                    name.text(), geometry.x, geometry.y, geometry.width, geometry.height,
+                                    pane->getX(), pane->getY(), pane->getWidth(), pane->getHeight());
+                        assert(geometry.x == pane->getX() && geometry.y == pane->getY() &&
+                               geometry.width == pane->getWidth() && geometry.height == pane->getHeight());
+                        assert(pane->getX() >= 0 && pane->getY() >= 0 &&
+                               pane->getX() + pane->getWidth() <= pane->getParent()->getWidth() &&
+                               pane->getY() + pane->getHeight() <= pane->getParent()->getHeight());
+                    }
+                }
+            }
+        }
+        toolbarAction->setText(oldLabel);
+        original.writeActive(app.reg());
+        window->applyTheme(original);
+        window->position(oldX, oldY, oldWidth, oldHeight);
+        panel->getList()->killSelection();
+    }
+    actions->model.items = saved;
+    puts("PASS: all 32 appearance-condition combinations across eight selections in both panes; toolbar/main-menu enablement, nested groups and filtered context menus");
+}
+
 int main(int argc, char** argv)
 {
     std::setvbuf(stdout, NULL, _IOLBF, 0);
@@ -1870,6 +2046,12 @@ int main(int argc, char** argv)
     XFileExplorer* window = new XFileExplorer(&app, paths, 3);
     mainWindow = window;
     app.create(); window->show(); pump(app, 1000);
+    checkAppearanceConditions(window, fixture);
+    if (getenv("SWORDFISH_TEST_APPEARANCE_ONLY"))
+    {
+        std::fflush(stdout);
+        std::_Exit(0);
+    }
     checkScriptMenus(app, window);
     window->raise();
     window->setFocus();

@@ -4233,6 +4233,38 @@ This is local work, not part of the published beta; portable and real-machine
 testing remain outstanding. The broader Custom Actions GUI regression reaches
 an existing tree-collapse assertion that also fails without the Scripts test.
 
+### 3.131. Custom Action appearance conditions (23 November 2026)
+
+The reported folder-only, single-selection action was eligible without any
+selection because checking Folders bypassed the separate Show without selection
+checkbox. That checkbox is now authoritative. Folders still permits selected
+folders and, when Show without selection is also checked, supplies the current
+folder to selected-path placeholders.
+
+The user chose to keep inapplicable toolbar and main-menu entries visible but
+greyed out; context menus continue to filter them. No toolbar overflow or
+unrelated layout changes are included. The properties help and manual describe
+the corrected conditions.
+
+The model regression passes, and a clean native build staged in `/tmp` passes
+a focused GUI matrix covering all 32 combinations of file, folder, single,
+multiple and no-selection flags across eight selections in both panes. These
+checks cover mixed types, a nonmatching file among matching files, nested group
+enablement and filtered context menus. The focused mode avoids the previously
+reported failures elsewhere in the broader GUI suite. This fix is local and
+not part of the published beta.
+
+Independent screenshot review confirmed the toolbar's enabled/disabled states,
+long labels and Settings button at normal/narrow sizes in light/dark themes.
+The initial review incorrectly classified the Details-view background-click
+gutters as redraw artifacts. Duplicated panes and black blocks in some captures
+were investigated after the user challenged leaving them unresolved. The
+screenshot helper had pumped nonblocking events without allowing FOX's idle
+layout to finish. It now runs a bounded real event loop before capture, and the
+regression checks that pane geometry matches X11 and stays within its parent.
+All 16 corrected captures passed independent review. The intentional gutters
+remain, and no application repaint code was changed.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -4822,8 +4854,8 @@ Do not amend published commits/tags as an automatic workaround.
 
 0.0.3 is the latest stable release; 0.0.4 beta 1 is the latest published
 prerelease. Its release and known limitations are recorded in section 3.128;
-the user's subsequent reports and local Scripts fix are in sections
-3.129-3.130. The cancellation cleanup was deferred and is not included in the
+the user's subsequent reports and local Scripts/appearance fixes are in sections
+3.129-3.131. The cancellation cleanup was deferred and is not included in the
 beta (section 3.127). Generated
 autotools files may remain modified after local builds and must not be included
 in feature commits. Inspect the current branch and worktree rather than relying

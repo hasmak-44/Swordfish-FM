@@ -472,7 +472,10 @@ int main(int argc, char** argv)
     one.local = false; assert(!model.matches(match, one));
     CustomActionContext empty;
     empty.directory = "/work";
+    assert(!model.matches(match, empty));
+    match.background = true;
     assert(model.matches(match, empty));
+    match.background = false;
     match.folders = false;
     assert(!model.matches(match, empty));
     match.background = true; assert(model.matches(match, empty));
