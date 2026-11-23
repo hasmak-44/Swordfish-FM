@@ -261,7 +261,7 @@ SearchWindow::SearchWindow(FXApp* app, const FXString& name, int x, int y, int w
     searchresults = new FXLabel(frame2, "", NULL, LAYOUT_CENTER_Y | LAYOUT_FILL_X);
 
     // Buttons
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(frame2, PACK_UNIFORM_WIDTH, 0, 0, 0, 0, 10, 10, 5, 5);
+    FXHorizontalFrame* buttons = new DialogButtonBox(frame2, PACK_UNIFORM_WIDTH, 0, 0, 0, 0, 10, 10, 5, 5);
 
     // Start
     startbutton = new FXButton(buttons, _("&Start\tStart Search (F3)"), NULL, this, ID_START,

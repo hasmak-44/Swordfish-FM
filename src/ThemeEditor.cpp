@@ -369,7 +369,8 @@ public:
                               0, 0, 480, 0);
         progress = new FXProgressBar(this, NULL, 0, PROGRESSBAR_PERCENTAGE | FRAME_SUNKEN | LAYOUT_FILL_X);
         progress->setTotal(1);
-        new FXButton(this, _("Cancel"), NULL, this, ID_CANCEL,
+        DialogButtonBox* buttons = new DialogButtonBox(this);
+        new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL,
                      BUTTON_NORMAL | BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT);
         create();
         show(PLACEMENT_OWNER);
@@ -468,7 +469,7 @@ public:
         FXString message = FXString().format(_("The category \"%s\" already exists. How should the imported folder be handled?"),
                                              category.text());
         new FXLabel(this, message, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+        FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
         new FXButton(buttons, _("Merge"), NULL, this, ID_MERGE,
                      BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT | FRAME_GROOVE);
         new FXButton(buttons, _("Rename"), NULL, this, ID_RENAME, BUTTON_NORMAL | LAYOUT_RIGHT);
@@ -710,12 +711,12 @@ public:
         if (!extension.empty()) new FXLabel(renameRow, "." + extension, NULL, JUSTIFY_LEFT);
         new FXButton(renameRow, _("Rename"), NULL, this, ID_RENAME, BUTTON_NORMAL);
 
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
-        new FXButton(buttons, _("Replace"), NULL, this, ID_REPLACE, BUTTON_DEFAULT | FRAME_GROOVE);
-        new FXButton(buttons, _("Replace all"), NULL, this, ID_REPLACE_ALL, BUTTON_NORMAL);
-        new FXButton(buttons, _("Skip"), NULL, this, ID_SKIP, BUTTON_NORMAL);
-        new FXButton(buttons, _("Skip all"), NULL, this, ID_SKIP_ALL, BUTTON_NORMAL);
-        new FXButton(buttons, _("Cancel"), NULL, this, DialogBox::ID_CANCEL, BUTTON_NORMAL);
+        FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+        new FXButton(buttons, _("Replace"), NULL, this, ID_REPLACE, BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_RIGHT);
+        new FXButton(buttons, _("Replace all"), NULL, this, ID_REPLACE_ALL, BUTTON_NORMAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("Skip"), NULL, this, ID_SKIP, BUTTON_NORMAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("Skip all"), NULL, this, ID_SKIP_ALL, BUTTON_NORMAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("Cancel"), NULL, this, DialogBox::ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
     }
 
     ~GraphicImportConflictDialog()
@@ -2451,7 +2452,7 @@ public:
         DialogBox(owner, _("File-list background"), DECOR_ALL, 0, 0, 760, 660), editor(owner),
         effect(BackgroundEffect::parse(owner->getDraft().effect))
     {
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
+        FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
         new FXButton(buttons, _("Apply to mockup"), NULL, this, ID_ACCEPT,
                        BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT | FRAME_GROOVE);
         new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
@@ -3137,7 +3138,7 @@ public:
         DialogBox(owner, _("Background image"), DECOR_ALL, 0, 0, 720, 600),
         editor(owner), area(selectedArea), reference(owner->getDraft().property(selectedArea, "background_image"))
     {
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
+        FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
         new FXButton(buttons, _("Apply to mockup"), NULL, this, ID_ACCEPT,
                      BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT | FRAME_GROOVE);
         new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
@@ -3336,7 +3337,7 @@ public:
                   const FXString& first, const FXString& second) : DialogBox(owner, title)
     {
         new FXLabel(this, question, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+        FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
         new FXButton(buttons, first, NULL, this, ID_FIRST, BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT | FRAME_GROOVE);
         new FXButton(buttons, second, NULL, this, ID_SECOND, BUTTON_NORMAL | LAYOUT_RIGHT);
         new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
@@ -3398,13 +3399,13 @@ ThemeEditor::ThemeEditor(PreferencesBox* owner, XFileExplorer* source, const vec
                          FXint selected, StartMode mode) :
     DialogBox(owner, _("Theme Editor"), DECOR_ALL, 0, 0, 1240, 820), preferences(owner), choices(themes)
 {
-    FXHorizontalFrame* footer = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
-    new FXButton(footer, _("Close"), NULL, this, ID_CLOSE, BUTTON_NORMAL | LAYOUT_RIGHT);
-    new FXButton(footer, _("Save As..."), NULL, this, ID_SAVE_AS, BUTTON_NORMAL | LAYOUT_RIGHT);
+    FXHorizontalFrame* footer = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
     new FXButton(footer, _("Save"), NULL, this, ID_SAVE, BUTTON_DEFAULT | LAYOUT_RIGHT | FRAME_GROOVE);
+    new FXButton(footer, _("Save As..."), NULL, this, ID_SAVE_AS, BUTTON_NORMAL | LAYOUT_RIGHT);
+    new FXButton(footer, _("Close"), NULL, this, ID_CLOSE, BUTTON_NORMAL | LAYOUT_RIGHT);
     new FXButton(footer, _("User Manual"), NULL, this, ID_MANUAL, BUTTON_NORMAL | LAYOUT_LEFT);
-    new FXLabel(footer, _("Apply changes the mockup only. Save activates all cumulative changes."),
-                  NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    new FXLabel(this, _("Apply changes the mockup only. Save activates all cumulative changes."),
+                  NULL, JUSTIFY_LEFT | LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
     FXHorizontalFrame* startup = new FXHorizontalFrame(this, LAYOUT_FILL_X);
     new FXButton(startup, _("Edit current"), NULL, this, ID_START_CURRENT, BUTTON_NORMAL);
     new FXButton(startup, _("New theme"), NULL, this, ID_START_NEW, BUTTON_NORMAL);

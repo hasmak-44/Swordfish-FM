@@ -1930,7 +1930,9 @@ public:
             preferences->autoColumnWidths->setCheck(false);
             preferences->onUpdColumnWidths(NULL, 0, NULL);
             checkPreferencesScrolling(*preferences->getApp(), preferences);
-            FXScrollWindow* outer = dynamic_cast<FXScrollWindow*>(preferences->getFirst());
+            FXScrollWindow* outer = NULL;
+            for (FXWindow* child = preferences->getFirst(); child && !outer; child = child->getNext())
+                outer = dynamic_cast<FXScrollWindow*>(child);
             assert(outer);
             outer->setPosition(-outer->getContentWidth(), -outer->getContentHeight());
             pumpTransferEvents(*preferences->getApp(), 200000000LL);

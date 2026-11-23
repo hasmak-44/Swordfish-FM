@@ -850,7 +850,7 @@ static FXbool networkAskCredentials(FXWindow* owner, const NetworkAddress& addr,
     FXCheckButton* savebtn = new FXCheckButton(matrix, _("Save password"));
     savebtn->setCheck(save);
 
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(contents, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10, 5, 5);
+    FXHorizontalFrame* buttons = new DialogButtonBox(contents, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10, 5, 5);
     FXButton* accept = new FXButton(buttons, _("&Accept"), NULL, &dialog, DialogBox::ID_ACCEPT,
                                     FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     accept->addHotKey(KEY_Return);

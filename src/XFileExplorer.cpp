@@ -134,7 +134,7 @@ public:
                       "Changes made in this window will not be saved, to protect the settings on disk.\n"
                       "Finish copying before restarting. Unsaved changes in this window will be lost.\n\n") + problem,
                     NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(content, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+        FXHorizontalFrame* buttons = new DialogButtonBox(content, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
         new FXButton(buttons, _("&Restart Now"), NULL, this, ID_ACCEPT, BUTTON_NORMAL | LAYOUT_RIGHT);
         new FXButton(buttons, _("&Quit Without Saving"), NULL, this, ID_QUIT_WITHOUT_SAVING,
                      BUTTON_NORMAL | LAYOUT_RIGHT);
@@ -5105,10 +5105,10 @@ long XFileExplorer::onWelcome(FXObject*, FXSelector, void*)
                        "Please take some time to read the User Manual and get to know SwordFish.\n"
                        "It explains each step, even if you have never used a computer before."),
                 NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(body, LAYOUT_FILL_X);
+    FXHorizontalFrame* buttons = new DialogButtonBox(body, LAYOUT_FILL_X);
     new FXButton(buttons, _("Read User Manual"), minihelpicon, this, ID_USER_MANUAL, BUTTON_NORMAL);
-    new FXButton(buttons, _("Start Using SwordFish"), NULL, &welcome, FXDialogBox::ID_CANCEL, BUTTON_NORMAL);
-    new FXButton(buttons, _("Next"), NULL, &welcome, FXDialogBox::ID_ACCEPT, BUTTON_NORMAL | BUTTON_DEFAULT);
+    new FXButton(buttons, _("Next"), NULL, &welcome, FXDialogBox::ID_ACCEPT, BUTTON_NORMAL | BUTTON_DEFAULT | LAYOUT_RIGHT);
+    new FXButton(buttons, _("Start Using SwordFish"), NULL, &welcome, FXDialogBox::ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
     if (welcome.execute(PLACEMENT_OWNER))
     {
         DialogBox customize(this, _("Make SwordFish comfortable for you"), DECOR_TITLE | DECOR_BORDER | DECOR_CLOSE);
@@ -5119,11 +5119,11 @@ long XFileExplorer::onWelcome(FXObject*, FXSelector, void*)
                                "All three integration choices start unchecked.\n"
                                "You can change these choices later in Preferences."),
                     NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
-        FXHorizontalFrame* row = new FXHorizontalFrame(contents, LAYOUT_FILL_X);
+        FXHorizontalFrame* row = new DialogButtonBox(contents, LAYOUT_FILL_X);
         new FXButton(row, _("Customize..."), miniprefsicon, this, ID_PREFS, BUTTON_NORMAL);
         new FXButton(row, _("System Integration..."), NULL, this, ID_INTEGRATION, BUTTON_NORMAL);
         new FXButton(row, _("Start Using SwordFish"), NULL, &customize, FXDialogBox::ID_ACCEPT,
-                     BUTTON_NORMAL | BUTTON_DEFAULT);
+                     BUTTON_NORMAL | BUTTON_DEFAULT | LAYOUT_RIGHT);
         customize.execute(PLACEMENT_OWNER);
     }
     getApp()->reg().writeBoolEntry("OPTIONS", "welcome_completed", true);
@@ -7505,7 +7505,7 @@ public:
 
         new FXLabel(contents, _("Tip: drag a tab or a folder onto the Bookmarks list of the Places pane to bookmark it."),
                     NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(contents, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X,
+        FXHorizontalFrame* buttons = new DialogButtonBox(contents, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X,
                                                            0, 0, 0, 0, 10, 10, 5, 5);
         FXButton* close = new FXButton(buttons, _("&Close"), NULL, this, DialogBox::ID_CANCEL,
                                        FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);

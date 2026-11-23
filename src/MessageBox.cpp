@@ -259,7 +259,7 @@ void MessageBox::initialize(const FXString& text, FXIcon* ic, FXuint whichbutton
     }
     setText(text);
 
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(content,
+    FXHorizontalFrame* buttons = new DialogButtonBox(content,
                                                        LAYOUT_TOP | LAYOUT_LEFT | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH, 0,
                                                        0, 0, 0, 10, 10, 10, 10);
     if (whichbuttons == BOX_OK)
@@ -320,10 +320,10 @@ void MessageBox::initialize(const FXString& text, FXIcon* ic, FXuint whichbutton
                                BUTTON_INITIAL | BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_TOP | LAYOUT_LEFT |
                                LAYOUT_CENTER_X,
                                0, 0, 0, 0, HORZ_PAD, HORZ_PAD, VERT_PAD, VERT_PAD);
-        new FXButton(buttons, _("&Yes"), NULL, this, ID_CLICKED_YES,
+        new FXButton(buttons, _("&No"), NULL, this, ID_CLICKED_NO,
                      BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_TOP | LAYOUT_LEFT | LAYOUT_CENTER_X,
                      0, 0, 0, 0, HORZ_PAD, HORZ_PAD, VERT_PAD, VERT_PAD);
-        new FXButton(buttons, _("&No"), NULL, this, ID_CLICKED_NO,
+        new FXButton(buttons, _("&Yes"), NULL, this, ID_CLICKED_YES,
                      BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_TOP | LAYOUT_LEFT | LAYOUT_CENTER_X,
                      0, 0, 0, 0, HORZ_PAD, HORZ_PAD, VERT_PAD, VERT_PAD);
         initial->setFocus();

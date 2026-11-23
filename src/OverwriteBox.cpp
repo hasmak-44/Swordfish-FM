@@ -72,8 +72,8 @@ OverwriteBox::OverwriteBox(FXWindow* win, const FXString& source, const FXString
     conflictDetails(content, _("Destination (existing)"), destination, dstinfo, timeformat);
     new FXLabel(content, xf_multilines(_("Rename keeps both. New name: ") + FXPath::name(renamed),
                                      MAX_MESSAGE_LENGTH), NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
-    applyToAll = new FXCheckButton(content, _("Apply to all similar conflicts in this operation"));
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(content, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+    FXHorizontalFrame* buttons = new DialogButtonBox(content, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+    applyToAll = new FXCheckButton(buttons, _("Apply to all similar conflicts in this operation"));
     new FXButton(buttons, _("&Cancel"), NULL, this, ID_CLICKED_CANCEL,
                  BUTTON_INITIAL | BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_CENTER_X,
                  0, 0, 0, 0, HORZ_PAD, HORZ_PAD, VERT_PAD, VERT_PAD);
@@ -103,7 +103,7 @@ OverwriteBox::OverwriteBox(FXWindow* win, const FXString& name, const FXString& 
     new FXLabel(info, str, NULL,
                 JUSTIFY_LEFT | ICON_BEFORE_TEXT | LAYOUT_TOP | LAYOUT_LEFT | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(content,
+    FXHorizontalFrame* buttons = new DialogButtonBox(content,
                                                        LAYOUT_TOP | LAYOUT_LEFT | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH, 0,
                                                        0, 0, 0, 10, 10, 10, 10);
 
@@ -184,7 +184,7 @@ OverwriteBox::OverwriteBox(FXWindow* win, const FXString& name, const FXString& 
     new FXLabel(matrix, tgtmtime, NULL,
                 JUSTIFY_LEFT | ICON_BEFORE_TEXT | LAYOUT_TOP | LAYOUT_LEFT | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(content,
+    FXHorizontalFrame* buttons = new DialogButtonBox(content,
                                                        LAYOUT_TOP | LAYOUT_LEFT | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH, 0,
                                                        0, 0, 0, 10, 10, 10, 10);
 

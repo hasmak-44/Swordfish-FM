@@ -73,7 +73,7 @@ public:
     explicit DownloadWindow(FXWindow* owner) :
         DialogBox(owner, _("Media Download"), DECOR_TITLE | DECOR_BORDER | DECOR_CLOSE | DECOR_STRETCHABLE)
     {
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH,
+        FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH,
                                                            0, 0, 0, 0, 10, 10, 5, 5);
         new FXButton(buttons, _("Cancel &Downloads"), NULL, this, ID_CANCEL_DOWNLOADS,
                      FRAME_GROOVE | LAYOUT_RIGHT, 0, 0, 0, 0, 20, 20);
@@ -447,9 +447,9 @@ long RemoteQueue::tick(FXObject*, FXSelector, void*)
         new FXLabel(fields, _("Password:"));
         FXTextField* password = new FXTextField(fields, 30, NULL, 0,
                                               TEXTFIELD_NORMAL | TEXTFIELD_PASSWD | LAYOUT_FILL_X);
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(frame, LAYOUT_FILL_X);
-        new FXButton(buttons, _("Cancel"), NULL, &dialog, DialogBox::ID_CANCEL, BUTTON_NORMAL);
-        new FXButton(buttons, _("Connect"), NULL, &dialog, DialogBox::ID_ACCEPT, BUTTON_NORMAL);
+        FXHorizontalFrame* buttons = new DialogButtonBox(frame, LAYOUT_FILL_X);
+        new FXButton(buttons, _("Connect"), NULL, &dialog, DialogBox::ID_ACCEPT, BUTTON_NORMAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("Cancel"), NULL, &dialog, DialogBox::ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
         user->setFocus();
         FXbool accepted = dialog.execute(PLACEMENT_OWNER);
         auto found = listings.find(path);

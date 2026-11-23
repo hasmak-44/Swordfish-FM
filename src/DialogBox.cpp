@@ -8,6 +8,7 @@
 #include "DialogBox.h"
 #include "xfeutils.h"
 #include <X11/Xlib.h>
+#include <vector>
 
 
 // Main window
@@ -27,6 +28,121 @@ FXDEFMAP(DialogBox) DialogBoxMap[] =
 
 // Object implementation
 FXIMPLEMENT(DialogBox, FXTopWindow, DialogBoxMap, ARRAYNUMBER(DialogBoxMap))
+
+FXIMPLEMENT(DialogButtonBox, FXHorizontalFrame, NULL, 0)
+
+static FXint dialogbuttonwidth(FXWindow* child)
+{
+    FXint width = (child->getLayoutHints() & LAYOUT_FIX_WIDTH) ? child->getWidth() : child->getDefaultWidth();
+    FXButton* button = dynamic_cast<FXButton*>(child);
+    FXint minimum = child->getApp()->getNormalFont()->getTextWidth("00000000", 8) + 20;
+    return button && !button->getText().empty() ? FXMAX(minimum, width) : width;
+}
+
+
+FXint DialogButtonBox::getDefaultWidth()
+{
+    FXint width = 0, count = 0;
+    for (FXWindow* child = getFirst(); child; child = child->getNext())
+    {
+        if (child->shown())
+        {
+            width += dialogbuttonwidth(child);
+            ++count;
+        }
+    }
+    return padleft + padright + 2 * border + width + FXMAX(0, count - 1) * hspacing;
+}
+
+
+FXint DialogButtonBox::arrange(FXint available, FXbool position)
+{
+    std::vector<FXWindow*> left, actions;
+    for (FXWindow* child = getFirst(); child; child = child->getNext())
+    {
+        if (!child->shown()) continue;
+        FXuint hints = child->getLayoutHints();
+        if (dynamic_cast<FXButton*>(child) && (hints & LAYOUT_RIGHT)) actions.insert(actions.begin(), child);
+        else if (dynamic_cast<FXButton*>(child) && (hints & (LAYOUT_CENTER_X | LAYOUT_FILL_X))) actions.push_back(child);
+        else left.push_back(child);
+    }
+    available = FXMAX(1, available - padleft - padright - 2 * border);
+    FXint leftwidth = 0, actionwidth = 0, rowheight = 0, y = border + padtop;
+    for (FXWindow* child : left)
+    {
+        leftwidth += dialogbuttonwidth(child) + hspacing;
+        rowheight = FXMAX(rowheight, child->getDefaultHeight());
+    }
+    if (!left.empty()) leftwidth -= hspacing;
+    for (FXWindow* child : actions)
+    {
+        actionwidth += dialogbuttonwidth(child) + hspacing;
+        rowheight = FXMAX(rowheight, child->getDefaultHeight());
+    }
+    if (!actions.empty()) actionwidth -= hspacing;
+    if (leftwidth + actionwidth + (!left.empty() && !actions.empty() ? hspacing : 0) <= available)
+    {
+        for (int group = 0; group < 2; ++group)
+        {
+            FXint x = border + padleft + (group ? available - actionwidth : 0);
+            for (FXWindow* child : group ? actions : left)
+            {
+                FXint width = dialogbuttonwidth(child), height = child->getDefaultHeight();
+                if (position) child->position(x, y + (rowheight - height) / 2, width, height);
+                x += width + hspacing;
+            }
+        }
+        return y + rowheight + padbottom + border;
+    }
+    // On narrow windows, keep Help/options above the actions and the primary action at bottom right.
+    for (int group = 0; group < 2; ++group)
+    {
+        const std::vector<FXWindow*>& controls = group ? actions : left;
+        for (size_t start = 0; start < controls.size();)
+        {
+            size_t end = start;
+            FXint rowwidth = 0;
+            rowheight = 0;
+            while (end < controls.size())
+            {
+                FXint width = FXMIN(available, dialogbuttonwidth(controls[end]));
+                if (end > start && rowwidth + hspacing + width > available) break;
+                rowwidth += (end > start ? hspacing : 0) + width;
+                rowheight = FXMAX(rowheight, controls[end]->getDefaultHeight());
+                ++end;
+            }
+            FXint x = border + padleft + (group ? available - rowwidth : 0);
+            for (size_t i = start; i < end; ++i)
+            {
+                FXint width = FXMIN(available, dialogbuttonwidth(controls[i])), height = controls[i]->getDefaultHeight();
+                if (position) controls[i]->position(x, y + (rowheight - height) / 2, width, height);
+                x += width + hspacing;
+            }
+            y += rowheight;
+            start = end;
+            if (start < controls.size() || (!group && !actions.empty())) y += vspacing;
+        }
+    }
+    return y + padbottom + border;
+}
+
+
+FXint DialogButtonBox::getDefaultHeight()
+{
+    FXint available = getParent()->getWidth();
+    if (FXTopWindow* window = dynamic_cast<FXTopWindow*>(getParent()))
+        available -= window->getPadLeft() + window->getPadRight();
+    else if (FXPacker* packer = dynamic_cast<FXPacker*>(getParent()))
+        available -= packer->getPadLeft() + packer->getPadRight() + 2 * packer->getBorderWidth();
+    return arrange(available > 1 ? available : getDefaultWidth(), false);
+}
+
+
+void DialogButtonBox::layout()
+{
+    arrange(width, true);
+    flags &= ~FLAG_DIRTY;
+}
 
 
 // Contruct dialog which will stay on top of owner
@@ -131,6 +247,26 @@ public:
     {
         return contentWindow() ? contentWindow()->getDefaultHeight() : 1;
     }
+    virtual void create()
+    {
+        FXbool initial = !id();
+        FXScrollWindow::create();
+        if (initial)
+        {
+            FXTopWindow* window = static_cast<FXTopWindow*>(getParent());
+            FXint maxwidth = FXMAX(1, getRoot()->getWidth() - 20);
+            FXint maxheight = FXMAX(1, getRoot()->getHeight() - 40);
+            FXint naturalwidth = window->getDefaultWidth();
+            window->resize(FXMIN(maxwidth, FXMAX(window->getWidth(), naturalwidth)), window->getHeight());
+            FXint naturalheight = window->getDefaultHeight();
+            if (naturalheight > maxheight)
+                naturalwidth += verticalScrollBar()->getDefaultWidth();
+            if (naturalwidth > maxwidth)
+                naturalheight += horizontalScrollBar()->getDefaultHeight();
+            window->resize(FXMIN(maxwidth, FXMAX(window->getWidth(), naturalwidth)),
+                           FXMIN(maxheight, FXMAX(window->getHeight(), naturalheight)));
+        }
+    }
 };
 FXIMPLEMENT(DialogScroller, FXScrollWindow, NULL, 0)
 
@@ -210,32 +346,47 @@ bool XFApp::dispatchEvent(FXRawEvent& ev)
 }
 
 
+static void dialogfooters(FXWindow* parent, std::vector<DialogButtonBox*>& footers)
+{
+    for (FXWindow* child = parent->getFirst(); child; child = child->getNext())
+    {
+        if (DialogButtonBox* footer = dynamic_cast<DialogButtonBox*>(child))
+            footers.push_back(footer);
+        else if (!dynamic_cast<FXTopWindow*>(child))
+            dialogfooters(child, footers);
+    }
+}
+
+
 void xf_scrollabledialog(FXTopWindow* window)
 {
     window->setDecorations(window->getDecorations() | DECOR_TITLE | DECOR_BORDER | DECOR_RESIZE | DECOR_MAXIMIZE);
     FXWindow* first = window->getFirst();
-    if (!first || (dynamic_cast<DialogScroller*>(first) && !first->getNext()))
+    if (!first) return;
+    for (FXWindow* child = first; child; child = child->getNext())
+        if (dynamic_cast<DialogScroller*>(child)) return;
+    std::vector<DialogButtonBox*> footers;
+    dialogfooters(window, footers);
+    for (auto footer = footers.rbegin(); footer != footers.rend(); ++footer)
     {
-        return;
+        if (*footer != window->getFirst()) (*footer)->reparent(window, window->getFirst());
+        (*footer)->setLayoutHints(LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
     }
     DialogScroller* scroller = new DialogScroller(window);
     FXPacker* content = new FXPacker(scroller, LAYOUT_FILL_X | LAYOUT_FILL_Y, 0, 0, 0, 0,
                                      window->getPadLeft(), window->getPadRight(), window->getPadTop(),
                                      window->getPadBottom(), window->getHSpacing(), window->getVSpacing());
-    if (window->id())
-    {
-        scroller->create();
-    }
     for (FXWindow* child = window->getFirst(); child && child != scroller;)
     {
         FXWindow* next = child->getNext();
-        child->reparent(content);
+        if (!dynamic_cast<DialogButtonBox*>(child)) child->reparent(content);
         child = next;
     }
     window->setPadLeft(0);
     window->setPadRight(0);
     window->setPadTop(0);
     window->setPadBottom(0);
+    if (window->id()) scroller->create();
 }
 
 

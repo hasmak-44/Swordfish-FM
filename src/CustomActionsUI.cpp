@@ -159,10 +159,12 @@ bool discardChanges(FXWindow* owner)
     FXDialogBox question(owner, _("Unsaved Custom Action Changes"), DECOR_TITLE | DECOR_BORDER | DECOR_CLOSE);
     FXVerticalFrame* body = new FXVerticalFrame(&question, LAYOUT_FILL_X);
     new FXLabel(body, _("Discard your unsaved changes?"), NULL, JUSTIFY_LEFT);
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(body, LAYOUT_FILL_X);
+    FXHorizontalFrame* buttons = new DialogButtonBox(body, LAYOUT_FILL_X);
+    new FXButton(buttons, _("Discard"), NULL, &question, FXDialogBox::ID_ACCEPT, BUTTON_NORMAL | LAYOUT_RIGHT);
     new FXButton(buttons, _("Keep editing"), NULL, &question, FXDialogBox::ID_CANCEL,
                  BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT);
-    new FXButton(buttons, _("Discard"), NULL, &question, FXDialogBox::ID_ACCEPT, BUTTON_NORMAL | LAYOUT_RIGHT);
+    xf_scrollabledialog(&question);
+    xf_dialogcolors(&question);
     return question.execute(PLACEMENT_OWNER);
 }
 
@@ -394,9 +396,9 @@ public:
                     DECOR_TITLE | DECOR_BORDER | DECOR_RESIZE | DECOR_CLOSE | DECOR_MAXIMIZE,
                     0, 0, 800, 600), catalog(systemActionIcons(getApp())), selection(current)
     {
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
-        new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
+        FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
         new FXButton(buttons, _("Select"), NULL, this, ACCEPT, BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
         FXVerticalFrame* body = new FXVerticalFrame(this, LAYOUT_FILL_X | LAYOUT_FILL_Y);
         new FXLabel(body, _("Select icon from:"), NULL, JUSTIFY_LEFT);
         mode = new FXComboBox(body, 20, this, MODE, COMBOBOX_STATIC | FRAME_SUNKEN | LAYOUT_FILL_X);
@@ -564,9 +566,9 @@ public:
         model(actions), index(n), previewContext(ctx)
     {
         const CustomAction& a = model.items[n];
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
-        new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
+        FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
         new FXButton(buttons, _("Apply"), NULL, this, ENTRY_SAVE, BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
         FXTabBook* tabs = new FXTabBook(this, NULL, 0, LAYOUT_FILL_X | LAYOUT_FILL_Y);
         new DialogTabItem(tabs, _("Basic"));
         FXScrollWindow* scroll = new FXScrollWindow(tabs, LAYOUT_FILL_X | LAYOUT_FILL_Y | FRAME_THICK | FRAME_RAISED);
@@ -779,10 +781,13 @@ public:
         {
             FXDialogBox dialog(this, _("Parameter Legend"), DECOR_TITLE | DECOR_BORDER | DECOR_RESIZE | DECOR_CLOSE,
                                0, 0, 620, 420);
-            FXHorizontalFrame* buttons = new FXHorizontalFrame(&dialog, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
+            FXHorizontalFrame* buttons = new DialogButtonBox(&dialog, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
             new FXButton(buttons, _("Close"), NULL, &dialog, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
             FXText* legend = new FXText(&dialog, NULL, 0, TEXT_READONLY | TEXT_WORDWRAP | LAYOUT_FILL_X | LAYOUT_FILL_Y);
-            legend->setText(_(parameterLegend)); dialog.execute(PLACEMENT_OWNER); return 1;
+            legend->setText(_(parameterLegend));
+            xf_scrollabledialog(&dialog);
+            xf_dialogcolors(&dialog);
+            dialog.execute(PLACEMENT_OWNER); return 1;
         }
         case ID_ACCEPT:
         case ENTRY_SAVE:
@@ -994,9 +999,9 @@ public:
         FXDialogBox(owner, _("Custom Actions"), DECOR_TITLE | DECOR_BORDER | DECOR_RESIZE | DECOR_CLOSE,
                     0, 0, 780, 560), actions(ui), working(ui.model), editorContext(ui.context())
     {
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
-        new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
+        FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
         new FXButton(buttons, _("Save"), NULL, this, SAVE, BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("Cancel"), NULL, this, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
         new FXLabel(this, _("Double-click an entry to edit. Checked folders expose all children on the toolbar;\n"
                            "checked descendants are not duplicated. Use Move to Folder to change nesting."),
                     NULL, JUSTIFY_LEFT | LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
@@ -1093,9 +1098,11 @@ public:
             }
             folders->setNumVisible(12); folders->setCurrentItem(0);
             for (unsigned n = 0; n < ids.size(); ++n) { if (ids[n] == a->parent) { folders->setCurrentItem(n); } }
-            FXHorizontalFrame* row = new FXHorizontalFrame(frame, LAYOUT_FILL_X);
-            new FXButton(row, _("Cancel"), NULL, &dialog, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
+            FXHorizontalFrame* row = new DialogButtonBox(frame, LAYOUT_FILL_X);
             new FXButton(row, _("Move"), NULL, &dialog, ID_ACCEPT, BUTTON_DEFAULT | BUTTON_INITIAL | LAYOUT_RIGHT);
+            new FXButton(row, _("Cancel"), NULL, &dialog, ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
+            xf_scrollabledialog(&dialog);
+            xf_dialogcolors(&dialog);
             if (dialog.execute(PLACEMENT_OWNER))
             {
                 FXString error;

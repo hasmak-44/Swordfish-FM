@@ -1096,7 +1096,7 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     }
 
     // Buttons
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10, 5, 5);
+    FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10, 5, 5);
 
     // Contents
     FXHorizontalFrame* contents = new FXHorizontalFrame(this,
@@ -1109,10 +1109,9 @@ PreferencesBox::PreferencesBox(FXWindow* win, FXColor listbackcolor, FXColor lis
     ok->addHotKey(KEY_Return);
     ok->setFocus();
 
-    // Cancel
-    new FXButton(buttons, _("&Cancel"), NULL, this, PreferencesBox::ID_CANCEL,
-                 FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
     new FXButton(buttons, _("&Apply"), NULL, this, ID_APPLY,
+                 FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
+    new FXButton(buttons, _("&Cancel"), NULL, this, PreferencesBox::ID_CANCEL,
                  FRAME_GROOVE | LAYOUT_RIGHT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 20, 20);
 
     FXVerticalFrame* navigation = new FXVerticalFrame(contents, FRAME_NONE | LAYOUT_FILL_Y | LAYOUT_FIX_WIDTH,

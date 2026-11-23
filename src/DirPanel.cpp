@@ -5735,7 +5735,7 @@ public:
                     NULL, JUSTIFY_LEFT | LAYOUT_FILL_X, 0, 0, 0, 0, 12, 0, 0, 0);
         status = new FXLabel(text, FXString::null, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
         new FXHorizontalSeparator(content, SEPARATOR_GROOVE | LAYOUT_FILL_X);
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(content, LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10, 10, 10);
+        FXHorizontalFrame* buttons = new DialogButtonBox(content, LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10, 10, 10);
         cancel = new FXButton(buttons, _("&Cancel"), NULL, this, DialogBox::ID_CANCEL,
                               BUTTON_INITIAL | BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_RIGHT,
                               0, 0, 0, 0, 30, 30, 2, 2);

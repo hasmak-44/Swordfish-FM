@@ -71,7 +71,7 @@ CommandWindow::CommandWindow(FXWindow* owner, const FXString& name, FXString str
     command = strcmd;
 
     // Bottom part
-    FXHorizontalFrame* buttonbox = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+    FXHorizontalFrame* buttonbox = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
     new FXButton(buttonbox, _("Cl&ose"), NULL, this, ID_CLOSE, BUTTON_DEFAULT | LAYOUT_RIGHT | FRAME_GROOVE,
                  0, 0, 0, 0, 20, 20, 5, 5);
     FXButton* cancelbutton = new FXButton(buttonbox, _("&Cancel"), NULL, this, ID_KILLPROCESS, BUTTON_INITIAL |
@@ -105,7 +105,7 @@ CommandWindow::CommandWindow(FXApp* a, const FXString& name, FXString strcmd, in
     command = strcmd;
 
     // Bottom part
-    FXHorizontalFrame* buttonbox = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+    FXHorizontalFrame* buttonbox = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
     new FXButton(buttonbox, _("Cl&ose"), NULL, this, ID_CLOSE, BUTTON_DEFAULT | LAYOUT_RIGHT | FRAME_GROOVE, 0, 0, 0, 0,
                  20, 20, 5, 5);
     FXButton* cancelbutton = new FXButton(buttonbox, _("&Cancel"), NULL, this, ID_KILLPROCESS,

@@ -26,7 +26,7 @@ TextWindow::TextWindow(FXWindow* owner, const FXString& name, int nblines, int n
               0, 0, 0, 0, 6, 6, 6, 6, 4, 4)
 {
     // Bottom part
-    FXHorizontalFrame* closebox = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+    FXHorizontalFrame* closebox = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
     FXButton* button = new FXButton(closebox, _("&Close"), NULL, this, DialogBox::ID_ACCEPT,
                                     BUTTON_INITIAL | BUTTON_DEFAULT | LAYOUT_RIGHT | FRAME_GROOVE, 0, 0, 0, 0, 20, 20,
                                     5, 5);
@@ -55,7 +55,7 @@ TextWindow::TextWindow(FXApp* app, const FXString& name, int nblines, int nbcols
               0, 0, 0, 0, 6, 6, 6, 6, 4, 4)
 {
     // Bottom part
-    FXHorizontalFrame* closebox = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+    FXHorizontalFrame* closebox = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
     FXButton* button = new FXButton(closebox, _("&Close"), NULL, this, DialogBox::ID_ACCEPT,
                                     BUTTON_INITIAL | BUTTON_DEFAULT | LAYOUT_RIGHT | FRAME_GROOVE, 0, 0, 0, 0, 20, 20,
                                     5, 5);

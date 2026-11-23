@@ -1,6 +1,24 @@
 #ifndef DIALOGBOX_H
 #define DIALOGBOX_H
 
+class DialogButtonBox : public FXHorizontalFrame
+{
+    FXDECLARE(DialogButtonBox)
+protected:
+    DialogButtonBox() {}
+    FXint arrange(FXint available, FXbool position);
+public:
+    DialogButtonBox(FXComposite* parent, FXuint opts = LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X,
+                    FXint x = 0, FXint y = 0, FXint w = 0, FXint h = 0,
+                    FXint pl = DEFAULT_SPACING, FXint pr = DEFAULT_SPACING,
+                    FXint pt = DEFAULT_SPACING, FXint pb = DEFAULT_SPACING,
+                    FXint hs = DEFAULT_SPACING, FXint vs = DEFAULT_SPACING) :
+        FXHorizontalFrame(parent, opts & ~PACK_UNIFORM_WIDTH, x, y, w, h, pl, pr, pt, pb, hs, vs) {}
+    virtual FXint getDefaultWidth();
+    virtual FXint getDefaultHeight();
+    virtual void layout();
+};
+
 class DialogTabItem : public FXTabItem
 {
     FXDECLARE(DialogTabItem)

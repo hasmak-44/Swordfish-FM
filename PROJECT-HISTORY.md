@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
 Last updated: 23 November 2026, through the 0.0.4 beta 1 release and
-subsequent user feedback and local fixes (sections 3.128-3.133).
+subsequent user feedback and local fixes (sections 3.128-3.134).
 Latest prerelease: `swordfish-0.0.4-beta1`.
 Latest stable release: `swordfish-0.0.3`.
 Previous stable release: `swordfish-0.0.2`.
@@ -43,10 +43,10 @@ Historical implementation details below do not override the current code.
 7. User-confirmed fixes include the portable search warning, child-window
    icons, missing-archivemount guidance and the icon-startup fix (section 3.40).
    Distinguish those confirmations from later changes and the user's new
-   reports and local work in sections 3.129-3.132.
+   reports and local work in sections 3.129-3.134.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.118-3.132. Older beta and RC notes are
+9. For the latest state, read sections 3.118-3.134. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide was originally added after the frozen RC4 application commit and is
@@ -4308,6 +4308,42 @@ an external launch and verifies that a bundled helper still receives portable
 settings. This is local work, not part of the published beta; a packaged
 portable build has not been tested.
 
+### 3.134. Fixed-colour dialog sizing and persistent actions (local work)
+
+Reproduced the sizing fault: a dialog opened at 240 by 120 while its natural
+content required 954 by 123. The shared wrapper also put its action buttons
+inside the scrolling area. Dialogs now fit their natural content on initial
+creation, preserve larger requested sizes, and stay within the display.
+Later user resizing is preserved. Space for a necessary scrollbar is included.
+
+Footer rows use `DialogButtonBox`. The wrapper lifts those rows out of nested
+selectors as well as direct dialog children, leaving only the body scrollable.
+This covers the input, file/font/colour, Preferences, properties, rename,
+connection, key-binding, message, conflict, command/text/progress, Theme Editor
+and Custom Actions dialogs, including the FOX search/replace/input dialogs.
+Help/options stay left; Cancel precedes the primary action at the right.
+Preferences uses Cancel, Apply, OK. Narrow footers wrap without overlapping or
+hiding actions; long action labels do not force every button to the same width.
+Event targets, confirmation defaults and saved file selections are preserved.
+
+Focused geometry checks cover natural initial sizing, screen-constrained
+content, narrow windows, long status/action text, nested selectors and
+Preferences/Theme Editor footers. The full theme workflow and focused
+column/preferences regression passed in an isolated clean native build.
+The focused Custom Actions dialog workflow passed, including icon/legend
+dialogs, Apply, Save/disk reload and unchanged Cancel. Both dialog runners
+support `SWORDFISH_TEST_DIALOG_LAYOUT_ONLY=1`. All 44 default/narrow,
+long-status and display-constrained screenshots were independently reviewed
+in light/dark host environments; the review's Preferences ordering issue
+was corrected and re-reviewed.
+
+The full Custom Actions suite still fails its Scripts-menu popup assertion
+after the overflow/appearance sequence. The same failure was reproduced in a
+clean build of unchanged HEAD; the focused Scripts check passes. No full
+Custom Actions-suite pass is claimed. The manual describes the layout.
+This is local work, not part of the published beta; packaged portable and
+real-machine checks remain outstanding.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -4898,7 +4934,7 @@ Do not amend published commits/tags as an automatic workaround.
 0.0.3 is the latest stable release; 0.0.4 beta 1 is the latest published
 prerelease. Its release and known limitations are recorded in section 3.128;
 the user's subsequent reports and local Scripts/appearance/overflow/launch
-environment fixes are in sections 3.129-3.133. The cancellation cleanup was
+environment/dialog fixes are in sections 3.129-3.134. The cancellation cleanup was
 deferred and is not included in the beta (section 3.127). Generated
 autotools files may remain modified after local builds and must not be included
 in feature commits. Inspect the current branch and worktree rather than relying

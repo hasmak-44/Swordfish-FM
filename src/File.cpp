@@ -301,9 +301,8 @@ DialogBox(app, title, DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE | DECOR_CLO
 void File::initialize(FXWindow* owner, const FXuint operation, const FXuint num)
 {
     // Progress window
-    FXint buttonPadding = independent ? 12 : PROGRESSDIALOG_WIDTH;
-    FXPacker* buttons = new FXPacker(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 10, 10,
-                                     buttonPadding, buttonPadding, 5, 5);
+    DialogButtonBox* buttons = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X,
+                                                  0, 0, 0, 0, 10, 10, 5, 5);
     FXVerticalFrame* contents = new FXVerticalFrame(this, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);
 
     // Cancel Button
@@ -311,15 +310,13 @@ void File::initialize(FXWindow* owner, const FXuint operation, const FXuint num)
     if (operation != MOUNT && operation != UNMOUNT)
 #endif
     {
-        FXComposite* buttonParent = buttons;
         if (independent)
         {
-            buttonParent = new FXHorizontalFrame(buttons, LAYOUT_CENTER_X | PACK_UNIFORM_WIDTH);
-            pauseButton = new FXButton(buttonParent, _("&Pause"), NULL, this, File::ID_PAUSE_BUTTON,
-                                       FRAME_GROOVE, 0, 0, 0, 0, 20, 20);
+            pauseButton = new FXButton(buttons, _("&Pause"), NULL, this, File::ID_PAUSE_BUTTON,
+                                       FRAME_GROOVE | LAYOUT_RIGHT, 0, 0, 0, 0, 20, 20);
         }
-        cancelButton = new FXButton(buttonParent, _("&Cancel"), NULL, this, File::ID_CANCEL_BUTTON, FRAME_GROOVE |
-                                    LAYOUT_CENTER_X, 0, 0, 0, 0, 20, 20);
+        cancelButton = new FXButton(buttons, _("&Cancel"), NULL, this, File::ID_CANCEL_BUTTON, FRAME_GROOVE |
+                                    LAYOUT_RIGHT, 0, 0, 0, 0, 20, 20);
         cancelButton->setFocus();
         cancelButton->addHotKey(KEY_Escape);        
     }

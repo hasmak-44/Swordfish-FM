@@ -484,6 +484,24 @@ public:
         if (opensProperties) { app.addTimeout(this, 1, 30); }
         FXTopWindow* editor = dialog(app, "Custom Actions");
         FXTopWindow* properties = dialog(app, "Custom Action Properties");
+        if (getenv("SWORDFISH_TEST_DIALOG_LAYOUT_ONLY"))
+        {
+            for (FXTopWindow* window : {editor, properties})
+            {
+                if (!window) continue;
+                std::vector<DialogButtonBox*> rows = widgets<DialogButtonBox>(window);
+                assert(rows.size() == 1 && rows[0]->getParent() == window);
+                assert(rows[0]->getY() + rows[0]->getHeight() <= window->getHeight());
+                FXButton* primary = NULL;
+                FXButton* cancel = NULL;
+                for (FXButton* button : widgets<FXButton>(rows[0]))
+                {
+                    if (button->getText() == "Save" || button->getText() == "Apply") primary = button;
+                    if (button->getText() == "Cancel") cancel = button;
+                }
+                assert(primary && cancel && cancel->getX() + cancel->getWidth() <= primary->getX());
+            }
+        }
         if (current == 0) { assert(editor); click(editor, "Add Folder..."); }
         else if (current == 1)
         {
@@ -2382,6 +2400,25 @@ int main(int argc, char** argv)
     XFileExplorer* window = new XFileExplorer(&app, paths, 3);
     mainWindow = window;
     app.create(); window->show(); pump(app, 1000);
+    if (getenv("SWORDFISH_TEST_DIALOG_LAYOUT_ONLY"))
+    {
+        CustomActionsUI* actions = window->getCustomActions();
+        EditorAutomation automation(app, fixture + "/large.png");
+        app.addTimeout(&automation, 1, 30);
+        actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
+        assert(actions->model.items.size() == 9);
+        CustomActions persisted;
+        FXString error, warnings;
+        assert(persisted.loadDirectory(bundle + "/swordfish/custom-actions", error, warnings));
+        assert(persisted.items == actions->model.items);
+        DismissDialog cancel(app, "Custom Actions", "Cancel");
+        app.addTimeout(&cancel, 1, 30);
+        actions->handle(NULL, FXSEL(SEL_COMMAND, CustomActionsUI::ID_EDIT), NULL);
+        assert(actions->model.items == persisted.items);
+        puts("PASS: persistent Cancel-before-primary Custom Actions footers, properties/icon/legend workflows, Save reload and unchanged Cancel");
+        std::fflush(stdout);
+        std::_Exit(0);
+    }
     if (getenv("SWORDFISH_TEST_ENVIRONMENT_ONLY"))
     {
         checkLaunchEnvironment(app, fixture);

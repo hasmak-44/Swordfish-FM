@@ -43,7 +43,7 @@ FontSelector::FontSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXuint
     message = sel;
 
     // Bottom side
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
+    FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X);
     accept = new FXButton(buttons, _("&Accept"), NULL, NULL, 0, BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_RIGHT,
                           0, 0, 0, 0, 20, 20);
     cancel = new FXButton(buttons, _("&Cancel"), NULL, NULL, 0, BUTTON_INITIAL | BUTTON_DEFAULT | FRAME_GROOVE |

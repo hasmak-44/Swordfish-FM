@@ -227,7 +227,7 @@ RenameDialog::RenameDialog(FXWindow* win, FXString title, FXString src, FXuint n
     insertfromendchk = new FXCheckButton(matrix7, _("Starting from the end"), this, ID_INSERT_FROM_END);
 
     // Buttons
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(contents, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10,
+    FXHorizontalFrame* buttons = new DialogButtonBox(contents, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10,
                                                        5, 5);
 
     // Accept button

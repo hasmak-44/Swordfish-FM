@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
+#include "DialogBox.h"
 
 #if defined(linux)
 #include <linux/fs.h>
@@ -1500,7 +1501,7 @@ FXReplaceDialog::FXReplaceDialog(FXWindow* owner, const FXString& caption, FXIco
     FXDialogBox(owner, caption, opts | DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE, x, y, w, h, 10, 10, 10, 10, 10,
                 10)
 {
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(this,
+    FXHorizontalFrame* buttons = new DialogButtonBox(this,
                                                        LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH |
                                                        PACK_UNIFORM_HEIGHT, 0, 0, 0, 0, 0, 0, 0, 0);
 
@@ -1570,6 +1571,8 @@ FXReplaceDialog::FXReplaceDialog(FXWindow* owner, const FXString& caption, FXIco
     searchnext->addHotKey(MKUINT(KEY_f, CONTROLMASK));
     searchmode = SEARCH_EXACT | SEARCH_FORWARD;
     current = 0;
+    xf_scrollabledialog(this);
+    xf_dialogcolors(this);
 }
 
 
@@ -1597,7 +1600,7 @@ FXSearchDialog::FXSearchDialog(FXWindow* owner, const FXString& caption, FXIcon*
 void FXInputDialog::initialize(const FXString& label, FXIcon* icon)
 {
     FXuint textopts = TEXTFIELD_NORMAL | TEXTFIELD_ENTER_ONLY | LAYOUT_FILL_X;
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH, 0,
+    FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH, 0,
                                                        0, 0, 0, 0, 0, 0, 0);
 
     new FXButton(buttons, _("&OK"), NULL, this, ID_ACCEPT,
@@ -1627,6 +1630,8 @@ void FXInputDialog::initialize(const FXString& label, FXIcon* icon)
     input = new FXTextField(entry, 20, this, ID_ACCEPT, textopts, 0, 0, 0, 0, 8, 8, 4, 4);
     limlo = 1.0;
     limhi = 0.0;
+    xf_scrollabledialog(this);
+    xf_dialogcolors(this);
 }
 
 

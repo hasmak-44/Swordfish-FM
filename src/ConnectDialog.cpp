@@ -100,7 +100,7 @@ ConnectDialog::ConnectDialog(FXWindow* win, FXString title, FilePanel* fpanel, D
     hint = new FXLabel(vframe, FXString::null, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
 
     // Buttons
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(contents, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10,
+    FXHorizontalFrame* buttons = new DialogButtonBox(contents, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10,
                                                        5, 5);
 
     // Connect button

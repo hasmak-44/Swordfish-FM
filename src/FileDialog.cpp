@@ -260,11 +260,11 @@ FileSelector::FileSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXuint
 
     readonly = new FXCheckButton(filterframe, _("Read Only") + FXString(" "), NULL, 0, ICON_BEFORE_TEXT |
                                  JUSTIFY_LEFT | LAYOUT_CENTER_Y);
-    FXHorizontalFrame* entrybuttons = new FXHorizontalFrame(entryarea, LAYOUT_FILL_X);
+    FXHorizontalFrame* entrybuttons = new DialogButtonBox(entryarea, LAYOUT_FILL_X);
     new FXButton(entrybuttons, _("&OK"), NULL, this, ID_ACCEPT,
-                 BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_LEFT, 0, 0, 0, 0, 20, 20);
+                 BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_RIGHT, 0, 0, 0, 0, 20, 20);
     cancel = new FXButton(entrybuttons, _("&Cancel"), NULL, NULL, 0,
-                          BUTTON_INITIAL | BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_LEFT,
+                          BUTTON_INITIAL | BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_RIGHT,
                           0, 0, 0, 0, 20, 20);
     accept = new FXButton(buttons, FXString::null, NULL, NULL, 0, LAYOUT_FIX_X | LAYOUT_FIX_Y |
                           LAYOUT_FIX_WIDTH | LAYOUT_FIX_HEIGHT, 0, 0, 0, 0, 0, 0, 0, 0);

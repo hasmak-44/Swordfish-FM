@@ -194,7 +194,7 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString file, FXString path, FXbool
     trashinfolocation = xf_trashdatahome() + PATHSEPSTRING TRASHINFOPATH;
 
     // Buttons
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X,
+    FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X,
                                                        0, 0, 0, 0, 10, 10, 5, 5);
 
     // Contents
@@ -931,7 +931,7 @@ PropertiesBox::PropertiesBox(FXWindow* win, FXString* file, int n, FXString* pat
     nbseldirs = 0;
 
     // Buttons
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X,
+    FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X,
                                                        0, 0, 0, 0, 10, 10, 5, 5);
 
     // Contents

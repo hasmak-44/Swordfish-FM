@@ -374,7 +374,7 @@ HistInputDialog::HistInputDialog(FXWindow* w, FXString inp, FXString message, FX
     browsetype = browse;
 
     // Buttons
-    buttons = new FXHorizontalFrame(this, PACK_UNIFORM_WIDTH | LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10,
+    buttons = new DialogButtonBox(this, PACK_UNIFORM_WIDTH | LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10,
                                     5, 5);
 
     // Accept
@@ -384,12 +384,13 @@ HistInputDialog::HistInputDialog(FXWindow* w, FXString inp, FXString message, FX
     cancel = new FXButton(buttons, _("&Cancel"), NULL, this, ID_CANCEL, FRAME_GROOVE | LAYOUT_RIGHT, 0, 0, 0, 0, 20, 20);
 
     // Optional check box
-    checkbutton = new FXHorizontalFrame(this, JUSTIFY_RIGHT | LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10, 0, 0);
+    checkbutton = new FXHorizontalFrame(buttons, LAYOUT_LEFT | LAYOUT_CENTER_Y, 0, 0, 0, 0, 0, 0, 0, 0);
 
     if (option)
     {
         associationOption = new FXCheckButton(checkbutton, optiontext + FXString(" "), this, ID_TOGGLE_OPTION);
     }
+    else checkbutton->hide();
 
     // Vertical frame
     contents = new FXVerticalFrame(this, LAYOUT_SIDE_TOP | FRAME_NONE | LAYOUT_FILL_X | LAYOUT_FILL_Y);

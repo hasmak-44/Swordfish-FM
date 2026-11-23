@@ -1017,7 +1017,7 @@ ColorSelector::ColorSelector(FXComposite* p, FXObject* tgt, FXSelector sel, FXui
     message = sel;
 
     // Buttons
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+    FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
     accept = new FXButton(buttons, _("&Accept"), NULL, NULL, 0,
                           BUTTON_INITIAL | BUTTON_DEFAULT | FRAME_GROOVE | LAYOUT_RIGHT,
                           0, 0, 0, 0, 20, 20);

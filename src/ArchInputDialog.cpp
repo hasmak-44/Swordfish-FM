@@ -32,7 +32,7 @@ ArchInputDialog::ArchInputDialog(FXWindow* win, FXString inp) :
     DialogBox(win, _("Add To Archive"), DECOR_TITLE | DECOR_BORDER | DECOR_STRETCHABLE | DECOR_MAXIMIZE | DECOR_CLOSE)
 {
     // Buttons
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(this, PACK_UNIFORM_WIDTH | LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X,
+    FXHorizontalFrame* buttons = new DialogButtonBox(this, PACK_UNIFORM_WIDTH | LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X,
                                                        0, 0, 0, 0, 10, 10, 5, 5);
 
     // Accept

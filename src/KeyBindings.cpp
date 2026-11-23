@@ -69,7 +69,7 @@ KeyBindingsBox::KeyBindingsBox(FXWindow* win, FXStringDict* glbbindings, FXStrin
     xfwBindingsDict = xfwbindings;
 
     // Buttons
-    FXHorizontalFrame* buttons = new FXHorizontalFrame(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10, 5,
+    FXHorizontalFrame* buttons = new DialogButtonBox(this, LAYOUT_SIDE_BOTTOM | LAYOUT_FILL_X, 0, 0, 0, 0, 10, 10, 5,
                                                        5);
 
     // Contents

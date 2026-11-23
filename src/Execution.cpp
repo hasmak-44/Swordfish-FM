@@ -26,10 +26,10 @@ public:
     {
         FXVerticalFrame* frame = new FXVerticalFrame(this, LAYOUT_FILL_X | LAYOUT_FILL_Y);
         new FXLabel(frame, message, NULL, JUSTIFY_LEFT);
-        FXHorizontalFrame* buttons = new FXHorizontalFrame(frame, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
-        new FXButton(buttons, _("Use System Default Once"), NULL, this, 1, BUTTON_NORMAL | LAYOUT_FILL_X);
-        new FXButton(buttons, _("Open With..."), NULL, this, 2, BUTTON_NORMAL | LAYOUT_FILL_X);
-        new FXButton(buttons, _("Cancel"), NULL, this, 3, BUTTON_NORMAL | LAYOUT_FILL_X);
+        FXHorizontalFrame* buttons = new DialogButtonBox(frame, LAYOUT_FILL_X | PACK_UNIFORM_WIDTH);
+        new FXButton(buttons, _("Use System Default Once"), NULL, this, 1, BUTTON_NORMAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("Open With..."), NULL, this, 2, BUTTON_NORMAL | LAYOUT_RIGHT);
+        new FXButton(buttons, _("Cancel"), NULL, this, 3, BUTTON_NORMAL | LAYOUT_RIGHT);
         xf_scrollabledialog(this);
         xf_dialogcolors(this);
     }

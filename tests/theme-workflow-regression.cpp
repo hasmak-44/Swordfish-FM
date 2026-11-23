@@ -8,6 +8,7 @@
 #include "Preferences.h"
 #include "ThemeEditor.h"
 #include "ColorTools.h"
+#include "ColorSelector.h"
 #include "BackgroundEffect.h"
 #include "BackgroundImage.h"
 #include "FileDialog.h"
@@ -482,6 +483,132 @@ static void solidPng(FXApp& app, const FXString& path, FXColor color)
     assert(image.savePixels(output));
 }
 
+static void checkActionRow(FXTopWindow& dialog, const char* primaryText, const char* cancelText)
+{
+    FXButton* primary = findButton(&dialog, primaryText);
+    FXButton* cancel = findButton(&dialog, cancelText);
+    assert(primary && cancel);
+    DialogButtonBox* row = dynamic_cast<DialogButtonBox*>(primary->getParent());
+    assert(row && row->getParent() == &dialog && cancel->getParent() == row);
+    assert(row->getY() >= 0 && row->getY() + row->getHeight() <= dialog.getHeight());
+    std::vector<FXWindow*> visible;
+    for (FXWindow* child = row->getFirst(); child; child = child->getNext())
+    {
+        if (!child->shown()) continue;
+        assert(child->getX() >= 0 && child->getX() + child->getWidth() <= row->getWidth());
+        assert(child->getY() >= 0 && child->getY() + child->getHeight() <= row->getHeight());
+        if (dynamic_cast<FXButton*>(child)) assert(child->getWidth() >= child->getDefaultWidth());
+        for (FXWindow* other : visible)
+            assert(child->getX() >= other->getX() + other->getWidth() ||
+                   other->getX() >= child->getX() + child->getWidth() ||
+                   child->getY() >= other->getY() + other->getHeight() ||
+                   other->getY() >= child->getY() + child->getHeight());
+        visible.push_back(child);
+    }
+    assert(cancel->getY() <= primary->getY());
+    FXButton* apply = findButton(row, "Apply");
+    if (apply && apply != primary)
+    {
+        assert(cancel->getY() <= apply->getY() && apply->getY() <= primary->getY());
+        if (cancel->getY() == apply->getY())
+            assert(cancel->getX() + cancel->getWidth() <= apply->getX());
+        if (apply->getY() == primary->getY())
+            assert(apply->getX() + apply->getWidth() <= primary->getX());
+    }
+    if (cancel->getY() == primary->getY())
+        assert(cancel->getX() + cancel->getWidth() <= primary->getX());
+    assert(primary->getX() + primary->getWidth() >= row->getWidth() - 12);
+}
+
+static void exerciseDialog(FXTopWindow& dialog, const char* primary, const char* cancel, const char* name)
+{
+    dialog.create();
+    dialog.show(PLACEMENT_SCREEN);
+    pump(*dialog.getApp());
+    checkActionRow(dialog, primary, cancel);
+    screenshot(&dialog, (FXString(name) + "-default").text());
+    dialog.resize(480, 300);
+    pump(*dialog.getApp());
+    checkActionRow(dialog, primary, cancel);
+    screenshot(&dialog, (FXString(name) + "-narrow").text());
+    dialog.hide();
+}
+
+static void checkDialogLayout(FXApp& app, XFileExplorer& owner)
+{
+    InputDialog dialog(&owner, "", "A long folder name and explanatory text must remain accessible without hiding the actions.",
+                       "Dialog layout regression", "", NULL, true, "Apply to matching files");
+    findButton(&dialog, "Accept")->setText("Save");
+    dialog.addHelpButton(&owner, XFileExplorer::ID_USER_MANUAL);
+    dialog.resize(240, 120);
+    dialog.create();
+    dialog.show(PLACEMENT_SCREEN);
+    pump(app);
+    printf("Initial dialog: %d x %d, natural: %d x %d\n", dialog.getWidth(), dialog.getHeight(),
+           dialog.getDefaultWidth(), dialog.getDefaultHeight());
+    fflush(stdout);
+    assert(dialog.getWidth() >= dialog.getDefaultWidth());
+    assert(dialog.getHeight() >= dialog.getDefaultHeight());
+    FXScrollWindow* scroller = dynamic_cast<FXScrollWindow*>(findClass(&dialog, "DialogScroller"));
+    assert(scroller && scroller->getContentWidth() <= scroller->getViewportWidth());
+    assert(scroller->getContentHeight() <= scroller->getViewportHeight());
+    checkActionRow(dialog, "Save", "Cancel");
+    screenshot(&dialog, "dialog-default");
+    dialog.resize(480, 150);
+    pump(app);
+    checkActionRow(dialog, "Save", "Cancel");
+    screenshot(&dialog, "dialog-narrow");
+    findButton(&dialog, "Save")->setText("Save all changes to this theme");
+    FXString status;
+    for (int i = 0; i < 35; ++i) status += "A longer status message after the operation has started.\n";
+    dialog.setMessage(status);
+    dialog.resize(320, 190);
+    pump(app);
+    checkActionRow(dialog, "Save all changes to this theme", "Cancel");
+    screenshot(&dialog, "dialog-long-status");
+    dialog.hide();
+    dialog.show(PLACEMENT_SCREEN);
+    pump(app);
+    assert(dialog.getWidth() == 320 && dialog.getHeight() == 190);
+    dialog.hide();
+
+    FileDialog files(&owner, "Choose a file");
+    FXString path = owner.getCurrentPanel()->getDirectory() + "/real-preview-file.txt";
+    files.setSelectMode(SELECTFILE_EXISTING);
+    files.setFilename(path);
+    exerciseDialog(files, "OK", "Cancel", "file-dialog");
+    files.show(PLACEMENT_SCREEN);
+    FXButton* open = findButton(&files, "OK");
+    open->getTarget()->handle(open, FXSEL(SEL_COMMAND, open->getSelector()), NULL);
+    assert(!files.shown() && files.getFilename() == path);
+
+    FontDialog fonts(&owner, "Choose a font");
+    exerciseDialog(fonts, "Accept", "Cancel", "font-dialog");
+    ColorDialog colors(&owner, "Choose a colour");
+    colors.setRGBA(FXRGB(40, 80, 120));
+    exerciseDialog(colors, "Accept", "Cancel", "colour-dialog");
+    assert(colors.getRGBA() == FXRGB(40, 80, 120));
+
+    DialogBox constrained(&owner, "Screen-constrained dialog", DECOR_ALL, 0, 0, 100, 100);
+    DialogButtonBox* buttons = new DialogButtonBox(&constrained);
+    new FXButton(buttons, "Save", NULL, &constrained, DialogBox::ID_ACCEPT, BUTTON_NORMAL | LAYOUT_RIGHT);
+    new FXButton(buttons, "Cancel", NULL, &constrained, DialogBox::ID_CANCEL, BUTTON_NORMAL | LAYOUT_RIGHT);
+    FXString tall;
+    for (int i = 0; i < 100; ++i) tall += "Long content should scroll without obscuring the bottom actions.\n";
+    new FXLabel(&constrained, tall, NULL, JUSTIFY_LEFT | LAYOUT_FILL_X);
+    constrained.create();
+    constrained.show(PLACEMENT_SCREEN);
+    pump(app);
+    checkActionRow(constrained, "Save", "Cancel");
+    assert(constrained.getWidth() <= app.getRootWindow()->getWidth() - 20);
+    assert(constrained.getHeight() <= app.getRootWindow()->getHeight() - 40);
+    scroller = dynamic_cast<FXScrollWindow*>(findClass(&constrained, "DialogScroller"));
+    assert(scroller && scroller->verticalScrollBar()->shown() && !scroller->horizontalScrollBar()->shown());
+    screenshot(&constrained, "dialog-screen-constrained");
+    constrained.hide();
+    puts("PASS: initial natural dialog size and persistent ordered actions after shrinking");
+}
+
 static FXColor pngPixel(FXApp& app, const FXString& path)
 {
     FXPNGImage image(&app, NULL, IMAGE_KEEP);
@@ -544,6 +671,51 @@ static void copyThemeWithName(const FXString& source, const FXString& destinatio
 class ThemeWorkflowRegression
 {
 public:
+    static void dialogs(FXApp& app, XFileExplorer& window)
+    {
+        checkDialogLayout(app, window);
+        PreferencesBox preferences(&window, app.getBackColor(), app.getForeColor(), app.getBackColor(),
+                                   app.getSelbackColor(), FXRGB(255, 0, 0), app.getBaseColor());
+        exerciseDialog(preferences, "OK", "Cancel", "preferences");
+        ThemeEditor editor(&preferences, &window, preferences.Themes, 0, ThemeEditor::EDIT_CURRENT);
+        exerciseDialog(editor, "Save", "Close", "theme-editor");
+        editor.show(PLACEMENT_SCREEN);
+        for (const char* key : {"effect", "background_image"})
+        {
+            editor.selectElement(FXString(key) == "effect" ? "list" : "main");
+            auto property = std::find(editor.propertyKeys.begin(), editor.propertyKeys.end(), key);
+            assert(property != editor.propertyKeys.end());
+            editor.properties->setCurrentItem(std::distance(editor.propertyKeys.begin(), property));
+            ActionTimer inspect([&]()
+            {
+                FXTopWindow* popup = dynamic_cast<FXTopWindow*>(app.getModalWindow());
+                assert(popup);
+                FXint width = popup->getWidth(), height = popup->getHeight();
+                FXTabBook* tabs = FXString(key) == "effect" ?
+                    dynamic_cast<FXTabBook*>(findClass(popup, "FXTabBook")) : NULL;
+                for (FXint page = 0; page < (tabs ? 3 : 1); ++page)
+                {
+                    if (tabs) tabs->setCurrent(page, true);
+                    popup->resize(width, height);
+                    pump(app);
+                    checkActionRow(*popup, "Apply to mockup", "Cancel");
+                    FXString name = FXString(key) + "-" + FXStringVal(page);
+                    screenshot(popup, (name + "-default").text());
+                    popup->resize(480, 300);
+                    pump(app);
+                    checkActionRow(*popup, "Apply to mockup", "Cancel");
+                    screenshot(popup, (name + "-narrow").text());
+                }
+                FXButton* cancel = findButton(popup, "Cancel");
+                cancel->getTarget()->handle(cancel, FXSEL(SEL_COMMAND, cancel->getSelector()), NULL);
+            });
+            app.addTimeout(&inspect, 1, 150);
+            editor.onEditProperty(NULL, 0, NULL);
+        }
+        editor.hide();
+        puts("PASS: Preferences and Theme Editor keep ordered actions outside scrolling content");
+    }
+
     static void run(FXApp& app, XFileExplorer& window)
     {
         PreferencesBox preferences(&window, app.getBackColor(), app.getForeColor(), app.getBackColor(),
@@ -634,7 +806,7 @@ public:
         puts("PASS: fixed-palette tabs repaint both old and newly selected tabs");
 
         assert((preferences.getDecorations() & (DECOR_RESIZE | DECOR_MAXIMIZE)) == (DECOR_RESIZE | DECOR_MAXIMIZE));
-        assert(dynamic_cast<FXScrollWindow*>(preferences.getFirst()) && !preferences.getFirst()->getNext());
+        assert(findClass(&preferences, "DialogScroller"));
         FXCheckButton* toggle = NULL;
         std::vector<FXButton*> rowButtons;
         std::vector<FXWindow*> pending = {&preferences};
@@ -654,9 +826,9 @@ public:
         for (FXButton* button : rowButtons)
         {
             assert(button->getBackColor() == DialogColors::field);
-            assert(button->getDefaultWidth() == rowButtons[0]->getDefaultWidth());
+            assert(button->getX() >= 0 && button->getX() + button->getWidth() <= button->getParent()->getWidth());
         }
-        puts("PASS: fixed dialogs are resizable/maximizable/scrollable with large toggles and uniform field buttons");
+        puts("PASS: fixed dialogs are resizable/maximizable/scrollable with large toggles and persistent field buttons");
 
         FileList* files = window.getCurrentPanel()->getList();
         FXColor before = files->getBackColor();
@@ -3016,6 +3188,14 @@ int main(int argc, char** argv)
     app.setForeColor(FXRGB(226, 244, 246));
     app.setSelbackColor(FXRGB(191, 67, 42));
     app.setSelforeColor(FXRGB(255, 255, 255));
+    if (FXString(getenv("SWORDFISH_TEST_DIALOG_HOST_THEME")) == "light")
+    {
+        app.setBaseColor(FXRGB(235, 235, 235));
+        app.setBorderColor(FXRGB(130, 130, 130));
+        app.setBackColor(FXRGB(255, 255, 255));
+        app.setForeColor(FXRGB(30, 30, 30));
+        app.setSelbackColor(FXRGB(30, 100, 210));
+    }
     homedir = FXSystem::getHomeDirectory();
     xdgconfighome = homedir + "/config";
     xdgdatahome = homedir + "/data";
@@ -3120,6 +3300,12 @@ int main(int argc, char** argv)
     window->getCurrentPanel()->setDirectory(fixture);
     window->getCurrentPanel()->getList()->onCmdRefresh(NULL, 0, NULL);
     pump(app);
+
+    if (getenv("SWORDFISH_TEST_DIALOG_LAYOUT_ONLY"))
+    {
+        ThemeWorkflowRegression::dialogs(app, *window);
+        std::_Exit(0);
+    }
 
     FXColor color;
     FXString error;
