@@ -1,8 +1,8 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 24 November 2026, through the 0.0.4 beta 1 release and
-subsequent user feedback and local fixes (sections 3.128-3.141).
-Latest prerelease: `swordfish-0.0.4-beta1`.
+Last updated: 24 November 2026, through the 0.0.4 beta 2 release
+(sections 3.128-3.142).
+Latest prerelease: `swordfish-0.0.4-beta2`.
 Latest stable release: `swordfish-0.0.3`.
 Previous stable release: `swordfish-0.0.2`.
 
@@ -30,9 +30,9 @@ Historical implementation details below do not override the current code.
    - [Stable release](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.3)
    - The previous stable release, `swordfish-0.0.2` (application commit
      `30a9a315476a9cf358560b5beba27f6c00a3fac7`), remains published.
-   - The newer [0.0.4 beta 1 prerelease](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.4-beta1)
-     is not the latest stable release; its four-architecture builds and
-     limitations are recorded in section 3.128.
+   - The newer [0.0.4 beta 2 prerelease](https://github.com/hasmak-44/Swordfish-FM/releases/tag/swordfish-0.0.4-beta2)
+     is not the latest stable release; it is recorded in section 3.142.
+     Beta 1 (section 3.128) remains published.
 4. Treat published releases as locked. Do not move their tags, replace their
    assets, or present local test builds as a new stable release.
 5. The **Network discovery section is intentionally hidden**, not accidentally
@@ -43,10 +43,10 @@ Historical implementation details below do not override the current code.
 7. User-confirmed fixes include the portable search warning, child-window
    icons, missing-archivemount guidance and the icon-startup fix (section 3.40).
    Distinguish those confirmations from later changes and the user's new
-   reports and local work in sections 3.129-3.141.
+   reports and the fixes released in beta 2 in sections 3.129-3.142.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.118-3.141. Older beta and RC notes are
+9. For the latest state, read sections 3.118-3.142. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide was originally added after the frozen RC4 application commit and is
@@ -4595,6 +4595,26 @@ does not claim network validation or a full GUI-suite pass.
 The manual is updated. This remains local work: no portable package, release
 or real-machine acceptance is claimed.
 
+### 3.142. Swordfish 0.0.4 beta 2 release (24 November 2026)
+
+The user downloaded and tested the amd64/i386 bundles containing the one-row
+toolbar, then asked to commit, push and publish beta 2. The toolbar change was
+committed as `689dcbf`; `7e91f1a` set the version to `0.0.4-beta2` and added
+its `CHANGELOG.md` notes, covering the fixes in sections 3.130-3.141.
+Tag `swordfish-0.0.4-beta2` points to `7e91f1a`.
+
+The tag-triggered workflow built amd64, i386, arm64 and armhf (under QEMU);
+every architecture passed its version and Debian install/reinstall/removal
+checks, and the workflow created a draft prerelease with 14 assets. All
+downloaded assets matched both the checksum manifest and GitHub's server
+digests. The released amd64 tarball contained no `portable-data`, reported
+`swordfish version 0.0.4-beta2`, and opened at 1024x600 under Openbox with
+the Ocean Depth default and a one-row toolbar ending in `>>`.
+
+The release was published as a prerelease, not marked latest; 0.0.3 remains
+the latest stable release. Physical i386, armhf and arm64 desktop testing,
+real phones and external drag interoperability remain outstanding.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -5182,11 +5202,10 @@ Do not amend published commits/tags as an automatic workaround.
 
 ### Durable starting point
 
-0.0.3 is the latest stable release; 0.0.4 beta 1 is the latest published
-prerelease. Its release and known limitations are recorded in section 3.128;
-the user's subsequent reports and local Scripts/appearance/overflow/launch
-environment/dialog/settings fixes are in sections 3.129-3.137. The cancellation cleanup was
-deferred and is not included in the beta (section 3.127). Generated
+0.0.3 is the latest stable release; 0.0.4 beta 2 is the latest published
+prerelease (section 3.142). It includes the fixes reported after beta 1
+(sections 3.129-3.141), including safer `.part` copies in place of the
+cancellation cleanup deferred from beta 1 (sections 3.127 and 3.138). Generated
 autotools files may remain modified after local builds and must not be included
 in feature commits. Inspect the current branch and worktree rather than relying
 on an old experimental ZIP, roadmap or handoff. Do not publish local work
