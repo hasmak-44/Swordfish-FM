@@ -4615,6 +4615,15 @@ The release was published as a prerelease, not marked latest; 0.0.3 remains
 the latest stable release. Physical i386, armhf and arm64 desktop testing,
 real phones and external drag interoperability remain outstanding.
 
+Afterwards, at the user's request, the 14 experimental generated themes
+(six image themes in two variants each, plus Material Light/Dark) were attached
+to the beta 2 release as a separate download, `Swordfish-Bonus-Themes.tar.gz`,
+with a `.sha256` file (`5a38a7c2…5851`). It contains a short install README and
+`colors/<theme>/` folders, each with its own `CREDITS.txt`; the themes are not
+in the repository or the built-in set. The release notes gained a Bonus themes
+section. Editing the notes cleared the prerelease flag, which was restored;
+0.0.3 remains marked latest.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
