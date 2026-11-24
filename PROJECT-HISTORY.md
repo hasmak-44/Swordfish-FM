@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
-Last updated: 23 November 2026, through the 0.0.4 beta 1 release and
-subsequent user feedback and local fixes (sections 3.128-3.134).
+Last updated: 24 November 2026, through the 0.0.4 beta 1 release and
+subsequent user feedback and local fixes (sections 3.128-3.137).
 Latest prerelease: `swordfish-0.0.4-beta1`.
 Latest stable release: `swordfish-0.0.3`.
 Previous stable release: `swordfish-0.0.2`.
@@ -43,10 +43,10 @@ Historical implementation details below do not override the current code.
 7. User-confirmed fixes include the portable search warning, child-window
    icons, missing-archivemount guidance and the icon-startup fix (section 3.40).
    Distinguish those confirmations from later changes and the user's new
-   reports and local work in sections 3.129-3.134.
+   reports and local work in sections 3.129-3.137.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.118-3.134. Older beta and RC notes are
+9. For the latest state, read sections 3.118-3.137. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide was originally added after the frozen RC4 application commit and is
@@ -4409,6 +4409,54 @@ snapshot and package caches were removed afterwards; builder images are
 rebuilt automatically by the portable build script when needed. The downloaded
 archive and its checksum remain under `/tmp` on the separate large volume.
 
+### 3.137. Remaining multi-window settings conflicts (24 November 2026)
+
+The user confirmed that the `56999f1` test build still shows "Portable settings
+changed" when using multiple instances or a root window. The supplied
+`build/same-error.png` identifies the "changed outside this window" branch.
+They identified `Swordfish-Portable-Test-20261116b` as working and the later
+`Swordfish-Portable-Test.tar.gz` as the first affected build.
+
+The original two archives were not available locally, so the comparison used
+the retained source history across those dates and the user-provided Xfe
+2.1.11 source. The earlier Swordfish and Xfe writers used a temporary file
+and atomic rename without the portable guard. Commit `b60ad0b` introduced
+that guard on 17 November; `0845c15` later added peer merging based on an
+X-root-window property. A full rollback would also remove unrelated fixes,
+so only the settings-saving mechanism is corrected:
+
+- Startup now takes the same lock as writers before inspecting temporary
+  saves or loading the registry. A focused reproduction previously mistook
+  another window's active, locked save for an interrupted one.
+- Peer recognition uses an atomically replaced `xferc.saved` record under the
+  existing lock, not an X-server property. Its token binds the saved content
+  digest to the file identity and metadata, so copied records do not authorize
+  a different file. Peer saves work before an X display is available or across
+  separate displays. A new no-display two-process check failed before this fix.
+- Metadata or inode changes alone do not block saving when the settings
+  contents are unchanged.
+- Root saves retain the existing settings owner and permissions. An actual
+  root-process check with umask 077 reproduced a root-owned replacement before
+  this correction. The save record remains readable across user IDs.
+
+Shared-preference merging, per-window browsing state, external-copy protection,
+interrupted-save recovery and the safe filesystem fallbacks remain in place.
+No theme, gallery, phone, transfer, toolbar, dialog or other later feature code
+was rolled back. Close all older windows before using an updated build; old
+and new peer-recognition protocols must not share a live profile.
+
+Validation in a clean native build staged under `/tmp`: 27 core profile checks,
+20 real-window profile checks under Xvfb (including the opt-in sudo root
+process), and eight portable-launcher checks passed. Coverage includes three
+simultaneous writers retaining all their changes, startup during a save, peer
+preference updates, restrictive root saves, copied profiles, modal-editor
+protection, persistence, portable relocation, restart and injected save races
+and failures. Four pre-existing GUI fixture failures were traced to the fixture
+disallowing no-selection actions after section 3.131; the fixture now explicitly
+allows its intended no-selection invocation. Manual and portable notes updated.
+These are local automated results, not desktop acceptance. No replacement
+portable package, commit or push was made for this fix.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -4687,7 +4735,7 @@ prereleases and must not be assumed to select RC4.
 ## 9. Unfinished work and agreements not to mistake for completed features
 
 The following retains historical handoff notes and discussions; dates and
-superseding sections matter. See sections 3.128-3.132 for the latest release
+superseding sections matter. See sections 3.128-3.137 for the latest release
 and feedback rather than assuming these notes describe the current worktree.
 
 ### 9.0 Historical position (26 October 2026)
@@ -4999,7 +5047,7 @@ Do not amend published commits/tags as an automatic workaround.
 0.0.3 is the latest stable release; 0.0.4 beta 1 is the latest published
 prerelease. Its release and known limitations are recorded in section 3.128;
 the user's subsequent reports and local Scripts/appearance/overflow/launch
-environment/dialog fixes are in sections 3.129-3.134. The cancellation cleanup was
+environment/dialog/settings fixes are in sections 3.129-3.137. The cancellation cleanup was
 deferred and is not included in the beta (section 3.127). Generated
 autotools files may remain modified after local builds and must not be included
 in feature commits. Inspect the current branch and worktree rather than relying

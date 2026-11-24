@@ -64,8 +64,6 @@ FXString portableSettingsPath;
 FXString portableSettingsProblem;
 PortableSettingsSnapshot portableSettingsBaseline;
 FXSettings portableSettingsRegistryBaseline;
-Display* portableSettingsDisplay = NULL;
-Atom portableSettingsAtom = None;
 bool portableSettingsRegistryLoaded = false;
 bool portableSettingsSyncPending = false;
 
@@ -101,39 +99,78 @@ void mergePortableSettingsEntry(const FXSettings& incoming, FXSettings& local, F
     else baseline.deleteEntry(section, key);
 }
 
-FXString portableSettingsPropertyName()
+FXString portableSettingsSaveToken(const PortableSettingsSnapshot& snapshot)
 {
+    const struct stat& info = snapshot.info;
+    FXString metadata = FXStringVal((FXlong)info.st_dev) + ":" + FXStringVal((FXlong)info.st_ino) + ":" +
+                        FXStringVal((FXlong)info.st_mode) + ":" + FXStringVal((FXlong)info.st_uid) + ":" +
+                        FXStringVal((FXlong)info.st_gid) + ":" + FXStringVal((FXlong)info.st_size) + ":" +
+                        FXStringVal((FXlong)info.st_mtim.tv_sec) + ":" + FXStringVal((FXlong)info.st_mtim.tv_nsec) + ":" +
+                        FXStringVal((FXlong)info.st_ctim.tv_sec) + ":" + FXStringVal((FXlong)info.st_ctim.tv_nsec) + ":";
     GChecksum* checksum = g_checksum_new(G_CHECKSUM_SHA256);
-    g_checksum_update(checksum, reinterpret_cast<const guchar*>(portableSettingsPath.text()),
-                      portableSettingsPath.length());
-    FXString name = "_SWORDFISH_PORTABLE_SETTINGS_" + FXString(g_checksum_get_string(checksum));
+    g_checksum_update(checksum, reinterpret_cast<const guchar*>(metadata.text()), metadata.length());
+    g_checksum_update(checksum, snapshot.digest.data(), snapshot.digest.size());
+    FXString token = g_checksum_get_string(checksum);
     g_checksum_free(checksum);
-    return name;
+    return token + "\n";
 }
 
-bool portableSettingsPropertyMatches(const PortableSettingsSnapshot& snapshot)
+bool portableSettingsSaveMatches(const PortableSettingsSnapshot& snapshot, FXString& error)
 {
-    if (!portableSettingsDisplay || portableSettingsAtom == None || !snapshot.exists) return false;
-    Atom type = None;
-    int format = 0;
-    unsigned long count = 0, remaining = 0;
-    unsigned char* value = NULL;
-    int result = XGetWindowProperty(portableSettingsDisplay, DefaultRootWindow(portableSettingsDisplay),
-                                    portableSettingsAtom, 0, snapshot.digest.size(), False, XA_STRING, &type,
-                                    &format, &count, &remaining, &value);
-    bool matches = result == Success && value && type == XA_STRING && format == 8 &&
-                   count == snapshot.digest.size() && remaining == 0 &&
-                   memcmp(value, snapshot.digest.data(), snapshot.digest.size()) == 0;
-    if (value) XFree(value);
-    return matches;
+    if (!snapshot.exists) return false;
+    FXString path = portableSettingsPath + ".saved";
+    int input = open(path.text(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (input < 0)
+    {
+        if (errno != ENOENT)
+            error = _("Cannot read the portable settings save record: ") + path + ": " + strerror(errno);
+        return false;
+    }
+    struct stat info;
+    char value[66];
+    ssize_t count = -1;
+    int failure = 0;
+    if (fstat(input, &info) != 0) failure = errno;
+    else if (!S_ISREG(info.st_mode)) failure = EINVAL;
+    else
+    {
+        do { count = read(input, value, sizeof(value)); } while (count < 0 && errno == EINTR);
+        if (count < 0) failure = errno;
+    }
+    if (close(input) != 0 && !failure) failure = errno;
+    if (failure)
+    {
+        error = _("Cannot read the portable settings save record: ") + path + ": " + strerror(failure);
+        return false;
+    }
+    FXString token = portableSettingsSaveToken(snapshot);
+    return count == token.length() && memcmp(value, token.text(), token.length()) == 0;
 }
 
-void publishPortableSettings(const PortableSettingsSnapshot& snapshot)
+bool publishPortableSettings(const PortableSettingsSnapshot& snapshot)
 {
-    if (!portableSettingsDisplay || portableSettingsAtom == None || !snapshot.exists) return;
-    XChangeProperty(portableSettingsDisplay, DefaultRootWindow(portableSettingsDisplay), portableSettingsAtom,
-                    XA_STRING, 8, PropModeReplace, snapshot.digest.data(), snapshot.digest.size());
-    XFlush(portableSettingsDisplay);
+    FXString path = portableSettingsPath + ".saved";
+    FXString pattern = path + "-XXXXXX";
+    std::vector<char> name(pattern.text(), pattern.text() + pattern.length() + 1);
+    int output = mkstemp(name.data());
+    int failure = output < 0 ? errno : 0;
+    if (output >= 0)
+    {
+        FXString token = portableSettingsSaveToken(snapshot);
+        ssize_t count;
+        do { count = write(output, token.text(), token.length()); } while (count < 0 && errno == EINTR);
+        if (count != token.length()) failure = count < 0 ? errno : EIO;
+        // Keep peer saves readable across user IDs, independent of the writer's umask.
+        if (!failure && fchmod(output, 0444) != 0) failure = errno;
+        if (close(output) != 0 && !failure) failure = errno;
+        if (!failure && rename(name.data(), path.text()) != 0) failure = errno;
+    }
+    if (!failure) return true;
+    portableSettingsProblem = _("Cannot publish the portable settings save record: ") + path + ": " + strerror(failure);
+    if (output >= 0 && unlink(name.data()) != 0 && errno != ENOENT)
+        portableSettingsProblem += _("\nCannot remove the temporary settings file: ") + FXString(name.data()) +
+                                   ": " + strerror(errno);
+    return false;
 }
 
 bool mergePortableSettings(FXSettings& incoming, bool localChangesWin)
@@ -613,8 +650,7 @@ bool replacePortableSettings(const FXString& temporary, const FXString& target)
             if (unsupportedSettingsRename(failure))
             {
                 bool replaced = replacePortableSettingsWithoutExchange(temporary, target, written);
-                if (replaced) { publishPortableSettings(portableSettingsBaseline); }
-                return replaced;
+                return replaced && publishPortableSettings(portableSettingsBaseline);
             }
             portableSettingsConflict(_("Cannot safely replace the portable settings file: ") + target + ": " +
                                      strerror(failure));
@@ -670,8 +706,7 @@ bool replacePortableSettings(const FXString& temporary, const FXString& target)
         discardSettingsTemp(temporary);
         if (!portableSettingsProblem.empty()) { return false; }
         portableSettingsBaseline = current;
-        publishPortableSettings(current);
-        return true;
+        return publishPortableSettings(current);
     }
 
     PortableSettingsSnapshot current;
@@ -683,8 +718,7 @@ bool replacePortableSettings(const FXString& temporary, const FXString& target)
     }
     if (!portableSettingsProblem.empty()) { return false; }
     portableSettingsBaseline = current;
-    publishPortableSettings(current);
-    return true;
+    return publishPortableSettings(current);
 }
 
 bool refreshPortableSettings(bool localChangesWin, bool lockHeld = false)
@@ -705,6 +739,12 @@ bool refreshPortableSettings(bool localChangesWin, bool lockHeld = false)
         return true;
     }
     if (sameSettingsSnapshot(portableSettingsBaseline, current)) return false;
+    if (portableSettingsBaseline.exists && current.exists &&
+        portableSettingsBaseline.digest == current.digest)
+    {
+        portableSettingsBaseline = current;
+        return false;
+    }
     if (!portableSettingsRegistryLoaded)
     {
         if (localChangesWin)
@@ -715,9 +755,10 @@ bool refreshPortableSettings(bool localChangesWin, bool lockHeld = false)
         portableSettingsBaseline = current;
         return false;
     }
-    if (!portableSettingsPropertyMatches(current))
+    if (!portableSettingsSaveMatches(current, error))
     {
-        portableSettingsConflict(_("The portable settings changed outside this window: ") + portableSettingsPath);
+        portableSettingsConflict(error.empty() ?
+                                 _("The portable settings changed outside this window: ") + portableSettingsPath : error);
         return true;
     }
 
@@ -750,6 +791,13 @@ void xf_watchportablesettings(FXRegistry* registry)
     portableSettingsPath = xdgconfighome + PATHSEPSTRING XFECONFIGPATH PATHSEPSTRING DESKTOP;
     portableSettingsProblem.clear();
     FXString error;
+    PortableSettingsFileLock settingsLock;
+    if (xf_existfile(FXPath::directory(portableSettingsPath)) &&
+        !settingsLock.acquire(portableSettingsPath, error, false))
+    {
+        portableSettingsConflict(error);
+        return;
+    }
     if (!readSettingsSnapshot(portableSettingsPath, portableSettingsBaseline, error))
         portableSettingsConflict(error);
     else if (findInterruptedSettingsSave(portableSettingsPath, error))
@@ -765,15 +813,6 @@ void xf_portablesettingsloaded(FXRegistry* registry)
     FXString error;
     if (!readSettingsSnapshot(portableSettingsPath, portableSettingsBaseline, error))
         portableSettingsConflict(error);
-}
-
-void xf_setportablesettingsdisplay(void* nativeDisplay)
-{
-    if (!portableSettingsRegistry) return;
-    portableSettingsDisplay = static_cast<Display*>(nativeDisplay);
-    if (!portableSettingsDisplay) return;
-    FXString name = portableSettingsPropertyName();
-    portableSettingsAtom = XInternAtom(portableSettingsDisplay, name.text(), False);
 }
 
 FXbool xf_portablesettingswatching()
@@ -800,6 +839,13 @@ FXbool xf_portablesettingssynchronized()
 bool FXRegistry::read()
 {
     FXString conflict;
+    PortableSettingsFileLock settingsLock;
+    if (this == portableSettingsRegistry && xf_existfile(FXPath::directory(portableSettingsPath)) &&
+        !settingsLock.acquire(portableSettingsPath, conflict, false))
+    {
+        portableSettingsConflict(conflict);
+        return false;
+    }
     if (this == portableSettingsRegistry && portableSettingsRegistryLoaded &&
         xf_portablesettingschanged(conflict)) { return false; }
     FXString dirname;
@@ -1003,6 +1049,16 @@ bool FXSettings::unparseFile(const FXString& filename)
 
     if (created)
     {
+        if (guarded && portableSettingsBaseline.exists)
+        {
+            const struct stat& previous = portableSettingsBaseline.info;
+            struct stat temporary;
+            if (fstat(file.handle(), &temporary) != 0) goto x;
+            if (geteuid() == 0 && (temporary.st_uid != previous.st_uid || temporary.st_gid != previous.st_gid) &&
+                fchown(file.handle(), previous.st_uid, previous.st_gid) != 0) goto x;
+            if ((temporary.st_mode & 0777) != (previous.st_mode & 0777) &&
+                fchmod(file.handle(), previous.st_mode & 0777) != 0) goto x;
+        }
         // Loop over all sections
         for (FXint s = first(); s < size(); s = next(s))
         {

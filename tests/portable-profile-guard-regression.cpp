@@ -208,6 +208,123 @@ static void inPlaceCopy(const FXString& work)
     assert(!settings.write() && contents(path) == copied);
 }
 
+static void peerSavesWithoutDisplay(const FXString& work)
+{
+    FXString path = setup(work, "peer-without-display");
+    put(path, original);
+    FXRegistry settings("xfe", "SwordFish");
+    xf_watchportablesettings(&settings);
+    assert(settings.read());
+    settings.writeStringEntry("SETTINGS", "local", "kept");
+    pid_t child = fork();
+    assert(child >= 0);
+    if (child == 0)
+    {
+        FXRegistry peer("xfe", "SwordFish");
+        xf_watchportablesettings(&peer);
+        assert(peer.read());
+        peer.writeStringEntry("SETTINGS", "choice", "peer");
+        assert(peer.write());
+        _exit(0);
+    }
+    int status;
+    assert(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    FXString problem;
+    assert(!xf_portablesettingschanged(problem));
+    assert(FXString(settings.readStringEntry("SETTINGS", "choice", "")) == "peer");
+    assert(settings.write());
+    FXRegistry saved("xfe", "SwordFish");
+    assert(saved.read());
+    assert(FXString(saved.readStringEntry("SETTINGS", "choice", "")) == "peer");
+    assert(FXString(saved.readStringEntry("SETTINGS", "local", "")) == "kept");
+    // Copying a peer's save record must not authorize an externally replaced file.
+    FXString replacement = path + ".replacement";
+    put(replacement, copied);
+    assert(rename(replacement.text(), path.text()) == 0);
+    assert(xf_portablesettingschanged(problem));
+    assert(!settings.write() && contents(path) == copied);
+}
+
+static void unchangedSettingsMetadata(const FXString& work)
+{
+    FXString path = setup(work, "unchanged-metadata");
+    put(path, original);
+    FXRegistry settings("xfe", "SwordFish");
+    xf_watchportablesettings(&settings);
+    assert(settings.read());
+    assert(chmod(path.text(), 0600) == 0);
+    FXString problem;
+    assert(!xf_portablesettingschanged(problem));
+    FXString replacement = path + ".replacement";
+    put(replacement, original);
+    assert(rename(replacement.text(), path.text()) == 0);
+    assert(!xf_portablesettingschanged(problem));
+    settings.writeStringEntry("SETTINGS", "local", "saved");
+    assert(settings.write());
+}
+
+static void concurrentPeerSaves(const FXString& work)
+{
+    FXString path = setup(work, "concurrent-peers");
+    put(path, original);
+    int ready[2], start[2];
+    assert(pipe(ready) == 0 && pipe(start) == 0);
+    pid_t children[3];
+    for (int i = 0; i < 3; ++i)
+    {
+        children[i] = fork();
+        assert(children[i] >= 0);
+        if (children[i] == 0)
+        {
+            close(ready[0]);
+            close(start[1]);
+            FXRegistry settings("xfe", "SwordFish");
+            xf_watchportablesettings(&settings);
+            assert(settings.read());
+            FXString key = "peer" + FXStringVal(i);
+            settings.writeStringEntry("SETTINGS", key.text(), "kept");
+            char byte = 0;
+            assert(write(ready[1], &byte, 1) == 1 && read(start[0], &byte, 1) == 1);
+            assert(settings.write());
+            _exit(0);
+        }
+    }
+    close(ready[1]);
+    close(start[0]);
+    char byte = 0;
+    for (int i = 0; i < 3; ++i) assert(read(ready[0], &byte, 1) == 1);
+    for (int i = 0; i < 3; ++i) assert(write(start[1], &byte, 1) == 1);
+    close(ready[0]);
+    close(start[1]);
+    for (pid_t child : children)
+    {
+        int status;
+        assert(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    }
+    FXRegistry settings("xfe", "SwordFish");
+    assert(settings.read());
+    for (int i = 0; i < 3; ++i)
+    {
+        FXString key = "peer" + FXStringVal(i);
+        assert(FXString(settings.readStringEntry("SETTINGS", key.text(), "")) == "kept");
+    }
+}
+
+static void saveRecordFailure(const FXString& work)
+{
+    FXString path = setup(work, "save-record-failure");
+    put(path, original);
+    FXRegistry settings("xfe", "SwordFish");
+    xf_watchportablesettings(&settings);
+    assert(settings.read());
+    assert(mkdir((path + ".saved").text(), 0700) == 0);
+    settings.writeStringEntry("SETTINGS", "local", "saved");
+    assert(!settings.write());
+    FXString problem;
+    assert(xf_portablesettingschanged(problem) && problem.contains("Cannot publish"));
+    assert(contents(path).find("local=saved") != std::string::npos);
+}
+
 static void missingFile(const FXString& work)
 {
     FXString path = setup(work, "missing");
@@ -511,6 +628,10 @@ int main(int argc, char** argv)
     FXString root = argv[1];
     run(root, "self-saves, another window and blocked rereads", selfSaves);
     run(root, "in-place changes with preserved timestamps", inPlaceCopy);
+    run(root, "peer saves merge without an X display; external replacement is still protected", peerSavesWithoutDisplay);
+    run(root, "unchanged settings content does not conflict after metadata or inode changes", unchangedSettingsMetadata);
+    run(root, "three simultaneous processes retain each other's settings", concurrentPeerSaves);
+    run(root, "save-record failure is reported after preserving the written settings", saveRecordFailure);
     run(root, "first save and external deletion", missingFile);
     run(root, "external creation before first save", externallyCreated);
     run(root, "temporary write failure is reported", writeFailure);

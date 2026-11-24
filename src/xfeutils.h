@@ -670,7 +670,6 @@ FXString xf_userdatahome();
 FXString xf_scriptpath();
 void xf_watchportablesettings(FXRegistry*);
 void xf_portablesettingsloaded(FXRegistry*);
-void xf_setportablesettingsdisplay(void*);
 FXbool xf_portablesettingswatching();
 FXbool xf_portablesettingschanged(FXString&);
 FXbool xf_portablesettingssynchronized();

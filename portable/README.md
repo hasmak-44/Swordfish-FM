@@ -665,14 +665,23 @@ redirected. To make those references portable before copying while the old
 location is still available, start the updated source copy, open each saved tab
 group, and quit normally.
 
+Windows running this version share preferences without a settings-conflict
+warning, including normal and root windows. Each window retains its own folders,
+tabs and layout; the last saved value wins when both change the same preference.
+Saves and startup reads use the same file lock. A small `config/swordfish/xferc.saved`
+record identifies the exact file written by a peer, without relying on an X-server
+notification. Root saves preserve the settings file's existing owner and
+permissions. Unchanged file contents do not trigger a conflict merely because
+timestamps or ownership changed.
+
 If a running portable window detects that its `xferc` settings file was changed
-externally, including by another Swordfish window, it stops reading and saving
+outside these cooperating windows, it stops reading and saving
 that window's stale settings and offers **Restart Now**, **Quit Without Saving**
 or **Keep Running**. Restart opens a fresh window with the changed settings;
 if it cannot start, the current window stays open and reports the error. Keeping
 the window open does not re-enable settings saves; custom-action refresh and
 saves also wait for a restart so an old editor cannot overwrite copied actions.
-any unsaved settings in that window are lost when it closes. If a warning names
+Any unsaved settings in that window are lost when it closes. If a warning names
 a preserved settings file,
 keep it until you have checked which version you need. If the filesystem lacks
 the operations needed for a safe settings save, an error is shown instead of
@@ -684,7 +693,8 @@ out of the settings folder before starting again.
 
 This protection covers the main settings file, not an atomic snapshot of all
 profile folders. Older versions do not have it. Close both copies before
-copying even when this protection is available.
+copying even when this protection is available. Close all older Swordfish windows
+before switching to this build; do not mix old and new versions on one live profile.
 
 The amount of logging is set in Preferences > Settings > Logging, which also
 shows the log folder. The change applies immediately:

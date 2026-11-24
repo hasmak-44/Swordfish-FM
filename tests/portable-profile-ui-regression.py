@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 import configparser
-import ctypes
 import fcntl
 import hashlib
 import os
@@ -12,6 +11,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -113,7 +113,7 @@ class PortableProfileTests(unittest.TestCase):
             f"item0.command=/usr/bin/touch {marker}\n"
             "item0.patterns=*\nitem0.kind=0\nitem0.toolbar=1\n"
             "item0.files=1\nitem0.folders=1\nitem0.single=1\nitem0.multiple=1\n"
-            "item0.background=0\nitem0.terminal=0\nitem0.confirm=0\n")
+            "item0.background=1\nitem0.terminal=0\nitem0.confirm=0\n")
         return config
 
     def windows(self, title, pid=None):
@@ -212,32 +212,18 @@ class PortableProfileTests(unittest.TestCase):
                 temporary = Path(stream.name)
             os.replace(temporary, config)
             digest = hashlib.sha256(config.read_bytes()).digest()
-
-            x11 = ctypes.CDLL("libX11.so.6")
-            x11.XOpenDisplay.restype = ctypes.c_void_p
-            x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
-            x11.XInternAtom.restype = ctypes.c_ulong
-            x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
-            x11.XDefaultRootWindow.restype = ctypes.c_ulong
-            x11.XChangeProperty.argtypes = [
-                ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong,
-                ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
-            x11.XFlush.argtypes = [ctypes.c_void_p]
-            x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
-            display = x11.XOpenDisplay(None)
-            if not display:
-                raise AssertionError("Could not open the test X display")
-            try:
-                path_hash = hashlib.sha256(os.fsencode(config)).hexdigest().encode()
-                atom = x11.XInternAtom(display, b"_SWORDFISH_PORTABLE_SETTINGS_" + path_hash, 0)
-                string_type = x11.XInternAtom(display, b"STRING", 0)
-                payload = ctypes.create_string_buffer(digest)
-                x11.XChangeProperty(
-                    display, x11.XDefaultRootWindow(display), atom, string_type,
-                    8, 0, ctypes.cast(payload, ctypes.c_void_p), len(digest))
-                x11.XFlush(display)
-            finally:
-                x11.XCloseDisplay(display)
+            info = config.stat()
+            fields = (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid, info.st_size,
+                      info.st_mtime_ns // 10**9, info.st_mtime_ns % 10**9,
+                      info.st_ctime_ns // 10**9, info.st_ctime_ns % 10**9)
+            metadata = (":".join(str(field) for field in fields) + ":").encode()
+            record = hashlib.sha256(metadata + digest).hexdigest() + "\n"
+            with tempfile.NamedTemporaryFile(
+                    mode="w", dir=config.parent, prefix="peer-record-", delete=False) as stream:
+                stream.write(record)
+                temporary = Path(stream.name)
+            temporary.chmod(0o444)
+            os.replace(temporary, config.with_name(config.name + ".saved"))
         finally:
             fcntl.flock(lock, fcntl.LOCK_UN)
             os.close(lock)
@@ -405,6 +391,70 @@ class PortableProfileTests(unittest.TestCase):
         self.send(second_window, "ctrl+q")
         self.assertEqual(second.wait(timeout=10), 0)
         self.assertTrue(config.exists())
+
+    def test_start_during_peer_save_does_not_report_interrupted_save(self):
+        bundle = self.bundle("starting-during-save")
+        config = self.profile(bundle / "portable-data", "Shared", self.root / "shared-ran")
+        process, window = self.start(bundle)
+        self.normal_quit(process, window)
+        ready = threading.Event()
+
+        def saving():
+            with config.with_name(config.name + ".lock").open("rb") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                temporary = config.with_name(f"xferc_{os.getpid()}")
+                temporary.write_bytes(config.read_bytes())
+                ready.set()
+                time.sleep(3)
+                temporary.unlink()
+
+        writer = threading.Thread(target=saving)
+        writer.start()
+        try:
+            self.assertTrue(ready.wait(5))
+            process, window = self.start(bundle)
+            writer.join(timeout=10)
+            time.sleep(1.2)
+            self.assertFalse(self.windows("Portable settings changed", process.pid))
+            self.normal_quit(process, window)
+        finally:
+            writer.join(timeout=10)
+
+    @unittest.skipUnless(os.environ.get("SWORDFISH_TEST_ROOT") == "1",
+                         "requires explicit opt-in to a sudo root-window check")
+    def test_root_window_save_keeps_normal_window_writable(self):
+        bundle = self.bundle("root-shared")
+        config = self.profile(bundle / "portable-data", "Shared", self.root / "shared-ran")
+        config.write_text(config.read_text().replace("welcome_completed=1", "welcome_completed=1\nroot_warn=0"))
+        config.chmod(0o600)
+        first, first_window = self.start(bundle)
+        launcher = self.root / "root-launcher"
+        environment = {key: self.env[key] for key in
+                       ("HOME", "DISPLAY", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+                        "XDG_CACHE_HOME", "XDG_STATE_HOME", "LC_ALL")}
+        if "XAUTHORITY" in self.env:
+            environment["XAUTHORITY"] = self.env["XAUTHORITY"]
+        command = ["sudo", "-A", "env", *[f"{key}={value}" for key, value in environment.items()],
+                   str(bundle / "AppRun")]
+        launcher.write_text("#!/bin/sh\numask 077\nexec " + shlex.join(command) + ' "$@"\n')
+        launcher.chmod(0o755)
+        try:
+            second, second_window = self.start(bundle, launcher)
+            self.normal_quit(second, second_window)
+            self.assertEqual(config.stat().st_uid, os.getuid())
+            self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(config.with_name(config.name + ".saved").stat().st_mode & 0o777, 0o444)
+            time.sleep(1.2)
+            self.assertFalse(self.windows("Portable settings changed", first.pid))
+            self.normal_quit(first, first_window)
+            self.assertEqual(config.stat().st_uid, os.getuid())
+        finally:
+            for process in self.processes:
+                if process.poll() is None:
+                    process.terminate()
+                    process.wait(timeout=10)
+            subprocess.run(["sudo", "-A", "chown", "-R", f"{os.getuid()}:{os.getgid()}",
+                            str(bundle)], check=True)
 
     def test_peer_preference_updates_merge_in_open_windows(self):
         bundle = self.bundle("shared")
