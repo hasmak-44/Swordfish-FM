@@ -1,5 +1,35 @@
 # Swordfish FM portable changelog
 
+## swordfish-0.0.4-beta2 — 24 November 2026
+
+Second beta for testing. Portable ZIP, tar.gz and portable `.deb` packages
+are supplied for amd64, i386, armhf and arm64. Back up `portable-data` before
+trying the beta; 0.0.3 remains the latest stable release.
+
+### Changes since 0.0.4 beta 1
+- Windows fit small screens such as 1024x600 netbooks, and the main toolbar
+  stays on one row, with a `>>` menu for buttons that do not fit.
+- Local copies and moves check free space first and write to a temporary
+  `.part` file, replacing the destination only when the copy is complete.
+  Cancelling or an ordinary error removes the partial file.
+- Several windows, including a root window, no longer conflict when saving
+  settings; portable settings stay in step between windows.
+- The Scripts menu runs scripts again, using the active pane's selection, and
+  Tools → Scripts is available from the file context menu.
+- Custom Action appearance conditions are corrected, and the custom toolbar
+  gains a `>>` overflow menu while keeping its Settings button visible.
+- Applications launched from Swordfish use the computer's normal settings and
+  caches instead of the portable profile.
+- Fixed-colour dialogs open at a usable size with their buttons visible.
+
+### Known limitations
+- A crash or power loss during a copy can leave a `.part` file behind;
+  the previous destination file is kept.
+- Physical USB removal, real phone transfers and external drag-and-drop
+  interoperability still need further testing.
+- Removing the portable `.deb` also removes the installed portable folder and
+  its settings. Back up `portable-data` before uninstalling.
+
 ## swordfish-0.0.4-beta1 — 21 November 2026
 
 Beta release for testing. Portable ZIP, tar.gz and portable `.deb` packages
