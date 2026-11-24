@@ -108,6 +108,255 @@ extern FXStringDict* updevices;
 #endif
 
 
+class MainToolBar : public ThemeToolBar
+{
+    FXDECLARE(MainToolBar)
+    struct Entry
+    {
+        FXWindow* button;
+        FXWindow* item;
+        bool separator;
+    };
+    std::vector<Entry> entries;
+    FXToolBarGrip* grip = NULL;
+    FXMenuPane* menu = NULL;
+    FXMenuButton* overflow = NULL;
+
+    static FXint widthOf(FXWindow* widget)
+    {
+        return widget->getLayoutHints() & LAYOUT_FIX_WIDTH ? widget->getWidth() : widget->getDefaultWidth();
+    }
+
+    static FXint heightOf(FXWindow* widget)
+    {
+        return widget->getLayoutHints() & LAYOUT_FIX_HEIGHT ? widget->getHeight() : widget->getDefaultHeight();
+    }
+
+    bool horizontal() const
+    {
+        return getDockingSide() == LAYOUT_SIDE_TOP || getDockingSide() == LAYOUT_SIDE_BOTTOM;
+    }
+
+    FXint naturalWidth()
+    {
+        FXint width = getPadLeft() + getPadRight() + 2 * getBorderWidth();
+        if (grip) width += widthOf(grip);
+        for (const Entry& entry : entries) width += widthOf(entry.button) + getHSpacing();
+        return width;
+    }
+
+    FXint minimumWidth()
+    {
+        return getPadLeft() + getPadRight() + 2 * getBorderWidth() +
+               (grip ? widthOf(grip) + getHSpacing() : 0) + overflow->getDefaultWidth();
+    }
+
+protected:
+    MainToolBar() {}
+
+public:
+    enum { ID_COMMAND = ThemeToolBar::ID_LAST, ID_LAST = ID_COMMAND + 256 };
+
+    MainToolBar(FXComposite* parent, FXComposite* shell, FXuint opts) :
+        ThemeToolBar(parent, shell, opts)
+    {
+        if (horizontal()) setLayoutHints(getLayoutHints() & ~LAYOUT_DOCK_NEXT);
+    }
+
+    ~MainToolBar()
+    {
+        delete overflow;
+        delete menu;
+    }
+
+    void initialize(bool panelControls = false)
+    {
+        menu = new FXMenuPane(this, POPUP_SHRINKWRAP);
+        for (FXWindow* child = getFirst(); child; child = child->getNext())
+        {
+            if (FXToolBarGrip* handle = dynamic_cast<FXToolBarGrip*>(child))
+            {
+                grip = handle;
+                continue;
+            }
+            FXButton* button = dynamic_cast<FXButton*>(child);
+            FXArrowButton* arrow = dynamic_cast<FXArrowButton*>(child);
+            FXWindow* item = NULL;
+            if (button || arrow)
+            {
+                FXString text = button ? button->getTipText() : arrow->getTipText();
+                text.substitute("&", "&&");
+                FXSelector selector = ID_COMMAND + entries.size();
+                const FXSelector command = child->getSelector();
+                const bool radio = panelControls &&
+                    (dynamic_cast<XFileExplorer*>(child->getTarget()) ||
+                     command == FilePanel::ID_SHOW_BIG_ICONS || command == FilePanel::ID_SHOW_THUMBNAILS ||
+                     command == FilePanel::ID_SHOW_DETAILS);
+                item = radio ?
+                    static_cast<FXWindow*>(new FXMenuRadio(menu, text, this, selector)) :
+                    static_cast<FXWindow*>(new FXMenuCommand(menu, text, button ? button->getIcon() : NULL,
+                                                           this, selector));
+            }
+            else if (dynamic_cast<FXVerticalSeparator*>(child))
+                item = new FXMenuSeparator(menu);
+            entries.push_back({child, item, !button && !arrow});
+        }
+        overflow = new FXMenuButton(this, ">>\t" + FXString(_("More toolbar commands")), NULL, menu,
+                                   MENUBUTTON_DOWN | BUTTON_TOOLBAR | FRAME_NONE | LAYOUT_CENTER_Y);
+        overflow->hide();
+    }
+
+    FXint getDefaultWidth() override
+    {
+        if (!menu) return ThemeToolBar::getDefaultWidth();
+        if (!horizontal())
+        {
+            FXint width = grip ? widthOf(grip) : 0;
+            for (const Entry& entry : entries) width = FXMAX(width, widthOf(entry.button));
+            return width + getPadLeft() + getPadRight() + 2 * getBorderWidth();
+        }
+        FXDockSite* dock = dynamic_cast<FXDockSite*>(getParent());
+        if (!dock) return naturalWidth();
+
+        FXWindow* first = this;
+        while (first->getPrev() && !(first->getLayoutHints() & LAYOUT_DOCK_NEXT))
+            first = first->getPrev();
+        std::vector<FXWindow*> row;
+        FXint required = 0;
+        for (FXWindow* child = first; child; child = child->getNext())
+        {
+            if (!child->shown()) continue;
+            if (!row.empty() && (child->getLayoutHints() & LAYOUT_DOCK_NEXT)) break;
+            MainToolBar* bar = dynamic_cast<MainToolBar*>(child);
+            if (!row.empty()) required += dock->getHSpacing();
+            required += bar && bar->menu ? bar->naturalWidth() : widthOf(child);
+            row.push_back(child);
+        }
+        FXint shortage = FXMAX(0, required - dock->getWidth() + dock->getPadLeft() +
+                                  dock->getPadRight() + 2 * dock->getBorderWidth());
+        // Keep the earlier toolbar groups intact before overflowing later groups.
+        for (auto it = row.rbegin(); it != row.rend(); ++it)
+        {
+            MainToolBar* bar = dynamic_cast<MainToolBar*>(*it);
+            if (!bar || !bar->menu) continue;
+            FXint width = bar->naturalWidth();
+            FXint reduction = FXMIN(shortage, FXMAX(0, width - bar->minimumWidth()));
+            if (bar == this) return width - reduction;
+            shortage -= reduction;
+        }
+        return naturalWidth();
+    }
+
+    FXint getDefaultHeight() override
+    {
+        if (!menu) return ThemeToolBar::getDefaultHeight();
+        FXint height = grip ? heightOf(grip) : 0;
+        if (horizontal())
+        {
+            height = FXMAX(height, overflow->getDefaultHeight());
+            for (const Entry& entry : entries) height = FXMAX(height, heightOf(entry.button));
+        }
+        else
+            for (const Entry& entry : entries) height += heightOf(entry.button) + getVSpacing();
+        return height + getPadTop() + getPadBottom() + 2 * getBorderWidth();
+    }
+
+    void layout() override
+    {
+        if (!menu) { ThemeToolBar::layout(); return; }
+        if (!horizontal())
+        {
+            for (const Entry& entry : entries) entry.button->show();
+            overflow->hide();
+            ThemeToolBar::layout();
+            return;
+        }
+        const FXint top = getPadTop() + getBorderWidth();
+        const FXint height = FXMAX(1, getHeight() - top - getPadBottom() - getBorderWidth());
+        FXint x = getPadLeft() + getBorderWidth();
+        if (grip)
+        {
+            grip->position(x, top, widthOf(grip), height);
+            x += widthOf(grip) + getHSpacing();
+        }
+        const FXint right = getWidth() - getPadRight() - getBorderWidth();
+        const bool more = naturalWidth() > getWidth();
+        const FXint overflowX = FXMAX(x, right - overflow->getDefaultWidth());
+        const FXint limit = more ? overflowX - getHSpacing() : right;
+        unsigned visible = 0;
+        FXint end = x;
+        while (visible < entries.size() && end + widthOf(entries[visible].button) <= limit)
+        {
+            end += widthOf(entries[visible].button) + getHSpacing();
+            ++visible;
+        }
+        while (visible && entries[visible - 1].separator) --visible;
+        bool haveCommand = false;
+        FXWindow* pendingSeparator = NULL;
+        for (unsigned i = 0; i < entries.size(); ++i)
+        {
+            const Entry& entry = entries[i];
+            if (entry.item) entry.item->hide();
+            if (i < visible)
+            {
+                const bool fill = entry.button->getLayoutHints() & LAYOUT_FILL_Y;
+                const FXint itemHeight = fill ? height : FXMIN(height, heightOf(entry.button));
+                entry.button->show();
+                entry.button->position(x, top + (height - itemHeight) / 2,
+                                       widthOf(entry.button), itemHeight);
+                x += widthOf(entry.button) + getHSpacing();
+            }
+            else
+            {
+                entry.button->hide();
+                if (!entry.item) continue;
+                if (entry.separator)
+                {
+                    if (haveCommand) pendingSeparator = entry.item;
+                }
+                else
+                {
+                    if (pendingSeparator) pendingSeparator->show();
+                    pendingSeparator = NULL;
+                    entry.item->show();
+                    haveCommand = true;
+                }
+            }
+        }
+        menu->recalc();
+        if (more)
+        {
+            overflow->show();
+            overflow->position(overflowX, top, overflow->getDefaultWidth(), height);
+        }
+        else overflow->hide();
+        flags &= ~FLAG_DIRTY;
+    }
+
+    long onCommand(FXObject* sender, FXSelector selector, void* pointer)
+    {
+        FXWindow* button = entries[FXSELID(selector) - ID_COMMAND].button;
+        return button->getTarget()->handle(sender, FXSEL(SEL_COMMAND, button->getSelector()), pointer);
+    }
+
+    long onUpdate(FXObject* sender, FXSelector selector, void* pointer)
+    {
+        FXWindow* button = entries[FXSELID(selector) - ID_COMMAND].button;
+        if (FXMenuRadio* item = dynamic_cast<FXMenuRadio*>(sender))
+            item->setRadioColor(item->getBackColor());
+        if (!button->getTarget()->tryHandle(sender, FXSEL(SEL_UPDATE, button->getSelector()), pointer))
+            sender->handle(this, FXSEL(SEL_COMMAND, button->isEnabled() ? ID_ENABLE : ID_DISABLE), pointer);
+        return 1;
+    }
+};
+
+FXDEFMAP(MainToolBar) MainToolBarMap[] =
+{
+    FXMAPFUNCS(SEL_COMMAND, MainToolBar::ID_COMMAND, MainToolBar::ID_LAST - 1, MainToolBar::onCommand),
+    FXMAPFUNCS(SEL_UPDATE, MainToolBar::ID_COMMAND, MainToolBar::ID_LAST - 1, MainToolBar::onUpdate)
+};
+FXIMPLEMENT(MainToolBar, ThemeToolBar, MainToolBarMap, ARRAYNUMBER(MainToolBarMap))
+
 // Helper function to draw a toolbar separator
 static void toolbarSeparator(FXToolBar* tb)
 {
@@ -604,7 +853,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (top[i] == 0)
         {            
             FXToolBarShell* dragshell1 = new FXToolBarShell(this, FRAME_NONE);
-            generaltoolbar = new ThemeToolBar(topdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+            generaltoolbar = new MainToolBar(topdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
             new FXToolBarGrip(generaltoolbar, generaltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
             generaltoolbar->show();
         }
@@ -613,7 +862,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (top[i] == 1)
         {            
             FXToolBarShell* dragshell2 = new FXToolBarShell(this, FRAME_NONE);
-            toolstoolbar = new ThemeToolBar(topdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+            toolstoolbar = new MainToolBar(topdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
             new FXToolBarGrip(toolstoolbar, toolstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
        
@@ -621,7 +870,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (top[i] == 2)
         {
             FXToolBarShell* dragshell3 = new FXToolBarShell(this, FRAME_NONE);
-            paneltoolbar = new ThemeToolBar(topdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+            paneltoolbar = new MainToolBar(topdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
             new FXToolBarGrip(paneltoolbar, paneltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -649,7 +898,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (bottom[i] == 0)
         {            
             FXToolBarShell* dragshell1 = new FXToolBarShell(this, FRAME_NONE);
-            generaltoolbar = new ThemeToolBar(bottomdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
+            generaltoolbar = new MainToolBar(bottomdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
             new FXToolBarGrip(generaltoolbar, generaltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -657,7 +906,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (bottom[i] == 1)
         {            
             FXToolBarShell* dragshell2 = new FXToolBarShell(this, FRAME_NONE);
-            toolstoolbar = new ThemeToolBar(bottomdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
+            toolstoolbar = new MainToolBar(bottomdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
             new FXToolBarGrip(toolstoolbar, toolstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -665,7 +914,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (bottom[i] == 2)
         {
             FXToolBarShell* dragshell3 = new FXToolBarShell(this, FRAME_NONE);
-            paneltoolbar = new ThemeToolBar(bottomdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
+            paneltoolbar = new MainToolBar(bottomdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_BOTTOM);
             new FXToolBarGrip(paneltoolbar, paneltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
 
@@ -693,7 +942,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (left[i] == 0)
         {            
             FXToolBarShell* dragshell1 = new FXToolBarShell(this, FRAME_NONE);
-            generaltoolbar = new ThemeToolBar(leftdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
+            generaltoolbar = new MainToolBar(leftdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
             new FXToolBarGrip(generaltoolbar, generaltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -701,7 +950,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (left[i] == 1)
         {            
             FXToolBarShell* dragshell2 = new FXToolBarShell(this, FRAME_NONE);
-            toolstoolbar = new ThemeToolBar(leftdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
+            toolstoolbar = new MainToolBar(leftdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
             new FXToolBarGrip(toolstoolbar, toolstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
        
@@ -709,7 +958,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (left[i] == 2)
         {
             FXToolBarShell* dragshell3 = new FXToolBarShell(this, FRAME_NONE);
-            paneltoolbar = new ThemeToolBar(leftdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
+            paneltoolbar = new MainToolBar(leftdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_LEFT);
             new FXToolBarGrip(paneltoolbar, paneltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -737,7 +986,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (right[i] == 0)
         {            
             FXToolBarShell* dragshell1 = new FXToolBarShell(this, FRAME_NONE);
-            generaltoolbar = new ThemeToolBar(rightdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
+            generaltoolbar = new MainToolBar(rightdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
             new FXToolBarGrip(generaltoolbar, generaltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -745,7 +994,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (right[i] == 1)
         {            
             FXToolBarShell* dragshell2 = new FXToolBarShell(this, FRAME_NONE);
-            toolstoolbar = new ThemeToolBar(rightdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
+            toolstoolbar = new MainToolBar(rightdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
             new FXToolBarGrip(toolstoolbar, toolstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
         
@@ -753,7 +1002,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
         if (right[i] == 2)
         {
             FXToolBarShell* dragshell3 = new FXToolBarShell(this, FRAME_NONE);
-            paneltoolbar = new ThemeToolBar(rightdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
+            paneltoolbar = new MainToolBar(rightdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_RIGHT);
             new FXToolBarGrip(paneltoolbar, paneltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         }
 
@@ -780,7 +1029,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     if (!general_shown)
     {
         FXToolBarShell* dragshell1 = new FXToolBarShell(this, FRAME_NONE);
-        generaltoolbar = new ThemeToolBar(topdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+        generaltoolbar = new MainToolBar(topdock, dragshell1, general_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
         new FXToolBarGrip(generaltoolbar, generaltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);        
         
         generaltoolbar->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_HIDE), NULL);
@@ -794,7 +1043,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     if (!tools_shown)
     {            
         FXToolBarShell* dragshell2 = new FXToolBarShell(this, FRAME_NONE);
-        toolstoolbar = new ThemeToolBar(topdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+        toolstoolbar = new MainToolBar(topdock, dragshell2, tools_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
         new FXToolBarGrip(toolstoolbar, toolstoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         
         toolstoolbar->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_HIDE), NULL);
@@ -808,7 +1057,7 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
     if (!panel_shown)
     {
         FXToolBarShell* dragshell3 = new FXToolBarShell(this, FRAME_NONE);
-        paneltoolbar = new ThemeToolBar(topdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
+        paneltoolbar = new MainToolBar(topdock, dragshell3, panel_galley | FRAME_NONE | LAYOUT_SIDE_TOP);
         new FXToolBarGrip(paneltoolbar, paneltoolbar, FXToolBar::ID_TOOLBARGRIP, TOOLBARGRIP_DOUBLE);
         
         paneltoolbar->handle(this, FXSEL(SEL_COMMAND, FXWindow::ID_HIDE), NULL);
@@ -1594,6 +1843,10 @@ XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, con
                  BUTTON_TOOLBAR | LAYOUT_CENTER_Y | LAYOUT_LEFT | FRAME_NONE);
     new FXButton(paneltoolbar, TAB + _("Zoom In"), minizoominicon, lpanel, FilePanel::ID_ZOOM_IN,
                  BUTTON_TOOLBAR | LAYOUT_CENTER_Y | LAYOUT_LEFT | FRAME_NONE);
+
+    static_cast<MainToolBar*>(generaltoolbar)->initialize();
+    static_cast<MainToolBar*>(toolstoolbar)->initialize();
+    static_cast<MainToolBar*>(paneltoolbar)->initialize(true);
 
     // Edit the current panel's path
     key = getApp()->reg().readStringEntry("KEYBINDINGS", "clear_address", "Ctrl-L");
@@ -4537,8 +4790,10 @@ long XFileExplorer::onCmdDirBackHist(FXObject* sender, FXSelector, void*)
 
         // Display list box
         int x, y;
-        btnbackhist->translateCoordinatesTo(x, y, getRoot(), 0, btnbackhist->getHeight());
-        int pos = DirHistBox::box(btnbackhist, DECOR_NONE, strlist, x, y);
+        FXWindow* anchor = dynamic_cast<FXWindow*>(sender);
+        if (!anchor) anchor = btnbackhist;
+        anchor->translateCoordinatesTo(x, y, getRoot(), 0, anchor->getHeight());
+        int pos = DirHistBox::box(anchor, DECOR_NONE, strlist, x, y);
 
         // If an item was selected
         if (pos != -1)
@@ -4641,8 +4896,10 @@ long XFileExplorer::onCmdDirForwardHist(FXObject* sender, FXSelector, void*)
 
         // Display list box
         int x, y;
-        btnforwardhist->translateCoordinatesTo(x, y, getRoot(), 0, btnforwardhist->getHeight());
-        int pos = DirHistBox::box(btnforwardhist, DECOR_NONE, strlist, x, y);
+        FXWindow* anchor = dynamic_cast<FXWindow*>(sender);
+        if (!anchor) anchor = btnforwardhist;
+        anchor->translateCoordinatesTo(x, y, getRoot(), 0, anchor->getHeight());
+        int pos = DirHistBox::box(anchor, DECOR_NONE, strlist, x, y);
 
         // If an item was selected
         if (pos != -1)

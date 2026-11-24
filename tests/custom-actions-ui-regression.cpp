@@ -1022,11 +1022,11 @@ public:
 class ToolbarHistoryAutomation : public FXObject
 {
     FXApp& app;
-    FXArrowButton* button;
+    FXWindow* button;
     FXString expected;
 public:
     bool handled = false;
-    ToolbarHistoryAutomation(FXApp& application, FXArrowButton* arrow, const FXString& path) :
+    ToolbarHistoryAutomation(FXApp& application, FXWindow* arrow, const FXString& path) :
         app(application), button(arrow), expected(path) {}
     long handle(FXObject*, FXSelector, void*)
     {
@@ -1070,7 +1070,7 @@ static void checkPaneHistory(FXApp& app, FilePanel* panel, FXArrowButton* button
     assert(choose.handled && panel->getDirectory() == expected);
 }
 
-static void checkToolbarHistory(FXApp& app, FilePanel* panel, FXArrowButton* button, const FXString& expected)
+static void checkToolbarHistory(FXApp& app, FilePanel* panel, FXWindow* button, const FXString& expected)
 {
     // The window manager can steal focus and close the list first; retry the pick
     for (int attempt = 0; attempt < 6 && panel->getDirectory() != expected; ++attempt)
@@ -1156,6 +1156,225 @@ static void captureWindow(FXWindow* window, const char* name)
     FXString command;
     command.format("import -window 0x%lx '%s/%s.png'", (unsigned long)window->id(), directory, name);
     assert(system(command.text()) == 0);
+}
+
+static void checkMainToolbarOverflow(FXApp& app, XFileExplorer* window, const FXString& fixture)
+{
+    const FXint oldWidth = window->getWidth(), oldHeight = window->getHeight();
+    const Theme original = Theme::current(&app);
+    std::vector<FXToolBar*> bars;
+    std::vector<FXMenuButton*> overflows;
+    for (FXToolBar* bar : widgets<FXToolBar>(window))
+        for (FXMenuButton* button : widgets<FXMenuButton>(bar))
+            if (button->getTipText() == "More toolbar commands")
+            {
+                bars.push_back(bar);
+                overflows.push_back(button);
+            }
+    assert(bars.size() == 3);
+    auto settle = [&]()
+    {
+        class Delay : public FXObject
+        {
+        public:
+            FXuint done = 0;
+            long handle(FXObject*, FXSelector, void*) override { done = 1; return 1; }
+        } delay;
+        app.addTimeout(&delay, 1, 50);
+        app.runUntil(delay.done);
+        app.flush(true);
+    };
+    auto check = [&]()
+    {
+        FXint right = 0;
+        unsigned hidden = 0;
+        for (unsigned n = 0; n < bars.size(); ++n)
+        {
+            FXToolBar* bar = bars[n];
+            if (!bar->shown()) continue;
+            if (bar->getX() < right)
+                std::fprintf(stderr, "Toolbar %u overlaps: x=%d width=%d previous-right=%d dock-width=%d\n",
+                             n, bar->getX(), bar->getWidth(), right, bar->getParent()->getWidth());
+            assert(bar->getY() == bars[0]->getY());
+            assert(bar->getX() >= right);
+            assert(bar->getX() + bar->getWidth() <= bar->getParent()->getWidth());
+            right = bar->getX() + bar->getWidth();
+            std::vector<FXString> expected, actual;
+            FXint previous = 0;
+            for (FXWindow* child = bar->getFirst(); child; child = child->getNext())
+            {
+                if (child == overflows[n]) continue;
+                FXString tip;
+                if (FXButton* button = dynamic_cast<FXButton*>(child)) tip = button->getTipText();
+                if (FXArrowButton* arrow = dynamic_cast<FXArrowButton*>(child)) tip = arrow->getTipText();
+                if (!child->shown())
+                {
+                    if (!tip.empty()) { expected.push_back(tip); ++hidden; }
+                    continue;
+                }
+                assert(child->getX() >= previous);
+                assert(child->getX() + child->getWidth() <=
+                       (overflows[n]->shown() ? overflows[n]->getX() : bar->getWidth()));
+                previous = child->getX() + child->getWidth();
+            }
+            bool separator = true;
+            for (FXWindow* item = overflows[n]->getMenu()->getFirst(); item; item = item->getNext())
+            {
+                if (!item->shown()) continue;
+                if (FXMenuCaption* caption = dynamic_cast<FXMenuCaption*>(item))
+                {
+                    actual.push_back(caption->getText());
+                    separator = false;
+                }
+                else { assert(!separator); separator = true; }
+            }
+            assert(actual.empty() || !separator);
+            assert(actual == expected);
+            assert(overflows[n]->shown() == !expected.empty());
+            if (overflows[n]->shown())
+                assert(overflows[n]->getX() + overflows[n]->getWidth() <= bar->getWidth());
+        }
+        return hidden;
+    };
+    window->resize(1240, 730); settle();
+    assert(check() == 0);
+    FXint exact = 0;
+    for (FXToolBar* bar : bars) exact += bar->getWidth();
+    for (FXint width : {exact, exact - 1, exact + 1, 800, 640, 1240})
+    {
+        window->resize(width, 600); settle();
+        unsigned hidden = check();
+        if (width >= exact) assert(hidden == 0);
+        else assert(hidden > 0);
+    }
+    puts("PASS: main toolbar stays on one row; exact fit, one-pixel overflow, narrow resize and widening preserve command order");
+    window->resize(800, 600);
+    for (FXToolBar* bar : bars)
+    {
+        bar->handle(window, FXSEL(SEL_COMMAND, FXWindow::ID_TOGGLESHOWN), NULL); settle(); check();
+        bar->handle(window, FXSEL(SEL_COMMAND, FXWindow::ID_TOGGLESHOWN), NULL); settle(); check();
+    }
+    FXToolBar* panelBar = bars.back();
+    FXDockSite* dock = dynamic_cast<FXDockSite*>(panelBar->getParent());
+    FXWindow* next = panelBar->getNext();
+    const FXuint hints = panelBar->getLayoutHints();
+    FXDockSite* side = panelBar->findDockAtSide(LAYOUT_SIDE_LEFT);
+    assert(dock && side);
+    panelBar->dock(side); settle();
+    assert(!overflows.back()->shown());
+    for (FXWindow* child = panelBar->getFirst(); child != overflows.back(); child = child->getNext())
+        assert(child->shown());
+    panelBar->undock(30, 30); settle();
+    assert(panelBar->getParent() == panelBar->getWetDock());
+    panelBar->dock(dock, next); panelBar->setLayoutHints(hints); settle(); check();
+    puts("PASS: hiding/showing groups, vertical docking, floating and redocking retain original toolbar controls");
+
+    Theme themes[] = {
+        Theme("Light", "", FXRGB(238,238,238), FXRGB(100,100,100), FXRGB(255,255,255),
+              FXRGB(20,20,20), FXRGB(45,90,140), FXRGB(255,255,255), FXRGB(250,250,250),
+              FXRGB(20,20,20), FXRGB(230,235,240)),
+        Theme("Dark", "", FXRGB(35,42,52), FXRGB(90,100,110), FXRGB(24,30,40),
+              FXRGB(230,235,240), FXRGB(55,95,140), FXRGB(255,255,255), FXRGB(24,30,40),
+              FXRGB(230,235,240), FXRGB(35,43,55))
+    };
+    for (unsigned color = 0; color < 2; ++color)
+    {
+        themes[color].writeActive(app.reg()); window->applyTheme(themes[color]);
+        for (FXint width : {1240, 1024, 800})
+        {
+            window->position(0, 0, width, width == 1240 ? 730 : 600); settle(); check();
+            FXString name = FXString(color ? "main-dark-" : "main-light-") + FXStringVal(width);
+            assert(system("xdotool mousemove 1278 898") == 0);
+            captureWindow(window, name.text());
+            FXMenuButton* more = overflows.back();
+            if (!more->shown()) continue;
+            mouseClick(more, 1); settle();
+            assert(more->getMenu()->shown());
+            FXWindow* last = NULL;
+            for (FXWindow* item = more->getMenu()->getFirst(); item; item = item->getNext())
+                if (item->shown())
+                {
+                    if (FXMenuRadio* radio = dynamic_cast<FXMenuRadio*>(item))
+                        assert(themeContrast(radio->getTextColor(), radio->getRadioColor()) >= 4.5);
+                    assert(item->getY() >= 0);
+                    if (last) assert(item->getY() == last->getY() + last->getHeight());
+                    last = item;
+                }
+            captureWindow(app.getRootWindow(), (name + "-popup").text());
+            more->handle(NULL, FXSEL(SEL_COMMAND, FXMenuButton::ID_UNPOST), NULL);
+        }
+        window->resize(800, 600); settle();
+        FXMenuCaption* longest = NULL;
+        for (FXWindow* item = overflows.back()->getMenu()->getFirst(); item; item = item->getNext())
+            if (item->shown())
+                if (FXMenuCaption* caption = dynamic_cast<FXMenuCaption*>(item)) longest = caption;
+        assert(longest);
+        FXString text = longest->getText();
+        longest->setText("Zoom in - a deliberately long translated toolbar command label");
+        mouseClick(overflows.back(), 1); settle();
+        captureWindow(app.getRootWindow(), color ? "main-dark-long-label" : "main-light-long-label");
+        overflows.back()->handle(NULL, FXSEL(SEL_COMMAND, FXMenuButton::ID_UNPOST), NULL);
+        longest->setText(text);
+    }
+    for (FilePanel* panel : {window->getLeftPanel(), window->getRightPanel()})
+    {
+        panel->setActive();
+        window->resize(800, 600); settle();
+        FXMenuCommand* zoom = NULL;
+        FXMenuCommand* reset = NULL;
+        for (FXWindow* item = overflows.back()->getMenu()->getFirst(); item; item = item->getNext())
+            if (FXMenuCommand* command = dynamic_cast<FXMenuCommand*>(item))
+            {
+                if (command->getText() == "Zoom In") zoom = command;
+                if (command->getText() == "Reset Zoom") reset = command;
+            }
+        assert(zoom && reset && zoom->shown());
+        const FXint before = panel->getList()->getViewIconSize();
+        mouseClick(overflows.back(), 1); settle();
+        assert(overflows.back()->getMenu()->shown());
+        mouseClick(zoom, 1); settle();
+        assert(panel->getList()->getViewIconSize() > before);
+        reset->getTarget()->handle(reset, FXSEL(SEL_COMMAND, reset->getSelector()), NULL);
+        FXMenuRadio* icons = NULL;
+        FXMenuRadio* details = NULL;
+        for (FXWindow* item = overflows.back()->getMenu()->getFirst(); item; item = item->getNext())
+            if (FXMenuRadio* radio = dynamic_cast<FXMenuRadio*>(item))
+            {
+                if (radio->getText().left(6) == "Icons ") icons = radio;
+                if (radio->getText().left(8) == "Details ") details = radio;
+            }
+        assert(icons && details && icons->shown() && details->shown());
+        FilePanel* other = panel == window->getLeftPanel() ? window->getRightPanel() : window->getLeftPanel();
+        const FXuint otherStyle = other->getList()->getListStyle();
+        mouseClick(overflows.back(), 1); settle();
+        assert(details->getCheck() && !icons->getCheck());
+        mouseClick(icons, 1); settle();
+        assert(panel->getList()->getListStyle() & ICONLIST_BIG_ICONS);
+        assert(other->getList()->getListStyle() == otherStyle);
+        mouseClick(overflows.back(), 1); settle();
+        assert(icons->getCheck() && !details->getCheck());
+        captureWindow(app.getRootWindow(), panel == window->getLeftPanel() ?
+                      "main-dark-left-icons-selected" : "main-dark-right-icons-selected");
+        mouseClick(details, 1); settle();
+    }
+    FilePanel* left = window->getLeftPanel();
+    left->setActive(); left->setDirectory(fixture);
+    left->backhistRemoveAllItems(); left->forwardhistRemoveAllItems();
+    assert(left->navigatePane(fixture + "/other"));
+    FXMenuCaption* history = NULL;
+    for (FXWindow* item = overflows.front()->getMenu()->getFirst(); item; item = item->getNext())
+        if (FXMenuCaption* caption = dynamic_cast<FXMenuCaption*>(item))
+            if (caption->getText() == "Back History") history = caption;
+    assert(history);
+    history->getTarget()->handle(history, FXSEL(SEL_UPDATE, history->getSelector()), NULL);
+    assert(history->isEnabled());
+    checkToolbarHistory(app, left, history, fixture);
+    left->backhistRemoveAllItems();
+    history->getTarget()->handle(history, FXSEL(SEL_UPDATE, history->getSelector()), NULL);
+    assert(!history->isEnabled());
+    puts("PASS: overflow zoom and radio commands update correctly; view changes target the active pane, history proxy anchors its popup and updates enabled state");
+    original.writeActive(app.reg()); window->applyTheme(original);
+    window->resize(oldWidth, oldHeight); settle();
 }
 
 static void captureScriptScreen(FXApp& app, const FXString& name)
@@ -2436,10 +2655,22 @@ int main(int argc, char** argv)
                 app.reg().readStringEntry("SETTINGS", "iconpath", ""));
         assert(false);
     }
+    if (getenv("SWORDFISH_TEST_MAIN_TOOLBAR_ONLY"))
+    {
+        FXString wrapped = "1;" + FXStringVal(LAYOUT_SIDE_TOP) + ";" + FXStringVal(LAYOUT_DOCK_NEXT);
+        app.reg().writeStringEntry("OPTIONS", "toolstoolbar", wrapped.text());
+        app.reg().writeStringEntry("OPTIONS", "paneltoolbar", wrapped.text());
+    }
     vector_FXString paths; paths.push_back(fixture); paths.push_back(fixture);
     XFileExplorer* window = new XFileExplorer(&app, paths, 3);
     mainWindow = window;
     app.create(); window->show(); pump(app, 1000);
+    if (getenv("SWORDFISH_TEST_MAIN_TOOLBAR_ONLY"))
+    {
+        checkMainToolbarOverflow(app, window, fixture);
+        std::fflush(stdout);
+        std::_Exit(0);
+    }
     if (getenv("SWORDFISH_TEST_DIALOG_LAYOUT_ONLY"))
     {
         CustomActionsUI* actions = window->getCustomActions();
@@ -2499,7 +2730,6 @@ int main(int argc, char** argv)
                     general = bar;
                 if (FXButton* button = dynamic_cast<FXButton*>(child))
                 {
-                    assert(button->getTipText() != "More toolbar commands");
                     if (FXSELID(button->getSelector()) == FilePanel::ID_ZOOM_IN) { zoom = button; }
                 }
             }
@@ -2531,7 +2761,8 @@ int main(int argc, char** argv)
         zoom->getTarget()->handle(zoom, FXSEL(SEL_COMMAND, FilePanel::ID_ZOOM_RESET), NULL);
         assert(app.reg().readIntEntry("SETTINGS", "file_zoom_step", -1) == 1);
         puts("PASS: three extra zoom-out levels stop at 16 px and Reset Zoom restores the default");
-        puts("PASS: original built-in toolbar order/icons and Zoom In restored; stale customization ignored, no toolbar editor, presentation menus or overflow");
+        puts("PASS: original built-in toolbar order/icons and Zoom In retained; stale customization ignored, no toolbar editor or presentation menus");
+        checkMainToolbarOverflow(app, window, fixture);
     }
     CustomActionsUI* actions = window->getCustomActions();
     assert(actions && actions->model.items.size() == 6);

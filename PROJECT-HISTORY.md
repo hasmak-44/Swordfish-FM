@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
 Last updated: 24 November 2026, through the 0.0.4 beta 1 release and
-subsequent user feedback and local fixes (sections 3.128-3.140).
+subsequent user feedback and local fixes (sections 3.128-3.141).
 Latest prerelease: `swordfish-0.0.4-beta1`.
 Latest stable release: `swordfish-0.0.3`.
 Previous stable release: `swordfish-0.0.2`.
@@ -43,10 +43,10 @@ Historical implementation details below do not override the current code.
 7. User-confirmed fixes include the portable search warning, child-window
    icons, missing-archivemount guidance and the icon-startup fix (section 3.40).
    Distinguish those confirmations from later changes and the user's new
-   reports and local work in sections 3.129-3.140.
+   reports and local work in sections 3.129-3.141.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.118-3.140. Older beta and RC notes are
+9. For the latest state, read sections 3.118-3.141. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide was originally added after the frozen RC4 application commit and is
@@ -4557,6 +4557,43 @@ not rerun on the bundles, no `.deb` was built, and real Eee PC testing is
 outstanding. Afterwards the builder and container images, the Docker build
 cache and the build tree were removed; the archives and checksums remain under
 `/tmp/swordfish-test-20261124-85e87a7/download/`.
+
+### 3.141. One-row main toolbar with overflow (local work)
+
+The user confirmed that a fresh test build still used the expected Ocean Depth
+default theme, but its General/Tools/Panel toolbar groups wrapped onto two rows
+at about 1024 pixels wide. This became visible after removing the old large
+minimum window size (section 3.139). The user requested one row with overflow
+instead; the separate Custom Actions toolbar is intentionally unchanged.
+
+The ordinary toolbar groups now negotiate their horizontal widths, overflowing
+later groups first rather than wrapping. Each group's `>>` menu exposes its
+hidden commands in original order with their existing targets, enabled states,
+icons and panel/view radio selections. Widening restores the original buttons.
+Saved horizontal row breaks are cleared on startup, while vertical docking and
+floating remain available. History popups anchor to the invoking overflow entry
+instead of a hidden toolbar arrow. Radio backgrounds follow the menu theme so
+their selected state remains visible in dark themes. No default theme changed.
+
+A clean native build staged in `/tmp` passed. The focused existing GUI runner
+passes with and without Fluxbox:
+
+```sh
+SWORDFISH_TEST_MAIN_TOOLBAR_ONLY=1 bash tests/run-custom-actions-ui-regression.sh /path/to/native-tree
+SWORDFISH_TEST_WM=1 SWORDFISH_TEST_MAIN_TOOLBAR_ONLY=1 bash tests/run-custom-actions-ui-regression.sh /path/to/native-tree
+```
+
+Checks cover exact fit and a one-pixel shortage, shrinking to 640 pixels and
+widening again, command/menu order and separator boundaries, saved row-break
+recovery, View-menu toolbar toggles, vertical/floating/redocking behavior,
+real overflow clicks, active-pane view changes, radio state, and history popup
+ownership/enabled state. All 14 wide/narrow, light/dark, popup, long-label and
+left/right selected-view screenshots passed independent visual review.
+The isolated fixture reports its missing optional network helper; this work
+does not claim network validation or a full GUI-suite pass.
+
+The manual is updated. This remains local work: no portable package, release
+or real-machine acceptance is claimed.
 
 ## 4. The archive-command / false idle-timeout bug
 
