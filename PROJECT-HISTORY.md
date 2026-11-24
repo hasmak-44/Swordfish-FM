@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
 Last updated: 24 November 2026, through the 0.0.4 beta 1 release and
-subsequent user feedback and local fixes (sections 3.128-3.139).
+subsequent user feedback and local fixes (sections 3.128-3.140).
 Latest prerelease: `swordfish-0.0.4-beta1`.
 Latest stable release: `swordfish-0.0.3`.
 Previous stable release: `swordfish-0.0.2`.
@@ -43,10 +43,10 @@ Historical implementation details below do not override the current code.
 7. User-confirmed fixes include the portable search warning, child-window
    icons, missing-archivemount guidance and the icon-startup fix (section 3.40).
    Distinguish those confirmations from later changes and the user's new
-   reports and local work in sections 3.129-3.139.
+   reports and local work in sections 3.129-3.140.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.118-3.139. Older beta and RC notes are
+9. For the latest state, read sections 3.118-3.140. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide was originally added after the frozen RC4 application commit and is
@@ -4528,6 +4528,35 @@ saved position is moved back on screen; large screens keep 1024x768. The
 theme workflow regression passed. The custom-actions UI regression fails at
 its Utilities overflow-button assertion both before and after this change.
 No package was built or pushed.
+
+### 3.140. Downloaded amd64 and i386 test builds (24 November 2026)
+
+The user requested a test build of all local commits through `85e87a7`
+(settings conflicts between windows and root windows, local copy and move
+safety, and small-screen window fitting). A `git archive` snapshot was built
+in `/tmp/swordfish-test-20261124-85e87a7` with the unchanged
+`portable/build-portable.sh` for amd64 and i386, since the 1024x600 reporter
+uses the 32-bit build. `portable-data` was excluded from both archives.
+
+| Archive | Bytes | SHA-256 |
+|---|---:|---|
+| `Swordfish-Portable-0.0.4-beta1-test-20261124-85e87a7-amd64.tar.gz` | 86,812,464 | `1aaf6ae103f4ab6b7bc2b3778ccbd46063b195f63288ff988399266d3ae020d0` |
+| `Swordfish-Portable-0.0.4-beta1-test-20261124-85e87a7-i386.tar.gz` | 87,014,796 | `4ea3006be07939571a3e877a0941cc09fff7eb74de8393cbc1ae21d8695a371f` |
+
+Smoke checks on Xvfb 1024x600 with Openbox: both main windows opened
+maximized at 1024x581 with no published minimum size. The host cannot run
+i386 programs fully (no 32-bit zlib), so the i386 bundle ran as a normal user
+in a `linux/386` Debian 10 container. That container needed the libraries
+bundles always take from the system: fontconfig, X11/X11-xcb, libGL, ALSA,
+libdrm, FriBidi and HarfBuzz. Its settings warnings came only from the
+container user lacking write access to the host-owned bundle folder.
+
+Both archives were served privately on port 8765, checksum-verified over HTTP,
+downloaded by the user, and the port was closed. Full regression suites were
+not rerun on the bundles, no `.deb` was built, and real Eee PC testing is
+outstanding. Afterwards the builder and container images, the Docker build
+cache and the build tree were removed; the archives and checksums remain under
+`/tmp/swordfish-test-20261124-85e87a7/download/`.
 
 ## 4. The archive-command / false idle-timeout bug
 
