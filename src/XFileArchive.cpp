@@ -2094,11 +2094,15 @@ void XFileArchive::create()
     {
         int xpos = getApp()->reg().readIntEntry("OPTIONS", "xpos", DEFAULT_WINDOW_XPOS);
         int ypos = getApp()->reg().readIntEntry("OPTIONS", "ypos", DEFAULT_WINDOW_YPOS);
-        position(xpos, ypos, width, height);
+        FXint fitwidth = width, fitheight = height;
+        xf_fitwindowtoscreen(fitwidth, fitheight, &xpos, &ypos);
+        position(xpos, ypos, fitwidth, fitheight);
     }
     else
     {
-        position(getX(), getY(), width, height);
+        FXint fitwidth = width, fitheight = height;
+        xf_fitwindowtoscreen(fitwidth, fitheight);
+        position(getX(), getY(), fitwidth, fitheight);
     }
 
     // Read open history
@@ -2162,6 +2166,7 @@ void XFileArchive::create()
 
     // Show window
     show();
+    xf_maximizeifscreensized(this);
 
 #ifdef STARTUP_NOTIFICATION
     startup_completed();

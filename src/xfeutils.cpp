@@ -115,6 +115,44 @@ FXlong xf_getavailablespace(const FXString& filepath)
     return stat.f_bsize * stat.f_bavail;
 }
 
+// Keep a restored window size and position inside the screen, e.g. on 1024x600 netbooks
+void xf_fitwindowtoscreen(FXint& width, FXint& height, FXint* xpos, FXint* ypos)
+{
+    FXRootWindow* root = FXApp::instance()->getRootWindow();
+    FXint screenwidth = root->getDefaultWidth();
+    FXint screenheight = root->getDefaultHeight();
+
+    if (screenwidth > 0)
+    {
+        width = FXMIN(width, screenwidth);
+        if (xpos)
+        {
+            *xpos = FXCLAMP(0, *xpos, screenwidth - width);
+        }
+    }
+    if (screenheight > 0)
+    {
+        height = FXMIN(height, screenheight);
+        if (ypos)
+        {
+            *ypos = FXCLAMP(0, *ypos, screenheight - height);
+        }
+    }
+}
+
+
+// A shown window as large as the screen is maximized so the window manager fits it to the work area
+void xf_maximizeifscreensized(FXTopWindow* win)
+{
+    FXRootWindow* root = win->getApp()->getRootWindow();
+    if (!win->isMinimized() &&
+        ((win->getWidth() >= root->getDefaultWidth()) || (win->getHeight() >= root->getDefaultHeight())))
+    {
+        win->maximize();
+    }
+}
+
+
 FXint xf_filesystemlocality(const FXString& filepath)
 {
 #if defined(linux)

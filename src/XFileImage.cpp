@@ -2748,11 +2748,15 @@ void XFileImage::create()
     {
         int xpos = getApp()->reg().readIntEntry("OPTIONS", "xpos", DEFAULT_WINDOW_XPOS);
         int ypos = getApp()->reg().readIntEntry("OPTIONS", "ypos", DEFAULT_WINDOW_YPOS);
-        position(xpos, ypos, ww, hh);
+        FXint fitwidth = ww, fitheight = hh;
+        xf_fitwindowtoscreen(fitwidth, fitheight, &xpos, &ypos);
+        position(xpos, ypos, fitwidth, fitheight);
     }
     else
     {
-        position(getX(), getY(), ww, hh);
+        FXint fitwidth = ww, fitheight = hh;
+        xf_fitwindowtoscreen(fitwidth, fitheight);
+        position(getX(), getY(), fitwidth, fitheight);
     }
 
     // Read filter history
@@ -2803,6 +2807,7 @@ void XFileImage::create()
     filelist->setFocus();
 
     show();
+    xf_maximizeifscreensized(this);
 
 #ifdef STARTUP_NOTIFICATION
     startup_completed();

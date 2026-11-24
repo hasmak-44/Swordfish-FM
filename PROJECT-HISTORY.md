@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
 Last updated: 24 November 2026, through the 0.0.4 beta 1 release and
-subsequent user feedback and local fixes (sections 3.128-3.138).
+subsequent user feedback and local fixes (sections 3.128-3.139).
 Latest prerelease: `swordfish-0.0.4-beta1`.
 Latest stable release: `swordfish-0.0.3`.
 Previous stable release: `swordfish-0.0.2`.
@@ -43,10 +43,10 @@ Historical implementation details below do not override the current code.
 7. User-confirmed fixes include the portable search warning, child-window
    icons, missing-archivemount guidance and the icon-startup fix (section 3.40).
    Distinguish those confirmations from later changes and the user's new
-   reports and local work in sections 3.129-3.138.
+   reports and local work in sections 3.129-3.139.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.118-3.138. Older beta and RC notes are
+9. For the latest state, read sections 3.118-3.139. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide was originally added after the frozen RC4 application commit and is
@@ -4489,6 +4489,45 @@ regular-file and symlink destinations. It does not simulate a full disk or
 verify device/network filesystem behavior. The user-facing manual now
 documents temporary files and the supported-filesystem limits. No package
 was built or pushed.
+
+### 3.139. Small screens and minimum window size (24 November 2026)
+
+User feedback on 0.0.4 beta 1 (32-bit build): the main window could not be
+made smaller than about 1080x440, which does not fit 1024x600 netbook screens.
+
+Cause: the main window was created with `DECOR_STRETCHABLE` but not
+`DECOR_SHRINKABLE`. FOX then publishes the content's default width and height
+as the window-manager minimum size. That default is the sum of the menu bar,
+toolbar row and panel splitter widths, so it grows with panel mode, toolbars,
+font size and translation length.
+
+- The main window now uses `DECOR_RESIZE`, so it publishes no minimum size.
+  Toolbars already collapse into their overflow buttons when narrow.
+- New `xf_fitwindowtoscreen` limits the restored or default size, and the
+  saved position, to the screen. New `xf_maximizeifscreensized` then
+  maximizes a window that fills the screen so the window manager fits it to
+  the work area, including the title bar and panels. This applies to the main
+  window, text editor, image viewer, archive viewer and package viewer, which
+  all defaulted to 1024x768.
+- Known limit: the FOX 1.6 menu bar does not wrap. At default fonts it needs
+  about 640 px, so menus to the right are clipped only below that width.
+- A second AI review of the report reached the same diagnosis. Its
+  suggestions for a narrow Custom Actions toolbar width, shrinkable path
+  fields and toolbar wrapping were already in place.
+- Stopgap for 0.0.4 beta 1 users before this fix ships: scale the desktop
+  with `xrandr --output <output> --mode 1024x600 --panning 1152x675 --scale
+  1.125x1.125`, using the output name shown by `xrandr` (often `LVDS1`).
+- Deferred polish for the layout audit: at about 800 px the right-hand
+  status-bar free-space text is clipped, and long Places names wrap
+  mid-word, such as "Application / s".
+
+Validation: clean native build in `/tmp`; Xvfb plus Openbox checks at
+1024x600, 800x480 and 1920x1080. Fresh profiles open maximized on small
+screens with nothing offscreen; a saved 900x500 window is kept; an offscreen
+saved position is moved back on screen; large screens keep 1024x768. The
+theme workflow regression passed. The custom-actions UI regression fails at
+its Utilities overflow-button assertion both before and after this change.
+No package was built or pushed.
 
 ## 4. The archive-command / false idle-timeout bug
 

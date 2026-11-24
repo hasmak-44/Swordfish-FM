@@ -468,7 +468,7 @@ FXIMPLEMENT(XFileExplorer, FXMainWindow, XFileExplorerMap, ARRAYNUMBER(XFileExpl
 XFileExplorer::XFileExplorer(FXApp* app, vector_FXString URIs, const int pm, const FXbool iconic, const FXbool maximized,
                              const char* title, FXIcon* bigicon, FXIcon* miniicon) :
     FXMainWindow(app, title, bigicon, miniicon,
-                 DECOR_TITLE | DECOR_MINIMIZE | DECOR_MAXIMIZE | DECOR_CLOSE | DECOR_BORDER | DECOR_STRETCHABLE)
+                 DECOR_TITLE | DECOR_MINIMIZE | DECOR_MAXIMIZE | DECOR_CLOSE | DECOR_BORDER | DECOR_RESIZE)
 {
     // Panel mode
     panel_mode = pm;
@@ -3261,10 +3261,12 @@ void XFileExplorer::create()
     {
         int xpos = getApp()->reg().readIntEntry("OPTIONS", "xpos", DEFAULT_WINDOW_XPOS);
         int ypos = getApp()->reg().readIntEntry("OPTIONS", "ypos", DEFAULT_WINDOW_YPOS);
+        xf_fitwindowtoscreen(width, height, &xpos, &ypos);
         position(xpos, ypos, width, height);
     }
     else
     {
+        xf_fitwindowtoscreen(width, height);
         position(getX(), getY(), width, height);
     }
 
@@ -3876,6 +3878,10 @@ void XFileExplorer::create()
     if (startmaximized)
     {
         maximize();
+    }
+    else if (!starticonic)
+    {
+        xf_maximizeifscreensized(this);
     }
 
 #if defined(linux) && defined(XFE_AUTOMOUNTER)
