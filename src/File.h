@@ -165,6 +165,7 @@ public:
     {
         if (independent) sourceSizes[path] = size;
     }
+    FXulong sourceSize(const FXString& path) const;
 
 
     FXbool isCancelled()

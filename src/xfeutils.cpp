@@ -14,6 +14,10 @@
 #include <libgen.h>
 #include <stdlib.h>
 #include <sys/statvfs.h>
+#if defined(linux)
+#include <sys/statfs.h>
+#include <linux/magic.h>
+#endif
 #include <fstream>
 #include <set>
 #if defined(linux)
@@ -109,6 +113,53 @@ FXlong xf_getavailablespace(const FXString& filepath)
 
     // The available size is f_bsize * f_bavail
     return stat.f_bsize * stat.f_bavail;
+}
+
+FXint xf_filesystemlocality(const FXString& filepath)
+{
+#if defined(linux)
+    if (filepath.contains("mtp:host=")) return 0;
+
+    struct statfs info;
+    if (statfs(filepath.text(), &info) != 0) return -1;
+
+    switch (info.f_type)
+    {
+#ifdef NFS_SUPER_MAGIC
+    case NFS_SUPER_MAGIC:
+#endif
+#ifdef CIFS_MAGIC_NUMBER
+    case CIFS_MAGIC_NUMBER:
+#endif
+#ifdef SMB_SUPER_MAGIC
+    case SMB_SUPER_MAGIC:
+#endif
+#ifdef CODA_SUPER_MAGIC
+    case CODA_SUPER_MAGIC:
+#endif
+#ifdef AFS_SUPER_MAGIC
+    case AFS_SUPER_MAGIC:
+#endif
+#ifdef NCP_SUPER_MAGIC
+    case NCP_SUPER_MAGIC:
+#endif
+#ifdef V9FS_MAGIC
+    case V9FS_MAGIC:
+#endif
+#ifdef CEPH_SUPER_MAGIC
+    case CEPH_SUPER_MAGIC:
+#endif
+#ifdef FUSE_SUPER_MAGIC
+    case FUSE_SUPER_MAGIC:
+#endif
+        return 0;
+    default:
+        return 1;
+    }
+#else
+    (void)filepath;
+    return 0;
+#endif
 }
 
 

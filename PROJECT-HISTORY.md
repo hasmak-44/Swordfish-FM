@@ -1,7 +1,7 @@
 # Swordfish FM: project history and recovery guide
 
 Last updated: 24 November 2026, through the 0.0.4 beta 1 release and
-subsequent user feedback and local fixes (sections 3.128-3.137).
+subsequent user feedback and local fixes (sections 3.128-3.138).
 Latest prerelease: `swordfish-0.0.4-beta1`.
 Latest stable release: `swordfish-0.0.3`.
 Previous stable release: `swordfish-0.0.2`.
@@ -43,10 +43,10 @@ Historical implementation details below do not override the current code.
 7. User-confirmed fixes include the portable search warning, child-window
    icons, missing-archivemount guidance and the icon-startup fix (section 3.40).
    Distinguish those confirmations from later changes and the user's new
-   reports and local work in sections 3.129-3.137.
+   reports and local work in sections 3.129-3.138.
 8. Before claiming a feature is implemented, distinguish code, automated
    validation, portable validation and the user's real-machine confirmation.
-9. For the latest state, read sections 3.118-3.137. Older beta and RC notes are
+9. For the latest state, read sections 3.118-3.138. Older beta and RC notes are
    historical context, not the current local development status.
 
 This guide was originally added after the frozen RC4 application commit and is
@@ -4457,6 +4457,39 @@ allows its intended no-selection invocation. Manual and portable notes updated.
 These are local automated results, not desktop acceptance. No replacement
 portable package, commit or push was made for this fix.
 
+### 3.138. Safer local copy and cross-filesystem move (24 November 2026)
+
+The user accepted the recommendation to check free space, reserve space where
+supported, stage unfinished files under a `.part` name, retain the previous
+destination until the replacement completes, and remove temporary files on
+ordinary failures. This is a focused change to regular-file transfers on local
+Linux filesystems; MTP and recognized network/FUSE filesystems keep the prior
+copy path.
+
+- Before a transfer starts, estimate its data size and check available space
+  for each destination filesystem. Same-filesystem moves are excluded because
+  they use rename and need no copy space. Reservation is performed per file
+  with `posix_fallocate` when supported; unsupported filesystems fall back to
+  normal writes, while real allocation errors stop the copy.
+- Regular files are written to `destination.part`, synced, and renamed into
+  place only after copy and optional checksum verification succeed. Existing
+  non-directory destinations remain in place through copy and cancellation.
+  Cross-filesystem moves remove the source only after the staged copy succeeds.
+- Normal copy errors and cancellation remove the partial. A process crash or
+  power loss can leave a `.part` file, but the prior destination is not
+  replaced until the rename.
+- Existing transfer directory locks remain in effect. They coordinate
+  Swordfish transfers, not unrelated programs; free-space estimates cannot
+  prevent other applications from consuming space afterward.
+
+Validation: clean native `make` in `/tmp` and the focused Xvfb copy regression
+passed. The regression checks successful staging, preservation of an existing
+file during replacement, and cleanup/preservation after cancellation for both
+regular-file and symlink destinations. It does not simulate a full disk or
+verify device/network filesystem behavior. The user-facing manual now
+documents temporary files and the supported-filesystem limits. No package
+was built or pushed.
+
 ## 4. The archive-command / false idle-timeout bug
 
 This is important enough to preserve separately.
@@ -4735,7 +4768,7 @@ prereleases and must not be assumed to select RC4.
 ## 9. Unfinished work and agreements not to mistake for completed features
 
 The following retains historical handoff notes and discussions; dates and
-superseding sections matter. See sections 3.128-3.137 for the latest release
+superseding sections matter. See sections 3.128-3.138 for the latest release
 and feedback rather than assuming these notes describe the current worktree.
 
 ### 9.0 Historical position (26 October 2026)

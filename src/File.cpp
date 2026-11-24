@@ -1110,6 +1110,16 @@ int File::verifycopy(const FXString& source, const FXString& target, const FXStr
     return -2;
 }
 
+FXulong File::sourceSize(const FXString& path) const
+{
+    std::map<FXString, FXulong>::const_iterator found = sourceSizes.find(path);
+    if (found != sourceSizes.end()) return found->second;
+
+    struct stat info;
+    if (xf_lstat(path.text(), &info) != 0 || !S_ISREG(info.st_mode)) return 0;
+    return static_cast<FXulong>(info.st_size);
+}
+
 
 // Copy ordinary file
 // Return  0 to allow displaying an error message in the calling function
@@ -1119,12 +1129,39 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                    const FXulong sourcesize, const FXulong tstart, const FXbool preserve_date)
 {
     FXString destfile;
+    FXString writefile;
+    FXString partfile;
     FXuchar buffer[BUFFER_COPY_SIZE];
     struct stat info;
     struct utimbuf timbuf;
     FXlong nread, nwritten;
     int src, dst;
     int ok = false;
+    FXbool usePart = false;
+    FXbool partPending = false;
+    FXint cleanupToken = 0;
+
+    auto removePartial = [&](void*)
+    {
+        if (partPending)
+        {
+            int failure = 0;
+            if (::unlink(partfile.text()) != 0 && errno != ENOENT) failure = errno;
+            partPending = false;
+            notifyChange(partfile);
+            if (failure)
+            {
+                appLog(APP_LOG_ERRORS, "copy-part-cleanup-failed", partfile + ": " + strerror(failure));
+                warned = true;
+                forceTimeout();
+                FXString message;
+                message.format(_("Can't remove incomplete file %s: %s"), partfile.text(), strerror(failure));
+                showFileError(mbox, independent, message);
+                restartTimeout();
+            }
+        }
+    };
+    std::unique_ptr<void, decltype(removePartial)> partialGuard(&cleanupToken, removePartial);
     
     FXbool warn = getApp()->reg().readUnsignedEntry("OPTIONS", "preserve_date_warn", true);
     FXbool verify = getApp()->reg().readUnsignedEntry("OPTIONS", "verify_copy", false);
@@ -1145,6 +1182,28 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
             else
             {
                 destfile = target;
+            }
+            writefile = destfile;
+            FXint locality = source.contains("mtp:host=") ? 0 :
+                             xf_filesystemlocality(FXPath::directory(destfile));
+            if (locality < 0)
+            {
+                int failure = errno;
+                ::close(src);
+                forceTimeout();
+                FXString message;
+                message.format(_("Can't check the destination filesystem for %s: %s"),
+                               target.text(), strerror(failure));
+                FXuint answer = showFileError(mbox, independent, message);
+                restartTimeout();
+                if (answer == BOX_CLICKED_CANCEL) cancelled = true;
+                return answer == BOX_CLICKED_CANCEL ? false : -2;
+            }
+            if (locality > 0)
+            {
+                partfile = destfile + ".part";
+                writefile = partfile;
+                usePart = true;
             }
 
             // File is on an MTP mount
@@ -1264,9 +1323,38 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                 }
 
                 // Copy file block by block
-                if ((dst = ::open(destfile.text(), O_WRONLY | O_CREAT | O_TRUNC, info.st_mode)) >= 0)
+                int flags = O_WRONLY | O_CREAT | (usePart ? O_EXCL | O_NOFOLLOW : O_TRUNC);
+                if ((dst = ::open(writefile.text(), flags, info.st_mode)) >= 0)
                 {
-                    notifyChange(destfile);
+                    if (usePart) partPending = true;
+                    notifyChange(writefile);
+                    if (usePart && info.st_size > 0)
+                    {
+                        int allocationError;
+                        do
+                        {
+                            allocationError = posix_fallocate(dst, 0, info.st_size);
+                        }
+                        while (allocationError == EINTR);
+                        if (allocationError == EOPNOTSUPP || allocationError == ENOSYS || allocationError == EINVAL)
+                        {
+                            if (::ftruncate(dst, 0) != 0) allocationError = errno;
+                            else allocationError = 0;
+                        }
+                        if (allocationError)
+                        {
+                            ::close(dst);
+                            ::close(src);
+                            forceTimeout();
+                            FXString message;
+                            message.format(_("Can't reserve space for file %s: %s"),
+                                           target.text(), strerror(allocationError));
+                            FXuint answer = showFileError(mbox, independent, message);
+                            restartTimeout();
+                            if (answer == BOX_CLICKED_CANCEL) cancelled = true;
+                            return answer == BOX_CLICKED_CANCEL ? false : -2;
+                        }
+                    }
                     int error = false;
                     std::unique_ptr<GChecksum, decltype(&g_checksum_free)> srcsum(
                         verify ? g_checksum_new(G_CHECKSUM_MD5) : NULL, g_checksum_free);
@@ -1297,7 +1385,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                             {
                                 ::close(dst);
                                 ::close(src);
-                                notifyChange(destfile);
+                                notifyChange(writefile);
                                 cancelled = true;
 
                                 return false;
@@ -1358,7 +1446,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                         {
                             ::close(dst);
                             ::close(src);
-                            notifyChange(destfile);
+                            notifyChange(writefile);
 
                             return false;
                         }
@@ -1385,7 +1473,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                             {
                                 ::close(dst);
                                 ::close(src);
-                                notifyChange(destfile);
+                                notifyChange(writefile);
                                 cancelled = true;
                                 
                                 return false;
@@ -1396,7 +1484,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                                 break;
                             }
                         }
-                        if (update) notifyChange(destfile);
+                        if (update) notifyChange(writefile);
 
                     }
 
@@ -1410,12 +1498,21 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                         ok = true;
                     }
 
-                    if (ok == true && srcsum && fdatasync(dst) != 0)
+                    int syncError = 0;
+                    if (ok == true && usePart)
                     {
-                        int errcode = errno;
+                        off_t copied = lseek(dst, 0, SEEK_CUR);
+                        if (copied < 0) syncError = errno;
+                        else if (ftruncate(dst, copied) != 0) syncError = errno;
+                    }
+                    if (ok == true && (srcsum || usePart) && !syncError && fdatasync(dst) != 0)
+                        syncError = errno;
+                    if (ok == true && syncError)
+                    {
+                        int errcode = syncError;
                         ::close(dst);
                         ::close(src);
-                        notifyChange(destfile);
+                        notifyChange(writefile);
                         forceTimeout();
                         FXString str;
                         str.format(_("Can't copy file %s: %s"), target.text(), strerror(errcode));
@@ -1429,12 +1526,12 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                         return -2;
                     }
                     ::close(dst);
-                    notifyChange(destfile);
+                    notifyChange(writefile);
 
                     FXbool verifyfailed = false;
                     if (ok == true && srcsum)
                     {
-                        ok = verifycopy(source, destfile, g_checksum_get_string(srcsum.get()));
+                        ok = verifycopy(source, writefile, g_checksum_get_string(srcsum.get()));
                         if (ok == false)
                         {
                             ::close(src);
@@ -1449,7 +1546,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                         timbuf.actime = info.st_atime;
                         timbuf.modtime = info.st_mtime;
                         errno = 0;
-                        int rc = utime(destfile.text(), &timbuf);
+                        int rc = utime(writefile.text(), &timbuf);
                         int errcode = errno;
                         if (warn && rc)
                         {
@@ -1488,7 +1585,7 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                     struct statfs fs;
                     if ((statfs(source.text(), &fs) == 0) && (fs.f_type == 0x9660))
                     {
-                        ::chmod(target.text(), info.st_mode | S_IWUSR);
+                        ::chmod(writefile.text(), info.st_mode | S_IWUSR);
                     }
                 }
 #endif
@@ -1524,6 +1621,23 @@ int File::copyfile(const FXString& source, const FXString& target, const FXStrin
                         // in the calling function
     }
 
+    if (ok == true && usePart)
+    {
+        if (::rename(partfile.text(), destfile.text()) != 0)
+        {
+            int errcode = errno;
+            forceTimeout();
+            FXString message;
+            message.format(_("Can't finish copying file %s: %s"), target.text(), strerror(errcode));
+            FXuint answer = showFileError(mbox, independent, message);
+            restartTimeout();
+            if (answer == BOX_CLICKED_CANCEL) cancelled = true;
+            return answer == BOX_CLICKED_CANCEL ? false : -2;
+        }
+        partPending = false;
+        notifyChange(partfile);
+        notifyChange(destfile);
+    }
     return ok;
 }
 
@@ -1727,7 +1841,8 @@ int File::copyrec(const FXString& source, const FXString& target, const FXString
     // Only two real directories merge; links are replaced without following them.
     if (xf_lstat(destination.text(), &linfo2) == 0)
     {
-        if (!(S_ISDIR(linfo1.st_mode) && S_ISDIR(linfo2.st_mode)))
+        if (!(S_ISDIR(linfo1.st_mode) && S_ISDIR(linfo2.st_mode)) &&
+            !(S_ISREG(linfo1.st_mode) && !S_ISDIR(linfo2.st_mode)))
         {
             int result = File::remove(destination);
             if (result != true)

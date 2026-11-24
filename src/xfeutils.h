@@ -639,6 +639,7 @@ static inline int xf_lstat(const char* path, struct stat* buf)
 
 FXString xf_mimetype(FXString);
 FXlong xf_getavailablespace(const FXString&);
+FXint xf_filesystemlocality(const FXString&);
 FXHotKey xf_parseaccel(const FXString&);
 FXbool xf_existcommand(const FXString);
 void xf_restorehostenv();

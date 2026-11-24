@@ -5,12 +5,14 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <limits>
 #include <map>
 #include <stdint.h>
 #include <string.h>
 #include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <time.h>
 #include <unistd.h>
 #if defined(linux)
@@ -201,6 +203,102 @@ FXString targetParent(const FXString& target, FXbool directory)
 {
     return directory ? target : FXPath::directory(FXPath::absolute(target));
 }
+
+FXbool checkAvailableSpace(File* progress, const Request& request, const FXString& trashFiles,
+                           FXbool useTrash)
+{
+    struct SpaceRequirement
+    {
+        FXString path;
+        FXulong required = 0;
+        FXulong available = 0;
+    };
+    std::map<dev_t, SpaceRequirement> requirements;
+
+    for (size_t i = 0; i < request.items.size(); ++i)
+    {
+        const TransferItem& item = request.items[i];
+        FXString destination = item.target;
+        FXString directory;
+        if (useTrash && destination == trashFiles) directory = trashFiles;
+        else directory = targetParent(destination, request.targetDirectories[i]);
+
+        if (item.source.contains("mtp:host=") || directory.contains("mtp:host="))
+            continue;
+
+        FXint locality = xf_filesystemlocality(directory);
+        if (locality < 0)
+        {
+            int failure = errno;
+            MessageBox::error(progress, BOX_OK, _("Can't check available space"),
+                              _("Can't check the destination filesystem for %s: %s"),
+                              directory.text(), strerror(failure));
+            return false;
+        }
+        if (locality == 0) continue;
+
+        struct stat targetInfo;
+        if (stat(directory.text(), &targetInfo) != 0)
+        {
+            int failure = errno;
+            MessageBox::error(progress, BOX_OK, _("Can't check available space"),
+                              _("Can't check the destination folder %s: %s"),
+                              directory.text(), strerror(failure));
+            return false;
+        }
+
+        if (request.operation == MOVE)
+        {
+            struct stat sourceInfo;
+            if (lstat(item.source.text(), &sourceInfo) == 0 && sourceInfo.st_dev == targetInfo.st_dev)
+                continue;
+        }
+
+        FXulong bytes = progress->sourceSize(item.source);
+        SpaceRequirement& requirement = requirements[targetInfo.st_dev];
+        if (requirement.path.empty())
+        {
+            requirement.path = directory;
+            struct statvfs space;
+            if (statvfs(directory.text(), &space) != 0)
+            {
+                int failure = errno;
+                MessageBox::error(progress, BOX_OK, _("Can't check available space"),
+                                  _("Can't check available space in %s: %s"),
+                                  directory.text(), strerror(failure));
+                return false;
+            }
+            FXulong blockSize = space.f_frsize ? space.f_frsize : space.f_bsize;
+            FXulong blocks = geteuid() == 0 ? space.f_bfree : space.f_bavail;
+            requirement.available = blockSize &&
+                                    blocks > std::numeric_limits<FXulong>::max() / blockSize ?
+                                    std::numeric_limits<FXulong>::max() : blocks * blockSize;
+        }
+        if (bytes > static_cast<FXulong>(std::numeric_limits<FXulong>::max() - requirement.required))
+        {
+            MessageBox::error(progress, BOX_OK, _("Can't check available space"),
+                              _("The transfer size is too large to check safely."));
+            return false;
+        }
+        requirement.required += bytes;
+    }
+
+    for (const auto& entry : requirements)
+    {
+        const SpaceRequirement& requirement = entry.second;
+        if (requirement.required > requirement.available)
+        {
+            FXString needed = xf_humansize(FXStringVal(requirement.required).text());
+            FXString available = xf_humansize(FXStringVal(requirement.available).text());
+            MessageBox::error(progress, BOX_OK, _("Not enough space"),
+                              _("The transfer needs about %s, but only %s is available in %s."),
+                              needed.text(), available.text(), requirement.path.text());
+            return false;
+        }
+    }
+    return true;
+}
+
 
 // Keep destination directories alive so a replacement cannot reuse their inode.
 class DirectoryPins
@@ -650,12 +748,17 @@ int xf_runTransferWorker(int requestFd, int channel, char* executable)
         FXulong total = 0;
         FXString humanSize;
         if (!errors && !progress->isCancelled()) humanSize = progress->sourcesize(sources, &total);
-        FXulong started = xf_getcurrenttime();
-        if (!errors && !progress->isCancelled()) progress->beginTransfer();
-
         FXString trashFiles = xf_trashdatahome() + PATHSEPSTRING TRASHFILESPATH;
         FXString trashInfo = xf_trashdatahome() + PATHSEPSTRING TRASHINFOPATH;
         FXbool useTrash = app->reg().readUnsignedEntry("OPTIONS", "use_trash_can", true);
+        if (!errors && !progress->isCancelled())
+        {
+            progress->setIndependentStatus(_("Checking available space..."));
+            if (!checkAvailableSpace(progress, request, trashFiles, useTrash)) errors = true;
+        }
+        FXulong started = xf_getcurrenttime();
+        if (!errors && !progress->isCancelled()) progress->beginTransfer();
+
         std::map<std::pair<uint64_t, uint64_t>, PathIdentity> movedHardLinks;
         for (size_t i = 0; i < request.items.size(); ++i)
         {
